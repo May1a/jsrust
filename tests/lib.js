@@ -3,7 +3,7 @@
  * @typedef {{ passed: number, failed: number, errors: { test: string, message: string }[] }} TestResult
  */
 
-let currentTest = "";
+/** @type {{ test: string, message: string }[]} */
 const errors = [];
 
 /**
@@ -11,7 +11,6 @@ const errors = [];
  * @param {() => void | Promise<void>} fn
  */
 export function test(name, fn) {
-    currentTest = name;
     try {
         fn();
     } catch (e) {
@@ -25,15 +24,21 @@ export function test(name, fn) {
 /**
  * @param {string} name
  * @param {() => void | Promise<void>} fn
+ * @returns {Promise<void>}
  */
 export function testAsync(name, fn) {
-    currentTest = name;
-    return fn().catch((e) => {
-        errors.push({
-            test: name,
-            message: e instanceof Error ? e.message : String(e),
-        });
-    });
+    const result = fn();
+    if (result instanceof Promise) {
+        return result.catch(
+            /** @param {unknown} e */ (e) => {
+                errors.push({
+                    test: name,
+                    message: e instanceof Error ? e.message : String(e),
+                });
+            },
+        );
+    }
+    return Promise.resolve();
 }
 
 /**
