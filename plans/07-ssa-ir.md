@@ -5,101 +5,101 @@
 **Dependencies**: None
 
 ## Task 7.1: IR Value Types
-- [ ] `ValueId` - unique identifier for SSA values (number)
-- [ ] `BlockId` - unique identifier for basic blocks (number)
-- [ ] `FunctionId` - unique identifier for functions (number)
-- [ ] `LocalId` - unique identifier for stack slots (number)
+- [x] `ValueId` - unique identifier for SSA values (number)
+- [x] `BlockId` - unique identifier for basic blocks (number)
+- [x] `FunctionId` - unique identifier for functions (number)
+- [x] `LocalId` - unique identifier for stack slots (number)
 
 ## Task 7.2: IR Types
-- [ ] `IRIntType` - i8, i16, i32, i64
-- [ ] `IRFloatType` - f32, f64
-- [ ] `IRBoolType` - boolean
-- [ ] `IRPtrType` - pointer
-- [ ] `IRUnitType` - ()
-- [ ] `IRStructType` - named struct with field types
-- [ ] `IREnumType` - named enum with variant types
-- [ ] `IRArrayType` - [T; N]
-- [ ] `IRFuncType` - function signature
+- [x] `IRIntType` - i8, i16, i32, i64
+- [x] `IRFloatType` - f32, f64
+- [x] `IRBoolType` - boolean
+- [x] `IRPtrType` - pointer
+- [x] `IRUnitType` - ()
+- [x] `IRStructType` - named struct with field types
+- [x] `IREnumType` - named enum with variant types
+- [x] `IRArrayType` - [T; N]
+- [x] `IRFuncType` - function signature
 
 ## Task 7.3: IR Module
-- [ ] `IRModule` - container for functions and globals
-- [ ] `IRGlobal` - global variable definition
+- [x] `IRModule` - container for functions and globals
+- [x] `IRGlobal` - global variable definition
 
 ## Task 7.4: IR Function
-- [ ] `IRFunction` - function definition
-- [ ] Parameters with value IDs and types
-- [ ] Return type
-- [ ] List of basic blocks
-- [ ] List of local allocations
-- [ ] Entry block reference
+- [x] `IRFunction` - function definition
+- [x] Parameters with value IDs and types
+- [x] Return type
+- [x] List of basic blocks
+- [x] List of local allocations
+- [x] Entry block reference
 
 ## Task 7.5: IR Basic Block
-- [ ] `IRBlock` - basic block
-- [ ] Block parameters (phi alternative)
-- [ ] List of instructions
-- [ ] Terminator instruction
+- [x] `IRBlock` - basic block
+- [x] Block parameters (phi alternative)
+- [x] List of instructions
+- [x] Terminator instruction
 
 ## Task 7.6: IR Local (Stack Slot)
-- [ ] `IRLocal` - stack allocation metadata
-- [ ] Type and optional name
+- [x] `IRLocal` - stack allocation metadata
+- [x] Type and optional name
 
 ## Task 7.7: Constant Instructions
 **File**: `ir_instructions.js`
-- [ ] `iconst` - integer constant
-- [ ] `fconst` - float constant
-- [ ] `bconst` - boolean constant
-- [ ] `null` - null pointer
+- [x] `iconst` - integer constant
+- [x] `fconst` - float constant
+- [x] `bconst` - boolean constant
+- [x] `null` - null pointer
 
 ## Task 7.8: Arithmetic Instructions
-- [ ] `iadd`, `isub`, `imul`, `idiv`, `imod` - integer arithmetic
-- [ ] `fadd`, `fsub`, `fmul`, `fdiv` - float arithmetic
-- [ ] `ineg`, `fneg` - negation
+- [x] `iadd`, `isub`, `imul`, `idiv`, `imod` - integer arithmetic
+- [x] `fadd`, `fsub`, `fmul`, `fdiv` - float arithmetic
+- [x] `ineg`, `fneg` - negation
 
 ## Task 7.9: Bitwise Instructions
-- [ ] `iand`, `ior`, `ixor` - bitwise ops
-- [ ] `ishl`, `ishr` - shifts
+- [x] `iand`, `ior`, `ixor` - bitwise ops
+- [x] `ishl`, `ishr` - shifts
 
 ## Task 7.10: Comparison Instructions
-- [ ] `icmp` - integer comparison (eq, ne, slt, sle, sgt, sge, ult, ule, ugt, uge)
-- [ ] `fcmp` - float comparison (oeq, one, olt, ole, ogt, oge)
+- [x] `icmp` - integer comparison (eq, ne, slt, sle, sgt, sge, ult, ule, ugt, uge)
+- [x] `fcmp` - float comparison (oeq, one, olt, ole, ogt, oge)
 
 ## Task 7.11: Memory Instructions
-- [ ] `alloca` - stack allocation
-- [ ] `load` - load from memory
-- [ ] `store` - store to memory
-- [ ] `memcpy` - memory copy
+- [x] `alloca` - stack allocation
+- [x] `load` - load from memory
+- [x] `store` - store to memory
+- [x] `memcpy` - memory copy
 
 ## Task 7.12: Address Instructions
-- [ ] `gep` - get element pointer
-- [ ] `ptradd` - pointer arithmetic
+- [x] `gep` - get element pointer
+- [x] `ptradd` - pointer arithmetic
 
 ## Task 7.13: Conversion Instructions
-- [ ] `trunc` - truncate integer
-- [ ] `sext`, `zext` - sign/zero extend
-- [ ] `fptoui`, `fptosi` - float to int
-- [ ] `uitofp`, `sitofp` - int to float
-- [ ] `bitcast` - reinterpret bits
+- [x] `trunc` - truncate integer
+- [x] `sext`, `zext` - sign/zero extend
+- [x] `fptoui`, `fptosi` - float to int
+- [x] `uitofp`, `sitofp` - int to float
+- [x] `bitcast` - reinterpret bits
 
 ## Task 7.14: Call Instruction
-- [ ] `call` - function call with optional return value
+- [x] `call` - function call with optional return value
 
 ## Task 7.15: Struct/Enum Instructions
-- [ ] `struct_create` - create struct value
-- [ ] `struct_get` - extract struct field
-- [ ] `enum_create` - create enum variant
-- [ ] `enum_get_tag` - get variant tag
-- [ ] `enum_get_data` - get variant data
+- [x] `struct_create` - create struct value
+- [x] `struct_get` - extract struct field
+- [x] `enum_create` - create enum variant
+- [x] `enum_get_tag` - get variant tag
+- [x] `enum_get_data` - get variant data
 
 ## Task 7.16: Terminators
 **File**: `ir_terminators.js`
-- [ ] `ret` - return from function
-- [ ] `br` - unconditional branch
-- [ ] `br_if` - conditional branch
-- [ ] `switch` - multi-way branch
-- [ ] `unreachable` - unreachable code
+- [x] `ret` - return from function
+- [x] `br` - unconditional branch
+- [x] `br_if` - conditional branch
+- [x] `switch` - multi-way branch
+- [x] `unreachable` - unreachable code
 
 ## Testing
-- [ ] Test file: `tests/ir/types.js`
-- [ ] Test file: `tests/ir/instructions.js`
-- [ ] Test file: `tests/ir/blocks.js`
-- [ ] Test file: `tests/ir/functions.js`
+- [x] Test file: `tests/ir/types.js`
+- [x] Test file: `tests/ir/instructions.js`
+- [x] Test file: `tests/ir/blocks.js`
+- [x] Test file: `tests/ir/functions.js`

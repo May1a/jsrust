@@ -28,7 +28,7 @@ Track completion of all tasks. Mark with:
 - [ ] All tasks (depends on 01-ast, 05-hir, 04-type-inference)
 
 ### 07-ssa-ir.md
-- [ ] All tasks
+- [x] All tasks
 
 ### 08-ssa-builder.md
 - [ ] All tasks (depends on 07-ssa-ir)
