@@ -1,12 +1,16 @@
 {
-  "type": "module",
-  "scripts": {
-    "test": "node tests/run.js",
-    "compile": "node main.js",
-    "typecheck": "npx tsc"
-  },
-  "devDependencies": {
-    "@types/node": "^25.2.3",
-    "typescript": "^5.9.3"
-  }
+    "type": "module",
+    "scripts": {
+        "test": "node tests/run.js",
+        "compile": "node main.js",
+        "typecheck": "npx tsc",
+        "format": "npx prettier -w ."
+    },
+    "devDependencies": {
+        "@types/node": "^25.2.3",
+        "typescript": "^5.9.3"
+    },
+    "prettier": {
+        "tabWidth": 4
+    }
 }
