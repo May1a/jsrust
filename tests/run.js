@@ -13,6 +13,9 @@ import { runParserItemTests } from "./parser/items.js";
 import { runParserPatternTests } from "./parser/patterns.js";
 import { runParserTypeTests } from "./parser/types.js";
 import { runParserErrorTests } from "./parser/errors.js";
+import { runTypeRepresentationTests } from "./types/representation.js";
+import { runTypeContextTests } from "./types/context.js";
+import { runTypeUtilitiesTests } from "./types/utilities.js";
 
 const { printSummary, clearErrors } = lib;
 
@@ -34,6 +37,9 @@ totalTests += runParserItemTests();
 totalTests += runParserPatternTests();
 totalTests += runParserTypeTests();
 totalTests += runParserErrorTests();
+totalTests += runTypeRepresentationTests();
+totalTests += runTypeContextTests();
+totalTests += runTypeUtilitiesTests();
 
 const success = printSummary(totalTests);
 process.exit(success ? 0 : 1);

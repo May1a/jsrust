@@ -14,7 +14,7 @@ Track completion of all tasks. Mark with:
 - [x] All tasks (depends on 01-ast)
 
 ### 03-types.md
-- [ ] All tasks
+- [x] All tasks
 
 ### 04-type-inference.md
 - [ ] All tasks (depends on 01-ast, 03-types)
