@@ -6,6 +6,10 @@ A Rust compiler written in pure JavaScript with no dependencies.
 
 See `plans/README.md` for the current implementation plans.
 
+## Plan Status
+
+- 02-parser.md complete
+
 ## Important
 
 Please keep this `AGENTS.md` up to date with the latest plans.

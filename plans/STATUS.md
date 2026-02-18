@@ -11,7 +11,7 @@ Track completion of all tasks. Mark with:
 - [x] All tasks
 
 ### 02-parser.md
-- [ ] All tasks (depends on 01-ast)
+- [x] All tasks (depends on 01-ast)
 
 ### 03-types.md
 - [ ] All tasks
