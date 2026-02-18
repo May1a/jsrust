@@ -22,7 +22,7 @@ Track completion of all tasks. Mark with:
 ## Phase 2: IR
 
 ### 05-hir.md
-- [ ] All tasks (depends on 03-types)
+- [x] All tasks (depends on 03-types)
 
 ### 06-lowering-hir.md
 - [ ] All tasks (depends on 01-ast, 05-hir, 04-type-inference)
