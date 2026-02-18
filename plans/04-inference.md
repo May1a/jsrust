@@ -5,75 +5,75 @@
 **Dependencies**: `types.js`, `type_context.js`, `ast.js`
 
 ## Task 4.1: Inference Entry Point
-- [ ] `inferModule(ctx, module)` - top-level entry
-- [ ] Run in multiple passes
+- [x] `inferModule(ctx, module)` - top-level entry
+- [x] Run in multiple passes
 
 ## Task 4.2: Declaration Gathering Pass
-- [ ] Collect all struct definitions
-- [ ] Collect all enum definitions
-- [ ] Collect all function signatures
-- [ ] Register in type context
+- [x] Collect all struct definitions
+- [x] Collect all enum definitions
+- [x] Collect all function signatures
+- [x] Register in type context
 
 ## Task 4.3: Expression Inference
-- [ ] `inferExpr(ctx, expr)` - main entry
-- [ ] `inferLiteral(ctx, literal)` - integer defaults to i32, float to f64
-- [ ] `inferIdentifier(ctx, ident)` - lookup in scope
-- [ ] `inferBinary(ctx, binary)` - operators
-- [ ] `inferUnary(ctx, unary)` - !, -, *, &
-- [ ] `inferCall(ctx, call)` - function calls
-- [ ] `inferField(ctx, field)` - field access
-- [ ] `inferIndex(ctx, index)` - index access
+- [x] `inferExpr(ctx, expr)` - main entry
+- [x] `inferLiteral(ctx, literal)` - integer defaults to i32, float to f64
+- [x] `inferIdentifier(ctx, ident)` - lookup in scope
+- [x] `inferBinary(ctx, binary)` - operators
+- [x] `inferUnary(ctx, unary)` - !, -, *, &
+- [x] `inferCall(ctx, call)` - function calls
+- [x] `inferField(ctx, field)` - field access
+- [x] `inferIndex(ctx, index)` - index access
 
 ## Task 4.4: Control Flow Inference
-- [ ] `inferIf(ctx, ifExpr)` - both branches must unify
-- [ ] `inferMatch(ctx, matchExpr)` - all arms must unify
-- [ ] `inferBlock(ctx, block)` - type of final expr
-- [ ] `inferLoop(ctx, loopExpr)` - can be any type (break)
-- [ ] `inferWhile(ctx, whileExpr)` - always unit
+- [x] `inferIf(ctx, ifExpr)` - both branches must unify
+- [x] `inferMatch(ctx, matchExpr)` - all arms must unify
+- [x] `inferBlock(ctx, block)` - type of final expr
+- [x] `inferLoop(ctx, loopExpr)` - can be any type (break)
+- [x] `inferWhile(ctx, whileExpr)` - always unit
 
 ## Task 4.5: Statement Checking
-- [ ] `checkStmt(ctx, stmt)`
-- [ ] `checkLetStmt(ctx, letStmt)` - infer or check type
-- [ ] `checkExprStmt(ctx, exprStmt)`
-- [ ] `checkReturnStmt(ctx, returnStmt)` - match fn return type
+- [x] `checkStmt(ctx, stmt)`
+- [x] `checkLetStmt(ctx, letStmt)` - infer or check type
+- [x] `checkExprStmt(ctx, exprStmt)`
+- [x] `checkReturnStmt(ctx, returnStmt)` - match fn return type
 
 ## Task 4.6: Function Body Checking
-- [ ] `checkFnBody(ctx, fnDecl)`
-- [ ] Set up parameter bindings
-- [ ] Track current function for return checking
+- [x] `checkFnBody(ctx, fnDecl)`
+- [x] Set up parameter bindings
+- [x] Track current function for return checking
 
 ## Task 4.7: Pattern Type Checking
-- [ ] `inferPattern(ctx, pattern)` - get pattern type
-- [ ] `checkPattern(ctx, pattern, expectedType)` - check against type
-- [ ] Bind pattern variables in scope
+- [x] `inferPattern(ctx, pattern)` - get pattern type
+- [x] `checkPattern(ctx, pattern, expectedType)` - check against type
+- [x] Bind pattern variables in scope
 
 ## Task 4.8: Unification
-- [ ] `unify(ctx, t1, t2)` - make types equal
-- [ ] Handle type variables
-- [ ] Occurs check (prevent infinite types)
-- [ ] Record substitutions
+- [x] `unify(ctx, t1, t2)` - make types equal
+- [x] Handle type variables
+- [x] Occurs check (prevent infinite types)
+- [x] Record substitutions
 
 ## Task 4.9: Substitution
-- [ ] `substitute(ctx, type)` - replace type vars with bounds
-- [ ] `applySubst(ctx)` - apply to entire function
+- [x] `substitute(ctx, type)` - replace type vars with bounds
+- [x] `applySubst(ctx)` - apply to entire function
 
 ## Task 4.10: Error Reporting
-- [ ] `TypeError` type with message, span, notes
-- [ ] Type mismatch errors
-- [ ] Unbound variable errors
-- [ ] Arity mismatch errors
-- [ ] Field not found errors
+- [x] `TypeError` type with message, span, notes
+- [x] Type mismatch errors
+- [x] Unbound variable errors
+- [x] Arity mismatch errors
+- [x] Field not found errors
 
 ## Task 4.11: Inference Finalization
-- [ ] Resolve all remaining type variables
-- [ ] Report ambiguous type errors
-- [ ] Substitute concrete types everywhere
+- [x] Resolve all remaining type variables
+- [x] Report ambiguous type errors
+- [x] Substitute concrete types everywhere
 
 ## Testing
-- [ ] Test file: `tests/inference/expressions.js`
-- [ ] Test file: `tests/inference/statements.js`
-- [ ] Test file: `tests/inference/functions.js`
-- [ ] Test file: `tests/inference/structs.js`
-- [ ] Test file: `tests/inference/enums.js`
-- [ ] Test file: `tests/inference/references.js`
-- [ ] Test file: `tests/inference/errors.js`
+- [x] Test file: `tests/inference/expressions.js`
+- [x] Test file: `tests/inference/statements.js`
+- [x] Test file: `tests/inference/functions.js`
+- [x] Test file: `tests/inference/structs.js`
+- [x] Test file: `tests/inference/enums.js`
+- [x] Test file: `tests/inference/references.js`
+- [x] Test file: `tests/inference/errors.js`
