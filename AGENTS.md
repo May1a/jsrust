@@ -1,0 +1,56 @@
+# JSRust - Rust compiler in JavaScript
+
+A joke Rust compiler written in pure JavaScript with no dependencies.
+
+## Project Structure
+
+- `main.js` - Entry point
+- `tokenizer.js` - Lexer/tokenizer
+- `tests/` - Test suite
+
+## Conventions
+
+- **ES Modules** - Use `import`/`export`, not CommonJS
+- No external dependencies
+- JSDoc for type safety
+- Pure JS, Node-compatible APIs only (easy to adapt to other environments)
+- Minimal runtime requirements
+- Errors-as-values error Handling (no exceptions)
+
+## Running
+
+```bash
+node main.js
+```
+
+## Testing
+
+```bash
+node tests/run.js
+```
+
+## Tokenizer
+
+The tokenizer emits tokens with the following structure:
+
+```javascript
+{
+  type: number,    // TokenType enum value
+  value: string,   // Raw text
+  line: number,    // 1-based line number
+  column: number   // 1-based column number
+}
+```
+
+### Current Token Types
+
+- Keywords: `fn`, `let`, `const`, `static`, `true`, `false`, `type`, `use`, `pub`, `enum`, `struct`, `unsafe`, `if`, `match`, `impl`, `mod`, `return`, `else`, `for`, `while`, `loop`, `self`
+- Delimiters: `(`, `)`, `[`, `]`, `{`, `}`, `,`, `;`, `:`, `.`
+- Operators: `+`, `-`, `*`, `/`, `%`, `=`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `&&`, `||`, `!`, `&`, `|`, `^`
+- Literals: integers, floats, strings
+- Identifiers: alphanumeric + underscore
+- Comments are discarded
+
+### Error Handling
+
+Invalid input produces `Invalid` tokens rather than throwing errors.
