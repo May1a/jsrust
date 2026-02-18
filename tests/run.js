@@ -16,6 +16,8 @@ import { runParserErrorTests } from "./parser/errors.js";
 import { runTypeRepresentationTests } from "./types/representation.js";
 import { runTypeContextTests } from "./types/context.js";
 import { runTypeUtilitiesTests } from "./types/utilities.js";
+import { runHirConstructionTests } from "./hir/construction.js";
+import { runHirUtilitiesTests } from "./hir/utilities.js";
 
 const { printSummary, clearErrors } = lib;
 
@@ -40,6 +42,8 @@ totalTests += runParserErrorTests();
 totalTests += runTypeRepresentationTests();
 totalTests += runTypeContextTests();
 totalTests += runTypeUtilitiesTests();
+totalTests += runHirConstructionTests();
+totalTests += runHirUtilitiesTests();
 
 const success = printSummary(totalTests);
 process.exit(success ? 0 : 1);
