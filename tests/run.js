@@ -18,6 +18,10 @@ import { runTypeContextTests } from "./types/context.js";
 import { runTypeUtilitiesTests } from "./types/utilities.js";
 import { runHirConstructionTests } from "./hir/construction.js";
 import { runHirUtilitiesTests } from "./hir/utilities.js";
+import { runIRTypesTests } from "./ir/types.js";
+import { runIRInstructionsTests } from "./ir/instructions.js";
+import { runIRBlocksTests } from "./ir/blocks.js";
+import { runIRFunctionsTests } from "./ir/functions.js";
 
 const { printSummary, clearErrors } = lib;
 
@@ -44,6 +48,10 @@ totalTests += runTypeContextTests();
 totalTests += runTypeUtilitiesTests();
 totalTests += runHirConstructionTests();
 totalTests += runHirUtilitiesTests();
+totalTests += runIRTypesTests();
+totalTests += runIRInstructionsTests();
+totalTests += runIRBlocksTests();
+totalTests += runIRFunctionsTests();
 
 const success = printSummary(totalTests);
 process.exit(success ? 0 : 1);
