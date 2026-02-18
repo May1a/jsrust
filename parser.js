@@ -1,4 +1,9 @@
 import { tokenize, TokenType } from "./tokenizer.js";
+/** @typedef {import('./tokenizer.js').Token} Token */
+/** @typedef {import('./tokenizer.js').TokenTypeValue} TokenTypeValue */
+/** @typedef {import('./ast.js').Span} Span */
+/** @typedef {import('./ast.js').Node} Node */
+/** @typedef {import('./ast.js').BinaryOpValue} BinaryOpValue */
 import {
     LiteralKind,
     UnaryOp,
@@ -63,10 +68,25 @@ const tokenNames = Object.fromEntries(
     Object.entries(TokenType).map(([k, v]) => [v, k]),
 );
 
+/**
+ * @typedef {{ tokens: Token[], pos: number, errors: ParseError[] }} ParserState
+ * @typedef {{ message: string, span: Span, expected: string[] | null, found: string | null }} ParseError
+ * @typedef {{ ok: boolean, value: Node | null, errors: ParseError[] }} ParseResult
+ */
+
+/**
+ * @param {Token[]} tokens
+ * @returns {ParserState}
+ */
 function createState(tokens) {
     return { tokens, pos: 0, errors: [] };
 }
 
+/**
+ * @param {ParserState} state
+ * @param {number} [offset=0]
+ * @returns {Token}
+ */
 function peek(state, offset = 0) {
     return (
         state.tokens[state.pos + offset] ??
@@ -74,6 +94,10 @@ function peek(state, offset = 0) {
     );
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Token}
+ */
 function advance(state) {
     const token = peek(state);
     if (state.pos < state.tokens.length) {
@@ -82,6 +106,10 @@ function advance(state) {
     return token;
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Token}
+ */
 function previous(state) {
     if (state.pos - 1 >= 0) {
         return state.tokens[state.pos - 1];
@@ -89,24 +117,49 @@ function previous(state) {
     return state.tokens[0] ?? peek(state);
 }
 
+/**
+ * @param {ParserState} state
+ * @param {number} type
+ * @returns {boolean}
+ */
 function check(state, type) {
     return peek(state).type === type;
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {boolean}
+ */
 function isAtEnd(state) {
     return peek(state).type === TokenType.Eof;
 }
 
+/**
+ * @param {Token} token
+ * @returns {Span}
+ */
 function spanFromToken(token) {
     const start = token.column;
     const end = token.column + (token.value ? token.value.length : 0);
     return makeSpan(token.line, token.column, start, end);
 }
 
+/**
+ * @param {Span} a
+ * @param {Span} b
+ * @returns {Span}
+ */
 function mergeSpans(a, b) {
     return makeSpan(a.line, a.column, a.start, b.end);
 }
 
+/**
+ * @param {ParserState} state
+ * @param {string} message
+ * @param {Token | null} [token=null]
+ * @param {string[] | null} [expected=null]
+ * @returns {void}
+ */
 function addError(state, message, token, expected = null) {
     const span = token ? spanFromToken(token) : spanFromToken(peek(state));
     state.errors.push({
@@ -117,6 +170,11 @@ function addError(state, message, token, expected = null) {
     });
 }
 
+/**
+ * @param {ParserState} state
+ * @param {number} type
+ * @returns {Token | null}
+ */
 function matchToken(state, type) {
     if (check(state, type)) {
         return advance(state);
@@ -124,6 +182,12 @@ function matchToken(state, type) {
     return null;
 }
 
+/**
+ * @param {ParserState} state
+ * @param {number} type
+ * @param {string} message
+ * @returns {Token | null}
+ */
 function expectToken(state, type, message) {
     if (check(state, type)) {
         return advance(state);
@@ -132,24 +196,47 @@ function expectToken(state, type, message) {
     return null;
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Span}
+ */
 function currentSpan(state) {
     return spanFromToken(peek(state));
 }
 
+/**
+ * @param {ParserState} state
+ * @param {number[]} tokenTypes
+ * @returns {void}
+ */
 function skipToRecovery(state, tokenTypes) {
     while (!isAtEnd(state) && !tokenTypes.includes(peek(state).type)) {
         advance(state);
     }
 }
 
+/**
+ * @param {Token} token
+ * @returns {boolean}
+ */
 function isIdentifierToken(token) {
     return token.type === TokenType.Identifier || token.type === TokenType.Self;
 }
 
+/**
+ * @param {Token} token
+ * @param {string} value
+ * @returns {boolean}
+ */
 function isIdentifierValue(token, value) {
     return token.type === TokenType.Identifier && token.value === value;
 }
 
+/**
+ * @param {ParserState} state
+ * @param {number} type
+ * @returns {Token | null}
+ */
 function matchDouble(state, type) {
     if (check(state, type) && peek(state, 1).type === type) {
         const first = advance(state);
@@ -159,6 +246,10 @@ function matchDouble(state, type) {
     return null;
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Token | null}
+ */
 function matchArrow(state) {
     if (check(state, TokenType.Minus) && peek(state, 1).type === TokenType.Gt) {
         const token = advance(state);
@@ -168,6 +259,10 @@ function matchArrow(state) {
     return null;
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Token | null}
+ */
 function matchFatArrow(state) {
     if (check(state, TokenType.Eq) && peek(state, 1).type === TokenType.Gt) {
         const token = advance(state);
@@ -177,6 +272,11 @@ function matchFatArrow(state) {
     return null;
 }
 
+/**
+ * @param {ParserState} state
+ * @param {string} symbol
+ * @returns {Token | null}
+ */
 function matchInvalidSymbol(state, symbol) {
     if (
         peek(state).type === TokenType.Invalid &&
@@ -187,6 +287,10 @@ function matchInvalidSymbol(state, symbol) {
     return null;
 }
 
+/**
+ * @param {Token} token
+ * @returns {number}
+ */
 function parseIntegerToken(token) {
     if (token.value.startsWith("0x") || token.value.startsWith("0X")) {
         return Number.parseInt(token.value.slice(2), 16);
@@ -200,10 +304,18 @@ function parseIntegerToken(token) {
     return Number.parseInt(token.value, 10);
 }
 
+/**
+ * @param {Token} token
+ * @returns {number}
+ */
 function parseFloatToken(token) {
     return Number.parseFloat(token.value);
 }
 
+/**
+ * @param {string} value
+ * @returns {string}
+ */
 function decodeEscapes(value) {
     let result = "";
     for (let i = 0; i < value.length; i += 1) {
@@ -226,12 +338,21 @@ function decodeEscapes(value) {
     return result;
 }
 
+/**
+ * @param {Token} token
+ * @returns {string}
+ */
 function parseStringToken(token) {
     const raw = token.value;
     const inner = raw.length >= 2 ? raw.slice(1, -1) : "";
     return decodeEscapes(inner);
 }
 
+/**
+ * @param {Token} token
+ * @param {ParserState} state
+ * @returns {string}
+ */
 function parseCharToken(token, state) {
     const value = parseStringToken(token);
     if (value.length !== 1) {
@@ -240,6 +361,10 @@ function parseCharToken(token, state) {
     return value[0] ?? "";
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node | null}
+ */
 function parseLiteralExpr(state) {
     const token = peek(state);
     if (token.type === TokenType.Integer) {
@@ -293,7 +418,12 @@ function parseLiteralExpr(state) {
     return null;
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {string[]}
+ */
 function parsePathSegments(state) {
+    /** @type {string[]} */
     const segments = [];
     const first = peek(state);
     if (!isIdentifierToken(first)) {
@@ -319,6 +449,11 @@ function parsePathSegments(state) {
     return segments;
 }
 
+/**
+ * @param {ParserState} state
+ * @param {Node} pathNode
+ * @returns {Node}
+ */
 function parseStructExpr(state, pathNode) {
     const fields = [];
     let spread = null;
@@ -354,7 +489,9 @@ function parseStructExpr(state, pathNode) {
         } else {
             value = makeIdentifierExpr(spanFromToken(nameToken), name);
         }
-        fields.push({ name, value });
+        if (value) {
+            fields.push({ name, value });
+        }
         matchToken(state, TokenType.Comma);
     }
     const endToken =
@@ -371,6 +508,11 @@ function parseStructExpr(state, pathNode) {
     );
 }
 
+/**
+ * @param {ParserState} state
+ * @param {boolean} [allowStructLiteral=true]
+ * @returns {Node | null}
+ */
 function parseAtom(state, allowStructLiteral = true) {
     const literal = parseLiteralExpr(state);
     if (literal) return literal;
@@ -482,6 +624,11 @@ function parseAtom(state, allowStructLiteral = true) {
     return null;
 }
 
+/**
+ * @param {ParserState} state
+ * @param {Node} expr
+ * @returns {Node | null}
+ */
 function parsePostfix(state, expr) {
     let result = expr;
     while (result) {
@@ -535,6 +682,11 @@ function parsePostfix(state, expr) {
     return result;
 }
 
+/**
+ * @param {ParserState} state
+ * @param {boolean} [allowStructLiteral=true]
+ * @returns {Node | null}
+ */
 function parsePrefix(state, allowStructLiteral = true) {
     const token = peek(state);
     if (token.type === TokenType.Bang) {
@@ -575,6 +727,11 @@ function parsePrefix(state, allowStructLiteral = true) {
     return parsePostfix(state, atom);
 }
 
+/**
+ * @typedef {{ prec: number, op: BinaryOpValue, assoc: string }} BinaryOpInfo
+ */
+
+/** @type {Map<number, BinaryOpInfo>} */
 const binaryOps = new Map([
     [TokenType.PipePipe, { prec: 2, op: BinaryOp.Or, assoc: "left" }],
     [TokenType.AndAnd, { prec: 3, op: BinaryOp.And, assoc: "left" }],
@@ -594,6 +751,10 @@ const binaryOps = new Map([
     [TokenType.Percent, { prec: 10, op: BinaryOp.Rem, assoc: "left" }],
 ]);
 
+/**
+ * @param {ParserState} state
+ * @returns {{ token: Token, inclusive: boolean } | null}
+ */
 function parseRangeOperator(state) {
     if (check(state, TokenType.Dot) && peek(state, 1).type === TokenType.Dot) {
         const startToken = advance(state);
@@ -604,6 +765,12 @@ function parseRangeOperator(state) {
     return null;
 }
 
+/**
+ * @param {ParserState} state
+ * @param {number} [minPrec=0]
+ * @param {boolean} [allowStructLiteral=true]
+ * @returns {Node | null}
+ */
 function parseExpr(state, minPrec = 0, allowStructLiteral = true) {
     let left = parsePrefix(state, allowStructLiteral);
     if (!left) return null;
@@ -648,6 +815,10 @@ function parseExpr(state, minPrec = 0, allowStructLiteral = true) {
     return left;
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseLetStmt(state) {
     const start =
         expectToken(state, TokenType.Let, "Expected let") ?? peek(state);
@@ -677,6 +848,10 @@ function parseLetStmt(state) {
     );
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseExprStmt(state) {
     const expr = parseExpr(state, 0);
     const hasSemicolon = matchToken(state, TokenType.Semicolon) !== null;
@@ -688,6 +863,10 @@ function parseExprStmt(state) {
     );
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseStmt(state) {
     if (check(state, TokenType.Let)) {
         return parseLetStmt(state);
@@ -708,6 +887,10 @@ function parseStmt(state) {
     return parseExprStmt(state);
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node[]}
+ */
 function parseParamList(state) {
     const params = [];
     expectToken(state, TokenType.OpenParen, "Expected ( in parameter list");
@@ -731,6 +914,11 @@ function parseParamList(state) {
     return params;
 }
 
+/**
+ * @param {ParserState} state
+ * @param {boolean} isUnsafe
+ * @returns {Node}
+ */
 function parseFnItem(state, isUnsafe) {
     const start =
         expectToken(state, TokenType.Fn, "Expected fn") ?? peek(state);
@@ -764,6 +952,10 @@ function parseFnItem(state, isUnsafe) {
     );
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseStructItem(state) {
     const start =
         expectToken(state, TokenType.Struct, "Expected struct") ?? peek(state);
@@ -830,6 +1022,10 @@ function parseStructItem(state) {
     return makeStructItem(span, nameToken.value ?? "", null, fields, isTuple);
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseEnumItem(state) {
     const start =
         expectToken(state, TokenType.Enum, "Expected enum") ?? peek(state);
@@ -863,6 +1059,7 @@ function parseEnumItem(state) {
                         TokenType.Identifier,
                         "Expected field name",
                     ) ?? peek(state);
+                /** @type {Node | null} */
                 let ty = null;
                 if (matchToken(state, TokenType.Colon)) {
                     ty = parseType(state);
@@ -883,6 +1080,7 @@ function parseEnumItem(state) {
                 "Expected } after variant fields",
             );
         }
+        /** @type {Node | null} */
         let discriminant = null;
         if (matchToken(state, TokenType.Eq)) {
             discriminant = parseExpr(state, 0);
@@ -908,12 +1106,17 @@ function parseEnumItem(state) {
     return makeEnumItem(span, nameToken.value ?? "", null, variants);
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseModItem(state) {
     const start =
         expectToken(state, TokenType.Mod, "Expected mod") ?? peek(state);
     const nameToken =
         expectToken(state, TokenType.Identifier, "Expected module name") ??
         peek(state);
+    /** @type {Node[]} */
     let items = [];
     let isInline = false;
     if (matchToken(state, TokenType.OpenCurly)) {
@@ -943,9 +1146,14 @@ function parseModItem(state) {
     return makeModItem(span, nameToken.value ?? "", items, isInline);
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseUseTree(state) {
     const startToken = peek(state);
     const path = parsePathSegments(state);
+    /** @type {Node[] | null} */
     let children = null;
     if (matchToken(state, TokenType.OpenCurly)) {
         children = [];
@@ -963,6 +1171,11 @@ function parseUseTree(state) {
     return makeUseTree(span, path, null, children);
 }
 
+/**
+ * @param {ParserState} state
+ * @param {boolean} isPub
+ * @returns {Node}
+ */
 function parseUseItem(state, isPub) {
     const start =
         expectToken(state, TokenType.Use, "Expected use") ?? peek(state);
@@ -974,6 +1187,10 @@ function parseUseItem(state, isPub) {
     return makeUseItem(span, tree, isPub);
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node | null}
+ */
 function parseItem(state) {
     let isPub = false;
     let isUnsafe = false;
@@ -992,6 +1209,10 @@ function parseItem(state) {
     return null;
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parsePattern(state) {
     const alternatives = [];
     const first = parsePatternAtom(state);
@@ -1008,6 +1229,10 @@ function parsePattern(state) {
     return makeOrPat(span, alternatives);
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parsePatternAtom(state) {
     const token = peek(state);
     if (token.type === TokenType.Identifier && token.value === "_") {
@@ -1077,6 +1302,10 @@ function parsePatternAtom(state) {
     return makeWildcardPat(spanFromToken(token));
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node | null}
+ */
 function parseLiteralPat(state) {
     const token = peek(state);
     if (token.type === TokenType.Integer) {
@@ -1113,6 +1342,12 @@ function parseLiteralPat(state) {
     return null;
 }
 
+/**
+ * @param {ParserState} state
+ * @param {Node} path
+ * @param {Token} startToken
+ * @returns {Node}
+ */
 function parseStructPattern(state, path, startToken) {
     const fields = [];
     let rest = false;
@@ -1129,6 +1364,7 @@ function parseStructPattern(state, path, startToken) {
         const fieldNameToken =
             expectToken(state, TokenType.Identifier, "Expected field name") ??
             peek(state);
+        /** @type {Node | null} */
         let pat = null;
         if (matchToken(state, TokenType.Colon)) {
             pat = parsePattern(state);
@@ -1154,6 +1390,12 @@ function parseStructPattern(state, path, startToken) {
     return makeStructPat(span, path, fields, rest);
 }
 
+/**
+ * @param {ParserState} state
+ * @param {Token} startToken
+ * @param {string | null} name
+ * @returns {Node}
+ */
 function parseTuplePattern(state, startToken, name) {
     const elements = [];
     expectToken(state, TokenType.OpenParen, "Expected ( in tuple pattern");
@@ -1188,6 +1430,10 @@ function parseTuplePattern(state, startToken, name) {
     return makeTuplePat(span, elements);
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseSlicePattern(state) {
     const startToken =
         expectToken(
@@ -1196,6 +1442,7 @@ function parseSlicePattern(state) {
             "Expected [ in slice pattern",
         ) ?? peek(state);
     const elements = [];
+    /** @type {Node | null} */
     let rest = null;
     if (!check(state, TokenType.CloseSquare)) {
         while (!check(state, TokenType.CloseSquare) && !isAtEnd(state)) {
@@ -1222,6 +1469,10 @@ function parseSlicePattern(state) {
     return makeSlicePat(span, elements, rest);
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseType(state) {
     const token = peek(state);
     if (token.type === TokenType.And) {
@@ -1362,11 +1613,16 @@ function parseType(state) {
     return makeNamedType(spanFromToken(token), "unknown", null);
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseIfExpr(state) {
     const start =
         expectToken(state, TokenType.If, "Expected if") ?? peek(state);
     const condition = parseExpr(state, 0);
     const thenBranch = parseBlockExpr(state);
+    /** @type {Node | null} */
     let elseBranch = null;
     if (matchToken(state, TokenType.Else)) {
         if (check(state, TokenType.If)) {
@@ -1391,6 +1647,10 @@ function parseIfExpr(state) {
     );
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseMatchExpr(state) {
     const start =
         expectToken(state, TokenType.Match, "Expected match") ?? peek(state);
@@ -1399,6 +1659,7 @@ function parseMatchExpr(state) {
     const arms = [];
     while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
         const pat = parsePattern(state);
+        /** @type {Node | null} */
         let guard = null;
         if (matchToken(state, TokenType.If)) {
             guard = parseExpr(state, 0);
@@ -1432,10 +1693,15 @@ function parseMatchExpr(state) {
     );
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseBlockExpr(state) {
     const start =
         expectToken(state, TokenType.OpenCurly, "Expected {") ?? peek(state);
     const stmts = [];
+    /** @type {Node | null} */
     let expr = null;
     while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
         if (check(state, TokenType.Let)) {
@@ -1472,6 +1738,10 @@ function parseBlockExpr(state) {
     return makeBlockExpr(span, stmts, expr);
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseLoopExpr(state) {
     const start =
         expectToken(state, TokenType.Loop, "Expected loop") ?? peek(state);
@@ -1480,6 +1750,10 @@ function parseLoopExpr(state) {
     return makeLoopExpr(span, null, body);
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseWhileExpr(state) {
     const start =
         expectToken(state, TokenType.While, "Expected while") ?? peek(state);
@@ -1500,6 +1774,10 @@ function parseWhileExpr(state) {
     );
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseForExpr(state) {
     const start =
         expectToken(state, TokenType.For, "Expected for") ?? peek(state);
@@ -1521,6 +1799,10 @@ function parseForExpr(state) {
     );
 }
 
+/**
+ * @param {ParserState} state
+ * @returns {Node}
+ */
 function parseModuleFromState(state) {
     const items = [];
     while (!isAtEnd(state)) {
@@ -1545,6 +1827,11 @@ function parseModuleFromState(state) {
     return makeModule(span, "root", items);
 }
 
+/**
+ * @param {ParserState} state
+ * @param {Node | null} value
+ * @returns {ParseResult}
+ */
 function buildResult(state, value) {
     return {
         ok: state.errors.length === 0 && value !== null,
@@ -1553,6 +1840,10 @@ function buildResult(state, value) {
     };
 }
 
+/**
+ * @param {string} source
+ * @returns {ParseResult}
+ */
 function parseModule(source) {
     const tokens = tokenize(source);
     const state = createState(tokens);
@@ -1560,6 +1851,10 @@ function parseModule(source) {
     return buildResult(state, module);
 }
 
+/**
+ * @param {string} source
+ * @returns {ParseResult}
+ */
 function parseExpression(source) {
     const tokens = tokenize(source);
     const state = createState(tokens);
@@ -1567,6 +1862,10 @@ function parseExpression(source) {
     return buildResult(state, expr);
 }
 
+/**
+ * @param {string} source
+ * @returns {ParseResult}
+ */
 function parseStatement(source) {
     const tokens = tokenize(source);
     const state = createState(tokens);
@@ -1574,6 +1873,10 @@ function parseStatement(source) {
     return buildResult(state, stmt);
 }
 
+/**
+ * @param {string} source
+ * @returns {ParseResult}
+ */
 function parsePatternSource(source) {
     const tokens = tokenize(source);
     const state = createState(tokens);
@@ -1581,6 +1884,10 @@ function parsePatternSource(source) {
     return buildResult(state, pat);
 }
 
+/**
+ * @param {string} source
+ * @returns {ParseResult}
+ */
 function parseTypeSource(source) {
     const tokens = tokenize(source);
     const state = createState(tokens);
