@@ -15,7 +15,10 @@ export function test(name, fn) {
     try {
         fn();
     } catch (e) {
-        errors.push({ test: name, message: e instanceof Error ? e.message : String(e) });
+        errors.push({
+            test: name,
+            message: e instanceof Error ? e.message : String(e),
+        });
     }
 }
 
@@ -26,7 +29,10 @@ export function test(name, fn) {
 export function testAsync(name, fn) {
     currentTest = name;
     return fn().catch((e) => {
-        errors.push({ test: name, message: e instanceof Error ? e.message : String(e) });
+        errors.push({
+            test: name,
+            message: e instanceof Error ? e.message : String(e),
+        });
     });
 }
 
@@ -37,7 +43,10 @@ export function testAsync(name, fn) {
  */
 export function assertEqual(actual, expected, msg) {
     if (actual !== expected) {
-        throw new Error(msg || `Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+        throw new Error(
+            msg ||
+                `Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+        );
     }
 }
 
@@ -47,7 +56,9 @@ export function assertEqual(actual, expected, msg) {
  */
 export function assertTrue(value, msg) {
     if (!value) {
-        throw new Error(msg || `Expected truthy value, got ${JSON.stringify(value)}`);
+        throw new Error(
+            msg || `Expected truthy value, got ${JSON.stringify(value)}`,
+        );
     }
 }
 
@@ -61,11 +72,17 @@ export function assertArrayEqual(actual, expected, msg) {
         throw new Error(msg || "Both values must be arrays");
     }
     if (actual.length !== expected.length) {
-        throw new Error(msg || `Array length mismatch: expected ${expected.length}, got ${actual.length}`);
+        throw new Error(
+            msg ||
+                `Array length mismatch: expected ${expected.length}, got ${actual.length}`,
+        );
     }
     for (let i = 0; i < actual.length; i++) {
         if (actual[i] !== expected[i]) {
-            throw new Error(msg || `Array mismatch at index ${i}: expected ${JSON.stringify(expected[i])}, got ${JSON.stringify(actual[i])}`);
+            throw new Error(
+                msg ||
+                    `Array mismatch at index ${i}: expected ${JSON.stringify(expected[i])}, got ${JSON.stringify(actual[i])}`,
+            );
         }
     }
 }
@@ -76,16 +93,25 @@ export function assertArrayEqual(actual, expected, msg) {
  */
 export function assertTokensMatch(tokens, expected) {
     if (tokens.length !== expected.length + 1) {
-        const actualStr = tokens.slice(0, -1).map((t) => t.value).join(" ");
+        const actualStr = tokens
+            .slice(0, -1)
+            .map((t) => t.value)
+            .join(" ");
         const expectedStr = expected.map((t) => t.value).join(" ");
-        throw new Error(`Token count mismatch.\n  Got: [${actualStr}]\n  Expected: [${expectedStr}]`);
+        throw new Error(
+            `Token count mismatch.\n  Got: [${actualStr}]\n  Expected: [${expectedStr}]`,
+        );
     }
     for (let i = 0; i < expected.length; i++) {
         if (tokens[i].type !== expected[i].type) {
-            throw new Error(`Token type mismatch at index ${i} (${JSON.stringify(tokens[i].value)}): expected type ${expected[i].type}, got ${tokens[i].type}`);
+            throw new Error(
+                `Token type mismatch at index ${i} (${JSON.stringify(tokens[i].value)}): expected type ${expected[i].type}, got ${tokens[i].type}`,
+            );
         }
         if (tokens[i].value !== expected[i].value) {
-            throw new Error(`Token value mismatch at index ${i}: expected ${JSON.stringify(expected[i].value)}, got ${JSON.stringify(tokens[i].value)}`);
+            throw new Error(
+                `Token value mismatch at index ${i}: expected ${JSON.stringify(expected[i].value)}, got ${JSON.stringify(tokens[i].value)}`,
+            );
         }
     }
 }
@@ -117,10 +143,12 @@ export function mergeResult(name, result) {
 export function printSummary(totalTests) {
     const failed = errors.length;
     const passed = totalTests - failed;
-    
+
     console.log(`\n${"=".repeat(50)}`);
-    console.log(`Tests: ${passed} passed, ${failed} failed, ${totalTests} total`);
-    
+    console.log(
+        `Tests: ${passed} passed, ${failed} failed, ${totalTests} total`,
+    );
+
     if (failed > 0) {
         console.log(`\nFailures:`);
         for (const e of errors) {
@@ -128,7 +156,7 @@ export function printSummary(totalTests) {
         }
     }
     console.log(`${"=".repeat(50)}`);
-    
+
     return failed === 0;
 }
 

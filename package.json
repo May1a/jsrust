@@ -1,1 +1,12 @@
-{ "type": "module" }
+{
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run.js",
+    "compile": "node main.js",
+    "typecheck": "npx tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "typescript": "^5.9.3"
+  }
+}

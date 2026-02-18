@@ -5,7 +5,7 @@ const { test, assertTokensMatch } = lib;
 
 export function runCommentsTests() {
     const T = TokenType;
-    
+
     test("line comment", () => {
         const tokens = tokenize("// this is a comment\nlet x = 1;");
         assertTokensMatch(tokens, [
@@ -16,7 +16,7 @@ export function runCommentsTests() {
             { type: T.Semicolon, value: ";" },
         ]);
     });
-    
+
     test("line comment at end", () => {
         const tokens = tokenize("let x = 1; // comment");
         assertTokensMatch(tokens, [
@@ -27,7 +27,7 @@ export function runCommentsTests() {
             { type: T.Semicolon, value: ";" },
         ]);
     });
-    
+
     test("block comment", () => {
         const tokens = tokenize("/* comment */let x = 1;");
         assertTokensMatch(tokens, [
@@ -38,7 +38,7 @@ export function runCommentsTests() {
             { type: T.Semicolon, value: ";" },
         ]);
     });
-    
+
     test("multiline block comment", () => {
         const tokens = tokenize("/* line 1\n   line 2 */let x = 1;");
         assertTokensMatch(tokens, [
@@ -49,7 +49,7 @@ export function runCommentsTests() {
             { type: T.Semicolon, value: ";" },
         ]);
     });
-    
+
     test("nested code with comments", () => {
         const tokens = tokenize(`
 fn main() {
@@ -80,7 +80,7 @@ fn main() {
             { type: T.CloseCurly, value: "}" },
         ]);
     });
-    
+
     test("comment between tokens", () => {
         const tokens = tokenize("let/*comment*/x");
         assertTokensMatch(tokens, [
@@ -88,6 +88,6 @@ fn main() {
             { type: T.Identifier, value: "x" },
         ]);
     });
-    
+
     return 6;
 }
