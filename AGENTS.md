@@ -9,6 +9,7 @@ See `plans/README.md` for the current implementation plans.
 ## Plan Status
 
 - 02-parser.md complete
+- 03-types.md complete
 
 ## Important
 
