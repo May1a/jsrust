@@ -1,7 +1,7 @@
 import { tokenize, TokenType } from "./tokenizer.js";
 
 const tokenNames = Object.fromEntries(
-    Object.entries(TokenType).map(([k, v]) => [v, k])
+    Object.entries(TokenType).map(([k, v]) => [v, k]),
 );
 
 const source = `
@@ -21,5 +21,7 @@ const tokens = tokenize(source);
 for (const token of tokens) {
     if (token.type === TokenType.Eof) continue;
     const typeName = tokenNames[token.type] || "Unknown";
-    console.log(`${String(token.line).padStart(3)}:${String(token.column).padStart(3)} ${typeName.padEnd(12)} ${JSON.stringify(token.value)}`);
+    console.log(
+        `${String(token.line).padStart(3)}:${String(token.column).padStart(3)} ${typeName.padEnd(12)} ${JSON.stringify(token.value)}`,
+    );
 }
