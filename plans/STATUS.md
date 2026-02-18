@@ -17,7 +17,7 @@ Track completion of all tasks. Mark with:
 - [x] All tasks
 
 ### 04-type-inference.md
-- [ ] All tasks (depends on 01-ast, 03-types)
+- [x] All tasks (depends on 01-ast, 03-types)
 
 ## Phase 2: IR
 
