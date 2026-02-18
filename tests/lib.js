@@ -1,0 +1,139 @@
+/**
+ * @typedef {{ name: string, fn: () => void | Promise<void> }} Test
+ * @typedef {{ passed: number, failed: number, errors: { test: string, message: string }[] }} TestResult
+ */
+
+let currentTest = "";
+const errors = [];
+
+/**
+ * @param {string} name
+ * @param {() => void | Promise<void>} fn
+ */
+export function test(name, fn) {
+    currentTest = name;
+    try {
+        fn();
+    } catch (e) {
+        errors.push({ test: name, message: e instanceof Error ? e.message : String(e) });
+    }
+}
+
+/**
+ * @param {string} name
+ * @param {() => void | Promise<void>} fn
+ */
+export function testAsync(name, fn) {
+    currentTest = name;
+    return fn().catch((e) => {
+        errors.push({ test: name, message: e instanceof Error ? e.message : String(e) });
+    });
+}
+
+/**
+ * @param {any} actual
+ * @param {any} expected
+ * @param {string} [msg]
+ */
+export function assertEqual(actual, expected, msg) {
+    if (actual !== expected) {
+        throw new Error(msg || `Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    }
+}
+
+/**
+ * @param {any} value
+ * @param {string} [msg]
+ */
+export function assertTrue(value, msg) {
+    if (!value) {
+        throw new Error(msg || `Expected truthy value, got ${JSON.stringify(value)}`);
+    }
+}
+
+/**
+ * @param {any} actual
+ * @param {any[]} expected
+ * @param {string} [msg]
+ */
+export function assertArrayEqual(actual, expected, msg) {
+    if (!Array.isArray(actual) || !Array.isArray(expected)) {
+        throw new Error(msg || "Both values must be arrays");
+    }
+    if (actual.length !== expected.length) {
+        throw new Error(msg || `Array length mismatch: expected ${expected.length}, got ${actual.length}`);
+    }
+    for (let i = 0; i < actual.length; i++) {
+        if (actual[i] !== expected[i]) {
+            throw new Error(msg || `Array mismatch at index ${i}: expected ${JSON.stringify(expected[i])}, got ${JSON.stringify(actual[i])}`);
+        }
+    }
+}
+
+/**
+ * @param {{ type: number, value: string, line: number, column: number }[]} tokens
+ * @param {{ type: number, value: string }[]} expected
+ */
+export function assertTokensMatch(tokens, expected) {
+    if (tokens.length !== expected.length + 1) {
+        const actualStr = tokens.slice(0, -1).map((t) => t.value).join(" ");
+        const expectedStr = expected.map((t) => t.value).join(" ");
+        throw new Error(`Token count mismatch.\n  Got: [${actualStr}]\n  Expected: [${expectedStr}]`);
+    }
+    for (let i = 0; i < expected.length; i++) {
+        if (tokens[i].type !== expected[i].type) {
+            throw new Error(`Token type mismatch at index ${i} (${JSON.stringify(tokens[i].value)}): expected type ${expected[i].type}, got ${tokens[i].type}`);
+        }
+        if (tokens[i].value !== expected[i].value) {
+            throw new Error(`Token value mismatch at index ${i}: expected ${JSON.stringify(expected[i].value)}, got ${JSON.stringify(tokens[i].value)}`);
+        }
+    }
+}
+
+/**
+ * @returns {TestResult}
+ */
+export function getResults() {
+    return {
+        passed: 0,
+        failed: errors.length,
+        errors: [...errors],
+    };
+}
+
+/**
+ * @param {string} name
+ * @param {TestResult} result
+ */
+export function mergeResult(name, result) {
+    for (const e of result.errors) {
+        errors.push({ test: `${name} > ${e.test}`, message: e.message });
+    }
+}
+
+/**
+ * @param {number} totalTests
+ */
+export function printSummary(totalTests) {
+    const failed = errors.length;
+    const passed = totalTests - failed;
+    
+    console.log(`\n${"=".repeat(50)}`);
+    console.log(`Tests: ${passed} passed, ${failed} failed, ${totalTests} total`);
+    
+    if (failed > 0) {
+        console.log(`\nFailures:`);
+        for (const e of errors) {
+            console.log(`  - ${e.test}: ${e.message}`);
+        }
+    }
+    console.log(`${"=".repeat(50)}`);
+    
+    return failed === 0;
+}
+
+export function clearErrors() {
+    errors.length = 0;
+}
+
+export { errors };
