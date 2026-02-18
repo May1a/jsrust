@@ -1,12 +1,14 @@
 # JSRust - Rust compiler in JavaScript
 
-A joke Rust compiler written in pure JavaScript with no dependencies.
+A Rust compiler written in pure JavaScript with no dependencies.
 
-## Project Structure
+## Plans
 
-- `main.js` - Entry point
-- `tokenizer.js` - Lexer/tokenizer
-- `tests/` - Test suite
+See `plans/README.md` for the current implementation plans.
+
+## Important
+
+Please keep this `AGENTS.md` up to date with the latest plans.
 
 ## Conventions
 
@@ -20,13 +22,19 @@ A joke Rust compiler written in pure JavaScript with no dependencies.
 ## Running
 
 ```bash
-node main.js
+npm run compile
 ```
 
 ## Testing
 
 ```bash
-node tests/run.js
+npm run test
+```
+
+## TypeChecking
+
+```bash
+npm run typecheck
 ```
 
 ## Tokenizer
