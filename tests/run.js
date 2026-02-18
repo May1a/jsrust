@@ -6,6 +6,7 @@ import { runDelimitersTests } from "./delimiters.js";
 import { runCommentsTests } from "./comments.js";
 import { runErrorsTests } from "./errors.js";
 import { runPositionTests } from "./position.js";
+import { runAstTests } from "./ast.js";
 
 const { printSummary, clearErrors } = lib;
 
@@ -20,6 +21,7 @@ totalTests += runDelimitersTests();
 totalTests += runCommentsTests();
 totalTests += runErrorsTests();
 totalTests += runPositionTests();
+totalTests += runAstTests();
 
 const success = printSummary(totalTests);
 process.exit(success ? 0 : 1);
