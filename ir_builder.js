@@ -17,7 +17,6 @@ import {
     makeIRLocal,
 } from "./ir.js";
 import {
-    IRInstKind,
     makeIconst,
     makeFconst,
     makeBconst,
@@ -231,19 +230,27 @@ export class IRBuilder {
     // ============================================================================
 
     iconst(value, width) {
-        return makeIconst(value, width);
+        const inst = makeIconst(value, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     fconst(value, width) {
-        return makeFconst(value, width);
+        const inst = makeFconst(value, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     bconst(value) {
-        return makeBconst(value);
+        const inst = makeBconst(value);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     null(ty) {
-        return makeNull(ty);
+        const inst = makeNull(ty);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     // ============================================================================
@@ -251,47 +258,69 @@ export class IRBuilder {
     // ============================================================================
 
     iadd(a, b, width) {
-        return makeIadd(a, b, width);
+        const inst = makeIadd(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     isub(a, b, width) {
-        return makeIsub(a, b, width);
+        const inst = makeIsub(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     imul(a, b, width) {
-        return makeImul(a, b, width);
+        const inst = makeImul(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     idiv(a, b, width) {
-        return makeIdiv(a, b, width);
+        const inst = makeIdiv(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     imod(a, b, width) {
-        return makeImod(a, b, width);
+        const inst = makeImod(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     fadd(a, b, width) {
-        return makeFadd(a, b, width);
+        const inst = makeFadd(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     fsub(a, b, width) {
-        return makeFsub(a, b, width);
+        const inst = makeFsub(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     fmul(a, b, width) {
-        return makeFmul(a, b, width);
+        const inst = makeFmul(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     fdiv(a, b, width) {
-        return makeFdiv(a, b, width);
+        const inst = makeFdiv(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     ineg(a, width) {
-        return makeIneg(a, width);
+        const inst = makeIneg(a, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     fneg(a, width) {
-        return makeFneg(a, width);
+        const inst = makeFneg(a, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     // ============================================================================
@@ -299,23 +328,33 @@ export class IRBuilder {
     // ============================================================================
 
     iand(a, b, width) {
-        return makeIand(a, b, width);
+        const inst = makeIand(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     ior(a, b, width) {
-        return makeIor(a, b, width);
+        const inst = makeIor(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     ixor(a, b, width) {
-        return makeIxor(a, b, width);
+        const inst = makeIxor(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     ishl(a, b, width) {
-        return makeIshl(a, b, width);
+        const inst = makeIshl(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     ishr(a, b, width) {
-        return makeIshr(a, b, width);
+        const inst = makeIshr(a, b, width);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     // ============================================================================
@@ -323,11 +362,15 @@ export class IRBuilder {
     // ============================================================================
 
     icmp(op, a, b) {
-        return makeIcmp(op, a, b);
+        const inst = makeIcmp(op, a, b);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     fcmp(op, a, b) {
-        return makeFcmp(op, a, b);
+        const inst = makeFcmp(op, a, b);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     // ============================================================================
@@ -335,19 +378,27 @@ export class IRBuilder {
     // ============================================================================
 
     alloca(ty, localId = null) {
-        return makeAlloca(ty, localId);
+        const inst = makeAlloca(ty, localId);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     load(ptr, ty) {
-        return makeLoad(ptr, ty);
+        const inst = makeLoad(ptr, ty);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     store(ptr, value, ty) {
-        return makeStore(ptr, value, ty);
+        const inst = makeStore(ptr, value, ty);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     memcpy(dest, src, size) {
-        return makeMemcpy(dest, src, size);
+        const inst = makeMemcpy(dest, src, size);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     // ============================================================================
@@ -355,11 +406,15 @@ export class IRBuilder {
     // ============================================================================
 
     gep(ptr, indices, resultTy) {
-        return makeGep(ptr, indices, resultTy);
+        const inst = makeGep(ptr, indices, resultTy);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     ptradd(ptr, offset) {
-        return makePtradd(ptr, offset);
+        const inst = makePtradd(ptr, offset);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     // ============================================================================
@@ -367,35 +422,51 @@ export class IRBuilder {
     // ============================================================================
 
     trunc(val, fromType, toType) {
-        return makeTrunc(val, fromType, toType);
+        const inst = makeTrunc(val, fromType, toType);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     sext(val, fromType, toType) {
-        return makeSext(val, fromType, toType);
+        const inst = makeSext(val, fromType, toType);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     zext(val, fromType, toType) {
-        return makeZext(val, fromType, toType);
+        const inst = makeZext(val, fromType, toType);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     fptoui(val, toType) {
-        return makeFptoui(val, toType);
+        const inst = makeFptoui(val, toType);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     fptosi(val, toType) {
-        return makeFptosi(val, toType);
+        const inst = makeFptosi(val, toType);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     uitofp(val, toType) {
-        return makeUitofp(val, toType);
+        const inst = makeUitofp(val, toType);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     sitofp(val, toType) {
-        return makeSitofp(val, toType);
+        const inst = makeSitofp(val, toType);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     bitcast(val, toType) {
-        return makeBitcast(val, toType);
+        const inst = makeBitcast(val, toType);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     // ============================================================================
@@ -403,7 +474,9 @@ export class IRBuilder {
     // ============================================================================
 
     call(fn, args, returnType = null) {
-        return makeCall(fn, args, returnType);
+        const inst = makeCall(fn, args, returnType);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     // ============================================================================
@@ -411,23 +484,33 @@ export class IRBuilder {
     // ============================================================================
 
     structCreate(fields, ty) {
-        return makeStructCreate(fields, ty);
+        const inst = makeStructCreate(fields, ty);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     structGet(struct, fieldIndex, fieldTy) {
-        return makeStructGet(struct, fieldIndex, fieldTy);
+        const inst = makeStructGet(struct, fieldIndex, fieldTy);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     enumCreate(variant, data, ty) {
-        return makeEnumCreate(variant, data, ty);
+        const inst = makeEnumCreate(variant, data, ty);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     enumGetTag(enum_) {
-        return makeEnumGetTag(enum_);
+        const inst = makeEnumGetTag(enum_);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     enumGetData(enum_, variant, index, dataTy) {
-        return makeEnumGetData(enum_, variant, index, dataTy);
+        const inst = makeEnumGetData(enum_, variant, index, dataTy);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
     }
 
     // ============================================================================
