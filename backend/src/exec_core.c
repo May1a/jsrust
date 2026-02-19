@@ -2,6 +2,11 @@
 
 #include "bytes.h"
 
+#include <stdio.h>
+
+static const char* g_builtinPrintlnName = "__jsrust_builtin_println_bytes";
+static const char* g_builtinPrintName = "__jsrust_builtin_print_bytes";
+
 typedef struct {
     uint32_t id;
     ExecValue value;
@@ -38,6 +43,52 @@ typedef struct {
 static BackendStatus Exec_error(const char* message)
 {
     return BackendStatus_make(JSRUST_BACKEND_ERR_EXECUTE, ByteSpan_fromCString(message));
+}
+
+static uint32_t Exec_hashNameToFunctionId(const char* name)
+{
+    int32_t hash;
+    size_t index;
+    int64_t nonNegative;
+
+    hash = 0;
+    index = 0;
+    while (name[index] != '\0') {
+        hash = (int32_t)(((hash << 5) - hash) + (int32_t)(unsigned char)name[index]);
+        ++index;
+    }
+
+    nonNegative = (int64_t)hash;
+    if (nonNegative < 0)
+        nonNegative = -nonNegative;
+
+    return (uint32_t)(nonNegative % 1000000);
+}
+
+static uint32_t Exec_builtinPrintlnId(void)
+{
+    static uint32_t cached;
+    static bool initialized;
+
+    if (!initialized) {
+        cached = Exec_hashNameToFunctionId(g_builtinPrintlnName);
+        initialized = true;
+    }
+
+    return cached;
+}
+
+static uint32_t Exec_builtinPrintId(void)
+{
+    static uint32_t cached;
+    static bool initialized;
+
+    if (!initialized) {
+        cached = Exec_hashNameToFunctionId(g_builtinPrintName);
+        initialized = true;
+    }
+
+    return cached;
 }
 
 static bool FrameValueTable_reserve(FrameValueTable* table, Arena* arena, uint32_t required)
@@ -531,6 +582,40 @@ static bool Exec_isZeroValue(ExecValue value)
     return value.i64 == 0;
 }
 
+static BackendStatus Exec_executeBuiltinPrint(ExecFrame* frame, const IRInstruction* inst, bool appendNewline, ExecValue* outValue)
+{
+    uint32_t index;
+
+    for (index = 0; index < inst->callArgs.count; ++index) {
+        ExecValue value;
+        BackendStatus status;
+        int writeResult;
+
+        status = Exec_readOperand(frame, inst->callArgs.items[index], &value);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        if (value.kind != ExecValueKind_Int)
+            return Exec_error("print builtin argument must be integer byte");
+        if (value.i64 < 0 || value.i64 > 255)
+            return Exec_error("print builtin byte out of range");
+
+        writeResult = fputc((int)value.i64, stdout);
+        if (writeResult == EOF)
+            return Exec_error("failed to write print builtin output");
+    }
+
+    if (appendNewline) {
+        if (fputc('\n', stdout) == EOF)
+            return Exec_error("failed to write print builtin newline");
+    }
+
+    if (fflush(stdout) != 0)
+        return Exec_error("failed to flush print builtin output");
+
+    *outValue = ExecValue_makeUnit();
+    return BackendStatus_ok();
+}
+
 static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* frame, const IRInstruction* inst, ExecValue* outValue)
 {
     ExecValue left;
@@ -765,8 +850,13 @@ static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* fram
         ExecValue callReturn;
 
         callee = Runtime_findFunctionByHash(engine->runtime, inst->fn);
-        if (!callee)
+        if (!callee) {
+            if (inst->fn == Exec_builtinPrintlnId())
+                return Exec_executeBuiltinPrint(frame, inst, true, outValue);
+            if (inst->fn == Exec_builtinPrintId())
+                return Exec_executeBuiltinPrint(frame, inst, false, outValue);
             return Exec_error("call target function id not found");
+        }
 
         callArgs = NULL;
         if (inst->callArgs.count > 0) {
