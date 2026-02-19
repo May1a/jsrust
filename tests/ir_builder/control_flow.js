@@ -1,5 +1,5 @@
 // Control flow tests
-import { assertEqual } from "../lib.js";
+import { assertEqual, test } from "../lib.js";
 import { IRBuilder } from "../../ir_builder.js";
 import { IntWidth } from "../../types.js";
 
@@ -12,10 +12,12 @@ export function testBrTarget() {
     builder.br(1);
     builder.switchToBlock(1);
     builder.unreachable();
+    builder.sealBlock(0);
+    builder.sealBlock(1);
 
     const fn = builder.build();
     assertEqual(fn.blocks[0].terminator.kind, 1); // Br
-    assertEqual(fn.blocks[0].successors[0].id, 1);
+    assertEqual(fn.blocks[0].successors[0], 1);
 }
 
 export function testBrIfFlow() {
@@ -34,6 +36,10 @@ export function testBrIfFlow() {
 
     builder.switchToBlock(2);
     builder.unreachable();
+
+    builder.sealBlock(0);
+    builder.sealBlock(1);
+    builder.sealBlock(2);
 
     const fn = builder.build();
     const brIf = fn.blocks[0].terminator;
@@ -64,6 +70,11 @@ export function testSwitch() {
     builder.unreachable();
     builder.switchToBlock(3);
     builder.unreachable();
+
+    builder.sealBlock(0);
+    builder.sealBlock(1);
+    builder.sealBlock(2);
+    builder.sealBlock(3);
 
     const fn = builder.build();
     const sw = fn.blocks[0].terminator;
@@ -96,6 +107,11 @@ export function functionWithMultipleBasicBlocks() {
     // In a real SSA builder, we'd have a phi here
     builder.unreachable();
 
+    builder.sealBlock(0);
+    builder.sealBlock(1);
+    builder.sealBlock(2);
+    builder.sealBlock(3);
+
     const fn = builder.build();
     assertEqual(fn.blocks.length, 4);
     // Entry has BrIf
@@ -112,18 +128,7 @@ export function runTests() {
         ["Multiple basic blocks", functionWithMultipleBasicBlocks],
     ];
 
-    let passed = 0;
-    let failed = 0;
-
-    for (const [name, test] of tests) {
-        try {
-            test();
-            passed++;
-        } catch (e) {
-            console.error(`  ✗ ${name}: ${e.message}`);
-            failed++;
-        }
+    for (const [name, fn] of tests) {
+        test(name, fn);
     }
-
-    return { passed, failed };
 }

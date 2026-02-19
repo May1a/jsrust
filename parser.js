@@ -265,6 +265,10 @@ function matchArrow(state) {
  * @returns {Token | null}
  */
 function matchFatArrow(state) {
+    if (check(state, TokenType.FatArrow)) {
+        return advance(state);
+    }
+    // Also support the old way for backwards compatibility
     if (check(state, TokenType.Eq) && peek(state, 1).type === TokenType.Gt) {
         const token = advance(state);
         advance(state);
@@ -522,20 +526,49 @@ function parseAtom(state, allowStructLiteral = true) {
 
     if (token.type === TokenType.OpenParen) {
         const startToken = advance(state);
-        const expr = parseExpr(state, 0);
+        const elements = [];
+        let hasComma = false;
+        
+        // Parse tuple or grouped expression
+        if (!check(state, TokenType.CloseParen)) {
+            while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
+                const elem = parseExpr(state, 0);
+                if (elem) elements.push(elem);
+                if (matchToken(state, TokenType.Comma)) {
+                    hasComma = true;
+                } else {
+                    break;
+                }
+            }
+        }
+        
         const end =
             expectToken(state, TokenType.CloseParen, "Expected )") ??
             startToken;
-        if (!expr) {
+        
+        // Empty parens = unit literal
+        if (elements.length === 0) {
             return makeLiteralExpr(
                 mergeSpans(spanFromToken(startToken), spanFromToken(end)),
                 LiteralKind.Int,
                 0,
-                "0",
+                "()",
             );
         }
-        expr.span = mergeSpans(spanFromToken(startToken), spanFromToken(end));
-        return expr;
+        
+        // Single element without comma = grouped expression
+        if (elements.length === 1 && !hasComma) {
+            elements[0].span = mergeSpans(spanFromToken(startToken), spanFromToken(end));
+            return elements[0];
+        }
+        
+        // Multiple elements or trailing comma = tuple
+        // For now, return as a struct expression (tuple is a struct with numeric fields)
+        const span = mergeSpans(spanFromToken(startToken), spanFromToken(end));
+        // Create a tuple as a struct with field names "0", "1", etc.
+        const fields = elements.map((elem, i) => ({ name: String(i), value: elem }));
+        const path = makePathExpr(span, ["()"]); // Unit type name for tuples
+        return makeStructExpr(span, path, fields, null);
     }
 
     if (token.type === TokenType.OpenCurly) {
@@ -781,7 +814,7 @@ function parsePrefix(state, allowStructLiteral = true) {
     if (token.type === TokenType.And) {
         advance(state);
         let mutability = Mutability.Immutable;
-        if (isIdentifierValue(peek(state), "mut")) {
+        if (check(state, TokenType.Mut) || isIdentifierValue(peek(state), "mut")) {
             advance(state);
             mutability = Mutability.Mutable;
         }
@@ -1307,9 +1340,50 @@ function parsePatternAtom(state) {
         advance(state);
         return makeWildcardPat(spanFromToken(token));
     }
+    // Handle `mut` keyword for mutable patterns
+    if (token.type === TokenType.Mut) {
+        const mutToken = advance(state);
+        const nameToken = peek(state);
+        if (isIdentifierToken(nameToken)) {
+            const name = advance(state).value;
+            return makeIdentPat(
+                mergeSpans(spanFromToken(mutToken), spanFromToken(nameToken)),
+                name,
+                Mutability.Mutable,
+                false,
+                null,
+            );
+        }
+        // If `mut` is not followed by an identifier, treat it as an error
+        addError(state, "Expected identifier after `mut`", nameToken, ["Identifier"]);
+        return makeWildcardPat(spanFromToken(mutToken));
+    }
     if (token.type === TokenType.Identifier || token.type === TokenType.Self) {
         const startToken = token;
-        const name = advance(state).value;
+        const segments = parsePathSegments(state);
+        const name = segments[segments.length - 1];
+        
+        // Check if this is a qualified path (e.g., Color::Red)
+        if (segments.length > 1) {
+            // This is a qualified path like Color::Red - could be enum variant or struct
+            const path = makePathExpr(spanFromToken(startToken), segments);
+            if (check(state, TokenType.OpenCurly)) {
+                return parseStructPattern(state, path, startToken);
+            }
+            if (check(state, TokenType.OpenParen)) {
+                return parseTuplePattern(state, startToken, segments.join("::"));
+            }
+            // Return as an identifier pattern with the full path as name
+            // For enum variants, this will be handled specially
+            return makeIdentPat(
+                spanFromToken(startToken),
+                segments.join("::"),
+                Mutability.Immutable,
+                false,
+                null,
+            );
+        }
+        
         if (matchInvalidSymbol(state, "@")) {
             const inner = parsePattern(state);
             const span = inner
@@ -1546,7 +1620,7 @@ function parseType(state) {
     if (token.type === TokenType.And) {
         const start = advance(state);
         let mutability = Mutability.Immutable;
-        if (isIdentifierValue(peek(state), "mut")) {
+        if (check(state, TokenType.Mut) || isIdentifierValue(peek(state), "mut")) {
             advance(state);
             mutability = Mutability.Mutable;
         }
@@ -1625,6 +1699,10 @@ function parseType(state) {
                 TokenType.CloseParen,
                 "Expected ) in tuple type",
             ) ?? start;
+        // Empty parens () is unit type
+        if (elements.length === 0) {
+            return makeNamedType(mergeSpans(spanFromToken(start), spanFromToken(endToken)), "()", null);
+        }
         if (!hasComma && elements.length === 1) {
             return elements[0];
         }

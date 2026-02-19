@@ -493,6 +493,9 @@ export class HirToSsaCtx {
         const right = this.lowerExpr(expr.right);
         const ty = expr.ty;
         const irTy = this.translateType(ty);
+        
+        // For comparison operators, we need the operand type, not the result type
+        const operandTy = expr.left.ty;
 
         let inst;
 
@@ -559,13 +562,13 @@ export class HirToSsaCtx {
                 break;
             }
 
-            // Comparison
+            // Comparison - use operand type, not result type (which is bool)
             case BinaryOp.Eq: {
-                if (ty.kind === TypeKind.Int) {
+                if (operandTy.kind === TypeKind.Int) {
                     inst = this.builder.icmp(IcmpOp.Eq, left, right);
-                } else if (ty.kind === TypeKind.Float) {
+                } else if (operandTy.kind === TypeKind.Float) {
                     inst = this.builder.fcmp(FcmpOp.Oeq, left, right);
-                } else if (ty.kind === TypeKind.Bool) {
+                } else if (operandTy.kind === TypeKind.Bool) {
                     inst = this.builder.icmp(IcmpOp.Eq, left, right);
                 } else {
                     throw new Error("Invalid type for eq");
@@ -573,11 +576,11 @@ export class HirToSsaCtx {
                 break;
             }
             case BinaryOp.Ne: {
-                if (ty.kind === TypeKind.Int) {
+                if (operandTy.kind === TypeKind.Int) {
                     inst = this.builder.icmp(IcmpOp.Ne, left, right);
-                } else if (ty.kind === TypeKind.Float) {
+                } else if (operandTy.kind === TypeKind.Float) {
                     inst = this.builder.fcmp(FcmpOp.One, left, right);
-                } else if (ty.kind === TypeKind.Bool) {
+                } else if (operandTy.kind === TypeKind.Bool) {
                     inst = this.builder.icmp(IcmpOp.Ne, left, right);
                 } else {
                     throw new Error("Invalid type for ne");
@@ -585,14 +588,14 @@ export class HirToSsaCtx {
                 break;
             }
             case BinaryOp.Lt: {
-                if (ty.kind === TypeKind.Int) {
-                    const isSigned = this.isSignedIntType(ty);
+                if (operandTy.kind === TypeKind.Int) {
+                    const isSigned = this.isSignedIntType(operandTy);
                     inst = this.builder.icmp(
                         isSigned ? IcmpOp.Slt : IcmpOp.Ult,
                         left,
                         right,
                     );
-                } else if (ty.kind === TypeKind.Float) {
+                } else if (operandTy.kind === TypeKind.Float) {
                     inst = this.builder.fcmp(FcmpOp.Olt, left, right);
                 } else {
                     throw new Error("Invalid type for lt");
@@ -600,14 +603,14 @@ export class HirToSsaCtx {
                 break;
             }
             case BinaryOp.Le: {
-                if (ty.kind === TypeKind.Int) {
-                    const isSigned = this.isSignedIntType(ty);
+                if (operandTy.kind === TypeKind.Int) {
+                    const isSigned = this.isSignedIntType(operandTy);
                     inst = this.builder.icmp(
                         isSigned ? IcmpOp.Sle : IcmpOp.Ule,
                         left,
                         right,
                     );
-                } else if (ty.kind === TypeKind.Float) {
+                } else if (operandTy.kind === TypeKind.Float) {
                     inst = this.builder.fcmp(FcmpOp.Ole, left, right);
                 } else {
                     throw new Error("Invalid type for le");
@@ -615,14 +618,14 @@ export class HirToSsaCtx {
                 break;
             }
             case BinaryOp.Gt: {
-                if (ty.kind === TypeKind.Int) {
-                    const isSigned = this.isSignedIntType(ty);
+                if (operandTy.kind === TypeKind.Int) {
+                    const isSigned = this.isSignedIntType(operandTy);
                     inst = this.builder.icmp(
                         isSigned ? IcmpOp.Sgt : IcmpOp.Ugt,
                         left,
                         right,
                     );
-                } else if (ty.kind === TypeKind.Float) {
+                } else if (operandTy.kind === TypeKind.Float) {
                     inst = this.builder.fcmp(FcmpOp.Ogt, left, right);
                 } else {
                     throw new Error("Invalid type for gt");
@@ -630,14 +633,14 @@ export class HirToSsaCtx {
                 break;
             }
             case BinaryOp.Ge: {
-                if (ty.kind === TypeKind.Int) {
-                    const isSigned = this.isSignedIntType(ty);
+                if (operandTy.kind === TypeKind.Int) {
+                    const isSigned = this.isSignedIntType(operandTy);
                     inst = this.builder.icmp(
                         isSigned ? IcmpOp.Sge : IcmpOp.Uge,
                         left,
                         right,
                     );
-                } else if (ty.kind === TypeKind.Float) {
+                } else if (operandTy.kind === TypeKind.Float) {
                     inst = this.builder.fcmp(FcmpOp.Oge, left, right);
                 } else {
                     throw new Error("Invalid type for ge");

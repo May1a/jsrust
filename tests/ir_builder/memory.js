@@ -1,5 +1,5 @@
 // Memory tests for alloca, load, store, memcpy, gep, ptradd
-import { assertEqual } from "../lib.js";
+import { assertEqual, test } from "../lib.js";
 import { IRBuilder } from "../../ir_builder.js";
 import { IntWidth } from "../../types.js";
 
@@ -16,6 +16,7 @@ export function testAllocaStackSlot() {
     const ptr3 = builder.alloca("f64", 2);
 
     builder.unreachable();
+    builder.sealBlock(0);
     const fn = builder.build();
     assertEqual(fn.blocks[0].instructions.length, 3);
 }
@@ -30,6 +31,7 @@ export function testGepArray() {
     const elemPtr = builder.gep(arrPtr, [0], "i32");
     builder.ret(elemPtr);
 
+    builder.sealBlock(0);
     const fn = builder.build();
     assertEqual(fn.blocks[0].instructions[1].kind, 26); // Gep
 }
@@ -44,6 +46,7 @@ export function testGepStruct() {
     const field2 = builder.gep(structPtr, [0, 1], "i32");
     builder.ret(field2);
 
+    builder.sealBlock(0);
     const fn = builder.build();
     assertEqual(fn.blocks[0].instructions[1].kind, 26); // Gep
 }
@@ -60,8 +63,9 @@ export function testMemcpySequence() {
     builder.memcpy(dest, dest, size); // simplified
     builder.unreachable();
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[2].kind, 25); // Memcpy
+    assertEqual(fn.blocks[0].instructions.at(-1).kind, 25); // Memcpy
 }
 
 export function runTests() {
@@ -72,18 +76,7 @@ export function runTests() {
         ["Memcpy sequence", testMemcpySequence],
     ];
 
-    let passed = 0;
-    let failed = 0;
-
-    for (const [name, test] of tests) {
-        try {
-            test();
-            passed++;
-        } catch (e) {
-            console.error(`  ✗ ${name}: ${e.message}`);
-            failed++;
-        }
+    for (const [name, fn] of tests) {
+        test(name, fn);
     }
-
-    return { passed, failed };
 }

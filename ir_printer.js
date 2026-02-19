@@ -303,8 +303,9 @@ function printInstruction(inst, ctx) {
             return `${resultPrefix}struct_get ${ctx.getValueName(inst.struct)}, ${inst.fieldIndex}`;
 
         case IRInstKind.EnumCreate: {
-            const data = inst.data.map((d) => ctx.getValueName(d)).join(", ");
-            return `${resultPrefix}enum_create ${printType(inst.ty)}, variant ${inst.variant}${data ? ` [${data}]` : ""}`;
+            const data =
+                inst.data !== null ? ` [${ctx.getValueName(inst.data)}]` : "";
+            return `${resultPrefix}enum_create ${printType(inst.ty)}, variant ${inst.variant}${data}`;
         }
 
         case IRInstKind.EnumGetTag:

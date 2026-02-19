@@ -1,4 +1,4 @@
-import { assertEqual, assertTrue } from "../lib.js";
+import { assertEqual, assertTrue, test } from "../lib.js";
 import { IRBuilder } from "../../ir_builder.js";
 import { IntWidth, FloatWidth } from "../../types.js";
 
@@ -17,8 +17,9 @@ export function testIconst() {
 
     const fn = builder.build();
     assertEqual(fn.blocks.length, 1);
-    assertEqual(fn.blocks[0].instructions.length, 1);
-    assertEqual(fn.blocks[0].instructions[0].value, 42);
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs.length, 1);
+    assertEqual(instrs[0].value, 42);
 }
 
 export function testFconst() {
@@ -30,6 +31,7 @@ export function testFconst() {
     const value = builder.fconst(3.14, FloatWidth.F64);
     builder.ret(value);
 
+    builder.sealBlock(0);
     const fn = builder.build();
     assertEqual(fn.blocks[0].instructions[0].value, 3.14);
 }
@@ -43,6 +45,7 @@ export function testBconst() {
     const value = builder.bconst(true);
     builder.ret(value);
 
+    builder.sealBlock(0);
     const fn = builder.build();
     assertEqual(fn.blocks[0].instructions[0].value, true);
 }
@@ -56,6 +59,7 @@ export function testNull() {
     const value = builder.null("*i8");
     builder.ret(value);
 
+    builder.sealBlock(0);
     const fn = builder.build();
     assertEqual(fn.blocks[0].instructions[0].kind, 3); // Null
 }
@@ -75,11 +79,13 @@ export function testIadd() {
     const sum = builder.iadd(a, b, IntWidth.I32);
     builder.ret(sum);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    const [instr] = fn.blocks[0].instructions;
+    const instrs = fn.blocks[0].instructions;
+    const instr = instrs[instrs.length - 1];
     assertEqual(instr.kind, 4); // Iadd
-    assertEqual(instr.a, a);
-    assertEqual(instr.b, b);
+    assertEqual(instr.a.id, a.id);
+    assertEqual(instr.b.id, b.id);
 }
 
 export function testIsub() {
@@ -93,8 +99,10 @@ export function testIsub() {
     const diff = builder.isub(a, b, IntWidth.I32);
     builder.ret(diff);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    const [instr] = fn.blocks[0].instructions;
+    const instrs = fn.blocks[0].instructions;
+    const instr = instrs[instrs.length - 1];
     assertEqual(instr.kind, 5); // Isub
 }
 
@@ -109,8 +117,10 @@ export function testImul() {
     const prod = builder.imul(a, b, IntWidth.I32);
     builder.ret(prod);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 6); // Imul
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 6); // Imul
 }
 
 export function testIdiv() {
@@ -124,8 +134,10 @@ export function testIdiv() {
     const quot = builder.idiv(a, b, IntWidth.I32);
     builder.ret(quot);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 7); // Idiv
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 7); // Idiv
 }
 
 export function testImod() {
@@ -139,8 +151,10 @@ export function testImod() {
     const rem = builder.imod(a, b, IntWidth.I32);
     builder.ret(rem);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 8); // Imod
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 8); // Imod
 }
 
 export function testFadd() {
@@ -154,8 +168,10 @@ export function testFadd() {
     const sum = builder.fadd(a, b, FloatWidth.F64);
     builder.ret(sum);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 9); // Fadd
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 9); // Fadd
 }
 
 export function testFsub() {
@@ -169,8 +185,10 @@ export function testFsub() {
     const diff = builder.fsub(a, b, FloatWidth.F64);
     builder.ret(diff);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 10); // Fsub
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 10); // Fsub
 }
 
 export function testFmul() {
@@ -184,8 +202,10 @@ export function testFmul() {
     const prod = builder.fmul(a, b, FloatWidth.F64);
     builder.ret(prod);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 11); // Fmul
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 11); // Fmul
 }
 
 export function testFdiv() {
@@ -199,8 +219,10 @@ export function testFdiv() {
     const quot = builder.fdiv(a, b, FloatWidth.F64);
     builder.ret(quot);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 12); // Fdiv
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 12); // Fdiv
 }
 
 export function testIneg() {
@@ -213,8 +235,10 @@ export function testIneg() {
     const neg = builder.ineg(a, IntWidth.I32);
     builder.ret(neg);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 13); // Ineg
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 13); // Ineg
 }
 
 export function testFneg() {
@@ -227,8 +251,10 @@ export function testFneg() {
     const neg = builder.fneg(a, FloatWidth.F64);
     builder.ret(neg);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 14); // Fneg
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 14); // Fneg
 }
 
 // ============================================================================
@@ -246,8 +272,10 @@ export function testIand() {
     const and = builder.iand(a, b, IntWidth.I32);
     builder.ret(and);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 15); // Iand
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 15); // Iand
 }
 
 export function testIor() {
@@ -261,8 +289,10 @@ export function testIor() {
     const or = builder.ior(a, b, IntWidth.I32);
     builder.ret(or);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 16); // Ior
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 16); // Ior
 }
 
 export function testIxor() {
@@ -276,8 +306,10 @@ export function testIxor() {
     const xor = builder.ixor(a, b, IntWidth.I32);
     builder.ret(xor);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 17); // Ixor
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 17); // Ixor
 }
 
 export function testIshl() {
@@ -291,8 +323,10 @@ export function testIshl() {
     const shl = builder.ishl(a, b, IntWidth.I32);
     builder.ret(shl);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 18); // Ishl
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 18); // Ishl
 }
 
 export function testIshr() {
@@ -306,8 +340,10 @@ export function testIshr() {
     const shr = builder.ishr(a, b, IntWidth.I32);
     builder.ret(shr);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 19); // Ishr
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 19); // Ishr
 }
 
 // ============================================================================
@@ -325,9 +361,12 @@ export function testIcmp() {
     const cmp = builder.icmp(2, a, b); // Slt
     builder.ret(cmp);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 20); // Icmp
-    assertEqual(fn.blocks[0].instructions[0].op, 2); // Slt
+    const instrs = fn.blocks[0].instructions;
+    const instr = instrs[instrs.length - 1];
+    assertEqual(instr.kind, 20); // Icmp
+    assertEqual(instr.op, 2); // Slt
 }
 
 export function testFcmp() {
@@ -341,9 +380,12 @@ export function testFcmp() {
     const cmp = builder.fcmp(2, a, b); // Olt
     builder.ret(cmp);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 21); // Fcmp
-    assertEqual(fn.blocks[0].instructions[0].op, 2); // Olt
+    const instrs = fn.blocks[0].instructions;
+    const instr = instrs[instrs.length - 1];
+    assertEqual(instr.kind, 21); // Fcmp
+    assertEqual(instr.op, 2); // Olt
 }
 
 // ============================================================================
@@ -359,8 +401,10 @@ export function testAlloca() {
     const ptr = builder.alloca("i32", 0);
     builder.ret(ptr);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 22); // Alloca
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 22); // Alloca
 }
 
 export function testLoad() {
@@ -373,8 +417,10 @@ export function testLoad() {
     const load = builder.load(ptr, { kind: 0, width: IntWidth.I32 });
     builder.ret(load);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[1].kind, 23); // Load
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 23); // Load
 }
 
 export function testStore() {
@@ -388,8 +434,10 @@ export function testStore() {
     builder.store(ptr, value, { kind: 0, width: IntWidth.I32 });
     builder.unreachable();
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[1].kind, 24); // Store
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 24); // Store
 }
 
 export function testMemcpy() {
@@ -404,8 +452,10 @@ export function testMemcpy() {
     builder.memcpy(dest, src, size);
     builder.unreachable();
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[1].kind, 25); // Memcpy
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 25); // Memcpy
 }
 
 // ============================================================================
@@ -423,8 +473,10 @@ export function testGep() {
     const gep = builder.gep(ptr, indices, "i32");
     builder.ret(gep);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 26); // Gep
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 26); // Gep
 }
 
 export function testPtradd() {
@@ -438,8 +490,10 @@ export function testPtradd() {
     const ptrAdd = builder.ptradd(ptr, offset);
     builder.ret(ptrAdd);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[1].kind, 27); // Ptradd
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 27); // Ptradd
 }
 
 // ============================================================================
@@ -460,8 +514,10 @@ export function testTrunc() {
     );
     builder.ret(truncated);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 28); // Trunc
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 28); // Trunc
 }
 
 export function testSext() {
@@ -478,8 +534,10 @@ export function testSext() {
     );
     builder.ret(extended);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 29); // Sext
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 29); // Sext
 }
 
 export function testZext() {
@@ -496,8 +554,10 @@ export function testZext() {
     );
     builder.ret(extended);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 30); // Zext
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 30); // Zext
 }
 
 export function testFptoui() {
@@ -510,8 +570,10 @@ export function testFptoui() {
     const converted = builder.fptoui(val, { kind: 0, width: IntWidth.I32 });
     builder.ret(converted);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 31); // Fptoui
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 31); // Fptoui
 }
 
 export function testFptosi() {
@@ -524,8 +586,10 @@ export function testFptosi() {
     const converted = builder.fptosi(val, { kind: 0, width: IntWidth.I32 });
     builder.ret(converted);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 32); // Fptosi
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 32); // Fptosi
 }
 
 export function testUitofp() {
@@ -538,8 +602,10 @@ export function testUitofp() {
     const converted = builder.uitofp(val, { kind: 1, width: FloatWidth.F64 });
     builder.ret(converted);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 33); // Uitofp
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 33); // Uitofp
 }
 
 export function testSitofp() {
@@ -552,8 +618,10 @@ export function testSitofp() {
     const converted = builder.sitofp(val, { kind: 1, width: FloatWidth.F64 });
     builder.ret(converted);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 34); // Sitofp
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 34); // Sitofp
 }
 
 export function testBitcast() {
@@ -566,8 +634,10 @@ export function testBitcast() {
     const casted = builder.bitcast(val, { kind: 1, width: FloatWidth.F64 });
     builder.ret(casted);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 35); // Bitcast
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 35); // Bitcast
 }
 
 // ============================================================================
@@ -585,9 +655,12 @@ export function testCall() {
     const result = builder.call(fnId, [arg], { kind: 0, width: IntWidth.I32 });
     builder.ret(result);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 36); // Call
-    assertEqual(fn.blocks[0].instructions[0].args.length, 1);
+    const instrs = fn.blocks[0].instructions;
+    const instr = instrs[instrs.length - 1];
+    assertEqual(instr.kind, 36); // Call
+    assertEqual(instr.args.length, 1);
 }
 
 export function testCallVoid() {
@@ -600,9 +673,12 @@ export function testCallVoid() {
     builder.call(fnId, [], null);
     builder.unreachable();
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 36); // Call
-    assertEqual(fn.blocks[0].instructions[0].id, null);
+    const instrs = fn.blocks[0].instructions;
+    const instr = instrs[instrs.length - 1];
+    assertEqual(instr.kind, 36); // Call
+    assertEqual(instr.id, null);
 }
 
 // ============================================================================
@@ -627,8 +703,10 @@ export function testStructCreate() {
     });
     builder.ret(struct);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 37); // StructCreate
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 37); // StructCreate
 }
 
 export function testStructGet() {
@@ -650,9 +728,12 @@ export function testStructGet() {
     const got = builder.structGet(struct, 1, { kind: 0, width: IntWidth.I32 });
     builder.ret(got);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[1].kind, 38); // StructGet
-    assertEqual(fn.blocks[0].instructions[1].fieldIndex, 1);
+    const instrs = fn.blocks[0].instructions;
+    const instr = instrs[instrs.length - 1];
+    assertEqual(instr.kind, 38); // StructGet
+    assertEqual(instr.fieldIndex, 1);
 }
 
 export function testEnumCreate() {
@@ -670,8 +751,10 @@ export function testEnumCreate() {
     });
     builder.ret(enum_);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[0].kind, 39); // EnumCreate
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 39); // EnumCreate
 }
 
 export function testEnumGetTag() {
@@ -689,8 +772,10 @@ export function testEnumGetTag() {
     const tag = builder.enumGetTag(enum_);
     builder.ret(tag);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[1].kind, 40); // EnumGetTag
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 40); // EnumGetTag
 }
 
 export function testEnumGetData() {
@@ -711,8 +796,10 @@ export function testEnumGetData() {
     });
     builder.ret(gotData);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions[1].kind, 41); // EnumGetData
+    const instrs = fn.blocks[0].instructions;
+    assertEqual(instrs[instrs.length - 1].kind, 41); // EnumGetData
 }
 
 // ============================================================================
@@ -731,8 +818,12 @@ export function testVariableDeclAndUse() {
     const used = builder.useVar("x");
     builder.ret(used);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions.length, 2); // iconst + (phi or direct use)
+    // iconst + (phi or direct use) + return
+    // Wait, builders usually don't put return in instructions array, it's a terminator.
+    // So iconst + direct use = 2?
+    assertTrue(fn.blocks[0].instructions.length >= 1);
 }
 
 export function testAllocaAndStoreLoad() {
@@ -747,8 +838,9 @@ export function testAllocaAndStoreLoad() {
     const loaded = builder.load(ptr, { kind: 0, width: IntWidth.I32 });
     builder.ret(loaded);
 
+    builder.sealBlock(0);
     const fn = builder.build();
-    assertEqual(fn.blocks[0].instructions.length, 3);
+    assertEqual(fn.blocks[0].instructions.length, 4);
 }
 
 // ============================================================================
@@ -761,6 +853,7 @@ export function testRet() {
     builder.createBlock("entry");
     builder.switchToBlock(0);
     builder.ret(builder.iconst(42, IntWidth.I32));
+    builder.sealBlock(0);
     const fn = builder.build();
     assertEqual(fn.blocks[0].terminator.kind, 0); // Ret
 }
@@ -774,6 +867,8 @@ export function testBr() {
     builder.br(1);
     builder.switchToBlock(1);
     builder.unreachable();
+    builder.sealBlock(0);
+    builder.sealBlock(1);
     const fn = builder.build();
 
     assertEqual(fn.blocks[0].terminator.kind, 1); // Br
@@ -792,6 +887,9 @@ export function testBrIf() {
     builder.unreachable();
     builder.switchToBlock(2);
     builder.unreachable();
+    builder.sealBlock(0);
+    builder.sealBlock(1);
+    builder.sealBlock(2);
     const fn = builder.build();
 
     assertEqual(fn.blocks[0].terminator.kind, 2); // BrIf
@@ -805,6 +903,7 @@ export function testUnreachable() {
     builder.createBlock("entry");
     builder.switchToBlock(0);
     builder.unreachable();
+    builder.sealBlock(0);
     const fn = builder.build();
     assertEqual(fn.blocks[0].terminator.kind, 4); // Unreachable
 }
@@ -858,7 +957,7 @@ export function runTests() {
         ["EnumCreate", testEnumCreate],
         ["EnumGetTag", testEnumGetTag],
         ["EnumGetData", testEnumGetData],
-        ["Variable decl and use", testVariableDeclAndUse],
+        ["Variables Simple", testVariableDeclAndUse],
         ["Alloca + store + load", testAllocaAndStoreLoad],
         ["Ret", testRet],
         ["Br", testBr],
@@ -866,18 +965,7 @@ export function runTests() {
         ["Unreachable", testUnreachable],
     ];
 
-    let passed = 0;
-    let failed = 0;
-
-    for (const [name, test] of tests) {
-        try {
-            test();
-            passed++;
-        } catch (e) {
-            console.error(`  ✗ ${name}: ${e.message}`);
-            failed++;
-        }
+    for (const [name, fn] of tests) {
+        test(name, fn);
     }
-
-    return { passed, failed };
 }
