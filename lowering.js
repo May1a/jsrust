@@ -60,9 +60,14 @@ import {
     TypeKind,
     IntWidth,
     FloatWidth,
+    makeIntType,
+    makeFnType,
     makeUnitType,
     typeToString,
 } from "./types.js";
+
+const BUILTIN_PRINTLN_BYTES_FN = "__jsrust_builtin_println_bytes";
+const BUILTIN_PRINT_BYTES_FN = "__jsrust_builtin_print_bytes";
 
 // ============================================================================
 // Task 6.1: Lowering Context
@@ -613,6 +618,9 @@ function lowerExpr(ctx, expr, typeCtx) {
         case NodeKind.DerefExpr:
             return lowerDeref(ctx, expr, typeCtx);
 
+        case NodeKind.MacroExpr:
+            return lowerMacro(ctx, expr, typeCtx);
+
         default:
             ctx.addError(`Unknown expression kind: ${expr.kind}`, expr.span);
             return makeHUnitExpr(expr.span, makeUnitType());
@@ -787,6 +795,78 @@ function lowerCall(ctx, call, typeCtx) {
     }
 
     return makeHCallExpr(call.span, callee, args, ty);
+}
+
+/**
+ * Lower a macro invocation expression.
+ * Currently supports `println!` and `print!` with a single string literal.
+ * @param {LoweringCtx} ctx
+ * @param {Node} macroExpr
+ * @param {TypeContext} typeCtx
+ * @returns {import('./hir.js').HExpr}
+ */
+function lowerMacro(ctx, macroExpr, typeCtx) {
+    switch (macroExpr.name) {
+        case "println":
+            return lowerPrintMacro(ctx, macroExpr, BUILTIN_PRINTLN_BYTES_FN);
+        case "print":
+            return lowerPrintMacro(ctx, macroExpr, BUILTIN_PRINT_BYTES_FN);
+        default:
+            ctx.addError(`Unsupported macro in lowering: ${macroExpr.name}!`, macroExpr.span);
+            return makeHUnitExpr(macroExpr.span, makeUnitType());
+    }
+}
+
+/**
+ * Lower print-like macros to builtin call form with UTF-8 byte args.
+ * @param {LoweringCtx} ctx
+ * @param {Node} macroExpr
+ * @param {string} builtinName
+ * @returns {import('./hir.js').HExpr}
+ */
+function lowerPrintMacro(ctx, macroExpr, builtinName) {
+    const args = macroExpr.args || [];
+    if (args.length === 0) {
+        ctx.addError(`${macroExpr.name}! requires a string literal argument`, macroExpr.span);
+        return makeHUnitExpr(macroExpr.span, makeUnitType());
+    }
+
+    if (args.length > 1) {
+        ctx.addError(
+            `${macroExpr.name}! formatting arguments are not supported yet`,
+            macroExpr.span,
+        );
+        return makeHUnitExpr(macroExpr.span, makeUnitType());
+    }
+
+    const firstArg = args[0];
+    if (
+        firstArg.kind !== NodeKind.LiteralExpr ||
+        firstArg.literalKind !== LiteralKind.String
+    ) {
+        ctx.addError(
+            `${macroExpr.name}! currently requires a string literal as the first argument`,
+            firstArg.span || macroExpr.span,
+        );
+        return makeHUnitExpr(macroExpr.span, makeUnitType());
+    }
+
+    const bytes = new TextEncoder().encode(String(firstArg.value));
+    const byteType = makeIntType(IntWidth.I32, macroExpr.span);
+    const hirArgs = Array.from(bytes, (byte) =>
+        makeHLiteralExpr(macroExpr.span, HLiteralKind.Int, byte, byteType),
+    );
+
+    const unitType = makeUnitType(macroExpr.span);
+    const calleeType = makeFnType(
+        hirArgs.map(() => byteType),
+        unitType,
+        false,
+        macroExpr.span,
+    );
+    const callee = makeHVarExpr(macroExpr.span, builtinName, -1, calleeType);
+
+    return makeHCallExpr(macroExpr.span, callee, hirArgs, unitType);
 }
 
 /**
