@@ -34,7 +34,7 @@ Track completion of all tasks. Mark with:
 - [x] All tasks (depends on 07-ssa-ir)
 
 ### 09-hir-to-ssa.md
-- [ ] All tasks (depends on 05-hir, 07-ssa-ir, 08-ssa-builder)
+- [x] All tasks (depends on 05-hir, 07-ssa-ir, 08-ssa-builder)
 
 ## Phase 3: Backend Support
 
