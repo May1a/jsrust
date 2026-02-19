@@ -1,6 +1,6 @@
 CC ?= clang
 WASM_CC ?= clang
-CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic -I./src -I./include
+CFLAGS ?= -std=c11 -O3 -Wall -Wextra -Werror -pedantic -I./src -I./include
 LDFLAGS ?=
 WASM_CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic -I./src -I./include -DJSRUST_BACKEND_WASM=1
 WASM_LDFLAGS ?= \
