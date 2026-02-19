@@ -6,7 +6,7 @@
 /** @typedef {number} BuiltinTypeValue */
 
 /** @typedef {{ line: number, column: number, start: number, end: number }} Span */
-/** @typedef {{ kind: NodeKindValue, span: Span }} Node */
+/** @typedef {{ kind: NodeKindValue, span: Span } & Record<string, any>} Node */
 /** @typedef {{ type: number, value: string, line: number, column: number }} Token */
 
 const NodeKind = {

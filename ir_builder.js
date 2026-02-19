@@ -83,14 +83,23 @@ import {
  */
 export class IRBuilder {
     constructor() {
+        /** @type {any | null} */
         this.currentModule = null;
+        /** @type {IRFunction | null} */
         this.currentFunction = null;
+        /** @type {IRBlock | null} */
         this.currentBlock = null;
+        /** @type {Set<BlockId>} */
         this.sealedBlocks = new Set();
+        /** @type {Map<string, Map<BlockId, ValueId>>} */
         this.varDefs = new Map(); // varName -> Map<blockId, ValueId>
+        /** @type {Map<string, Map<BlockId, ValueId[]>>} */
         this.incompletePhis = new Map(); // blockId -> Map<varName, ValueId>
+        /** @type {Map<string, IRType>} */
         this.varTypes = new Map(); // varName -> IRType
+        /** @type {number} */
         this.nextValueId = 0;
+        /** @type {number} */
         this.nextBlockId = 0;
     }
 
@@ -98,6 +107,11 @@ export class IRBuilder {
     // Function & Block Management
     // ============================================================================
 
+    /**
+     * @param {string} name
+     * @param {IRType[]} params
+     * @param {IRType} returnType
+     */
     createFunction(name, params, returnType) {
         this.currentFunction = {
             id: this.nextValueId++, // placeholder
@@ -115,6 +129,10 @@ export class IRBuilder {
         this.currentModule = null; // Will be set later if added to module
     }
 
+    /**
+     * @param {string | null} [name]
+     * @returns {BlockId}
+     */
     createBlock(name = null) {
         const blockId = this.nextBlockId++;
         const block = makeIRBlock(blockId);
@@ -130,7 +148,13 @@ export class IRBuilder {
         return blockId;
     }
 
+    /**
+     * @param {BlockId} blockId
+     */
     switchToBlock(blockId) {
+        if (!this.currentFunction) {
+            throw new Error("No current function");
+        }
         const block = this.currentFunction.blocks.find((b) => b.id === blockId);
         if (!block) {
             throw new Error(`Block ${blockId} not found in function`);
@@ -138,15 +162,27 @@ export class IRBuilder {
         this.currentBlock = block;
     }
 
+    /**
+     * @param {BlockId} blockId
+     */
     sealBlock(blockId) {
         this.sealedBlocks.add(blockId);
     }
 
+    /**
+     * @param {BlockId} blockId
+     * @returns {boolean}
+     */
     isBlockSealed(blockId) {
         return this.sealedBlocks.has(blockId);
     }
 
+    /**
+     * @param {BlockId} blockId
+     * @returns {BlockId[]}
+     */
     getPredecessors(blockId) {
+        if (!this.currentFunction) return [];
         const block = this.currentFunction.blocks.find((b) => b.id === blockId);
         return block ? block.predecessors : [];
     }
@@ -155,14 +191,24 @@ export class IRBuilder {
     // Variable Operations (SSA Construction)
     // ============================================================================
 
+    /**
+     * @param {string} name
+     * @param {IRType} type
+     */
     declareVar(name, type) {
         this.varTypes.set(name, type);
         this.varDefs.set(name, new Map());
         this.incompletePhis.set(name, new Map());
     }
 
+    /**
+     * @param {string} name
+     * @param {ValueId} value
+     * @param {BlockId | null} [blockId]
+     */
     defineVar(name, value, blockId = null) {
         if (blockId === null) {
+            if (!this.currentBlock) throw new Error("No current block");
             blockId = this.currentBlock.id;
         }
         const defs = this.varDefs.get(name);
@@ -183,8 +229,14 @@ export class IRBuilder {
         }
     }
 
+    /**
+     * @param {string} name
+     * @param {BlockId | null} [blockId]
+     * @returns {ValueId}
+     */
     useVar(name, blockId = null) {
         if (blockId === null) {
+            if (!this.currentBlock) throw new Error("No current block");
             blockId = this.currentBlock.id;
         }
         const defs = this.varDefs.get(name);
