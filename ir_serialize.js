@@ -92,8 +92,8 @@ class IRSerializer {
         const globalsSize = this.calculateGlobalsSize(module);
         const functionsSize = this.calculateFunctionsSize(module);
 
-        // Calculate offsets (header is 24 bytes: magic + version + flags + 3 section offsets)
-        const headerSize = 24;
+        // Calculate offsets (header is 28 bytes: magic + version + flags + 4 section offsets)
+        const headerSize = 28;
         const stringTableOffset = headerSize;
         const typesOffset = stringTableOffset + stringTableSize;
         const globalsOffset = typesOffset + typesSize;
@@ -160,6 +160,7 @@ class IRSerializer {
         // Global names
         for (const global of module.globals) {
             this.strings.addString(global.name);
+            this.collectTypeStrings(global.ty);
         }
 
         // Function names, parameter names, local names
@@ -169,12 +170,57 @@ class IRSerializer {
                 if (param.name) {
                     this.strings.addString(param.name);
                 }
+                this.collectTypeStrings(param.ty);
             }
+            this.collectTypeStrings(fn.returnType);
             for (const local of fn.locals) {
                 if (local.name) {
                     this.strings.addString(local.name);
                 }
+                this.collectTypeStrings(local.ty);
             }
+            for (const block of fn.blocks) {
+                for (const param of block.params) {
+                    this.collectTypeStrings(param.ty);
+                }
+                for (const inst of block.instructions) {
+                    this.collectTypeStrings(inst.ty);
+                    if (inst.valueType) {
+                        this.collectTypeStrings(inst.valueType);
+                    }
+                    if (inst.fromTy) {
+                        this.collectTypeStrings(inst.fromTy);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Collect string names referenced by a type recursively
+     * @param {IRType | null | undefined} type
+     */
+    collectTypeStrings(type) {
+        if (!type) {
+            return;
+        }
+
+        switch (type.kind) {
+            case IRTypeKind.Struct:
+            case IRTypeKind.Enum:
+                if (type.name) {
+                    this.strings.addString(type.name);
+                }
+                break;
+            case IRTypeKind.Array:
+                this.collectTypeStrings(type.element);
+                break;
+            case IRTypeKind.Fn:
+                for (const param of type.params || []) {
+                    this.collectTypeStrings(param);
+                }
+                this.collectTypeStrings(type.returnType);
+                break;
         }
     }
 

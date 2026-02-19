@@ -1,5 +1,7 @@
 # Prepare for New Backend (Immediate Plan)
 
+Status: complete (implemented in repository artifacts and tests)
+
 ## Purpose
 
 Prepare a stable, decision-complete handoff surface for the future C backend.
@@ -25,6 +27,14 @@ Prepare a stable, decision-complete handoff surface for the future C backend.
 - Validation expectations are documented and traceable to tests.
 - A concrete backend invocation contract is written and can be implemented in C without additional design decisions.
 - CI conformance checks fail on schema or compatibility regression.
+
+## Implementation Artifacts
+
+- Binary contract document: `/Users/may/jsrust/docs/backend/binary-ir-contract-v1.md`
+- Validation semantics document: `/Users/may/jsrust/docs/backend/validation-semantics.md`
+- C backend interface contract: `/Users/may/jsrust/docs/backend/c-backend-interface.md`
+- Fixture corpus and manifest: `/Users/may/jsrust/tests/fixtures/backend_ir_v1/`
+- Conformance tests: `/Users/may/jsrust/tests/binary/conformance.js`
 
 ## Non-Goals
 
