@@ -6,17 +6,30 @@
 /** @type {{ test: string, message: string }[]} */
 const errors = [];
 let totalTestsRun = 0;
+let runLockDepth = 0;
 
 /**
  * @param {string} name
  * @param {() => void | Promise<void>} fn
  */
 export function test(name, fn) {
+    if (typeof fn !== "function") {
+        errors.push({
+            test: name,
+            message: "Test callback must be a function",
+        });
+        return;
+    }
+
     totalTestsRun++;
     try {
         fn();
     } catch (e) {
-        if (e instanceof Error && e.stack) {
+        if (
+            process?.env?.TEST_VERBOSE === "1" &&
+            e instanceof Error &&
+            e.stack
+        ) {
             console.error(e.stack);
         }
         errors.push({
@@ -36,11 +49,21 @@ export function testGroup(name, fn) {
 }
 
 /**
- * @param {string} msg
- * @param {() => void} fn
+ * Overload:
+ * - assert("name", () => { ... }) for defining tests
+ * - assert(condition, "optional message") for truthy checks
+ * @param {string | any} msgOrCondition
+ * @param {(() => void) | string} [fnOrMessage]
  */
-export function assert(msg, fn) {
-    test(msg, fn);
+export function assert(msgOrCondition, fnOrMessage) {
+    if (typeof msgOrCondition === "string") {
+        test(msgOrCondition, /** @type {() => void} */ (fnOrMessage));
+        return;
+    }
+
+    const message =
+        typeof fnOrMessage === "string" ? fnOrMessage : undefined;
+    assertTrue(msgOrCondition, message);
 }
 
 /**
@@ -196,8 +219,17 @@ export function printSummary() {
 }
 
 export function clearErrors() {
+    if (runLockDepth > 0) return;
     errors.length = 0;
     totalTestsRun = 0;
+}
+
+export function beginRun() {
+    runLockDepth++;
+}
+
+export function endRun() {
+    if (runLockDepth > 0) runLockDepth--;
 }
 
 export { errors };
