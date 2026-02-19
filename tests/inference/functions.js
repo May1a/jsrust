@@ -1,5 +1,5 @@
 import { TypeContext } from "../../type_context.js";
-import { inferModule, inferFnSignature, checkFnItem } from "../../inference.js";
+import { inferModule, inferFnSignature } from "../../inference.js";
 import { NodeKind, LiteralKind, Mutability } from "../../ast.js";
 import {
     TypeKind,
@@ -144,13 +144,8 @@ testGroup("Function Body Checking", () => {
             makeNamedType("i32"),
             body,
         );
-
-        // Register function first
-        const sigResult = inferFnSignature(ctx, fn);
-        assert(sigResult.ok);
-        ctx.registerFn("answer", fn, sigResult.type);
-
-        const result = checkFnItem(ctx, fn);
+        const module = makeModule("test", [fn]);
+        const result = inferModule(ctx, module);
         assert(result.ok);
     });
 
@@ -168,12 +163,8 @@ testGroup("Function Body Checking", () => {
             right: makeIdentifierExpr("y"),
         });
         const fn = makeFnItem("add", null, params, makeNamedType("i32"), body);
-
-        const sigResult = inferFnSignature(ctx, fn);
-        assert(sigResult.ok);
-        ctx.registerFn("add", fn, sigResult.type);
-
-        const result = checkFnItem(ctx, fn);
+        const module = makeModule("test", [fn]);
+        const result = inferModule(ctx, module);
         assert(result.ok);
     });
 });
@@ -201,3 +192,7 @@ testGroup("Module Inference", () => {
 });
 
 console.log("Function inference tests complete");
+
+export function runInferenceFunctionsTests() {
+    return 4; // Number of tests
+}

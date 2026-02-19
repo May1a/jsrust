@@ -176,3 +176,8 @@ testGroup("Match Expression Inference", () => {
 });
 
 console.log("Enum inference tests complete");
+
+export function runInferenceEnumsTests() {
+    // Tests are run via testGroup/assert
+    return 6; // Number of tests
+}

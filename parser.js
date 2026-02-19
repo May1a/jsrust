@@ -32,6 +32,7 @@ import {
     makeRangeExpr,
     makeRefExpr,
     makeDerefExpr,
+    makeMacroExpr,
     makeLetStmt,
     makeExprStmt,
     makeItemStmt,
@@ -625,6 +626,44 @@ function parseAtom(state, allowStructLiteral = true) {
 }
 
 /**
+ * Parse macro invocation arguments
+ * Macros use different delimiters: println!("..."), vec![...], macro!{...}
+ * @param {ParserState} state
+ * @returns {Node[]}
+ */
+function parseMacroArgs(state) {
+    const args = [];
+    
+    // Determine the delimiter
+    let endToken = TokenType.CloseParen;
+    if (check(state, TokenType.OpenSquare)) {
+        endToken = TokenType.CloseSquare;
+    } else if (check(state, TokenType.OpenCurly)) {
+        endToken = TokenType.CloseCurly;
+    } else if (!check(state, TokenType.OpenParen)) {
+        // No arguments
+        return args;
+    }
+    
+    // Consume opening delimiter
+    advance(state);
+    
+    // Parse arguments
+    if (!check(state, endToken)) {
+        while (!check(state, endToken) && !isAtEnd(state)) {
+            const arg = parseExpr(state, 0);
+            if (arg) args.push(arg);
+            if (!matchToken(state, TokenType.Comma)) break;
+        }
+    }
+    
+    // Consume closing delimiter
+    expectToken(state, endToken, "Expected closing delimiter after macro arguments");
+    
+    return args;
+}
+
+/**
  * @param {ParserState} state
  * @param {Node} expr
  * @returns {Node | null}
@@ -636,6 +675,35 @@ function parsePostfix(state, expr) {
             check(state, TokenType.Dot) &&
             peek(state, 1).type === TokenType.Dot
         ) {
+            return result;
+        }
+        // Handle macro invocation: identifier! followed by args
+        if (matchToken(state, TokenType.Bang)) {
+            // Check if this looks like a macro invocation (has delimiter after !)
+            if (
+                check(state, TokenType.OpenParen) ||
+                check(state, TokenType.OpenSquare) ||
+                check(state, TokenType.OpenCurly)
+            ) {
+                // Get macro name from the identifier expression
+                let macroName = null;
+                if (result.kind === 1) { // NodeKind.IdentifierExpr
+                    macroName = result.name;
+                } else if (result.kind === 17) { // NodeKind.PathExpr
+                    // For paths, use the last segment
+                    macroName = result.segments[result.segments.length - 1];
+                }
+                
+                if (macroName) {
+                    const args = parseMacroArgs(state);
+                    const endToken = previous(state);
+                    const span = mergeSpans(result.span, spanFromToken(endToken));
+                    result = makeMacroExpr(span, macroName, args);
+                    continue;
+                }
+            }
+            // Not a macro invocation - put back the ! token
+            state.pos -= 1;
             return result;
         }
         if (matchToken(state, TokenType.Dot)) {

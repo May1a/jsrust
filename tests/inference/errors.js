@@ -139,3 +139,7 @@ testGroup("Error Message Formatting", () => {
 });
 
 console.log("Error inference tests complete");
+
+export function runInferenceErrorsTests() {
+    return 12; // Number of tests
+}

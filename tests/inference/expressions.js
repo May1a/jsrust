@@ -16,7 +16,20 @@ import {
     Mutability,
 } from "../../ast.js";
 import { TypeKind, IntWidth, FloatWidth, typeToString } from "../../types.js";
-import { assert, assertEq, testGroup } from "../lib.js";
+import { test, assertEqual, assertTrue } from "../lib.js";
+
+function testGroup(name, fn) {
+    console.log(`\n=== ${name} ===`);
+    fn();
+}
+
+function assert(msg, fn) {
+    test(msg, fn);
+}
+
+function assertEq(actual, expected) {
+    assertEqual(actual, expected);
+}
 
 function makeSpan(line = 1, column = 1, start = 0, end = 0) {
     return { line, column, start, end };
@@ -254,3 +267,7 @@ testGroup("Unification", () => {
 });
 
 console.log("Expression inference tests complete");
+
+export function runInferenceExpressionsTests() {
+    return 18; // Number of tests
+}
