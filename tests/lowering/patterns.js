@@ -57,10 +57,10 @@ function testLowerIdentPat() {
     const ast = makeIdentPat(makeSpan(0, 0, 0, 1), 'x', Mutability.Immutable, false, null);
     const hir = lowerPattern(ctx, ast, makeIntType(IntWidth.I32), typeCtx);
 
-    assertEquals(hir.kind, HPatKind.Ident, 'Should be an ident pattern');
-    assertEquals(hir.name, 'x', 'Should have name "x"');
-    assertEquals(hir.mutable, false, 'Should be immutable');
-    assertEquals(hir.isRef, false, 'Should not be ref');
+    assertEqual(hir.kind, HPatKind.Ident, 'Should be an ident pattern');
+    assertEqual(hir.name, 'x', 'Should have name "x"');
+    assertEqual(hir.mutable, false, 'Should be immutable');
+    assertEqual(hir.isRef, false, 'Should not be ref');
 }
 
 function testLowerIdentPatMutable() {
@@ -70,9 +70,9 @@ function testLowerIdentPatMutable() {
     const ast = makeIdentPat(makeSpan(0, 0, 0, 4), 'mut_x', Mutability.Mutable, false, null);
     const hir = lowerPattern(ctx, ast, makeIntType(IntWidth.I32), typeCtx);
 
-    assertEquals(hir.kind, HPatKind.Ident, 'Should be an ident pattern');
-    assertEquals(hir.name, 'mut_x', 'Should have name "mut_x"');
-    assertEquals(hir.mutable, true, 'Should be mutable');
+    assertEqual(hir.kind, HPatKind.Ident, 'Should be an ident pattern');
+    assertEqual(hir.name, 'mut_x', 'Should have name "mut_x"');
+    assertEqual(hir.mutable, true, 'Should be mutable');
 }
 
 function testLowerIdentPatRef() {
@@ -82,8 +82,8 @@ function testLowerIdentPatRef() {
     const ast = makeIdentPat(makeSpan(0, 0, 0, 5), 'ref_x', Mutability.Immutable, true, null);
     const hir = lowerPattern(ctx, ast, makeIntType(IntWidth.I32), typeCtx);
 
-    assertEquals(hir.kind, HPatKind.Ident, 'Should be an ident pattern');
-    assertEquals(hir.isRef, true, 'Should be ref');
+    assertEqual(hir.kind, HPatKind.Ident, 'Should be an ident pattern');
+    assertEqual(hir.isRef, true, 'Should be ref');
 }
 
 function testLowerIdentPatDefinesVar() {
@@ -94,8 +94,8 @@ function testLowerIdentPatDefinesVar() {
     lowerPattern(ctx, ast, makeIntType(IntWidth.I32), typeCtx);
 
     const varInfo = ctx.lookupVar('y');
-    assertEquals(varInfo !== null, true, 'Should define variable');
-    assertEquals(varInfo.name, 'y', 'Should have correct name');
+    assertTrue(varInfo !== null, 'Should define variable');
+    assertEqual(varInfo.name, 'y', 'Should have correct name');
 }
 
 // ============================================================================
@@ -109,7 +109,7 @@ function testLowerWildcardPat() {
     const ast = makeWildcardPat(makeSpan(0, 0, 0, 1));
     const hir = lowerPattern(ctx, ast, makeIntType(IntWidth.I32), typeCtx);
 
-    assertEquals(hir.kind, HPatKind.Wildcard, 'Should be a wildcard pattern');
+    assertEqual(hir.kind, HPatKind.Wildcard, 'Should be a wildcard pattern');
 }
 
 function testLowerWildcardPatNoVar() {
@@ -121,7 +121,7 @@ function testLowerWildcardPatNoVar() {
 
     // Wildcard should not define a variable
     const varInfo = ctx.lookupVar('_');
-    assertEquals(varInfo, null, 'Wildcard should not define variable');
+    assertEqual(varInfo, null, 'Wildcard should not define variable');
 }
 
 // ============================================================================
@@ -135,8 +135,8 @@ function testLowerLiteralPatInt() {
     const ast = makeLiteralPat(makeSpan(0, 0, 0, 1), LiteralKind.Int, 42);
     const hir = lowerPattern(ctx, ast, makeIntType(IntWidth.I32), typeCtx);
 
-    assertEquals(hir.kind, HPatKind.Literal, 'Should be a literal pattern');
-    assertEquals(hir.value, 42, 'Should have value 42');
+    assertEqual(hir.kind, HPatKind.Literal, 'Should be a literal pattern');
+    assertEqual(hir.value, 42, 'Should have value 42');
 }
 
 function testLowerLiteralPatBool() {
@@ -146,8 +146,8 @@ function testLowerLiteralPatBool() {
     const ast = makeLiteralPat(makeSpan(0, 0, 0, 4), LiteralKind.Bool, true);
     const hir = lowerPattern(ctx, ast, { kind: TypeKind.Bool }, typeCtx);
 
-    assertEquals(hir.kind, HPatKind.Literal, 'Should be a literal pattern');
-    assertEquals(hir.value, true, 'Should have value true');
+    assertEqual(hir.kind, HPatKind.Literal, 'Should be a literal pattern');
+    assertEqual(hir.value, true, 'Should have value true');
 }
 
 // ============================================================================
@@ -165,8 +165,8 @@ function testLowerTuplePat() {
     const expectedType = makeTupleType([makeIntType(IntWidth.I32), makeIntType(IntWidth.I32)]);
     const hir = lowerPattern(ctx, ast, expectedType, typeCtx);
 
-    assertEquals(hir.kind, HPatKind.Tuple, 'Should be a tuple pattern');
-    assertEquals(hir.elements.length, 2, 'Should have two elements');
+    assertEqual(hir.kind, HPatKind.Tuple, 'Should be a tuple pattern');
+    assertEqual(hir.elements.length, 2, 'Should have two elements');
 }
 
 function testLowerTuplePatNested() {
@@ -186,9 +186,9 @@ function testLowerTuplePatNested() {
     const expectedType = makeTupleType([innerType, makeIntType(IntWidth.I32)]);
     const hir = lowerPattern(ctx, ast, expectedType, typeCtx);
 
-    assertEquals(hir.kind, HPatKind.Tuple, 'Should be a tuple pattern');
-    assertEquals(hir.elements.length, 2, 'Should have two elements');
-    assertEquals(hir.elements[0].kind, HPatKind.Tuple, 'First element should be tuple');
+    assertEqual(hir.kind, HPatKind.Tuple, 'Should be a tuple pattern');
+    assertEqual(hir.elements.length, 2, 'Should have two elements');
+    assertEqual(hir.elements[0].kind, HPatKind.Tuple, 'First element should be tuple');
 }
 
 // ============================================================================
@@ -205,8 +205,8 @@ function testLowerOrPat() {
 
     const hir = lowerPattern(ctx, ast, makeIntType(IntWidth.I32), typeCtx);
 
-    assertEquals(hir.kind, HPatKind.Or, 'Should be an or pattern');
-    assertEquals(hir.alternatives.length, 2, 'Should have two alternatives');
+    assertEqual(hir.kind, HPatKind.Or, 'Should be an or pattern');
+    assertEqual(hir.alternatives.length, 2, 'Should have two alternatives');
 }
 
 function testLowerOrPatMultiple() {
@@ -220,8 +220,8 @@ function testLowerOrPatMultiple() {
 
     const hir = lowerPattern(ctx, ast, makeIntType(IntWidth.I32), typeCtx);
 
-    assertEquals(hir.kind, HPatKind.Or, 'Should be an or pattern');
-    assertEquals(hir.alternatives.length, 3, 'Should have three alternatives');
+    assertEqual(hir.kind, HPatKind.Or, 'Should be an or pattern');
+    assertEqual(hir.alternatives.length, 3, 'Should have three alternatives');
 }
 
 // ============================================================================
@@ -252,9 +252,9 @@ function testLowerStructPat() {
     const structType = { kind: TypeKind.Struct, name: 'Point', fields: [] };
     const hir = lowerPattern(ctx, ast, structType, typeCtx);
 
-    assertEquals(hir.kind, HPatKind.Struct, 'Should be a struct pattern');
-    assertEquals(hir.name, 'Point', 'Should have struct name');
-    assertEquals(hir.fields.length, 2, 'Should have two fields');
+    assertEqual(hir.kind, HPatKind.Struct, 'Should be a struct pattern');
+    assertEqual(hir.name, 'Point', 'Should have struct name');
+    assertEqual(hir.fields.length, 2, 'Should have two fields');
 }
 
 function testLowerStructPatWithRest() {
@@ -280,8 +280,8 @@ function testLowerStructPatWithRest() {
     const structType = { kind: TypeKind.Struct, name: 'Point', fields: [] };
     const hir = lowerPattern(ctx, ast, structType, typeCtx);
 
-    assertEquals(hir.kind, HPatKind.Struct, 'Should be a struct pattern');
-    assertEquals(hir.rest, true, 'Should have rest pattern');
+    assertEqual(hir.kind, HPatKind.Struct, 'Should be a struct pattern');
+    assertEqual(hir.rest, true, 'Should have rest pattern');
 }
 
 // ============================================================================
@@ -298,7 +298,7 @@ function testPatternVarIds() {
     const pat2 = makeIdentPat(makeSpan(0, 0, 0, 1), 'b', Mutability.Immutable, false, null);
     const hir2 = lowerPattern(ctx, pat2, makeIntType(IntWidth.I32), typeCtx);
 
-    assertEquals(hir1.id !== hir2.id, true, 'Different patterns should have different IDs');
+    assertTrue(hir1.id !== hir2.id, 'Different patterns should have different IDs');
 }
 
 // ============================================================================
