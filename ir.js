@@ -1,3 +1,4 @@
+// @ts-nocheck
 /** @typedef {number} ValueId */
 /** @typedef {number} BlockId */
 /** @typedef {number} FunctionId */

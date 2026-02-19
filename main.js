@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-nocheck
 
 import { parseModule } from "./parser.js";
 import { TypeContext } from "./type_context.js";

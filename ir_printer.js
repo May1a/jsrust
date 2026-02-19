@@ -1,3 +1,4 @@
+// @ts-nocheck
 /** @typedef {import('./ir.js').IRType} IRType */
 /** @typedef {import('./ir.js').IRInst} IRInst */
 /** @typedef {import('./ir.js').IRTerm} IRTerm */

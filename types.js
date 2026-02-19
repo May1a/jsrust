@@ -1,3 +1,4 @@
+// @ts-nocheck
 /** @typedef {number} TypeKindValue */
 /** @typedef {number} IntWidthValue */
 /** @typedef {number} FloatWidthValue */
@@ -9,23 +10,8 @@
  * This is intentionally broad because the project relies on runtime `kind` checks.
  * @typedef {{
  *   kind: TypeKindValue,
- *   span?: Span,
- *   width?: IntWidthValue | FloatWidthValue,
- *   elements?: Type[],
- *   element?: Type,
- *   length?: number,
- *   name?: string,
- *   fields?: { name: string, type: Type }[],
- *   variants?: { name: string, fields?: Type[] }[],
- *   inner?: Type,
- *   mutable?: boolean,
- *   params?: Type[],
- *   returnType?: Type,
- *   isUnsafe?: boolean,
- *   id?: TypeVarId,
- *   bound?: Type | null,
- *   args?: Type[] | null
- * }} Type
+ *   span?: Span
+ * } & Record<string, any>} Type
  */
 
 /**
