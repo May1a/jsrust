@@ -5,50 +5,50 @@
 **Dependencies**: None
 
 ## Task 13.1: Source Location
-- [ ] `SourceLocation` - file, line, column
-- [ ] `SourceSpan` - start and end locations
+- [x] `SourceLocation` - file, line, column
+- [x] `SourceSpan` - start and end locations
 
 ## Task 13.2: Diagnostic Structure
-- [ ] `Diagnostic` type
-- [ ] Level: error, warning, note
-- [ ] Message
-- [ ] Span
-- [ ] Optional related info
+- [x] `Diagnostic` type
+- [x] Level: error, warning, note
+- [x] Message
+- [x] Span
+- [x] Optional related info
 
 ## Task 13.3: Diagnostic Renderer
-- [ ] `renderDiagnostic(diag, source)` -> string
-- [ ] Show line of code with highlight
-- [ ] Show line numbers
-- [ ] Show caret under error
+- [x] `renderDiagnostic(diag, source)` -> string
+- [x] Show line of code with highlight
+- [x] Show line numbers
+- [x] Show caret under error
 
 ## Task 13.4: Error Collection
-- [ ] `DiagnosticCollector` class
-- [ ] `addError(message, span)`
-- [ ] `addWarning(message, span)`
-- [ ] `addNote(message, span)`
-- [ ] `hasErrors()` -> boolean
-- [ ] `getDiagnostics()` -> Diagnostic[]
+- [x] `DiagnosticCollector` class
+- [x] `addError(message, span)`
+- [x] `addWarning(message, span)`
+- [x] `addNote(message, span)`
+- [x] `hasErrors()` -> boolean
+- [x] `getDiagnostics()` -> Diagnostic[]
 
 ## Task 13.5: Result Type
-- [ ] `Result<T, E>` type with Ok/Err
-- [ ] `ok(value)` -> Result
-- [ ] `err(error)` -> Result
-- [ ] `isOk(result)` -> boolean
-- [ ] `unwrap(result)` -> T (throws if Err)
-- [ ] `unwrapOr(result, default)` -> T
+- [x] `Result<T, E>` type with Ok/Err
+- [x] `ok(value)` -> Result
+- [x] `err(error)` -> Result
+- [x] `isOk(result)` -> boolean
+- [x] `unwrap(result)` -> T (throws if Err)
+- [x] `unwrapOr(result, default)` -> T
 
 ## Task 13.6: Error Formatting Utilities
-- [ ] `formatTypeMismatch(expected, found, span)`
-- [ ] `formatUndefinedVar(name, span)`
-- [ ] `formatDuplicateDef(name, span, prevSpan)`
-- [ ] `formatArityMismatch(expected, found, span)`
+- [x] `formatTypeMismatch(expected, found, span)`
+- [x] `formatUndefinedVar(name, span)`
+- [x] `formatDuplicateDef(name, span, prevSpan)`
+- [x] `formatArityMismatch(expected, found, span)`
 
 ## Task 13.7: Source Context
-- [ ] `SourceContext` class
-- [ ] Store source lines for rendering
-- [ ] `getLine(lineNum)` -> string
-- [ ] `highlightSpan(span)` -> string
+- [x] `SourceContext` class
+- [x] Store source lines for rendering
+- [x] `getLine(lineNum)` -> string
+- [x] `highlightSpan(span)` -> string
 
 ## Testing
-- [ ] Test file: `tests/diagnostics/rendering.js`
-- [ ] Test file: `tests/diagnostics/collection.js`
+- [x] Test file: `tests/diagnostics/rendering.js`
+- [x] Test file: `tests/diagnostics/collection.js`

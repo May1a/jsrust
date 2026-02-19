@@ -5,44 +5,44 @@
 **Dependencies**: `ir.js`
 
 ## Task 14.1: Type Printing
-- [ ] `printType(type)` -> string
-- [ ] Handle all IR types
-- [ ] Human-readable format
+- [x] `printType(type)` -> string
+- [x] Handle all IR types
+- [x] Human-readable format
 
 ## Task 14.2: Instruction Printing
-- [ ] `printInstruction(instr)` -> string
-- [ ] Format: `vN = opcode operands`
-- [ ] Handle all instruction types
-- [ ] Show types where relevant
+- [x] `printInstruction(instr)` -> string
+- [x] Format: `vN = opcode operands`
+- [x] Handle all instruction types
+- [x] Show types where relevant
 
 ## Task 14.3: Terminator Printing
-- [ ] `printTerminator(term)` -> string
-- [ ] Format branch targets and args
-- [ ] Show phi-like block arguments
+- [x] `printTerminator(term)` -> string
+- [x] Format branch targets and args
+- [x] Show phi-like block arguments
 
 ## Task 14.4: Block Printing
-- [ ] `printBlock(block)` -> string
-- [ ] Show block label
-- [ ] Show block parameters
-- [ ] Show all instructions
-- [ ] Show terminator
+- [x] `printBlock(block)` -> string
+- [x] Show block label
+- [x] Show block parameters
+- [x] Show all instructions
+- [x] Show terminator
 
 ## Task 14.5: Function Printing
-- [ ] `printFunction(fn)` -> string
-- [ ] Show signature
-- [ ] Show locals (stack slots)
-- [ ] Show all blocks
+- [x] `printFunction(fn)` -> string
+- [x] Show signature
+- [x] Show locals (stack slots)
+- [x] Show all blocks
 
 ## Task 14.6: Module Printing
-- [ ] `printModule(module)` -> string
-- [ ] Show all functions
-- [ ] Show type declarations
+- [x] `printModule(module)` -> string
+- [x] Show all functions
+- [x] Show type declarations
 
 ## Task 14.7: Value Naming
-- [ ] Track value names for debugging
-- [ ] `v0`, `v1`, `v2` for SSA values
-- [ ] `loc0`, `loc1` for locals
-- [ ] `block0`, `block1` for blocks
+- [x] Track value names for debugging
+- [x] `v0`, `v1`, `v2` for SSA values
+- [x] `loc0`, `loc1` for locals
+- [x] `block0`, `block1` for blocks
 
 ## Task 14.8: Source Mapping (Optional)
 - [ ] Track source locations in IR
@@ -50,6 +50,6 @@
 - [ ] Help with debugging
 
 ## Testing
-- [ ] Test file: `tests/output/types.js`
-- [ ] Test file: `tests/output/instructions.js`
-- [ ] Test file: `tests/output/functions.js`
+- [x] Test file: `tests/output/types.js`
+- [x] Test file: `tests/output/instructions.js`
+- [x] Test file: `tests/output/functions.js`
