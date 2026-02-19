@@ -31,6 +31,13 @@ import { runPrimitivesTests } from "./binary/primitives.js";
 import { runTypesTests } from "./binary/types.js";
 import { runInstructionsTests } from "./binary/instructions.js";
 import { runRoundtripTests } from "./binary/roundtrip.js";
+import { runOutputTypesTests } from "./output/types.js";
+import { runOutputInstructionsTests } from "./output/instructions.js";
+import { runOutputFunctionsTests } from "./output/functions.js";
+import { runValidationBasicTests } from "./validation/basic.js";
+import { runValidationTypesTests } from "./validation/types.js";
+import { runValidationControlFlowTests } from "./validation/control_flow.js";
+import { runValidationDominanceTests } from "./validation/dominance.js";
 
 const { printSummary, clearErrors } = lib;
 
@@ -70,6 +77,13 @@ totalTests += runPrimitivesTests();
 totalTests += runTypesTests();
 totalTests += runInstructionsTests();
 totalTests += runRoundtripTests();
+totalTests += runOutputTypesTests();
+totalTests += runOutputInstructionsTests();
+totalTests += runOutputFunctionsTests();
+totalTests += runValidationBasicTests();
+totalTests += runValidationTypesTests();
+totalTests += runValidationControlFlowTests();
+totalTests += runValidationDominanceTests();
 
 const success = printSummary(totalTests);
 process.exit(success ? 0 : 1);
