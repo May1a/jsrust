@@ -4,7 +4,29 @@
 /** @typedef {number} TypeVarId */
 
 /** @typedef {{ line: number, column: number, start: number, end: number }} Span */
-/** @typedef {{ kind: TypeKindValue, span?: Span }} Type */
+/**
+ * Structural type model used throughout the compiler.
+ * This is intentionally broad because the project relies on runtime `kind` checks.
+ * @typedef {{
+ *   kind: TypeKindValue,
+ *   span?: Span,
+ *   width?: IntWidthValue | FloatWidthValue,
+ *   elements?: Type[],
+ *   element?: Type,
+ *   length?: number,
+ *   name?: string,
+ *   fields?: { name: string, type: Type }[],
+ *   variants?: { name: string, fields?: Type[] }[],
+ *   inner?: Type,
+ *   mutable?: boolean,
+ *   params?: Type[],
+ *   returnType?: Type,
+ *   isUnsafe?: boolean,
+ *   id?: TypeVarId,
+ *   bound?: Type | null,
+ *   args?: Type[] | null
+ * }} Type
+ */
 
 /**
  * Type kinds for the type system
@@ -309,19 +331,10 @@ function typeEquals(a, b) {
 
     switch (a.kind) {
         case TypeKind.Int:
-            return (
-                a.width ===
-                /** @type {{ kind: TypeKind.Int, width: IntWidthValue }} */ (b)
-                    .width
-            );
+            return a.width === /** @type {{ width?: IntWidthValue }} */ (b).width;
 
         case TypeKind.Float:
-            return (
-                a.width ===
-                /** @type {{ kind: TypeKind.Float, width: FloatWidthValue }} */ (
-                    b
-                ).width
-            );
+            return a.width === /** @type {{ width?: FloatWidthValue }} */ (b).width;
 
         case TypeKind.Bool:
         case TypeKind.Char:
@@ -331,11 +344,11 @@ function typeEquals(a, b) {
             return true;
 
         case TypeKind.Tuple: {
-            const bTuple =
-                /** @type {{ kind: TypeKind.Tuple, elements: Type[] }} */ (b);
-            if (a.elements.length !== bTuple.elements.length) return false;
+            const bTuple = /** @type {{ elements?: Type[] }} */ (b);
+            const bElements = bTuple.elements ?? [];
+            if (a.elements.length !== bElements.length) return false;
             for (let i = 0; i < a.elements.length; i++) {
-                if (!typeEquals(a.elements[i], bTuple.elements[i]))
+                if (!typeEquals(a.elements[i], bElements[i]))
                     return false;
             }
             return true;

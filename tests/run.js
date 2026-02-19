@@ -58,6 +58,7 @@ import { runTests as runHirToSsaExpressionsTests } from "./hir_to_ssa/expression
 import { runDiagnosticsCollectionTests } from "./diagnostics/collection.js";
 import { runDiagnosticsRenderingTests } from "./diagnostics/rendering.js";
 import { runE2ETests } from "./e2e.js";
+import { runExamplesTests } from "./examples.js";
 
 const { printSummary, clearErrors, beginRun, endRun } = lib;
 
@@ -123,6 +124,7 @@ runHirToSsaExpressionsTests();
 runDiagnosticsCollectionTests();
 runDiagnosticsRenderingTests();
 runE2ETests();
+runExamplesTests();
 
 endRun();
 const success = printSummary();
