@@ -1,5 +1,5 @@
 // Variable tests for SSA variable tracking and phi construction
-import { assertTrue } from "../lib.js";
+import { assertTrue, test } from "../lib.js";
 import { IRBuilder } from "../../ir_builder.js";
 
 export function testSimpleVarFlow() {
@@ -14,6 +14,7 @@ export function testSimpleVarFlow() {
     const used = builder.useVar("x");
 
     builder.ret(used);
+    builder.sealBlock(0);
 
     const fn = builder.build();
     assertTrue(fn !== null);
@@ -35,6 +36,9 @@ export function testVarAcrossBlocks() {
     const used = builder.useVar("x");
     builder.unreachable();
 
+    builder.sealBlock(0);
+    builder.sealBlock(1);
+
     const fn = builder.build();
     assertTrue(fn !== null);
 }
@@ -45,18 +49,7 @@ export function runTests() {
         ["Var across blocks", testVarAcrossBlocks],
     ];
 
-    let passed = 0;
-    let failed = 0;
-
-    for (const [name, test] of tests) {
-        try {
-            test();
-            passed++;
-        } catch (e) {
-            console.error(`  ✗ ${name}: ${e.message}`);
-            failed++;
-        }
+    for (const [name, fn] of tests) {
+        test(name, fn);
     }
-
-    return { passed, failed };
 }

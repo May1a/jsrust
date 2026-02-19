@@ -293,6 +293,9 @@ function makeNamedType(name, args, span) {
  * @returns {boolean}
  */
 function typeEquals(a, b) {
+    // Handle null/undefined
+    if (!a || !b) return a === b;
+    
     // Handle type variables
     if (a.kind === TypeKind.TypeVar && b.kind === TypeKind.TypeVar) {
         if (a.id !== b.id) return false;

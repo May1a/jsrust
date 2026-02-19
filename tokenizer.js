@@ -33,6 +33,8 @@ const TokenType = {
     While: iota(),
     Loop: iota(),
     Self: iota(),
+    Mut: iota(),
+    FatArrow: iota(),
     OpenParen: iota(),
     CloseParen: iota(),
     OpenCurly: iota(),
@@ -96,6 +98,7 @@ const KEYWORDS = {
     while: TokenType.While,
     loop: TokenType.Loop,
     self: TokenType.Self,
+    mut: TokenType.Mut,
 };
 
 /**
@@ -413,6 +416,7 @@ function readOperatorOrDelimiter(state) {
         ">=": TokenType.GtEq,
         "&&": TokenType.AndAnd,
         "||": TokenType.PipePipe,
+        "=>": TokenType.FatArrow,
     };
 
     const next = peekAt(state, 1);

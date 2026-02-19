@@ -1177,6 +1177,11 @@ function lowerPath(ctx, pathExpr, typeCtx) {
         return makeHUnitExpr(pathExpr.span, makeUnitType());
     }
 
+    // Handle "()" as unit type for tuple expressions
+    if (pathExpr.segments.length === 1 && pathExpr.segments[0] === "()") {
+        return makeHUnitExpr(pathExpr.span, makeUnitType());
+    }
+
     // Simple identifier
     if (pathExpr.segments.length === 1) {
         return lowerIdentifier(

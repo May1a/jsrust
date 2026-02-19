@@ -5,15 +5,20 @@
 
 /** @type {{ test: string, message: string }[]} */
 const errors = [];
+let totalTestsRun = 0;
 
 /**
  * @param {string} name
  * @param {() => void | Promise<void>} fn
  */
 export function test(name, fn) {
+    totalTestsRun++;
     try {
         fn();
     } catch (e) {
+        if (e instanceof Error && e.stack) {
+            console.error(e.stack);
+        }
         errors.push({
             test: name,
             message: e instanceof Error ? e.message : String(e),
@@ -56,7 +61,7 @@ export function testAsync(name, fn) {
     const result = fn();
     if (result instanceof Promise) {
         return result.catch(
-            /** @param {unknown} e */ (e) => {
+            /** @param {unknown} e */(e) => {
                 errors.push({
                     test: name,
                     message: e instanceof Error ? e.message : String(e),
@@ -76,7 +81,7 @@ export function assertEqual(actual, expected, msg) {
     if (actual !== expected) {
         throw new Error(
             msg ||
-                `Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+            `Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
         );
     }
 }
@@ -105,14 +110,14 @@ export function assertArrayEqual(actual, expected, msg) {
     if (actual.length !== expected.length) {
         throw new Error(
             msg ||
-                `Array length mismatch: expected ${expected.length}, got ${actual.length}`,
+            `Array length mismatch: expected ${expected.length}, got ${actual.length}`,
         );
     }
     for (let i = 0; i < actual.length; i++) {
         if (actual[i] !== expected[i]) {
             throw new Error(
                 msg ||
-                    `Array mismatch at index ${i}: expected ${JSON.stringify(expected[i])}, got ${JSON.stringify(actual[i])}`,
+                `Array mismatch at index ${i}: expected ${JSON.stringify(expected[i])}, got ${JSON.stringify(actual[i])}`,
             );
         }
     }
@@ -169,30 +174,30 @@ export function mergeResult(name, result) {
 }
 
 /**
- * @param {number} totalTests
+ * @returns {boolean}
  */
-export function printSummary(totalTests) {
+export function printSummary() {
     const failed = errors.length;
-    const passed = totalTests - failed;
+    const passed = totalTestsRun - failed;
 
-    console.log(`\n${"=".repeat(50)}`);
-    console.log(
-        `Tests: ${passed} passed, ${failed} failed, ${totalTests} total`,
-    );
-
-    if (failed > 0) {
+    console.log("==================================================");
+    if (failed === 0) {
+        console.log(`All ${totalTestsRun} tests passed!`);
+    } else {
+        console.log(`Tests: ${passed} passed, ${failed} failed, ${totalTestsRun} total`);
         console.log(`\nFailures:`);
         for (const e of errors) {
             console.log(`  - ${e.test}: ${e.message}`);
         }
     }
-    console.log(`${"=".repeat(50)}`);
+    console.log("==================================================");
 
     return failed === 0;
 }
 
 export function clearErrors() {
     errors.length = 0;
+    totalTestsRun = 0;
 }
 
 export { errors };

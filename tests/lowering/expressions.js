@@ -2,7 +2,7 @@
  * Tests for AST to HIR expression lowering
  */
 
-import { assertEqual, assertTrue } from "../lib.js";
+import { assertEqual, assertTrue, test } from "../lib.js";
 import {
     NodeKind,
     LiteralKind,
@@ -452,18 +452,7 @@ export function runTests() {
         ["Lower field expression", testLowerFieldExpression],
     ];
 
-    let passed = 0;
-    let failed = 0;
-
-    for (const [name, test] of tests) {
-        try {
-            test();
-            passed++;
-        } catch (e) {
-            console.error(`  ✗ ${name}: ${e.message}`);
-            failed++;
-        }
+    for (const [name, fn] of tests) {
+        test(name, fn);
     }
-
-    return { passed, failed };
 }

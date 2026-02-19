@@ -137,6 +137,11 @@ function unify(ctx, t1, t2) {
         return { ok: true };
     }
 
+    // Unit types are always equal (regardless of span)
+    if (t1.kind === TypeKind.Unit && t2.kind === TypeKind.Unit) {
+        return { ok: true };
+    }
+
     // Type variable unification
     if (t1.kind === TypeKind.TypeVar && t1.bound === null) {
         // Occurs check
@@ -526,7 +531,7 @@ function gatherDeclaration(ctx, item) {
                     errors: [
                         makeTypeError(
                             registerResult.error ||
-                                "Failed to register function",
+                            "Failed to register function",
                             item.span,
                         ),
                     ],
@@ -930,20 +935,17 @@ function checkFnItem(ctx, fnItem) {
     return { ok: true };
 }
 
-// ============================================================================
-// Task 4.3: Expression Inference
-// ============================================================================
-
 /**
  * Infer the type of an expression
  * @param {TypeContext} ctx
  * @param {Node} expr
+ * @param {Type} [expectedType=null]
  * @returns {InferenceResult}
  */
-function inferExpr(ctx, expr) {
+function inferExpr(ctx, expr, expectedType = null) {
     switch (expr.kind) {
         case NodeKind.LiteralExpr:
-            return inferLiteral(ctx, expr);
+            return inferLiteral(ctx, expr, expectedType);
 
         case NodeKind.IdentifierExpr:
             return inferIdentifier(ctx, expr);
@@ -1020,27 +1022,35 @@ function inferExpr(ctx, expr) {
  * Infer literal type
  * @param {TypeContext} ctx
  * @param {Node} literal
+ * @param {Type} [expectedType=null]
  * @returns {InferenceResult}
  */
-function inferLiteral(ctx, literal) {
+function inferLiteral(ctx, literal, expectedType = null) {
     switch (literal.literalKind) {
-        case LiteralKind.Int:
-            // Default integer type is i32
+        case LiteralKind.Int: {
+            if (expectedType) {
+                const resolved = ctx.resolveType(expectedType);
+                if (resolved.kind === TypeKind.Int) {
+                    return ok(makeIntType(resolved.width, literal.span));
+                }
+            }
             return ok(makeIntType(IntWidth.I32, literal.span));
-
-        case LiteralKind.Float:
-            // Default float type is f64
+        }
+        case LiteralKind.Float: {
+            if (expectedType) {
+                const resolved = ctx.resolveType(expectedType);
+                if (resolved.kind === TypeKind.Float) {
+                    return ok(makeFloatType(resolved.width, literal.span));
+                }
+            }
             return ok(makeFloatType(FloatWidth.F64, literal.span));
-
+        }
         case LiteralKind.Bool:
             return ok(makeBoolType(literal.span));
-
         case LiteralKind.String:
             return ok(makeStringType(literal.span));
-
         case LiteralKind.Char:
             return ok(makeCharType(literal.span));
-
         default:
             return err(
                 `Unknown literal kind: ${literal.literalKind}`,
@@ -1353,29 +1363,41 @@ function inferField(ctx, field) {
     if (!receiverResult.ok) return receiverResult;
 
     const receiverType = ctx.resolveType(receiverResult.type);
+    const fieldName =
+        typeof field.field === "string" ? field.field : field.field.name;
 
     // Handle struct field access
     if (receiverType.kind === TypeKind.Struct) {
-        const fieldName =
-            typeof field.field === "string" ? field.field : field.field.name;
         const fieldDef = receiverType.fields.find((f) => f.name === fieldName);
-        if (!fieldDef) {
-            return err(
-                `Field '${fieldName}' not found in struct ${receiverType.name}`,
-                field.span,
-            );
+        if (fieldDef) {
+            return ok(fieldDef.type);
         }
-        return ok(fieldDef.type);
+
+        // Some lowering paths keep struct names but omit field metadata.
+        // Fall back to the declared item definition in type context.
+        const item = ctx.lookupItem(receiverType.name);
+        if (item && item.kind === "struct") {
+            const structField = item.node.fields?.find(
+                (f) => f.name === fieldName,
+            );
+            if (structField) {
+                if (structField.ty) {
+                    return resolveTypeNode(ctx, structField.ty);
+                }
+                return ok(ctx.freshTypeVar());
+            }
+        }
+
+        return err(
+            `Field '${fieldName}' not found in struct ${receiverType.name}`,
+            field.span,
+        );
     }
 
     // Handle named type (unresolved struct)
     if (receiverType.kind === TypeKind.Named) {
         const item = ctx.lookupItem(receiverType.name);
         if (item && item.kind === "struct") {
-            const fieldName =
-                typeof field.field === "string"
-                    ? field.field
-                    : field.field.name;
             const structField = item.node.fields?.find(
                 (f) => f.name === fieldName,
             );
@@ -1612,12 +1634,17 @@ function inferBlock(ctx, block) {
     ctx.pushScope();
 
     const errors = [];
+    let diverges = false;
+    let neverType = null;
 
     // Check statements
     for (const stmt of block.stmts || []) {
         const result = checkStmt(ctx, stmt);
         if (!result.ok) {
             errors.push(...(result.errors || []));
+        } else if (result.type && result.type.kind === TypeKind.Never) {
+            diverges = true;
+            neverType = result.type;
         }
     }
 
@@ -1629,6 +1656,10 @@ function inferBlock(ctx, block) {
             errors.push(...(exprResult.errors || []));
         } else {
             resultType = exprResult.type;
+            if (resultType.kind === TypeKind.Never) {
+                diverges = true;
+                neverType = resultType;
+            }
         }
     }
 
@@ -1638,7 +1669,7 @@ function inferBlock(ctx, block) {
         return { ok: false, errors };
     }
 
-    return ok(resultType);
+    return ok(diverges ? neverType : resultType);
 }
 
 /**
@@ -1785,6 +1816,11 @@ function inferPath(ctx, pathExpr) {
         return err("Empty path expression", pathExpr.span);
     }
 
+    // Handle "()" as unit type for tuple expressions
+    if (pathExpr.segments.length === 1 && pathExpr.segments[0] === "()") {
+        return ok(makeUnitType(pathExpr.span));
+    }
+
     // Simple identifier
     if (pathExpr.segments.length === 1) {
         return inferIdentifier(ctx, {
@@ -1800,8 +1836,72 @@ function inferPath(ctx, pathExpr) {
         return err(`Unbound item: ${itemName}`, pathExpr.span);
     }
 
-    // TODO: Handle module paths, enum variants, etc.
-    return err(`Qualified paths not yet supported`, pathExpr.span);
+    // Handle enum variants: EnumName::VariantName
+    if (item.kind === "enum" && pathExpr.segments.length === 2) {
+        const variantName = pathExpr.segments[1];
+        const enumNode = item.node;
+
+        // Find the variant
+        const variants = enumNode.variants || [];
+        const variantIndex = variants.findIndex(v => v.name === variantName);
+        if (variantIndex === -1) {
+            return err(`Unknown variant: ${variantName}`, pathExpr.span);
+        }
+
+        const variant = variants[variantIndex];
+        const variantFields = variant.fields || [];
+
+        // Build the enum type
+        const enumType = {
+            kind: TypeKind.Enum,
+            name: itemName,
+            variants: variants.map(v => ({
+                name: v.name,
+                fields: (v.fields || []).map(f => f.ty || null),
+            })),
+            span: pathExpr.span,
+        };
+
+        // If the variant has fields, return a function type that constructs the enum
+        if (variantFields.length > 0) {
+            // Resolve field types
+            const fieldTypes = [];
+            for (const field of variantFields) {
+                if (field.ty) {
+                    const fieldTyResult = resolveTypeNode(ctx, field.ty);
+                    if (fieldTyResult.ok) {
+                        fieldTypes.push(fieldTyResult.type);
+                    } else {
+                        fieldTypes.push(ctx.freshTypeVar());
+                    }
+                } else {
+                    fieldTypes.push(ctx.freshTypeVar());
+                }
+            }
+
+            // Return a function type: (field_types) -> EnumType
+            return ok(makeFnType(fieldTypes, enumType, false, pathExpr.span));
+        }
+
+        // No fields - return the enum type directly
+        return ok(enumType);
+    }
+
+    // Handle struct constructors: StructName::new or just StructName
+    if (item.kind === "struct") {
+        const structType = {
+            kind: TypeKind.Struct,
+            name: itemName,
+            fields: (item.node.fields || []).map(f => ({
+                name: f.name,
+                type: f.ty,
+            })),
+            span: pathExpr.span,
+        };
+        return ok(structType);
+    }
+
+    return err(`Qualified paths not yet supported for: ${itemName}`, pathExpr.span);
 }
 
 /**
@@ -1815,6 +1915,31 @@ function inferStructExpr(ctx, structExpr) {
     if (!pathResult.ok) return pathResult;
 
     const structType = ctx.resolveType(pathResult.type);
+
+    // Handle tuple expressions (path is "()" or Unit type)
+    if (
+        structType.kind === TypeKind.Unit ||
+        (structType.kind === TypeKind.Named && structType.name === "()")
+    ) {
+        // This is a tuple expression
+        const elementTypes = [];
+        const errors = [];
+
+        for (const field of structExpr.fields || []) {
+            const valueResult = inferExpr(ctx, field.value);
+            if (!valueResult.ok) {
+                errors.push(...(valueResult.errors || []));
+            } else {
+                elementTypes.push(valueResult.type);
+            }
+        }
+
+        if (errors.length > 0) {
+            return { ok: false, errors };
+        }
+
+        return ok(makeTupleType(elementTypes, structExpr.span));
+    }
 
     // Check that it's a struct
     if (
@@ -2000,7 +2125,7 @@ function inferMacro(ctx, macroExpr) {
         case "print": {
             // println! and print! return unit type
             // They accept a format string and arguments
-            
+
             if (!macroExpr.args || macroExpr.args.length === 0) {
                 return err(
                     `${macroName}! requires at least a format string argument`,
@@ -2009,7 +2134,7 @@ function inferMacro(ctx, macroExpr) {
             }
 
             const errors = [];
-            
+
             // Check all arguments
             for (const arg of macroExpr.args) {
                 const argResult = inferExpr(ctx, arg);
@@ -2093,7 +2218,7 @@ function inferMacro(ctx, macroExpr) {
  * Check a statement
  * @param {TypeContext} ctx
  * @param {Node} stmt
- * @returns {{ ok: boolean, errors?: TypeError[] }}
+ * @returns {InferenceResult}
  */
 function checkStmt(ctx, stmt) {
     switch (stmt.kind) {
@@ -2105,7 +2230,9 @@ function checkStmt(ctx, stmt) {
 
         case NodeKind.ItemStmt: {
             // Items are already gathered, just check nested items
-            return checkItem(ctx, stmt.item);
+            const result = checkItem(ctx, stmt.item);
+            if (!result.ok) return result;
+            return ok(makeUnitType(stmt.span));
         }
 
         default:
@@ -2125,20 +2252,10 @@ function checkStmt(ctx, stmt) {
  * Check a let statement
  * @param {TypeContext} ctx
  * @param {Node} letStmt
- * @returns {{ ok: boolean, errors?: TypeError[] }}
+ * @returns {InferenceResult}
  */
 function checkLetStmt(ctx, letStmt) {
     const errors = [];
-
-    let initType = null;
-    if (letStmt.init) {
-        const initResult = inferExpr(ctx, letStmt.init);
-        if (!initResult.ok) {
-            errors.push(...(initResult.errors || []));
-        } else {
-            initType = initResult.type;
-        }
-    }
 
     let declaredType = null;
     if (letStmt.ty) {
@@ -2147,6 +2264,16 @@ function checkLetStmt(ctx, letStmt) {
             errors.push(...(typeResult.errors || []));
         } else {
             declaredType = typeResult.type;
+        }
+    }
+
+    let initType = null;
+    if (letStmt.init) {
+        const initResult = inferExpr(ctx, letStmt.init, declaredType);
+        if (!initResult.ok) {
+            errors.push(...(initResult.errors || []));
+        } else {
+            initType = initResult.type;
         }
     }
 
@@ -2182,21 +2309,31 @@ function checkLetStmt(ctx, letStmt) {
     if (errors.length > 0) {
         return { ok: false, errors };
     }
-    return { ok: true };
+
+    // If initializer diverges, the whole statement diverges
+    if (initType && initType.kind === TypeKind.Never) {
+        return ok(initType);
+    }
+
+    return ok(makeUnitType(letStmt.span));
 }
 
 /**
  * Check an expression statement
  * @param {TypeContext} ctx
  * @param {Node} exprStmt
- * @returns {{ ok: boolean, errors?: TypeError[] }}
+ * @returns {InferenceResult}
  */
 function checkExprStmt(ctx, exprStmt) {
     const result = inferExpr(ctx, exprStmt.expr);
     if (!result.ok) {
-        return { ok: false, errors: result.errors };
+        return result;
     }
-    return { ok: true };
+    // If expression type is never, the statement diverges
+    if (result.type.kind === TypeKind.Never) {
+        return result;
+    }
+    return ok(makeUnitType(exprStmt.span));
 }
 
 // ============================================================================
