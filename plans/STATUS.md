@@ -12,5 +12,5 @@ For historical completion and archived phase detail, see:
 
 ## Active Track
 
-- `active/01-prepare-backend.md`: Not started
+- `active/01-prepare-backend.md`: Completed (contract/docs/fixtures/conformance checks added)
 - `active/02-compiler-progress.md`: Initialized (baseline progress captured)

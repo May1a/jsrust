@@ -29,19 +29,19 @@ import * as path from "path";
  * @property {string} [ir]
  * @property {object} [ast]
  * @property {object} [hir]
+ * @property {import('./ir.js').IRModule} [module]
  */
 
 /**
- * Compile a Rust source string to SSA IR
+ * Compile a Rust source string to SSA IR module
  * @param {string} source
- * @param {CompileOptions} [options={}]
+ * @param {{ emitAst?: boolean, emitHir?: boolean, validate?: boolean }} [options={}]
  * @returns {CompileResult}
  */
-function compile(source, options = {}) {
+function compileToIRModule(source, options = {}) {
     const {
         emitAst = false,
         emitHir = false,
-        emitIR = true,
         validate = true,
     } = options;
 
@@ -125,7 +125,7 @@ function compile(source, options = {}) {
 
     // Build result
     /** @type {CompileResult} */
-    const result = { ok: true, errors: [] };
+    const result = { ok: true, errors: [], module: irModule };
 
     if (emitAst) {
         result.ast = ast;
@@ -135,20 +135,36 @@ function compile(source, options = {}) {
         result.hir = hirModule;
     }
 
-    if (emitIR) {
-        result.ir = printIRModule(irModule);
+    return result;
+}
+
+/**
+ * Compile a Rust source string to SSA IR
+ * @param {string} source
+ * @param {CompileOptions} [options={}]
+ * @returns {CompileResult}
+ */
+function compile(source, options = {}) {
+    const { emitIR = true } = options;
+    const result = compileToIRModule(source, options);
+    if (!result.ok) {
+        return result;
+    }
+
+    if (emitIR && result.module) {
+        result.ir = printIRModule(result.module);
     }
 
     return result;
 }
 
 /**
- * Compile a file
+ * Compile a file to SSA IR module
  * @param {string} filePath
- * @param {CompileOptions} [options={}]
+ * @param {{ emitAst?: boolean, emitHir?: boolean, validate?: boolean }} [options={}]
  * @returns {CompileResult}
  */
-function compileFile(filePath, options = {}) {
+function compileFileToIRModule(filePath, options = {}) {
     let source;
     try {
         source = fs.readFileSync(filePath, "utf-8");
@@ -158,7 +174,26 @@ function compileFile(filePath, options = {}) {
             errors: [`Failed to read file: ${filePath}: ${e.message}`],
         };
     }
-    return compile(source, options);
+    return compileToIRModule(source, options);
+}
+
+/**
+ * Compile a file
+ * @param {string} filePath
+ * @param {CompileOptions} [options={}]
+ * @returns {CompileResult}
+ */
+function compileFile(filePath, options = {}) {
+    const result = compileFileToIRModule(filePath, options);
+    if (!result.ok) {
+        return result;
+    }
+
+    if (options.emitIR !== false && result.module) {
+        result.ir = printIRModule(result.module);
+    }
+
+    return result;
 }
 
 // CLI entry point
@@ -268,7 +303,7 @@ function main() {
     }
 }
 
-export { compile, compileFile };
+export { compile, compileFile, compileToIRModule, compileFileToIRModule };
 
 // Run CLI if this is the main module
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -81,16 +81,18 @@ function ok(value) {
 class IRDeserializer {
     /**
      * @param {ArrayBuffer} buffer
+     * @param {number} [byteOffset]
+     * @param {number} [byteLength]
      */
-    constructor(buffer) {
+    constructor(buffer, byteOffset = 0, byteLength = buffer.byteLength - byteOffset) {
         /** @type {DataView} */
-        this.view = new DataView(buffer);
+        this.view = new DataView(buffer, byteOffset, byteLength);
         /** @type {number} */
         this.pos = 0;
         /** @type {string[]} */
         this.strings = [];
         /** @type {number} */
-        this.end = buffer.byteLength;
+        this.end = byteLength;
     }
 
     /**
@@ -256,7 +258,11 @@ class IRDeserializer {
      * @returns {Uint8Array}
      */
     readBytes(count) {
-        const bytes = new Uint8Array(this.view.buffer, this.pos, count);
+        const bytes = new Uint8Array(
+            this.view.buffer,
+            this.view.byteOffset + this.pos,
+            count,
+        );
         this.pos += count;
         return bytes;
     }
@@ -955,7 +961,11 @@ class IRDeserializer {
  * @returns {Result<IRModule>}
  */
 function deserializeModule(data) {
-    const deserializer = new IRDeserializer(data.buffer);
+    const deserializer = new IRDeserializer(
+        data.buffer,
+        data.byteOffset,
+        data.byteLength,
+    );
     return deserializer.deserializeModule();
 }
 

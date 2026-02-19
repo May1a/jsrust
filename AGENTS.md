@@ -16,7 +16,7 @@ See `plans/README.md` for the current planning structure.
 ## Plan Status
 
 - future/01-new-backend.md not started
-- active/01-prepare-backend.md not started
+- active/01-prepare-backend.md complete
 - active/02-compiler-progress.md initialized
 
 ## Important
