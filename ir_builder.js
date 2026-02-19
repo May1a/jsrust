@@ -573,7 +573,9 @@ export class IRBuilder {
         // Verify all blocks sealed
         for (const block of this.currentFunction.blocks) {
             if (!this.sealedBlocks.has(block.id)) {
-                console.warn(`Block ${block.id} not sealed`);
+                if (process?.env?.TEST_VERBOSE === "1") {
+                    console.warn(`Block ${block.id} not sealed`);
+                }
             }
         }
 

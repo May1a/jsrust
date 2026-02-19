@@ -101,11 +101,8 @@ function testLowerIfWithElse() {
     const hir = lowerIf(ctx, ast, typeCtx);
 
     assertEqual(hir.kind, HExprKind.If, "Should be an if expression");
-    assertEqual(
-        hir.elseBranch.kind,
-        HExprKind.Unit,
-        "Else should be a block (unit expr wrapper)",
-    );
+    assertTrue(hir.elseBranch !== null, "Else branch should exist");
+    assertEqual(hir.elseBranch.ty.kind, TypeKind.Unit, "Else block should be unit-typed");
 }
 
 function testLowerIfWithFinalExpr() {

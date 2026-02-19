@@ -59,9 +59,10 @@ import { runDiagnosticsCollectionTests } from "./diagnostics/collection.js";
 import { runDiagnosticsRenderingTests } from "./diagnostics/rendering.js";
 import { runE2ETests } from "./e2e.js";
 
-const { printSummary, clearErrors } = lib;
+const { printSummary, clearErrors, beginRun, endRun } = lib;
 
 clearErrors();
+beginRun();
 
 runKeywordsTests();
 runLiteralsTests();
@@ -123,5 +124,6 @@ runDiagnosticsCollectionTests();
 runDiagnosticsRenderingTests();
 runE2ETests();
 
+endRun();
 const success = printSummary();
 process.exit(success ? 0 : 1);
