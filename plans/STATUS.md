@@ -58,7 +58,7 @@ Track completion of all tasks. Mark with:
 
 ### 12-validation.md
 
-- [~] All tasks (depends on 07-ssa-ir, 09-hir-to-ssa)
+- [x] All tasks (depends on 07-ssa-ir, 09-hir-to-ssa)
 
 ### 13-diagnostics.md
 
