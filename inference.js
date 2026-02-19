@@ -1,7 +1,7 @@
 /** @typedef {import("./types.js").Type} Type */
 /** @typedef {import("./types.js").Span} Span */
 /** @typedef {import("./ast.js").Node} Node */
-/** @typedef {import("./type_context.js").TypeContext} TypeContext */
+/** @typedef {import("./type_context.js").TypeContext} TypeContextModel */
 
 import {
     TypeKind,

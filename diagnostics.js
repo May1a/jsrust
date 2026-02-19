@@ -342,10 +342,7 @@ function createCollector() {
 /**
  * @template T
  * @template E
- * @typedef {object} Result
- * @property {boolean} ok - True if successful
- * @property {T} [value] - The success value
- * @property {E} [error] - The error value
+ * @typedef {{ ok: true, value: T } | { ok: false, error: E }} Result
  */
 
 /**
@@ -434,7 +431,7 @@ function map(result, fn) {
     if (result.ok) {
         return ok$1(fn(result.value));
     }
-    return result;
+    return /** @type {Result<U, E>} */ (result);
 }
 
 /**
@@ -450,7 +447,7 @@ function mapErr(result, fn) {
     if (!result.ok) {
         return err$1(fn(result.error));
     }
-    return result;
+    return /** @type {Result<T, F>} */ (result);
 }
 
 /**
@@ -466,7 +463,7 @@ function andThen(result, fn) {
     if (result.ok) {
         return fn(result.value);
     }
-    return result;
+    return /** @type {Result<U, E>} */ (result);
 }
 
 /**
@@ -477,7 +474,9 @@ function andThen(result, fn) {
  * @returns {Result<T[], E[]>}
  */
 function combineResults$1(results) {
+    /** @type {T[]} */
     const values = [];
+    /** @type {E[]} */
     const errors = [];
 
     for (const result of results) {
@@ -509,7 +508,7 @@ class SourceContext {
     constructor(source, file) {
         this.source = source;
         this.file = file;
-        /** @type {string[]} */
+        /** @type {string[] | null} */
         this._lines = null;
     }
 

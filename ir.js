@@ -9,6 +9,12 @@
 /** @typedef {number} FloatWidthValue */
 /** @typedef {number} IcmpOpValue */
 /** @typedef {number} FcmpOpValue */
+/** @typedef {any} IRType */
+/** @typedef {any} IRInst */
+/** @typedef {any} IRTerm */
+/** @typedef {any} IRBlock */
+/** @typedef {any} IRFunction */
+/** @typedef {any} IRModule */
 
 import { IntWidth, FloatWidth } from "./types.js";
 
