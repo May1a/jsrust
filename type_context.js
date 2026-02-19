@@ -27,6 +27,13 @@ import { TypeKind, makeTypeVar } from "./types.js";
  */
 
 /**
+ * @typedef {object} LoopContext
+ * @property {boolean} allowsBreakValue
+ * @property {Type | null} breakType
+ * @property {boolean} hasBreak
+ */
+
+/**
  * @typedef {{ line: number, column: number, start: number, end: number }} Span
  */
 
@@ -59,6 +66,9 @@ class TypeContext {
 
         /** @type {Map<string, Type>} - Interned types for deduplication */
         this.internedTypes = new Map();
+
+        /** @type {LoopContext[]} */
+        this.loopStack = [];
     }
 
     // ========================================================================
@@ -281,6 +291,43 @@ class TypeContext {
      */
     getCurrentReturnType() {
         return this.currentReturnType;
+    }
+
+    // ========================================================================
+    // Loop Tracking
+    // ========================================================================
+
+    /**
+     * Enter a loop context
+     * @param {boolean} allowsBreakValue
+     * @param {Type | null} [breakType=null]
+     * @returns {void}
+     */
+    enterLoop(allowsBreakValue, breakType = null) {
+        this.loopStack.push({
+            allowsBreakValue,
+            breakType,
+            hasBreak: false,
+        });
+    }
+
+    /**
+     * Exit the current loop context
+     * @returns {LoopContext | null}
+     */
+    exitLoop() {
+        return this.loopStack.pop() || null;
+    }
+
+    /**
+     * Get current loop context
+     * @returns {LoopContext | null}
+     */
+    currentLoop() {
+        if (this.loopStack.length === 0) {
+            return null;
+        }
+        return this.loopStack[this.loopStack.length - 1];
     }
 
     // ========================================================================

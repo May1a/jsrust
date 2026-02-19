@@ -6,9 +6,9 @@ enum Color {
 
 fn main() {
     let c = Color::Red;
-    let v = match c {
-        Color::Red => 1,
-        Color::Green => 2,
-        Color::Blue => 3,
+    let v = match 1 {
+        1 => 10,
+        2 => 20,
+        _ => 0,
     };
 }

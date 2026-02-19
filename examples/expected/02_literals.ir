@@ -1,0 +1,12 @@
+; Module: root
+
+fn main() -> () {
+
+    block0:
+        v0 = iconst i32 42
+        v1 = fconst f64 3.14
+        v2 = bconst true
+        v3 = null
+        ret
+
+}

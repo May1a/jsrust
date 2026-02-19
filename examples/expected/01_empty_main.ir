@@ -1,0 +1,8 @@
+; Module: root
+
+fn main() -> () {
+
+    block0:
+        ret
+
+}

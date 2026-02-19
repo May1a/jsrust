@@ -1,5 +1,10 @@
 import { TypeContext } from "../../type_context.js";
-import { checkStmt, checkLetStmt, inferBlock } from "../../inference.js";
+import {
+    checkStmt,
+    checkLetStmt,
+    inferBlock,
+    inferExpr,
+} from "../../inference.js";
 import { NodeKind, LiteralKind, Mutability } from "../../ast.js";
 import { TypeKind, IntWidth, makeIntType, makeUnitType } from "../../types.js";
 import { assert, assertEq, testGroup } from "../lib.js";
@@ -54,6 +59,40 @@ function makeBlockExpr(stmts, expr) {
         span: makeSpan(),
         stmts,
         expr,
+    };
+}
+
+function makeLoopExpr(body) {
+    return {
+        kind: NodeKind.LoopExpr,
+        span: makeSpan(),
+        label: null,
+        body,
+    };
+}
+
+function makeWhileExpr(condition, body) {
+    return {
+        kind: NodeKind.WhileExpr,
+        span: makeSpan(),
+        label: null,
+        condition,
+        body,
+    };
+}
+
+function makeBreakExpr(value = null) {
+    return {
+        kind: NodeKind.BreakExpr,
+        span: makeSpan(),
+        value,
+    };
+}
+
+function makeContinueExpr() {
+    return {
+        kind: NodeKind.ContinueExpr,
+        span: makeSpan(),
     };
 }
 
@@ -151,8 +190,44 @@ testGroup("Block Inference", () => {
     });
 });
 
+testGroup("Loop Control Flow Inference", () => {
+    assert("break outside loop fails", () => {
+        const ctx = new TypeContext();
+        const result = inferExpr(ctx, makeBreakExpr());
+        assert(!result.ok);
+    });
+
+    assert("continue outside loop fails", () => {
+        const ctx = new TypeContext();
+        const result = inferExpr(ctx, makeContinueExpr());
+        assert(!result.ok);
+    });
+
+    assert("loop with break value yields break type", () => {
+        const ctx = new TypeContext();
+        const body = makeBlockExpr(
+            [makeExprStmt(makeBreakExpr(makeLiteralExpr(LiteralKind.Int, 7, "7")))],
+            null,
+        );
+        const result = inferExpr(ctx, makeLoopExpr(body));
+        assert(result.ok);
+        assertEq(result.type.kind, TypeKind.Int);
+    });
+
+    assert("while does not allow break value", () => {
+        const ctx = new TypeContext();
+        const condition = makeLiteralExpr(LiteralKind.Bool, true, "true");
+        const body = makeBlockExpr(
+            [makeExprStmt(makeBreakExpr(makeLiteralExpr(LiteralKind.Int, 1, "1")))],
+            null,
+        );
+        const result = inferExpr(ctx, makeWhileExpr(condition, body));
+        assert(!result.ok);
+    });
+});
+
 console.log("Statement inference tests complete");
 
 export function runInferenceStatementsTests() {
-    return 7; // Number of tests
+    return 11; // Number of tests
 }

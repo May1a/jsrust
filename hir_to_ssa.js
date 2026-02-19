@@ -135,7 +135,9 @@ export class HirToSsaCtx {
 
             // Add implicit return if needed
             if (!this.builder.currentBlock.terminator) {
-                if (result !== null) {
+                if (this.returnType?.kind === IRTypeKind.Unit) {
+                    this.builder.ret(null);
+                } else if (result !== null) {
                     this.builder.ret(result);
                 } else {
                     this.builder.ret(null);
@@ -980,7 +982,10 @@ export class HirToSsaCtx {
         const elseId = expr.elseBranch
             ? this.builder.createBlock("else")
             : null;
-        const mergeId = this.builder.createBlock("merge");
+        const mergeId = this.builder.createBlock(
+            "merge",
+            hasResult ? [resultTy] : [],
+        );
 
         // Evaluate condition
         const cond = this.lowerExpr(expr.condition);
@@ -996,10 +1001,14 @@ export class HirToSsaCtx {
         this.builder.switchToBlock(thenId);
         const thenResult = this.lowerBlock(expr.thenBranch);
         if (!this.builder.currentBlock.terminator) {
-            this.builder.br(
-                mergeId,
-                hasResult && thenResult !== null ? [thenResult] : [],
-            );
+            if (hasResult) {
+                if (thenResult === null) {
+                    throw new Error("If then branch is missing result value");
+                }
+                this.builder.br(mergeId, [thenResult]);
+            } else {
+                this.builder.br(mergeId);
+            }
         }
         this.builder.sealBlock(thenId);
 
@@ -1009,10 +1018,16 @@ export class HirToSsaCtx {
             this.builder.switchToBlock(elseId);
             elseResult = this.lowerBlock(expr.elseBranch);
             if (!this.builder.currentBlock.terminator) {
-                this.builder.br(
-                    mergeId,
-                    hasResult && elseResult !== null ? [elseResult] : [],
-                );
+                if (hasResult) {
+                    if (elseResult === null) {
+                        throw new Error(
+                            "If else branch is missing result value",
+                        );
+                    }
+                    this.builder.br(mergeId, [elseResult]);
+                } else {
+                    this.builder.br(mergeId);
+                }
             }
             this.builder.sealBlock(elseId);
         }
@@ -1021,15 +1036,12 @@ export class HirToSsaCtx {
         this.builder.switchToBlock(mergeId);
         this.builder.sealBlock(mergeId);
 
-        // Return result (in a full implementation, this would be a phi node)
         if (hasResult) {
-            // For now, return a placeholder value
-            // A proper implementation would insert phi nodes
-            return (
-                thenResult ??
-                elseResult ??
-                this.builder.iconst(0, IntWidth.I32).id
-            );
+            const mergeBlock = this.builder.currentBlock;
+            if (!mergeBlock || mergeBlock.params.length !== 1) {
+                throw new Error("If merge block is missing result parameter");
+            }
+            return mergeBlock.params[0].id;
         }
 
         return this.builder.iconst(0, IntWidth.I8).id;
@@ -1115,8 +1127,12 @@ export class HirToSsaCtx {
         for (let i = 0; i < arms.length; i++) {
             const arm = arms[i];
             if (arm.pat.kind === HPatKind.Literal) {
+                const caseValue = this.builder.iconst(
+                    Number(arm.pat.value),
+                    IntWidth.I32,
+                ).id;
                 cases.push({
-                    value: arm.pat.value,
+                    value: caseValue,
                     target: armBlocks[i],
                     args: [],
                 });
@@ -1201,8 +1217,12 @@ export class HirToSsaCtx {
                     expr.scrutinee.ty,
                     arm.pat.name,
                 );
+                const caseValue = this.builder.iconst(
+                    variantIndex,
+                    IntWidth.I32,
+                ).id;
                 cases.push({
-                    value: variantIndex,
+                    value: caseValue,
                     target: armBlocks[i],
                     args: [],
                 });

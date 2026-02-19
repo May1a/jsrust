@@ -1680,19 +1680,25 @@ function inferBlock(ctx, block) {
  * @returns {InferenceResult}
  */
 function inferLoop(ctx, loopExpr) {
+    ctx.enterLoop(true, null);
     ctx.pushScope();
 
     const bodyResult = inferExpr(ctx, loopExpr.body);
     if (!bodyResult.ok) {
         ctx.popScope();
+        ctx.exitLoop();
         return bodyResult;
     }
 
     ctx.popScope();
-
-    // Loop can return any type via break
-    // For now, return never type (diverges)
-    return ok(makeNeverType(loopExpr.span));
+    const loopCtx = ctx.exitLoop();
+    if (!loopCtx || !loopCtx.hasBreak) {
+        return ok(makeNeverType(loopExpr.span));
+    }
+    if (!loopCtx.breakType) {
+        return ok(makeUnitType(loopExpr.span));
+    }
+    return ok(ctx.resolveType(loopCtx.breakType));
 }
 
 /**
@@ -1712,9 +1718,11 @@ function inferWhile(ctx, whileExpr) {
         return { ok: false, errors: [condUnify.error] };
     }
 
+    ctx.enterLoop(false, null);
     ctx.pushScope();
     const bodyResult = inferExpr(ctx, whileExpr.body);
     ctx.popScope();
+    ctx.exitLoop();
 
     if (!bodyResult.ok) return bodyResult;
 
@@ -1732,12 +1740,14 @@ function inferFor(ctx, forExpr) {
     const iterResult = inferExpr(ctx, forExpr.iter);
     if (!iterResult.ok) return iterResult;
 
+    ctx.enterLoop(false, null);
     ctx.pushScope();
 
     // Bind pattern variable
     const patResult = inferPattern(ctx, forExpr.pat);
     if (!patResult.ok) {
         ctx.popScope();
+        ctx.exitLoop();
         return patResult;
     }
 
@@ -1745,6 +1755,7 @@ function inferFor(ctx, forExpr) {
 
     const bodyResult = inferExpr(ctx, forExpr.body);
     ctx.popScope();
+    ctx.exitLoop();
 
     if (!bodyResult.ok) return bodyResult;
 
@@ -1790,8 +1801,40 @@ function inferReturn(ctx, returnExpr) {
  * @returns {InferenceResult}
  */
 function inferBreak(ctx, breakExpr) {
-    // TODO: Check that we're in a loop
-    // TODO: Handle break with value
+    const loopCtx = ctx.currentLoop();
+    if (!loopCtx) {
+        return err("Break outside of loop", breakExpr.span);
+    }
+
+    loopCtx.hasBreak = true;
+
+    if (breakExpr.value) {
+        if (!loopCtx.allowsBreakValue) {
+            return err(
+                "Break with value is only allowed in loop expressions",
+                breakExpr.span,
+            );
+        }
+        const valueResult = inferExpr(ctx, breakExpr.value);
+        if (!valueResult.ok) return valueResult;
+
+        if (!loopCtx.breakType) {
+            loopCtx.breakType = valueResult.type;
+        } else {
+            const unifyResult = unify(ctx, valueResult.type, loopCtx.breakType);
+            if (!unifyResult.ok) {
+                return { ok: false, errors: [unifyResult.error] };
+            }
+        }
+    } else if (loopCtx.allowsBreakValue && loopCtx.breakType) {
+        const unifyResult = unify(ctx, makeUnitType(), loopCtx.breakType);
+        if (!unifyResult.ok) {
+            return { ok: false, errors: [unifyResult.error] };
+        }
+    } else if (loopCtx.allowsBreakValue) {
+        loopCtx.breakType = makeUnitType();
+    }
+
     return ok(makeNeverType(breakExpr.span));
 }
 
@@ -1802,7 +1845,11 @@ function inferBreak(ctx, breakExpr) {
  * @returns {InferenceResult}
  */
 function inferContinue(ctx, continueExpr) {
-    // TODO: Check that we're in a loop
+    const loopCtx = ctx.currentLoop();
+    if (!loopCtx) {
+        return err("Continue outside of loop", continueExpr.span);
+    }
+
     return ok(makeNeverType(continueExpr.span));
 }
 

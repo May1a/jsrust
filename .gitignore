@@ -1,3 +1,8 @@
 node_modules/
 package-lock.json
 telemetry-id
+backend/bin/
+backend/src/*.o
+backend/tests/*.o
+backend/tests/tmp_*.bin
+backend/tests/tmp_*.txt

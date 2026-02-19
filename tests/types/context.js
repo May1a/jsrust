@@ -229,6 +229,23 @@ test("getCurrentReturnType returns current return type", () => {
     assertTrue(ctx.getCurrentReturnType() === retType);
 });
 
+test("loop tracking enters and exits loop context", () => {
+    const ctx = new TypeContext();
+    assertTrue(ctx.currentLoop() === null);
+
+    const breakType = makeIntType(2);
+    ctx.enterLoop(true, breakType);
+    const loop = ctx.currentLoop();
+    assertTrue(loop !== null);
+    assertTrue(loop.allowsBreakValue);
+    assertTrue(loop.breakType === breakType);
+    assertTrue(!loop.hasBreak);
+
+    const exited = ctx.exitLoop();
+    assertTrue(exited !== null);
+    assertTrue(ctx.currentLoop() === null);
+});
+
 // ============================================================================
 // Type Variable Management
 // ============================================================================
