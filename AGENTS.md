@@ -1,6 +1,7 @@
 # JSRust - Rust compiler in JavaScript
 
 A Rust compiler written in pure JavaScript with no dependencies.
+Will be moved to use custom backend
 
 ## Plans
 
@@ -34,7 +35,7 @@ Please keep this `AGENTS.md` up to date with the latest plans.
 ## Running
 
 ```bash
-npm run compile
+npm run compile <file>
 ```
 
 ## Testing
@@ -48,7 +49,7 @@ npm run test
 - Simple Rust examples live in `examples/`
 - The test suite compiles every `examples/*.rs` file via `tests/examples.js`
 
-## TypeChecking
+## TypeChecking (important)
 
 ```bash
 npm run typecheck
