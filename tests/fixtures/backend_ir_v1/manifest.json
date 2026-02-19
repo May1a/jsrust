@@ -1,0 +1,42 @@
+{
+    "contractVersion": 1,
+    "generatedBy": "scripts/generate_backend_fixtures.js",
+    "fixtures": [
+        {
+            "source": "01_empty_main.rs",
+            "artifact": "01_empty_main.bin",
+            "bytes": 95,
+            "sha256": "3bfbd8db5fbd68d5ca7db756b84404758f373dc54ede1aa69a2f982c32f42d32"
+        },
+        {
+            "source": "02_literals.rs",
+            "artifact": "02_literals.bin",
+            "bytes": 138,
+            "sha256": "d0b1346eacc775033e577cba9a6366d4ac6ead0bd6be4dd06aecb7c4d59d6531"
+        },
+        {
+            "source": "03_arithmetic.rs",
+            "artifact": "03_arithmetic.bin",
+            "bytes": 260,
+            "sha256": "05d57d9cb5259103916271aab12913be1fdee6e4a9bb09c0f8f06bc8468e6fab"
+        },
+        {
+            "source": "04_functions.rs",
+            "artifact": "04_functions.bin",
+            "bytes": 234,
+            "sha256": "d9d958e325b8ccb9c9f217e65bd68e35aaf1b90ad569fa5976eea9b36717a465"
+        },
+        {
+            "source": "07_structs.rs",
+            "artifact": "07_structs.bin",
+            "bytes": 170,
+            "sha256": "71532f2e283ba37c553e333a01b7566e525a92029f23ca733313e3d73f1e53a9"
+        },
+        {
+            "source": "09_references.rs",
+            "artifact": "09_references.bin",
+            "bytes": 165,
+            "sha256": "0c945626b9818ff0ea6077b5d3c61132352960b2401d4d30088d447c23e961f4"
+        }
+    ]
+}

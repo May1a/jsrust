@@ -1,0 +1,25 @@
+; Module: root
+
+fn main() -> () {
+
+    block0:
+        v0 = enum_create Color, variant 0
+        v1 = iconst i32 1
+        v2 = iconst i32 1
+        v3 = iconst i32 2
+        switch v1 { v2 => block2(), v3 => block3(), default: block4() }
+
+    block1:
+        v4 = iconst i8 0
+        ret
+
+    block2:
+        br block1
+
+    block3:
+        br block1
+
+    block4:
+        br block1
+
+}

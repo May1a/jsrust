@@ -26,7 +26,7 @@ Use this table for ongoing tracking:
 
 | Area | Done | In Progress | Blocked | Next |
 | ---- | ---- | ----------- | ------- | ---- |
-| Frontend Language Coverage | Baseline subset implemented |  |  | Add missing Rust subset priorities |
+| Frontend Language Coverage | Baseline subset implemented; loop `break`/`continue` semantics in type inference improved (`break <expr>` for `loop`) |  |  | Add missing Rust subset priorities |
 | Type/Semantic Analysis | Core local inference implemented |  |  | Strengthen semantic checks and diagnostics |
 | IR and Binary Contract | Core SSA + binary pipeline implemented |  |  | Lock schema/version contract for backend |
 | Backend Integration |  |  | C backend not yet started | Implement backend submodule and interface |

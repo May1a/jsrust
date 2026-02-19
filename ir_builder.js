@@ -132,13 +132,17 @@ export class IRBuilder {
 
     /**
      * @param {string | null} [name]
+     * @param {IRType[]} [paramTypes=[]]
      * @returns {BlockId}
      */
-    createBlock(name = null) {
+    createBlock(name = null, paramTypes = []) {
         const blockId = this.nextBlockId++;
         const block = makeIRBlock(blockId);
         if (name) {
             block.name = name;
+        }
+        for (const ty of paramTypes) {
+            addIRBlockParam(block, this.nextValueId++, ty);
         }
         if (this.currentFunction) {
             addIRBlock(this.currentFunction, block);

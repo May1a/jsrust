@@ -1,0 +1,12 @@
+; Module: root
+
+fn main() -> () {
+
+    block0:
+        v0 = iconst i32 1
+        v1 = iconst i32 2
+        v2 = struct_create Point { v0, v1 }
+        v3 = struct_get v2, 0
+        ret
+
+}
