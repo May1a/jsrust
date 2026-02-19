@@ -42,7 +42,7 @@ Track completion of all tasks. Mark with:
 - [x] All tasks (depends on 07-ssa-ir)
 
 ### 11-binary-format.md
-- [ ] All tasks (depends on 07-ssa-ir, 10-memory-layout)
+- [x] All tasks (depends on 07-ssa-ir, 10-memory-layout)
 
 ### 12-validation.md
 - [ ] All tasks (depends on 07-ssa-ir, 09-hir-to-ssa)

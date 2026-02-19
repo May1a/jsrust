@@ -27,6 +27,10 @@ import { runMemoryStructsTests } from "./memory/structs.js";
 import { runMemoryEnumsTests } from "./memory/enums.js";
 import { runMemoryArraysTests } from "./memory/arrays.js";
 import { runMemoryStackAllocTests } from "./memory/stack_alloc.js";
+import { runPrimitivesTests } from "./binary/primitives.js";
+import { runTypesTests } from "./binary/types.js";
+import { runInstructionsTests } from "./binary/instructions.js";
+import { runRoundtripTests } from "./binary/roundtrip.js";
 
 const { printSummary, clearErrors } = lib;
 
@@ -62,6 +66,10 @@ totalTests += runMemoryStructsTests();
 totalTests += runMemoryEnumsTests();
 totalTests += runMemoryArraysTests();
 totalTests += runMemoryStackAllocTests();
+totalTests += runPrimitivesTests();
+totalTests += runTypesTests();
+totalTests += runInstructionsTests();
+totalTests += runRoundtripTests();
 
 const success = printSummary(totalTests);
 process.exit(success ? 0 : 1);
