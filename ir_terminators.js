@@ -2,7 +2,7 @@
 /** @typedef {import('./ir.js').BlockId} BlockId */
 /** @typedef {import('./ir.js').IRType} IRType */
 
-import { IRTermKind } from './ir.js';
+import { IRTermKind } from "./ir.js";
 
 function makeRet(value) {
     return {
@@ -55,7 +55,12 @@ function makeUnreachable() {
 }
 
 function isIRTerminator(node) {
-    return node && typeof node.kind === 'number' && node.kind >= IRTermKind.Ret && node.kind <= IRTermKind.Unreachable;
+    return (
+        node &&
+        typeof node.kind === "number" &&
+        node.kind >= IRTermKind.Ret &&
+        node.kind <= IRTermKind.Unreachable
+    );
 }
 
 export {

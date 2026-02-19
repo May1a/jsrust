@@ -1,7 +1,13 @@
 import { TypeContext } from "../../type_context.js";
 import { inferModule, inferFnSignature, checkFnItem } from "../../inference.js";
 import { NodeKind, LiteralKind, Mutability } from "../../ast.js";
-import { TypeKind, IntWidth, makeIntType, makeFnType, makeUnitType } from "../../types.js";
+import {
+    TypeKind,
+    IntWidth,
+    makeIntType,
+    makeFnType,
+    makeUnitType,
+} from "../../types.js";
 import { assert, assertEq, testGroup } from "../lib.js";
 
 function makeSpan(line = 1, column = 1, start = 0, end = 0) {
@@ -55,7 +61,15 @@ function makeParam(name, ty) {
     };
 }
 
-function makeFnItem(name, generics, params, returnType, body, isAsync = false, isUnsafe = false) {
+function makeFnItem(
+    name,
+    generics,
+    params,
+    returnType,
+    body,
+    isAsync = false,
+    isUnsafe = false,
+) {
     return {
         kind: NodeKind.FnItem,
         span: makeSpan(),
@@ -119,14 +133,23 @@ testGroup("Function Body Checking", () => {
     assert("simple return function", () => {
         const ctx = new TypeContext();
         const params = [];
-        const body = makeBlockExpr([], makeLiteralExpr(LiteralKind.Int, 42, "42"));
-        const fn = makeFnItem("answer", null, params, makeNamedType("i32"), body);
-        
+        const body = makeBlockExpr(
+            [],
+            makeLiteralExpr(LiteralKind.Int, 42, "42"),
+        );
+        const fn = makeFnItem(
+            "answer",
+            null,
+            params,
+            makeNamedType("i32"),
+            body,
+        );
+
         // Register function first
         const sigResult = inferFnSignature(ctx, fn);
         assert(sigResult.ok);
         ctx.registerFn("answer", fn, sigResult.type);
-        
+
         const result = checkFnItem(ctx, fn);
         assert(result.ok);
     });
@@ -145,11 +168,11 @@ testGroup("Function Body Checking", () => {
             right: makeIdentifierExpr("y"),
         });
         const fn = makeFnItem("add", null, params, makeNamedType("i32"), body);
-        
+
         const sigResult = inferFnSignature(ctx, fn);
         assert(sigResult.ok);
         ctx.registerFn("add", fn, sigResult.type);
-        
+
         const result = checkFnItem(ctx, fn);
         assert(result.ok);
     });
@@ -166,7 +189,10 @@ testGroup("Module Inference", () => {
 
     assert("module with simple function", () => {
         const ctx = new TypeContext();
-        const body = makeBlockExpr([], makeLiteralExpr(LiteralKind.Int, 42, "42"));
+        const body = makeBlockExpr(
+            [],
+            makeLiteralExpr(LiteralKind.Int, 42, "42"),
+        );
         const fn = makeFnItem("answer", null, [], makeNamedType("i32"), body);
         const module = makeModule("test", [fn]);
         const result = inferModule(ctx, module);

@@ -1,4 +1,10 @@
-import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib.js";
+import {
+    test,
+    assertEqual,
+    assertTrue,
+    getResults,
+    clearErrors,
+} from "../lib.js";
 import {
     TypeKind,
     IntWidth,
@@ -255,7 +261,7 @@ test("makeFnType creates function types", () => {
     const fn = makeFnType(
         [makeIntType(IntWidth.I32), makeBoolType()],
         makeUnitType(),
-        false
+        false,
     );
     assertEqual(fn.kind, TypeKind.Fn);
     assertEqual(fn.params.length, 2);
@@ -265,7 +271,11 @@ test("makeFnType creates function types", () => {
 });
 
 test("makeFnType creates unsafe function types", () => {
-    const fn = makeFnType([makeIntType(IntWidth.I32)], makeIntType(IntWidth.I32), true);
+    const fn = makeFnType(
+        [makeIntType(IntWidth.I32)],
+        makeIntType(IntWidth.I32),
+        true,
+    );
     assertEqual(fn.isUnsafe, true);
     assertEqual(typeToString(fn), "unsafe fn(i32) -> i32");
 });
@@ -333,16 +343,27 @@ test("makeNamedType creates named types with args", () => {
 // ============================================================================
 
 test("typeEquals returns true for identical primitive types", () => {
-    assertTrue(typeEquals(makeIntType(IntWidth.I32), makeIntType(IntWidth.I32)));
-    assertTrue(typeEquals(makeFloatType(FloatWidth.F64), makeFloatType(FloatWidth.F64)));
+    assertTrue(
+        typeEquals(makeIntType(IntWidth.I32), makeIntType(IntWidth.I32)),
+    );
+    assertTrue(
+        typeEquals(
+            makeFloatType(FloatWidth.F64),
+            makeFloatType(FloatWidth.F64),
+        ),
+    );
     assertTrue(typeEquals(makeBoolType(), makeBoolType()));
     assertTrue(typeEquals(makeUnitType(), makeUnitType()));
     assertTrue(typeEquals(makeNeverType(), makeNeverType()));
 });
 
 test("typeEquals returns false for different primitive types", () => {
-    assertTrue(!typeEquals(makeIntType(IntWidth.I32), makeIntType(IntWidth.I64)));
-    assertTrue(!typeEquals(makeIntType(IntWidth.I32), makeFloatType(FloatWidth.F32)));
+    assertTrue(
+        !typeEquals(makeIntType(IntWidth.I32), makeIntType(IntWidth.I64)),
+    );
+    assertTrue(
+        !typeEquals(makeIntType(IntWidth.I32), makeFloatType(FloatWidth.F32)),
+    );
     assertTrue(!typeEquals(makeBoolType(), makeUnitType()));
 });
 

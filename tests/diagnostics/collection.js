@@ -25,7 +25,13 @@ import {
     makeSourceSpanFromLC,
 } from "../../diagnostics.js";
 
-import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib.js";
+import {
+    test,
+    assertEqual,
+    assertTrue,
+    getResults,
+    clearErrors,
+} from "../lib.js";
 
 // ============================================================================
 // DiagnosticCollector Tests

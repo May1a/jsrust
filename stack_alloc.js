@@ -1,6 +1,6 @@
 /**
  * Stack Allocation
- * 
+ *
  * Allocates stack slots for local variables in functions.
  */
 
@@ -10,7 +10,7 @@
 /** @typedef {import('./memory_layout.js').TypeLayout} TypeLayout */
 /** @typedef {import('./memory_layout.js').LayoutCache} LayoutCache */
 
-import { LayoutCache } from './memory_layout.js';
+import { LayoutCache } from "./memory_layout.js";
 
 // ============================================================================
 // Task 10.10: Frame Layout
@@ -59,17 +59,20 @@ class StackAllocator {
      */
     allocSlot(local, layoutCache) {
         const layout = layoutCache.getLayout(local.ty);
-        
+
         // Update max alignment
         this.maxAlign = Math.max(this.maxAlign, layout.align);
-        
+
         // Align the offset (growing downward, so we align before allocation)
         // The offset is negative, so we need to subtract
-        const alignedOffset = alignDown(this.currentOffset - layout.size, layout.align);
-        
+        const alignedOffset = alignDown(
+            this.currentOffset - layout.size,
+            layout.align,
+        );
+
         this.currentOffset = alignedOffset;
         this.slots.set(local.id, alignedOffset);
-        
+
         return alignedOffset;
     }
 
@@ -166,15 +169,15 @@ function sortLocalsByAlignment(locals, layoutCache) {
  */
 function computeFrame(fn, layoutCache) {
     const allocator = new StackAllocator();
-    
+
     // Sort locals by alignment for better packing
     const sortedLocals = sortLocalsByAlignment(fn.locals, layoutCache);
-    
+
     // Allocate slots for each local
     for (const local of sortedLocals) {
         allocator.allocSlot(local, layoutCache);
     }
-    
+
     return allocator.getFrameLayout();
 }
 
@@ -186,26 +189,29 @@ function computeFrame(fn, layoutCache) {
  */
 function computeFrameWithParams(fn, layoutCache) {
     const allocator = new StackAllocator();
-    
+
     // First allocate parameters (in reverse order, so first param is at lowest address)
     const paramOffsets = [];
     for (let i = fn.params.length - 1; i >= 0; i--) {
         const param = fn.params[i];
         const layout = layoutCache.getLayout(param.ty);
         allocator.maxAlign = Math.max(allocator.maxAlign, layout.align);
-        const alignedOffset = alignDown(allocator.currentOffset - layout.size, layout.align);
+        const alignedOffset = alignDown(
+            allocator.currentOffset - layout.size,
+            layout.align,
+        );
         allocator.currentOffset = alignedOffset;
         paramOffsets[i] = alignedOffset;
     }
-    
+
     // Sort locals by alignment for better packing
     const sortedLocals = sortLocalsByAlignment(fn.locals, layoutCache);
-    
+
     // Allocate slots for each local
     for (const local of sortedLocals) {
         allocator.allocSlot(local, layoutCache);
     }
-    
+
     return {
         frame: allocator.getFrameLayout(),
         paramOffsets,

@@ -128,8 +128,27 @@ function makeHModule(span, name, items) {
  * @param {boolean} isUnsafe
  * @returns {HFnDecl}
  */
-function makeHFnDecl(span, name, generics, params, returnType, body, isAsync, isUnsafe) {
-    return { kind: HItemKind.Fn, span, name, generics, params, returnType, body, isAsync, isUnsafe };
+function makeHFnDecl(
+    span,
+    name,
+    generics,
+    params,
+    returnType,
+    body,
+    isAsync,
+    isUnsafe,
+) {
+    return {
+        kind: HItemKind.Fn,
+        span,
+        name,
+        generics,
+        params,
+        returnType,
+        body,
+        isAsync,
+        isUnsafe,
+    };
 }
 
 /**
@@ -607,7 +626,15 @@ function makeHStructExpr(span, name, fields, spread, ty) {
  * @returns {HEnumExpr}
  */
 function makeHEnumExpr(span, enumName, variantName, variantIndex, fields, ty) {
-    return { kind: HExprKind.Enum, span, enumName, variantName, variantIndex, fields, ty };
+    return {
+        kind: HExprKind.Enum,
+        span,
+        enumName,
+        variantName,
+        variantIndex,
+        fields,
+        ty,
+    };
 }
 
 // ============================================================================
@@ -810,36 +837,40 @@ function makeHMatchArm(span, pat, guard, body) {
  * @returns {string}
  */
 function hirToString(hir) {
-    if ('items' in hir) {
+    if ("items" in hir) {
         // HModule
-        return `module ${hir.name} {\n${hir.items.map(i => '  ' + hirToString(i)).join('\n')}\n}`;
+        return `module ${hir.name} {\n${hir.items.map((i) => "  " + hirToString(i)).join("\n")}\n}`;
     }
 
-    if ('kind' in hir) {
+    if ("kind" in hir) {
         // Check for item kinds
         if (hir.kind === HItemKind.Fn) {
             const fn = /** @type {HFnDecl} */ (hir);
-            const params = fn.params.map(p => `${p.name}: ${typeToString(p.ty)}`).join(', ');
-            const body = fn.body ? hirToString(fn.body) : ';';
+            const params = fn.params
+                .map((p) => `${p.name}: ${typeToString(p.ty)}`)
+                .join(", ");
+            const body = fn.body ? hirToString(fn.body) : ";";
             return `fn ${fn.name}(${params}) -> ${typeToString(fn.returnType)} ${body}`;
         }
 
         if (hir.kind === HItemKind.Struct) {
             const struct = /** @type {HStructDecl} */ (hir);
-            const fields = struct.fields.map(f => `${f.name}: ${typeToString(f.ty)}`).join(', ');
+            const fields = struct.fields
+                .map((f) => `${f.name}: ${typeToString(f.ty)}`)
+                .join(", ");
             return `struct ${struct.name} { ${fields} }`;
         }
 
         if (hir.kind === HItemKind.Enum) {
             const enum_ = /** @type {HEnumDecl} */ (hir);
-            const variants = enum_.variants.map(v => v.name).join(', ');
+            const variants = enum_.variants.map((v) => v.name).join(", ");
             return `enum ${enum_.name} { ${variants} }`;
         }
 
         // Check for statement kinds
         if (hir.kind === HStmtKind.Let) {
             const stmt = /** @type {HLetStmt} */ (hir);
-            const init = stmt.init ? ` = ${hirToString(stmt.init)}` : '';
+            const init = stmt.init ? ` = ${hirToString(stmt.init)}` : "";
             return `let ${hirToString(stmt.pat)}: ${typeToString(stmt.ty)}${init};`;
         }
 
@@ -855,16 +886,18 @@ function hirToString(hir) {
 
         if (hir.kind === HStmtKind.Return) {
             const stmt = /** @type {HReturnStmt} */ (hir);
-            return stmt.value ? `return ${hirToString(stmt.value)};` : 'return;';
+            return stmt.value
+                ? `return ${hirToString(stmt.value)};`
+                : "return;";
         }
 
         if (hir.kind === HStmtKind.Break) {
             const stmt = /** @type {HBreakStmt} */ (hir);
-            return stmt.value ? `break ${hirToString(stmt.value)};` : 'break;';
+            return stmt.value ? `break ${hirToString(stmt.value)};` : "break;";
         }
 
         if (hir.kind === HStmtKind.Continue) {
-            return 'continue;';
+            return "continue;";
         }
 
         // Check for place kinds
@@ -890,7 +923,7 @@ function hirToString(hir) {
 
         // Check for expression kinds
         if (hir.kind === HExprKind.Unit) {
-            return '()';
+            return "()";
         }
 
         if (hir.kind === HExprKind.Literal) {
@@ -915,7 +948,7 @@ function hirToString(hir) {
 
         if (hir.kind === HExprKind.Call) {
             const expr = /** @type {HCallExpr} */ (hir);
-            const args = expr.args.map(hirToString).join(', ');
+            const args = expr.args.map(hirToString).join(", ");
             return `${hirToString(expr.callee)}(${args})`;
         }
 
@@ -931,7 +964,7 @@ function hirToString(hir) {
 
         if (hir.kind === HExprKind.Ref) {
             const expr = /** @type {HRefExpr} */ (hir);
-            return `&${expr.mutable ? 'mut ' : ''}${hirToString(expr.operand)}`;
+            return `&${expr.mutable ? "mut " : ""}${hirToString(expr.operand)}`;
         }
 
         if (hir.kind === HExprKind.Deref) {
@@ -941,25 +974,31 @@ function hirToString(hir) {
 
         if (hir.kind === HExprKind.Struct) {
             const expr = /** @type {HStructExpr} */ (hir);
-            const fields = expr.fields.map(f => `${f.name}: ${hirToString(f.value)}`).join(', ');
+            const fields = expr.fields
+                .map((f) => `${f.name}: ${hirToString(f.value)}`)
+                .join(", ");
             return `${expr.name} { ${fields} }`;
         }
 
         if (hir.kind === HExprKind.Enum) {
             const expr = /** @type {HEnumExpr} */ (hir);
-            const fields = expr.fields.map(hirToString).join(', ');
+            const fields = expr.fields.map(hirToString).join(", ");
             return `${expr.enumName}::${expr.variantName}(${fields})`;
         }
 
         if (hir.kind === HExprKind.If) {
             const expr = /** @type {HIfExpr} */ (hir);
-            const else_ = expr.elseBranch ? ` else ${hirToString(expr.elseBranch)}` : '';
+            const else_ = expr.elseBranch
+                ? ` else ${hirToString(expr.elseBranch)}`
+                : "";
             return `if ${hirToString(expr.condition)} ${hirToString(expr.thenBranch)}${else_}`;
         }
 
         if (hir.kind === HExprKind.Match) {
             const expr = /** @type {HMatchExpr} */ (hir);
-            const arms = expr.arms.map(a => `  ${hirToString(a.pat)} => ${hirToString(a.body)}`).join(',\n');
+            const arms = expr.arms
+                .map((a) => `  ${hirToString(a.pat)} => ${hirToString(a.body)}`)
+                .join(",\n");
             return `match ${hirToString(expr.scrutinee)} {\n${arms}\n}`;
         }
 
@@ -980,7 +1019,7 @@ function hirToString(hir) {
         }
 
         if (hir.kind === HPatKind.Wildcard) {
-            return '_';
+            return "_";
         }
 
         if (hir.kind === HPatKind.Literal) {
@@ -990,37 +1029,39 @@ function hirToString(hir) {
 
         if (hir.kind === HPatKind.Struct) {
             const pat = /** @type {HStructPat} */ (hir);
-            const fields = pat.fields.map(f => `${f.name}: ${hirToString(f.pat)}`).join(', ');
-            return `${pat.name} { ${fields}${pat.rest ? ' ..' : ''} }`;
+            const fields = pat.fields
+                .map((f) => `${f.name}: ${hirToString(f.pat)}`)
+                .join(", ");
+            return `${pat.name} { ${fields}${pat.rest ? " .." : ""} }`;
         }
 
         if (hir.kind === HPatKind.Tuple) {
             const pat = /** @type {HTuplePat} */ (hir);
-            return `(${pat.elements.map(hirToString).join(', ')})`;
+            return `(${pat.elements.map(hirToString).join(", ")})`;
         }
 
         if (hir.kind === HPatKind.Or) {
             const pat = /** @type {HOrPat} */ (hir);
-            return pat.alternatives.map(hirToString).join(' | ');
+            return pat.alternatives.map(hirToString).join(" | ");
         }
     }
 
     // Check for block
-    if ('stmts' in hir && 'ty' in hir) {
+    if ("stmts" in hir && "ty" in hir) {
         const block = /** @type {HBlock} */ (hir);
-        const stmts = block.stmts.map(s => '  ' + hirToString(s)).join('\n');
-        const expr = block.expr ? '\n  ' + hirToString(block.expr) : '';
+        const stmts = block.stmts.map((s) => "  " + hirToString(s)).join("\n");
+        const expr = block.expr ? "\n  " + hirToString(block.expr) : "";
         return `{\n${stmts}${expr}\n}`;
     }
 
     // Check for match arm
-    if ('pat' in hir && 'body' in hir) {
+    if ("pat" in hir && "body" in hir) {
         const arm = /** @type {HMatchArm} */ (hir);
-        const guard = arm.guard ? ` if ${hirToString(arm.guard)}` : '';
+        const guard = arm.guard ? ` if ${hirToString(arm.guard)}` : "";
         return `${hirToString(arm.pat)}${guard} => ${hirToString(arm.body)}`;
     }
 
-    return '<unknown>';
+    return "<unknown>";
 }
 
 /**
@@ -1028,8 +1069,27 @@ function hirToString(hir) {
  * @returns {string}
  */
 function binaryOpToString(op) {
-    const ops = ['+', '-', '*', '/', '%', '==', '!=', '<', '<=', '>', '>=', '&&', '||', '^', '&', '|', '<<', '>>'];
-    return ops[op] ?? '?';
+    const ops = [
+        "+",
+        "-",
+        "*",
+        "/",
+        "%",
+        "==",
+        "!=",
+        "<",
+        "<=",
+        ">",
+        ">=",
+        "&&",
+        "||",
+        "^",
+        "&",
+        "|",
+        "<<",
+        ">>",
+    ];
+    return ops[op] ?? "?";
 }
 
 /**
@@ -1037,8 +1097,8 @@ function binaryOpToString(op) {
  * @returns {string}
  */
 function unaryOpToString(op) {
-    const ops = ['!', '-', '*', '&'];
-    return ops[op] ?? '?';
+    const ops = ["!", "-", "*", "&"];
+    return ops[op] ?? "?";
 }
 
 /**
@@ -1053,20 +1113,20 @@ function collectVars(hir) {
      * @param {any} node
      */
     function visit(node) {
-        if (!node || typeof node !== 'object') return;
+        if (!node || typeof node !== "object") return;
 
         // Variable place
-        if (node.kind === HPlaceKind.Var && typeof node.id === 'number') {
+        if (node.kind === HPlaceKind.Var && typeof node.id === "number") {
             vars.add(node.id);
         }
 
         // Variable expression
-        if (node.kind === HExprKind.Var && typeof node.id === 'number') {
+        if (node.kind === HExprKind.Var && typeof node.id === "number") {
             vars.add(node.id);
         }
 
         // Identifier pattern
-        if (node.kind === HPatKind.Ident && typeof node.id === 'number') {
+        if (node.kind === HPatKind.Ident && typeof node.id === "number") {
             vars.add(node.id);
         }
 
@@ -1080,7 +1140,7 @@ function collectVars(hir) {
 
         // Recurse into object properties
         for (const key of Object.keys(node)) {
-            if (key === 'ty' || key === 'span') continue;
+            if (key === "ty" || key === "span") continue;
             visit(node[key]);
         }
     }
@@ -1095,7 +1155,12 @@ function collectVars(hir) {
  * @returns {node is HExpr}
  */
 function isHExpr(node) {
-    return node && typeof node.kind === 'number' && node.kind >= HExprKind.Unit && node.kind <= HExprKind.While;
+    return (
+        node &&
+        typeof node.kind === "number" &&
+        node.kind >= HExprKind.Unit &&
+        node.kind <= HExprKind.While
+    );
 }
 
 /**
@@ -1104,7 +1169,12 @@ function isHExpr(node) {
  * @returns {node is HStmt}
  */
 function isHStmt(node) {
-    return node && typeof node.kind === 'number' && node.kind >= HStmtKind.Let && node.kind <= HStmtKind.Continue;
+    return (
+        node &&
+        typeof node.kind === "number" &&
+        node.kind >= HStmtKind.Let &&
+        node.kind <= HStmtKind.Continue
+    );
 }
 
 /**
@@ -1113,7 +1183,12 @@ function isHStmt(node) {
  * @returns {node is HPlace}
  */
 function isHPlace(node) {
-    return node && typeof node.kind === 'number' && node.kind >= HPlaceKind.Var && node.kind <= HPlaceKind.Deref;
+    return (
+        node &&
+        typeof node.kind === "number" &&
+        node.kind >= HPlaceKind.Var &&
+        node.kind <= HPlaceKind.Deref
+    );
 }
 
 /**
@@ -1122,7 +1197,12 @@ function isHPlace(node) {
  * @returns {node is HPat}
  */
 function isHPat(node) {
-    return node && typeof node.kind === 'number' && node.kind >= HPatKind.Ident && node.kind <= HPatKind.Or;
+    return (
+        node &&
+        typeof node.kind === "number" &&
+        node.kind >= HPatKind.Ident &&
+        node.kind <= HPatKind.Or
+    );
 }
 
 /**
@@ -1131,11 +1211,16 @@ function isHPat(node) {
  * @returns {node is HItem}
  */
 function isHItem(node) {
-    return node && typeof node.kind === 'number' && node.kind >= HItemKind.Fn && node.kind <= HItemKind.Enum;
+    return (
+        node &&
+        typeof node.kind === "number" &&
+        node.kind >= HItemKind.Fn &&
+        node.kind <= HItemKind.Enum
+    );
 }
 
 // Import typeToString from types.js for use in hirToString
-import { typeToString } from './types.js';
+import { typeToString } from "./types.js";
 
 export {
     // Kinds

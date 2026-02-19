@@ -1,5 +1,11 @@
 import { TypeContext } from "../../type_context.js";
-import { inferExpr, inferBinary, inferIdentifier, unify, makeTypeError } from "../../inference.js";
+import {
+    inferExpr,
+    inferBinary,
+    inferIdentifier,
+    unify,
+    makeTypeError,
+} from "../../inference.js";
 import { NodeKind, LiteralKind, BinaryOp } from "../../ast.js";
 import { TypeKind, IntWidth, FloatWidth, typeToString } from "../../types.js";
 import { assert, assertEq, testGroup } from "../lib.js";
@@ -112,13 +118,21 @@ testGroup("Error Message Formatting", () => {
     });
 
     assert("type to string for reference", () => {
-        const t = { kind: TypeKind.Ref, inner: { kind: TypeKind.Int, width: IntWidth.I32 }, mutable: false };
+        const t = {
+            kind: TypeKind.Ref,
+            inner: { kind: TypeKind.Int, width: IntWidth.I32 },
+            mutable: false,
+        };
         const str = typeToString(t);
         assertEq(str, "&i32");
     });
 
     assert("type to string for mutable reference", () => {
-        const t = { kind: TypeKind.Ref, inner: { kind: TypeKind.Int, width: IntWidth.I32 }, mutable: true };
+        const t = {
+            kind: TypeKind.Ref,
+            inner: { kind: TypeKind.Int, width: IntWidth.I32 },
+            mutable: true,
+        };
         const str = typeToString(t);
         assertEq(str, "&mut i32");
     });

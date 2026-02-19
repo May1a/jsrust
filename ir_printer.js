@@ -19,9 +19,9 @@ import {
     irTypeToString,
     intWidthToString,
     floatWidthToString,
-} from './ir.js';
+} from "./ir.js";
 
-import { IntWidth } from './types.js';
+import { IntWidth } from "./types.js";
 
 // ============================================================================
 // Value Naming Context
@@ -113,17 +113,28 @@ function printType(type) {
  */
 function icmpOpToString(op) {
     switch (op) {
-        case IcmpOp.Eq: return 'eq';
-        case IcmpOp.Ne: return 'ne';
-        case IcmpOp.Slt: return 'slt';
-        case IcmpOp.Sle: return 'sle';
-        case IcmpOp.Sgt: return 'sgt';
-        case IcmpOp.Sge: return 'sge';
-        case IcmpOp.Ult: return 'ult';
-        case IcmpOp.Ule: return 'ule';
-        case IcmpOp.Ugt: return 'ugt';
-        case IcmpOp.Uge: return 'uge';
-        default: return '<unknown>';
+        case IcmpOp.Eq:
+            return "eq";
+        case IcmpOp.Ne:
+            return "ne";
+        case IcmpOp.Slt:
+            return "slt";
+        case IcmpOp.Sle:
+            return "sle";
+        case IcmpOp.Sgt:
+            return "sgt";
+        case IcmpOp.Sge:
+            return "sge";
+        case IcmpOp.Ult:
+            return "ult";
+        case IcmpOp.Ule:
+            return "ule";
+        case IcmpOp.Ugt:
+            return "ugt";
+        case IcmpOp.Uge:
+            return "uge";
+        default:
+            return "<unknown>";
     }
 }
 
@@ -134,13 +145,20 @@ function icmpOpToString(op) {
  */
 function fcmpOpToString(op) {
     switch (op) {
-        case FcmpOp.Oeq: return 'oeq';
-        case FcmpOp.One: return 'one';
-        case FcmpOp.Olt: return 'olt';
-        case FcmpOp.Ole: return 'ole';
-        case FcmpOp.Ogt: return 'ogt';
-        case FcmpOp.Oge: return 'oge';
-        default: return '<unknown>';
+        case FcmpOp.Oeq:
+            return "oeq";
+        case FcmpOp.One:
+            return "one";
+        case FcmpOp.Olt:
+            return "olt";
+        case FcmpOp.Ole:
+            return "ole";
+        case FcmpOp.Ogt:
+            return "ogt";
+        case FcmpOp.Oge:
+            return "oge";
+        default:
+            return "<unknown>";
     }
 }
 
@@ -152,144 +170,149 @@ function fcmpOpToString(op) {
  */
 function printInstruction(inst, ctx) {
     ctx = ctx ?? new PrintContext();
-    
-    const resultPrefix = inst.id !== null ? `${ctx.getValueName(inst.id)} = ` : '';
-    
+
+    const resultPrefix =
+        inst.id !== null ? `${ctx.getValueName(inst.id)} = ` : "";
+
     switch (inst.kind) {
         case IRInstKind.Iconst:
             return `${resultPrefix}iconst ${intWidthToString(inst.ty.width)} ${inst.value}`;
-        
+
         case IRInstKind.Fconst:
             return `${resultPrefix}fconst ${floatWidthToString(inst.ty.width)} ${inst.value}`;
-        
+
         case IRInstKind.Bconst:
             return `${resultPrefix}bconst ${inst.value}`;
-        
+
         case IRInstKind.Null:
             return `${resultPrefix}null`;
-        
+
         case IRInstKind.Iadd:
             return `${resultPrefix}iadd ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Isub:
             return `${resultPrefix}isub ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Imul:
             return `${resultPrefix}imul ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Idiv:
             return `${resultPrefix}idiv ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Imod:
             return `${resultPrefix}imod ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Fadd:
             return `${resultPrefix}fadd ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Fsub:
             return `${resultPrefix}fsub ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Fmul:
             return `${resultPrefix}fmul ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Fdiv:
             return `${resultPrefix}fdiv ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Ineg:
             return `${resultPrefix}ineg ${ctx.getValueName(inst.a)}`;
-        
+
         case IRInstKind.Fneg:
             return `${resultPrefix}fneg ${ctx.getValueName(inst.a)}`;
-        
+
         case IRInstKind.Iand:
             return `${resultPrefix}iand ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Ior:
             return `${resultPrefix}ior ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Ixor:
             return `${resultPrefix}ixor ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Ishl:
             return `${resultPrefix}ishl ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Ishr:
             return `${resultPrefix}ishr ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Icmp:
             return `${resultPrefix}icmp ${icmpOpToString(inst.op)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Fcmp:
             return `${resultPrefix}fcmp ${fcmpOpToString(inst.op)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
-        
+
         case IRInstKind.Alloca:
             return `${resultPrefix}alloca ${printType(inst.ty.inner)} ; ${ctx.getLocalName(inst.localId)}`;
-        
+
         case IRInstKind.Load:
             return `${resultPrefix}load ${printType(inst.ty)}, ${ctx.getValueName(inst.ptr)}`;
-        
+
         case IRInstKind.Store:
             return `store ${printType(inst.valueType)}, ${ctx.getValueName(inst.ptr)}, ${ctx.getValueName(inst.value)}`;
-        
+
         case IRInstKind.Memcpy:
             return `memcpy ${ctx.getValueName(inst.dest)}, ${ctx.getValueName(inst.src)}, ${inst.size}`;
-        
+
         case IRInstKind.Gep: {
-            const indices = inst.indices.map(i => ctx.getValueName(i)).join(', ');
+            const indices = inst.indices
+                .map((i) => ctx.getValueName(i))
+                .join(", ");
             return `${resultPrefix}gep ${ctx.getValueName(inst.ptr)}, [${indices}]`;
         }
-        
+
         case IRInstKind.Ptradd:
             return `${resultPrefix}ptradd ${ctx.getValueName(inst.ptr)}, ${inst.offset}`;
-        
+
         case IRInstKind.Trunc:
             return `${resultPrefix}trunc ${printType(inst.fromTy)} -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
-        
+
         case IRInstKind.Sext:
             return `${resultPrefix}sext ${printType(inst.fromTy)} -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
-        
+
         case IRInstKind.Zext:
             return `${resultPrefix}zext ${printType(inst.fromTy)} -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
-        
+
         case IRInstKind.Fptoui:
             return `${resultPrefix}fptoui -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
-        
+
         case IRInstKind.Fptosi:
             return `${resultPrefix}fptosi -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
-        
+
         case IRInstKind.Uitofp:
             return `${resultPrefix}uitofp -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
-        
+
         case IRInstKind.Sitofp:
             return `${resultPrefix}sitofp -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
-        
+
         case IRInstKind.Bitcast:
             return `${resultPrefix}bitcast -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
-        
+
         case IRInstKind.Call: {
-            const args = inst.args.map(a => ctx.getValueName(a)).join(', ');
+            const args = inst.args.map((a) => ctx.getValueName(a)).join(", ");
             return `${resultPrefix}call ${inst.fn}(${args})`;
         }
-        
+
         case IRInstKind.StructCreate: {
-            const fields = inst.fields.map(f => ctx.getValueName(f)).join(', ');
+            const fields = inst.fields
+                .map((f) => ctx.getValueName(f))
+                .join(", ");
             return `${resultPrefix}struct_create ${printType(inst.ty)} { ${fields} }`;
         }
-        
+
         case IRInstKind.StructGet:
             return `${resultPrefix}struct_get ${ctx.getValueName(inst.struct)}, ${inst.fieldIndex}`;
-        
+
         case IRInstKind.EnumCreate: {
-            const data = inst.data.map(d => ctx.getValueName(d)).join(', ');
-            return `${resultPrefix}enum_create ${printType(inst.ty)}, variant ${inst.variant}${data ? ` [${data}]` : ''}`;
+            const data = inst.data.map((d) => ctx.getValueName(d)).join(", ");
+            return `${resultPrefix}enum_create ${printType(inst.ty)}, variant ${inst.variant}${data ? ` [${data}]` : ""}`;
         }
-        
+
         case IRInstKind.EnumGetTag:
             return `${resultPrefix}enum_get_tag ${ctx.getValueName(inst.enum)}`;
-        
+
         case IRInstKind.EnumGetData:
             return `${resultPrefix}enum_get_data ${ctx.getValueName(inst.enum)}, variant ${inst.variant}, index ${inst.index}`;
-        
+
         default:
             return `<unknown instruction: ${inst.kind}>`;
     }
@@ -307,37 +330,47 @@ function printInstruction(inst, ctx) {
  */
 function printTerminator(term, ctx) {
     ctx = ctx ?? new PrintContext();
-    
+
     switch (term.kind) {
         case IRTermKind.Ret:
             if (term.value === null || term.value === undefined) {
-                return 'ret';
+                return "ret";
             }
             return `ret ${ctx.getValueName(term.value)}`;
-        
+
         case IRTermKind.Br: {
-            const args = term.args.map(a => ctx.getValueName(a)).join(', ');
-            return `br ${ctx.getBlockName(term.target)}${args ? `(${args})` : ''}`;
+            const args = term.args.map((a) => ctx.getValueName(a)).join(", ");
+            return `br ${ctx.getBlockName(term.target)}${args ? `(${args})` : ""}`;
         }
-        
+
         case IRTermKind.BrIf: {
-            const thenArgs = term.thenArgs.map(a => ctx.getValueName(a)).join(', ');
-            const elseArgs = term.elseArgs.map(a => ctx.getValueName(a)).join(', ');
+            const thenArgs = term.thenArgs
+                .map((a) => ctx.getValueName(a))
+                .join(", ");
+            const elseArgs = term.elseArgs
+                .map((a) => ctx.getValueName(a))
+                .join(", ");
             return `br_if ${ctx.getValueName(term.cond)}, then: ${ctx.getBlockName(term.thenBlock)}(${thenArgs}), else: ${ctx.getBlockName(term.elseBlock)}(${elseArgs})`;
         }
-        
+
         case IRTermKind.Switch: {
-            const cases = term.cases.map(c => {
-                const args = c.args.map(a => ctx.getValueName(a)).join(', ');
-                return `${ctx.getValueName(c.value)} => ${ctx.getBlockName(c.target)}(${args})`;
-            }).join(', ');
-            const defaultArgs = term.defaultArgs.map(a => ctx.getValueName(a)).join(', ');
+            const cases = term.cases
+                .map((c) => {
+                    const args = c.args
+                        .map((a) => ctx.getValueName(a))
+                        .join(", ");
+                    return `${ctx.getValueName(c.value)} => ${ctx.getBlockName(c.target)}(${args})`;
+                })
+                .join(", ");
+            const defaultArgs = term.defaultArgs
+                .map((a) => ctx.getValueName(a))
+                .join(", ");
             return `switch ${ctx.getValueName(term.value)} { ${cases}, default: ${ctx.getBlockName(term.defaultBlock)}(${defaultArgs}) }`;
         }
-        
+
         case IRTermKind.Unreachable:
-            return 'unreachable';
-        
+            return "unreachable";
+
         default:
             return `<unknown terminator: ${term.kind}>`;
     }
@@ -355,21 +388,23 @@ function printTerminator(term, ctx) {
  */
 function printBlock(block, ctx) {
     ctx = ctx ?? new PrintContext();
-    
+
     const lines = [];
-    
+
     // Block label with parameters
     const blockName = ctx.getBlockName(block.id);
     if (block.params.length > 0) {
-        const params = block.params.map(p => {
-            ctx.getValueName(p.id); // Register the param value name
-            return `${ctx.getValueName(p.id)}: ${printType(p.ty)}`;
-        }).join(', ');
+        const params = block.params
+            .map((p) => {
+                ctx.getValueName(p.id); // Register the param value name
+                return `${ctx.getValueName(p.id)}: ${printType(p.ty)}`;
+            })
+            .join(", ");
         lines.push(`${blockName}(${params}):`);
     } else {
         lines.push(`${blockName}:`);
     }
-    
+
     // Instructions
     for (const inst of block.instructions) {
         // Register value name first
@@ -378,13 +413,13 @@ function printBlock(block, ctx) {
         }
         lines.push(`    ${printInstruction(inst, ctx)}`);
     }
-    
+
     // Terminator
     if (block.terminator) {
         lines.push(`    ${printTerminator(block.terminator, ctx)}`);
     }
-    
-    return lines.join('\n');
+
+    return lines.join("\n");
 }
 
 // ============================================================================
@@ -399,44 +434,48 @@ function printBlock(block, ctx) {
  */
 function printFunction(fn, ctx) {
     ctx = ctx ?? new PrintContext();
-    
+
     const lines = [];
-    
+
     // Function signature
-    const params = fn.params.map(p => {
-        ctx.getValueName(p.id); // Register param name
-        return `${p.name}: ${printType(p.ty)}`;
-    }).join(', ');
-    const ret = fn.returnType ? ` -> ${printType(fn.returnType)}` : '';
+    const params = fn.params
+        .map((p) => {
+            ctx.getValueName(p.id); // Register param name
+            return `${p.name}: ${printType(p.ty)}`;
+        })
+        .join(", ");
+    const ret = fn.returnType ? ` -> ${printType(fn.returnType)}` : "";
     lines.push(`fn ${fn.name}(${params})${ret} {`);
-    
+
     // Locals (stack slots)
     if (fn.locals.length > 0) {
-        lines.push('    ; locals:');
+        lines.push("    ; locals:");
         for (const local of fn.locals) {
-            lines.push(`    ;   ${ctx.getLocalName(local.id)}: ${printType(local.ty)}`);
+            lines.push(
+                `    ;   ${ctx.getLocalName(local.id)}: ${printType(local.ty)}`,
+            );
         }
     }
-    
-    lines.push('');
-    
+
+    lines.push("");
+
     // Blocks
     for (const block of fn.blocks) {
         // Register block name
         ctx.getBlockName(block.id);
     }
-    
+
     for (const block of fn.blocks) {
         const blockStr = printBlock(block, ctx);
-        for (const line of blockStr.split('\n')) {
+        for (const line of blockStr.split("\n")) {
             lines.push(`    ${line}`);
         }
-        lines.push('');
+        lines.push("");
     }
-    
-    lines.push('}');
-    
-    return lines.join('\n');
+
+    lines.push("}");
+
+    return lines.join("\n");
 }
 
 // ============================================================================
@@ -451,52 +490,56 @@ function printFunction(fn, ctx) {
 function printModule(module) {
     const ctx = new PrintContext();
     const lines = [];
-    
+
     lines.push(`; Module: ${module.name}`);
-    lines.push('');
-    
+    lines.push("");
+
     // Type declarations
     if (module.structs.size > 0) {
-        lines.push('; Structs:');
+        lines.push("; Structs:");
         for (const [name, struct] of module.structs) {
-            const fields = struct.fields.map((f, i) => `${i}: ${printType(f)}`).join(', ');
+            const fields = struct.fields
+                .map((f, i) => `${i}: ${printType(f)}`)
+                .join(", ");
             lines.push(`;   struct ${name} { ${fields} }`);
         }
-        lines.push('');
+        lines.push("");
     }
-    
+
     if (module.enums.size > 0) {
-        lines.push('; Enums:');
+        lines.push("; Enums:");
         for (const [name, enum_] of module.enums) {
-            const variants = enum_.variants.map((v, i) => {
-                if (v.length === 0) {
-                    return `${i}`;
-                }
-                const fields = v.map(t => printType(t)).join(', ');
-                return `${i}(${fields})`;
-            }).join(', ');
+            const variants = enum_.variants
+                .map((v, i) => {
+                    if (v.length === 0) {
+                        return `${i}`;
+                    }
+                    const fields = v.map((t) => printType(t)).join(", ");
+                    return `${i}(${fields})`;
+                })
+                .join(", ");
             lines.push(`;   enum ${name} { ${variants} }`);
         }
-        lines.push('');
+        lines.push("");
     }
-    
+
     // Globals
     if (module.globals.length > 0) {
-        lines.push('; Globals:');
+        lines.push("; Globals:");
         for (const global of module.globals) {
-            const init = global.init !== undefined ? ` = ${global.init}` : '';
+            const init = global.init !== undefined ? ` = ${global.init}` : "";
             lines.push(`;   ${global.name}: ${printType(global.ty)}${init}`);
         }
-        lines.push('');
+        lines.push("");
     }
-    
+
     // Functions
     for (const fn of module.functions) {
         lines.push(printFunction(fn, ctx));
-        lines.push('');
+        lines.push("");
     }
-    
-    return lines.join('\n');
+
+    return lines.join("\n");
 }
 
 // ============================================================================

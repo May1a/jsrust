@@ -170,7 +170,11 @@ function makeNode(kind, span, props) {
  * @returns {Node}
  */
 function makeLiteralExpr(span, kind, value, raw) {
-    return makeNode(NodeKind.LiteralExpr, span, { literalKind: kind, value, raw });
+    return makeNode(NodeKind.LiteralExpr, span, {
+        literalKind: kind,
+        value,
+        raw,
+    });
 }
 
 /**
@@ -251,7 +255,11 @@ function makeAssignExpr(span, target, value) {
  * @returns {Node}
  */
 function makeIfExpr(span, condition, thenBranch, elseBranch) {
-    return makeNode(NodeKind.IfExpr, span, { condition, thenBranch, elseBranch });
+    return makeNode(NodeKind.IfExpr, span, {
+        condition,
+        thenBranch,
+        elseBranch,
+    });
 }
 
 /**
@@ -435,8 +443,25 @@ function makeParam(span, name, ty, pat) {
  * @param {boolean} isUnsafe
  * @returns {Node}
  */
-function makeFnItem(span, name, generics, params, returnType, body, isAsync, isUnsafe) {
-    return makeNode(NodeKind.FnItem, span, { name, generics, params, returnType, body, isAsync, isUnsafe });
+function makeFnItem(
+    span,
+    name,
+    generics,
+    params,
+    returnType,
+    body,
+    isAsync,
+    isUnsafe,
+) {
+    return makeNode(NodeKind.FnItem, span, {
+        name,
+        generics,
+        params,
+        returnType,
+        body,
+        isAsync,
+        isUnsafe,
+    });
 }
 
 /**
@@ -459,7 +484,12 @@ function makeStructField(span, name, ty, defaultValue) {
  * @returns {Node}
  */
 function makeStructItem(span, name, generics, fields, isTuple) {
-    return makeNode(NodeKind.StructItem, span, { name, generics, fields, isTuple });
+    return makeNode(NodeKind.StructItem, span, {
+        name,
+        generics,
+        fields,
+        isTuple,
+    });
 }
 
 /**

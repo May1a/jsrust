@@ -18,10 +18,8 @@ import {
     HExprKind,
     HPatKind,
     HLiteralKind,
-} from './hir.js';
-import {
-    IRBuilder,
-} from './ir_builder.js';
+} from "./hir.js";
+import { IRBuilder } from "./ir_builder.js";
 import {
     IRTypeKind,
     IcmpOp,
@@ -37,13 +35,9 @@ import {
     makeIRArrayType,
     makeIRFnType,
     addIRInstruction,
-} from './ir.js';
-import {
-    IntWidth,
-    FloatWidth,
-    TypeKind,
-} from './types.js';
-import { BinaryOp, UnaryOp } from './ast.js';
+} from "./ir.js";
+import { IntWidth, FloatWidth, TypeKind } from "./types.js";
+import { BinaryOp, UnaryOp } from "./ast.js";
 
 // ============================================================================
 // Task 9.1: Lowering Context
@@ -56,25 +50,25 @@ export class HirToSsaCtx {
     constructor() {
         /** @type {IRBuilder} */
         this.builder = new IRBuilder();
-        
+
         /** @type {BlockId[]} Stack of block IDs for break targets */
         this.breakStack = [];
-        
+
         /** @type {BlockId[]} Stack of block IDs for continue targets */
         this.continueStack = [];
-        
+
         /** @type {BlockId | null} Block to return to for function returns */
         this.returnBlock = null;
-        
+
         /** @type {IRType | null} Return type for current function */
         this.returnType = null;
-        
+
         /** @type {Map<number, ValueId>} Variable ID -> alloca pointer */
         this.varAllocas = new Map();
-        
+
         /** @type {Map<number, ValueId>} Variable ID -> current SSA value */
         this.varValues = new Map();
-        
+
         /** @type {Map<string, { id: number, ty: IRType }>} Variable name -> info */
         this.varNames = new Map();
     }
@@ -97,7 +91,7 @@ export class HirToSsaCtx {
         this.continueStack = [];
 
         // Translate types
-        const paramTypes = fnDecl.params.map(p => this.translateType(p.ty));
+        const paramTypes = fnDecl.params.map((p) => this.translateType(p.ty));
         const returnType = this.translateType(fnDecl.returnType);
         this.returnType = returnType;
 
@@ -105,7 +99,7 @@ export class HirToSsaCtx {
         this.builder.createFunction(fnDecl.name, paramTypes, returnType);
 
         // Create entry block
-        const entryBlockId = this.builder.createBlock('entry');
+        const entryBlockId = this.builder.createBlock("entry");
         this.builder.switchToBlock(entryBlockId);
         this.builder.sealBlock(entryBlockId);
 
@@ -113,16 +107,22 @@ export class HirToSsaCtx {
         for (let i = 0; i < fnDecl.params.length; i++) {
             const param = fnDecl.params[i];
             const paramValue = this.builder.currentFunction.params[i];
-            
+
             if (param.name) {
                 // Store parameter value in variable map
                 if (param.pat && param.pat.kind === HPatKind.Ident) {
                     const pat = param.pat;
                     this.varValues.set(pat.id, paramValue.id);
-                    this.varNames.set(param.name, { id: pat.id, ty: paramTypes[i] });
+                    this.varNames.set(param.name, {
+                        id: pat.id,
+                        ty: paramTypes[i],
+                    });
                 } else {
                     // Simple parameter binding
-                    this.varNames.set(param.name, { id: -i - 1, ty: paramTypes[i] });
+                    this.varNames.set(param.name, {
+                        id: -i - 1,
+                        ty: paramTypes[i],
+                    });
                     this.varValues.set(-i - 1, paramValue.id);
                 }
             }
@@ -131,7 +131,7 @@ export class HirToSsaCtx {
         // Lower function body
         if (fnDecl.body) {
             const result = this.lowerBlock(fnDecl.body);
-            
+
             // Add implicit return if needed
             if (!this.builder.currentBlock.terminator) {
                 if (result !== null) {
@@ -163,7 +163,7 @@ export class HirToSsaCtx {
         // Lower each statement
         for (const stmt of block.stmts) {
             this.lowerStmt(stmt);
-            
+
             // If block is terminated, stop
             if (this.builder.currentBlock.terminator) {
                 return null;
@@ -239,7 +239,10 @@ export class HirToSsaCtx {
                 if (value !== null) {
                     this.varValues.set(pat.id, value);
                 }
-                this.varNames.set(pat.name, { id: pat.id, ty: this.translateType(ty) });
+                this.varNames.set(pat.name, {
+                    id: pat.id,
+                    ty: this.translateType(ty),
+                });
                 break;
             }
             case HPatKind.Wildcard: {
@@ -257,7 +260,11 @@ export class HirToSsaCtx {
                     for (let i = 0; i < pat.fields.length; i++) {
                         const field = pat.fields[i];
                         const fieldTy = this.getFieldType(ty, field.name);
-                        const fieldValue = this.builder.structGet(value, i, this.translateType(fieldTy));
+                        const fieldValue = this.builder.structGet(
+                            value,
+                            i,
+                            this.translateType(fieldTy),
+                        );
                         this.bindPattern(field.pat, fieldValue.id, fieldTy);
                     }
                 }
@@ -265,11 +272,19 @@ export class HirToSsaCtx {
             }
             case HPatKind.Tuple: {
                 // Tuple pattern - bind each element
-                if (value !== null && pat.elements && ty.kind === TypeKind.Tuple) {
+                if (
+                    value !== null &&
+                    pat.elements &&
+                    ty.kind === TypeKind.Tuple
+                ) {
                     for (let i = 0; i < pat.elements.length; i++) {
                         const elemPat = pat.elements[i];
                         const elemTy = ty.elements[i];
-                        const elemValue = this.builder.structGet(value, i, this.translateType(elemTy));
+                        const elemValue = this.builder.structGet(
+                            value,
+                            i,
+                            this.translateType(elemTy),
+                        );
                         this.bindPattern(elemPat, elemValue.id, elemTy);
                     }
                 }
@@ -323,14 +338,14 @@ export class HirToSsaCtx {
     lowerBreakStmt(stmt) {
         const targetBlock = this.breakStack[this.breakStack.length - 1];
         if (targetBlock === undefined) {
-            throw new Error('Break outside of loop');
+            throw new Error("Break outside of loop");
         }
-        
+
         let value = null;
         if (stmt.value) {
             value = this.lowerExpr(stmt.value);
         }
-        
+
         this.builder.br(targetBlock, value !== null ? [value] : []);
     }
 
@@ -341,7 +356,7 @@ export class HirToSsaCtx {
     lowerContinueStmt(stmt) {
         const targetBlock = this.continueStack[this.continueStack.length - 1];
         if (targetBlock === undefined) {
-            throw new Error('Continue outside of loop');
+            throw new Error("Continue outside of loop");
         }
         this.builder.br(targetBlock);
     }
@@ -452,7 +467,7 @@ export class HirToSsaCtx {
         if (value !== undefined) {
             return value;
         }
-        
+
         // Look up by name
         const varInfo = this.varNames.get(expr.name);
         if (varInfo) {
@@ -461,7 +476,7 @@ export class HirToSsaCtx {
                 return val;
             }
         }
-        
+
         // Function reference - return a placeholder
         const fnId = this.resolveFunctionId(expr.name);
         const inst = this.builder.iconst(fnId, IntWidth.I64);
@@ -487,9 +502,13 @@ export class HirToSsaCtx {
                 if (ty.kind === TypeKind.Int) {
                     inst = this.builder.iadd(left, right, this.getIntWidth(ty));
                 } else if (ty.kind === TypeKind.Float) {
-                    inst = this.builder.fadd(left, right, this.getFloatWidth(ty));
+                    inst = this.builder.fadd(
+                        left,
+                        right,
+                        this.getFloatWidth(ty),
+                    );
                 } else {
-                    throw new Error('Invalid type for add');
+                    throw new Error("Invalid type for add");
                 }
                 break;
             }
@@ -497,9 +516,13 @@ export class HirToSsaCtx {
                 if (ty.kind === TypeKind.Int) {
                     inst = this.builder.isub(left, right, this.getIntWidth(ty));
                 } else if (ty.kind === TypeKind.Float) {
-                    inst = this.builder.fsub(left, right, this.getFloatWidth(ty));
+                    inst = this.builder.fsub(
+                        left,
+                        right,
+                        this.getFloatWidth(ty),
+                    );
                 } else {
-                    throw new Error('Invalid type for sub');
+                    throw new Error("Invalid type for sub");
                 }
                 break;
             }
@@ -507,9 +530,13 @@ export class HirToSsaCtx {
                 if (ty.kind === TypeKind.Int) {
                     inst = this.builder.imul(left, right, this.getIntWidth(ty));
                 } else if (ty.kind === TypeKind.Float) {
-                    inst = this.builder.fmul(left, right, this.getFloatWidth(ty));
+                    inst = this.builder.fmul(
+                        left,
+                        right,
+                        this.getFloatWidth(ty),
+                    );
                 } else {
-                    throw new Error('Invalid type for mul');
+                    throw new Error("Invalid type for mul");
                 }
                 break;
             }
@@ -517,9 +544,13 @@ export class HirToSsaCtx {
                 if (ty.kind === TypeKind.Int) {
                     inst = this.builder.idiv(left, right, this.getIntWidth(ty));
                 } else if (ty.kind === TypeKind.Float) {
-                    inst = this.builder.fdiv(left, right, this.getFloatWidth(ty));
+                    inst = this.builder.fdiv(
+                        left,
+                        right,
+                        this.getFloatWidth(ty),
+                    );
                 } else {
-                    throw new Error('Invalid type for div');
+                    throw new Error("Invalid type for div");
                 }
                 break;
             }
@@ -537,7 +568,7 @@ export class HirToSsaCtx {
                 } else if (ty.kind === TypeKind.Bool) {
                     inst = this.builder.icmp(IcmpOp.Eq, left, right);
                 } else {
-                    throw new Error('Invalid type for eq');
+                    throw new Error("Invalid type for eq");
                 }
                 break;
             }
@@ -549,51 +580,67 @@ export class HirToSsaCtx {
                 } else if (ty.kind === TypeKind.Bool) {
                     inst = this.builder.icmp(IcmpOp.Ne, left, right);
                 } else {
-                    throw new Error('Invalid type for ne');
+                    throw new Error("Invalid type for ne");
                 }
                 break;
             }
             case BinaryOp.Lt: {
                 if (ty.kind === TypeKind.Int) {
                     const isSigned = this.isSignedIntType(ty);
-                    inst = this.builder.icmp(isSigned ? IcmpOp.Slt : IcmpOp.Ult, left, right);
+                    inst = this.builder.icmp(
+                        isSigned ? IcmpOp.Slt : IcmpOp.Ult,
+                        left,
+                        right,
+                    );
                 } else if (ty.kind === TypeKind.Float) {
                     inst = this.builder.fcmp(FcmpOp.Olt, left, right);
                 } else {
-                    throw new Error('Invalid type for lt');
+                    throw new Error("Invalid type for lt");
                 }
                 break;
             }
             case BinaryOp.Le: {
                 if (ty.kind === TypeKind.Int) {
                     const isSigned = this.isSignedIntType(ty);
-                    inst = this.builder.icmp(isSigned ? IcmpOp.Sle : IcmpOp.Ule, left, right);
+                    inst = this.builder.icmp(
+                        isSigned ? IcmpOp.Sle : IcmpOp.Ule,
+                        left,
+                        right,
+                    );
                 } else if (ty.kind === TypeKind.Float) {
                     inst = this.builder.fcmp(FcmpOp.Ole, left, right);
                 } else {
-                    throw new Error('Invalid type for le');
+                    throw new Error("Invalid type for le");
                 }
                 break;
             }
             case BinaryOp.Gt: {
                 if (ty.kind === TypeKind.Int) {
                     const isSigned = this.isSignedIntType(ty);
-                    inst = this.builder.icmp(isSigned ? IcmpOp.Sgt : IcmpOp.Ugt, left, right);
+                    inst = this.builder.icmp(
+                        isSigned ? IcmpOp.Sgt : IcmpOp.Ugt,
+                        left,
+                        right,
+                    );
                 } else if (ty.kind === TypeKind.Float) {
                     inst = this.builder.fcmp(FcmpOp.Ogt, left, right);
                 } else {
-                    throw new Error('Invalid type for gt');
+                    throw new Error("Invalid type for gt");
                 }
                 break;
             }
             case BinaryOp.Ge: {
                 if (ty.kind === TypeKind.Int) {
                     const isSigned = this.isSignedIntType(ty);
-                    inst = this.builder.icmp(isSigned ? IcmpOp.Sge : IcmpOp.Uge, left, right);
+                    inst = this.builder.icmp(
+                        isSigned ? IcmpOp.Sge : IcmpOp.Uge,
+                        left,
+                        right,
+                    );
                 } else if (ty.kind === TypeKind.Float) {
                     inst = this.builder.fcmp(FcmpOp.Oge, left, right);
                 } else {
-                    throw new Error('Invalid type for ge');
+                    throw new Error("Invalid type for ge");
                 }
                 break;
             }
@@ -658,7 +705,7 @@ export class HirToSsaCtx {
                 } else if (ty.kind === TypeKind.Float) {
                     inst = this.builder.fneg(operand, this.getFloatWidth(ty));
                 } else {
-                    throw new Error('Invalid type for neg');
+                    throw new Error("Invalid type for neg");
                 }
                 break;
             }
@@ -669,10 +716,17 @@ export class HirToSsaCtx {
                     inst = this.builder.ixor(operand, one.id, IntWidth.I8);
                 } else if (ty.kind === TypeKind.Int) {
                     // Bitwise not: xor with -1 (all ones)
-                    const allOnes = this.builder.iconst(-1, this.getIntWidth(ty));
-                    inst = this.builder.ixor(operand, allOnes.id, this.getIntWidth(ty));
+                    const allOnes = this.builder.iconst(
+                        -1,
+                        this.getIntWidth(ty),
+                    );
+                    inst = this.builder.ixor(
+                        operand,
+                        allOnes.id,
+                        this.getIntWidth(ty),
+                    );
                 } else {
-                    throw new Error('Invalid type for not');
+                    throw new Error("Invalid type for not");
                 }
                 break;
             }
@@ -710,9 +764,9 @@ export class HirToSsaCtx {
             fnId = this.lowerExpr(expr.callee);
         }
 
-        const args = expr.args.map(arg => this.lowerExpr(arg));
+        const args = expr.args.map((arg) => this.lowerExpr(arg));
         const returnType = this.translateType(expr.ty);
-        
+
         const inst = this.builder.call(fnId, args, returnType);
         return inst.id;
     }
@@ -726,7 +780,7 @@ export class HirToSsaCtx {
         const base = this.lowerExpr(expr.base);
         const fieldIndex = expr.index;
         const fieldTy = this.translateType(expr.ty);
-        
+
         const inst = this.builder.structGet(base, fieldIndex, fieldTy);
         return inst.id;
     }
@@ -740,7 +794,7 @@ export class HirToSsaCtx {
         const base = this.lowerExpr(expr.base);
         const index = this.lowerExpr(expr.index);
         const elemTy = this.translateType(expr.ty);
-        
+
         // For arrays, use gep
         const inst = this.builder.gep(base, [index], elemTy);
         return inst.id;
@@ -775,9 +829,9 @@ export class HirToSsaCtx {
      * @returns {ValueId}
      */
     lowerStruct(expr) {
-        const fields = expr.fields.map(f => this.lowerExpr(f.value));
+        const fields = expr.fields.map((f) => this.lowerExpr(f.value));
         const structTy = this.translateType(expr.ty);
-        
+
         const inst = this.builder.structCreate(fields, structTy);
         return inst.id;
     }
@@ -789,14 +843,20 @@ export class HirToSsaCtx {
      */
     lowerEnum(expr) {
         const variant = expr.variantIndex;
-        const data = expr.fields.length > 0 
-            ? expr.fields.length === 1 
-                ? this.lowerExpr(expr.fields[0])
-                : this.builder.structCreate(expr.fields.map(f => this.lowerExpr(f)), 
-                    makeIRStructType('', expr.fields.map(f => this.translateType(f.ty)))).id
-            : null;
+        const data =
+            expr.fields.length > 0
+                ? expr.fields.length === 1
+                    ? this.lowerExpr(expr.fields[0])
+                    : this.builder.structCreate(
+                          expr.fields.map((f) => this.lowerExpr(f)),
+                          makeIRStructType(
+                              "",
+                              expr.fields.map((f) => this.translateType(f.ty)),
+                          ),
+                      ).id
+                : null;
         const enumTy = this.translateType(expr.ty);
-        
+
         const inst = this.builder.enumCreate(variant, data, enumTy);
         return inst.id;
     }
@@ -827,16 +887,23 @@ export class HirToSsaCtx {
             }
             throw new Error(`Unknown variable: ${place.name}`);
         }
-        
+
         if (place.kind === HExprKind.Field) {
             // Field access - need pointer to field
             const basePtr = this.lowerPlaceToRef(place.base);
             const fieldIndex = place.index;
             const fieldTy = this.translateType(place.ty);
-            const inst = this.builder.gep(basePtr, [this.builder.iconst(0, IntWidth.I32).id, this.builder.iconst(fieldIndex, IntWidth.I32).id], fieldTy);
+            const inst = this.builder.gep(
+                basePtr,
+                [
+                    this.builder.iconst(0, IntWidth.I32).id,
+                    this.builder.iconst(fieldIndex, IntWidth.I32).id,
+                ],
+                fieldTy,
+            );
             return inst.id;
         }
-        
+
         if (place.kind === HExprKind.Index) {
             // Index access - need pointer to element
             const basePtr = this.lowerPlaceToRef(place.base);
@@ -845,7 +912,7 @@ export class HirToSsaCtx {
             const inst = this.builder.gep(basePtr, [index], elemTy);
             return inst.id;
         }
-        
+
         if (place.kind === HExprKind.Deref) {
             // Deref - the operand is already a pointer
             return this.lowerExpr(place.operand);
@@ -866,7 +933,14 @@ export class HirToSsaCtx {
                 const basePtr = this.lowerPlaceToRef(place.base);
                 const fieldIndex = place.index;
                 const fieldTy = this.translateType(place.ty);
-                const inst = this.builder.gep(basePtr, [this.builder.iconst(0, IntWidth.I32).id, this.builder.iconst(fieldIndex, IntWidth.I32).id], fieldTy);
+                const inst = this.builder.gep(
+                    basePtr,
+                    [
+                        this.builder.iconst(0, IntWidth.I32).id,
+                        this.builder.iconst(fieldIndex, IntWidth.I32).id,
+                    ],
+                    fieldTy,
+                );
                 return inst.id;
             }
             case HPlaceKind.Index: {
@@ -898,9 +972,11 @@ export class HirToSsaCtx {
         const resultTy = this.translateType(expr.ty);
 
         // Create blocks
-        const thenId = this.builder.createBlock('then');
-        const elseId = expr.elseBranch ? this.builder.createBlock('else') : null;
-        const mergeId = this.builder.createBlock('merge');
+        const thenId = this.builder.createBlock("then");
+        const elseId = expr.elseBranch
+            ? this.builder.createBlock("else")
+            : null;
+        const mergeId = this.builder.createBlock("merge");
 
         // Evaluate condition
         const cond = this.lowerExpr(expr.condition);
@@ -916,7 +992,10 @@ export class HirToSsaCtx {
         this.builder.switchToBlock(thenId);
         const thenResult = this.lowerBlock(expr.thenBranch);
         if (!this.builder.currentBlock.terminator) {
-            this.builder.br(mergeId, hasResult && thenResult !== null ? [thenResult] : []);
+            this.builder.br(
+                mergeId,
+                hasResult && thenResult !== null ? [thenResult] : [],
+            );
         }
         this.builder.sealBlock(thenId);
 
@@ -926,7 +1005,10 @@ export class HirToSsaCtx {
             this.builder.switchToBlock(elseId);
             elseResult = this.lowerBlock(expr.elseBranch);
             if (!this.builder.currentBlock.terminator) {
-                this.builder.br(mergeId, hasResult && elseResult !== null ? [elseResult] : []);
+                this.builder.br(
+                    mergeId,
+                    hasResult && elseResult !== null ? [elseResult] : [],
+                );
             }
             this.builder.sealBlock(elseId);
         }
@@ -939,9 +1021,13 @@ export class HirToSsaCtx {
         if (hasResult) {
             // For now, return a placeholder value
             // A proper implementation would insert phi nodes
-            return thenResult ?? elseResult ?? this.builder.iconst(0, IntWidth.I32).id;
+            return (
+                thenResult ??
+                elseResult ??
+                this.builder.iconst(0, IntWidth.I32).id
+            );
         }
-        
+
         return this.builder.iconst(0, IntWidth.I8).id;
     }
 
@@ -962,7 +1048,7 @@ export class HirToSsaCtx {
 
         // For simple matches, use switch
         // For complex patterns, generate decision tree
-        
+
         if (arms.length === 0) {
             // No arms - unreachable
             this.builder.unreachable();
@@ -970,32 +1056,53 @@ export class HirToSsaCtx {
         }
 
         // Check if all patterns are simple literals or enums
-        const isSimple = arms.every(arm => 
-            arm.pat.kind === HPatKind.Literal || 
-            arm.pat.kind === HPatKind.Wildcard ||
-            arm.pat.kind === HPatKind.Ident
+        const isSimple = arms.every(
+            (arm) =>
+                arm.pat.kind === HPatKind.Literal ||
+                arm.pat.kind === HPatKind.Wildcard ||
+                arm.pat.kind === HPatKind.Ident,
         );
 
-        if (isSimple && arms.some(arm => arm.pat.kind === HPatKind.Literal)) {
+        if (isSimple && arms.some((arm) => arm.pat.kind === HPatKind.Literal)) {
             // Use switch for simple literal patterns
-            return this.lowerMatchSwitch(expr, scrutinee, arms, hasResult, resultTy);
+            return this.lowerMatchSwitch(
+                expr,
+                scrutinee,
+                arms,
+                hasResult,
+                resultTy,
+            );
         }
 
         // Check for enum match
         if (expr.scrutinee.ty.kind === TypeKind.Enum) {
-            return this.lowerEnumMatch(expr, scrutinee, arms, hasResult, resultTy);
+            return this.lowerEnumMatch(
+                expr,
+                scrutinee,
+                arms,
+                hasResult,
+                resultTy,
+            );
         }
 
         // General case: generate decision tree
-        return this.lowerMatchDecisionTree(expr, scrutinee, arms, hasResult, resultTy);
+        return this.lowerMatchDecisionTree(
+            expr,
+            scrutinee,
+            arms,
+            hasResult,
+            resultTy,
+        );
     }
 
     /**
      * Lower a match using switch
      */
     lowerMatchSwitch(expr, scrutinee, arms, hasResult, resultTy) {
-        const mergeId = this.builder.createBlock('match_merge');
-        const armBlocks = arms.map((_, i) => this.builder.createBlock(`arm${i}`));
+        const mergeId = this.builder.createBlock("match_merge");
+        const armBlocks = arms.map((_, i) =>
+            this.builder.createBlock(`arm${i}`),
+        );
 
         // Build switch cases
         const cases = [];
@@ -1007,7 +1114,7 @@ export class HirToSsaCtx {
                 cases.push({
                     value: arm.pat.value,
                     target: armBlocks[i],
-                    args: []
+                    args: [],
                 });
             } else {
                 // Wildcard or ident is default
@@ -1021,27 +1128,36 @@ export class HirToSsaCtx {
         let resultValue = null;
         for (let i = 0; i < arms.length; i++) {
             this.builder.switchToBlock(armBlocks[i]);
-            
+
             // Bind pattern
             this.bindPattern(arms[i].pat, scrutinee, expr.scrutinee.ty);
-            
+
             // Check guard
             if (arms[i].guard) {
                 const guardResult = this.lowerExpr(arms[i].guard);
-                const guardThenId = this.builder.createBlock('guard_then');
-                const guardElseId = this.builder.createBlock('guard_else');
-                this.builder.brIf(guardResult, guardThenId, [], guardElseId, []);
-                
+                const guardThenId = this.builder.createBlock("guard_then");
+                const guardElseId = this.builder.createBlock("guard_else");
+                this.builder.brIf(
+                    guardResult,
+                    guardThenId,
+                    [],
+                    guardElseId,
+                    [],
+                );
+
                 // If guard fails, go to next arm or merge
                 this.builder.switchToBlock(guardElseId);
                 this.builder.br(mergeId, []);
-                
+
                 this.builder.switchToBlock(guardThenId);
             }
-            
+
             const armResult = this.lowerBlock(arms[i].body);
             if (!this.builder.currentBlock.terminator) {
-                this.builder.br(mergeId, hasResult && armResult !== null ? [armResult] : []);
+                this.builder.br(
+                    mergeId,
+                    hasResult && armResult !== null ? [armResult] : [],
+                );
             }
             this.builder.sealBlock(armBlocks[i]);
         }
@@ -1049,15 +1165,19 @@ export class HirToSsaCtx {
         this.builder.switchToBlock(mergeId);
         this.builder.sealBlock(mergeId);
 
-        return hasResult ? this.builder.iconst(0, IntWidth.I32).id : this.builder.iconst(0, IntWidth.I8).id;
+        return hasResult
+            ? this.builder.iconst(0, IntWidth.I32).id
+            : this.builder.iconst(0, IntWidth.I8).id;
     }
 
     /**
      * Lower an enum match
      */
     lowerEnumMatch(expr, scrutinee, arms, hasResult, resultTy) {
-        const mergeId = this.builder.createBlock('match_merge');
-        const armBlocks = arms.map((_, i) => this.builder.createBlock(`arm${i}`));
+        const mergeId = this.builder.createBlock("match_merge");
+        const armBlocks = arms.map((_, i) =>
+            this.builder.createBlock(`arm${i}`),
+        );
 
         // Get enum tag
         const tag = this.builder.enumGetTag(scrutinee);
@@ -1068,15 +1188,24 @@ export class HirToSsaCtx {
 
         for (let i = 0; i < arms.length; i++) {
             const arm = arms[i];
-            if (arm.pat.kind === HPatKind.Struct && arm.pat.name === expr.scrutinee.ty.name) {
+            if (
+                arm.pat.kind === HPatKind.Struct &&
+                arm.pat.name === expr.scrutinee.ty.name
+            ) {
                 // Enum variant pattern - need to find variant index
-                const variantIndex = this.findEnumVariantIndex(expr.scrutinee.ty, arm.pat.name);
+                const variantIndex = this.findEnumVariantIndex(
+                    expr.scrutinee.ty,
+                    arm.pat.name,
+                );
                 cases.push({
                     value: variantIndex,
                     target: armBlocks[i],
-                    args: []
+                    args: [],
                 });
-            } else if (arm.pat.kind === HPatKind.Wildcard || arm.pat.kind === HPatKind.Ident) {
+            } else if (
+                arm.pat.kind === HPatKind.Wildcard ||
+                arm.pat.kind === HPatKind.Ident
+            ) {
                 defaultBlock = armBlocks[i];
             }
         }
@@ -1086,13 +1215,16 @@ export class HirToSsaCtx {
         // Lower each arm
         for (let i = 0; i < arms.length; i++) {
             this.builder.switchToBlock(armBlocks[i]);
-            
+
             // Bind pattern
             this.bindEnumPattern(arms[i].pat, scrutinee, expr.scrutinee.ty);
-            
+
             const armResult = this.lowerBlock(arms[i].body);
             if (!this.builder.currentBlock.terminator) {
-                this.builder.br(mergeId, hasResult && armResult !== null ? [armResult] : []);
+                this.builder.br(
+                    mergeId,
+                    hasResult && armResult !== null ? [armResult] : [],
+                );
             }
             this.builder.sealBlock(armBlocks[i]);
         }
@@ -1100,7 +1232,9 @@ export class HirToSsaCtx {
         this.builder.switchToBlock(mergeId);
         this.builder.sealBlock(mergeId);
 
-        return hasResult ? this.builder.iconst(0, IntWidth.I32).id : this.builder.iconst(0, IntWidth.I8).id;
+        return hasResult
+            ? this.builder.iconst(0, IntWidth.I32).id
+            : this.builder.iconst(0, IntWidth.I8).id;
     }
 
     /**
@@ -1112,7 +1246,12 @@ export class HirToSsaCtx {
             for (let i = 0; i < pat.fields.length; i++) {
                 const field = pat.fields[i];
                 const fieldTy = this.getEnumFieldType(enumTy, i);
-                const fieldValue = this.builder.enumGetData(enumValue, 0, i, this.translateType(fieldTy));
+                const fieldValue = this.builder.enumGetData(
+                    enumValue,
+                    0,
+                    i,
+                    this.translateType(fieldTy),
+                );
                 this.bindPattern(field.pat, fieldValue.id, fieldTy);
             }
         } else if (pat.kind === HPatKind.Ident) {
@@ -1126,20 +1265,27 @@ export class HirToSsaCtx {
      */
     lowerMatchDecisionTree(expr, scrutinee, arms, hasResult, resultTy) {
         // Simplified: just lower first matching arm
-        const mergeId = this.builder.createBlock('match_merge');
+        const mergeId = this.builder.createBlock("match_merge");
 
         for (let i = 0; i < arms.length; i++) {
             const arm = arms[i];
             const armBlock = this.builder.createBlock(`arm${i}`);
-            const nextBlock = i < arms.length - 1 ? this.builder.createBlock(`next${i}`) : mergeId;
+            const nextBlock =
+                i < arms.length - 1
+                    ? this.builder.createBlock(`next${i}`)
+                    : mergeId;
 
             // Generate pattern check
-            const { matches, bindings } = this.lowerPatternCheck(scrutinee, arm.pat, expr.scrutinee.ty);
-            
+            const { matches, bindings } = this.lowerPatternCheck(
+                scrutinee,
+                arm.pat,
+                expr.scrutinee.ty,
+            );
+
             if (matches !== null) {
-                const thenBlock = this.builder.createBlock('pat_then');
+                const thenBlock = this.builder.createBlock("pat_then");
                 this.builder.brIf(matches, thenBlock, [], nextBlock, []);
-                
+
                 this.builder.switchToBlock(thenBlock);
             }
 
@@ -1151,7 +1297,10 @@ export class HirToSsaCtx {
             // Lower arm body
             const armResult = this.lowerBlock(arm.body);
             if (!this.builder.currentBlock.terminator) {
-                this.builder.br(mergeId, hasResult && armResult !== null ? [armResult] : []);
+                this.builder.br(
+                    mergeId,
+                    hasResult && armResult !== null ? [armResult] : [],
+                );
             }
 
             if (matches !== null) {
@@ -1160,7 +1309,9 @@ export class HirToSsaCtx {
         }
 
         this.builder.switchToBlock(mergeId);
-        return hasResult ? this.builder.iconst(0, IntWidth.I32).id : this.builder.iconst(0, IntWidth.I8).id;
+        return hasResult
+            ? this.builder.iconst(0, IntWidth.I32).id
+            : this.builder.iconst(0, IntWidth.I8).id;
     }
 
     /**
@@ -1179,8 +1330,15 @@ export class HirToSsaCtx {
                 return { matches: null, bindings };
             }
             case HPatKind.Literal: {
-                const litValue = this.builder.iconst(pattern.value, this.getIntWidth(ty));
-                const matches = this.builder.icmp(IcmpOp.Eq, value, litValue.id);
+                const litValue = this.builder.iconst(
+                    pattern.value,
+                    this.getIntWidth(ty),
+                );
+                const matches = this.builder.icmp(
+                    IcmpOp.Eq,
+                    value,
+                    litValue.id,
+                );
                 return { matches: matches.id, bindings };
             }
             case HPatKind.Struct: {
@@ -1190,18 +1348,30 @@ export class HirToSsaCtx {
                     for (let i = 0; i < pattern.fields.length; i++) {
                         const field = pattern.fields[i];
                         const fieldTy = this.getFieldType(ty, field.name);
-                        const fieldValue = this.builder.structGet(value, i, this.translateType(fieldTy));
-                        const fieldCheck = this.lowerPatternCheck(fieldValue.id, field.pat, fieldTy);
-                        
+                        const fieldValue = this.builder.structGet(
+                            value,
+                            i,
+                            this.translateType(fieldTy),
+                        );
+                        const fieldCheck = this.lowerPatternCheck(
+                            fieldValue.id,
+                            field.pat,
+                            fieldTy,
+                        );
+
                         for (const [id, val] of fieldCheck.bindings) {
                             bindings.set(id, val);
                         }
-                        
+
                         if (fieldCheck.matches !== null) {
                             if (matches === null) {
                                 matches = fieldCheck.matches;
                             } else {
-                                const andInst = this.builder.iand(matches, fieldCheck.matches, IntWidth.I8);
+                                const andInst = this.builder.iand(
+                                    matches,
+                                    fieldCheck.matches,
+                                    IntWidth.I8,
+                                );
                                 matches = andInst.id;
                             }
                         }
@@ -1215,18 +1385,30 @@ export class HirToSsaCtx {
                     for (let i = 0; i < pattern.elements.length; i++) {
                         const elemPat = pattern.elements[i];
                         const elemTy = ty.elements[i];
-                        const elemValue = this.builder.structGet(value, i, this.translateType(elemTy));
-                        const elemCheck = this.lowerPatternCheck(elemValue.id, elemPat, elemTy);
-                        
+                        const elemValue = this.builder.structGet(
+                            value,
+                            i,
+                            this.translateType(elemTy),
+                        );
+                        const elemCheck = this.lowerPatternCheck(
+                            elemValue.id,
+                            elemPat,
+                            elemTy,
+                        );
+
                         for (const [id, val] of elemCheck.bindings) {
                             bindings.set(id, val);
                         }
-                        
+
                         if (elemCheck.matches !== null) {
                             if (matches === null) {
                                 matches = elemCheck.matches;
                             } else {
-                                const andInst = this.builder.iand(matches, elemCheck.matches, IntWidth.I8);
+                                const andInst = this.builder.iand(
+                                    matches,
+                                    elemCheck.matches,
+                                    IntWidth.I8,
+                                );
                                 matches = andInst.id;
                             }
                         }
@@ -1237,7 +1419,11 @@ export class HirToSsaCtx {
             case HPatKind.Or: {
                 // Or pattern - try each alternative
                 if (pattern.alternatives && pattern.alternatives.length > 0) {
-                    const firstCheck = this.lowerPatternCheck(value, pattern.alternatives[0], ty);
+                    const firstCheck = this.lowerPatternCheck(
+                        value,
+                        pattern.alternatives[0],
+                        ty,
+                    );
                     return firstCheck;
                 }
                 return { matches: null, bindings };
@@ -1257,9 +1443,9 @@ export class HirToSsaCtx {
      * @returns {ValueId}
      */
     lowerLoop(expr) {
-        const headerId = this.builder.createBlock('loop_header');
-        const bodyId = this.builder.createBlock('loop_body');
-        const exitId = this.builder.createBlock('loop_exit');
+        const headerId = this.builder.createBlock("loop_header");
+        const bodyId = this.builder.createBlock("loop_body");
+        const exitId = this.builder.createBlock("loop_exit");
 
         // Jump to header
         this.builder.br(headerId);
@@ -1303,9 +1489,9 @@ export class HirToSsaCtx {
      * @returns {ValueId}
      */
     lowerWhile(expr) {
-        const headerId = this.builder.createBlock('while_header');
-        const bodyId = this.builder.createBlock('while_body');
-        const exitId = this.builder.createBlock('while_exit');
+        const headerId = this.builder.createBlock("while_header");
+        const bodyId = this.builder.createBlock("while_body");
+        const exitId = this.builder.createBlock("while_exit");
 
         // Jump to header
         this.builder.br(headerId);
@@ -1369,24 +1555,30 @@ export class HirToSsaCtx {
                 return makeIRUnitType();
             case TypeKind.Tuple:
             case TypeKind.Struct: {
-                const fields = ty.fields 
-                    ? ty.fields.map(f => this.translateType(f.type || f))
-                    : ty.elements 
-                        ? ty.elements.map(e => this.translateType(e))
-                        : [];
-                return makeIRStructType(ty.name || '', fields);
+                const fields = ty.fields
+                    ? ty.fields.map((f) => this.translateType(f.type || f))
+                    : ty.elements
+                      ? ty.elements.map((e) => this.translateType(e))
+                      : [];
+                return makeIRStructType(ty.name || "", fields);
             }
             case TypeKind.Enum:
-                return makeIREnumType(ty.name || '', ty.variants ? ty.variants.map(v => v.fields || []) : []);
+                return makeIREnumType(
+                    ty.name || "",
+                    ty.variants ? ty.variants.map((v) => v.fields || []) : [],
+                );
             case TypeKind.Array:
-                return makeIRArrayType(this.translateType(ty.element), ty.length || 0);
+                return makeIRArrayType(
+                    this.translateType(ty.element),
+                    ty.length || 0,
+                );
             case TypeKind.Ref:
             case TypeKind.Ptr:
                 return makeIRPtrType(this.translateType(ty.inner));
             case TypeKind.Fn:
                 return makeIRFnType(
-                    ty.params.map(p => this.translateType(p)),
-                    this.translateType(ty.returnType)
+                    ty.params.map((p) => this.translateType(p)),
+                    this.translateType(ty.returnType),
                 );
             case TypeKind.Named:
                 // Named type - treat as unit for now
@@ -1463,7 +1655,7 @@ export class HirToSsaCtx {
      */
     getFieldType(structTy, fieldName) {
         if (structTy.kind === TypeKind.Struct && structTy.fields) {
-            const field = structTy.fields.find(f => f.name === fieldName);
+            const field = structTy.fields.find((f) => f.name === fieldName);
             if (field) {
                 return field.type;
             }
@@ -1480,7 +1672,11 @@ export class HirToSsaCtx {
     getEnumFieldType(enumTy, fieldIndex) {
         if (enumTy.kind === TypeKind.Enum && enumTy.variants) {
             const variant = enumTy.variants[0]; // Simplified
-            if (variant && variant.fields && fieldIndex < variant.fields.length) {
+            if (
+                variant &&
+                variant.fields &&
+                fieldIndex < variant.fields.length
+            ) {
                 return variant.fields[fieldIndex];
             }
         }
@@ -1513,7 +1709,7 @@ export class HirToSsaCtx {
         // Simple hash-based ID for now
         let hash = 0;
         for (let i = 0; i < name.length; i++) {
-            hash = ((hash << 5) - hash) + name.charCodeAt(i);
+            hash = (hash << 5) - hash + name.charCodeAt(i);
             hash |= 0;
         }
         return Math.abs(hash) % 1000000;
@@ -1540,17 +1736,17 @@ export function lowerHirToSsa(hirFn) {
  * @returns {import('./ir.js').IRModule}
  */
 export function lowerModuleToSsa(hirModule) {
-    const { makeIRModule, addIRFunction } = require('./ir.js');
+    const { makeIRModule, addIRFunction } = require("./ir.js");
     const irModule = makeIRModule(hirModule.name);
-    
+
     const ctx = new HirToSsaCtx();
-    
+
     for (const item of hirModule.items) {
         if (item.kind === HItemKind.Fn) {
             const irFn = ctx.lowerFunction(item);
             addIRFunction(irModule, irFn);
         }
     }
-    
+
     return irModule;
 }

@@ -3,13 +3,7 @@
 /** @typedef {import('./ast.js').Node} Node */
 /** @typedef {import('./type_context.js').TypeContext} TypeContext */
 
-import {
-    NodeKind,
-    LiteralKind,
-    UnaryOp,
-    BinaryOp,
-    Mutability,
-} from './ast.js';
+import { NodeKind, LiteralKind, UnaryOp, BinaryOp, Mutability } from "./ast.js";
 
 import {
     HItemKind,
@@ -59,7 +53,7 @@ import {
     makeHTuplePat,
     makeHOrPat,
     makeHMatchArm,
-} from './hir.js';
+} from "./hir.js";
 
 import {
     TypeKind,
@@ -67,7 +61,7 @@ import {
     FloatWidth,
     makeUnitType,
     typeToString,
-} from './types.js';
+} from "./types.js";
 
 // ============================================================================
 // Task 6.1: Lowering Context
@@ -247,7 +241,7 @@ function lowerModule(ast, typeCtx) {
 
     const span = ast.span || { line: 0, column: 0, start: 0, end: 0 };
     return {
-        module: makeHModule(span, ast.name || 'main', items),
+        module: makeHModule(span, ast.name || "main", items),
         errors: [],
     };
 }
@@ -262,11 +256,11 @@ function registerItem(ctx, item, typeCtx) {
     switch (item.kind) {
         case NodeKind.FnItem: {
             const itemDecl = typeCtx.lookupItem(item.name);
-            ctx.registerItem(item.name, 'fn', item, itemDecl?.type);
+            ctx.registerItem(item.name, "fn", item, itemDecl?.type);
             break;
         }
         case NodeKind.StructItem: {
-            ctx.registerItem(item.name, 'struct', item);
+            ctx.registerItem(item.name, "struct", item);
             // Register field indices
             for (let i = 0; i < (item.fields || []).length; i++) {
                 ctx.setFieldIndex(item.name, item.fields[i].name, i);
@@ -274,7 +268,7 @@ function registerItem(ctx, item, typeCtx) {
             break;
         }
         case NodeKind.EnumItem: {
-            ctx.registerItem(item.name, 'enum', item);
+            ctx.registerItem(item.name, "enum", item);
             break;
         }
     }
@@ -349,7 +343,7 @@ function lowerFnItem(ctx, fn, typeCtx) {
         returnType,
         body,
         fn.isAsync || false,
-        fn.isUnsafe || false
+        fn.isUnsafe || false,
     );
 }
 
@@ -369,7 +363,14 @@ function lowerParam(ctx, param, type, typeCtx) {
         // Create identifier pattern for named parameter
         const mutable = false; // Parameters are immutable by default
         const varInfo = ctx.defineVar(param.name, type, mutable);
-        pat = makeHIdentPat(param.span, param.name, varInfo.id, type, mutable, false);
+        pat = makeHIdentPat(
+            param.span,
+            param.name,
+            varInfo.id,
+            type,
+            mutable,
+            false,
+        );
     }
 
     return makeHParam(param.span, param.name, type, pat);
@@ -399,12 +400,9 @@ function lowerStructItem(ctx, struct, typeCtx) {
             defaultValue = lowerExpr(ctx, field.defaultValue, typeCtx);
         }
 
-        fields.push(makeHStructField(
-            field.span,
-            field.name,
-            fieldType,
-            defaultValue
-        ));
+        fields.push(
+            makeHStructField(field.span, field.name, fieldType, defaultValue),
+        );
     }
 
     return makeHStructDecl(
@@ -412,7 +410,7 @@ function lowerStructItem(ctx, struct, typeCtx) {
         struct.name,
         struct.generics,
         fields,
-        struct.isTuple || false
+        struct.isTuple || false,
     );
 }
 
@@ -445,20 +443,12 @@ function lowerEnumItem(ctx, enum_, typeCtx) {
             discriminant = 0;
         }
 
-        variants.push(makeHEnumVariant(
-            variant.span,
-            variant.name,
-            fields,
-            discriminant
-        ));
+        variants.push(
+            makeHEnumVariant(variant.span, variant.name, fields, discriminant),
+        );
     }
 
-    return makeHEnumDecl(
-        enum_.span,
-        enum_.name,
-        enum_.generics,
-        variants
-    );
+    return makeHEnumDecl(enum_.span, enum_.name, enum_.generics, variants);
 }
 
 // ============================================================================
@@ -481,11 +471,17 @@ function lowerStmt(ctx, stmt, typeCtx) {
         case NodeKind.ItemStmt: {
             // Items are handled at module level
             // Return an empty expression statement
-            return makeHExprStmt(stmt.span, makeHUnitExpr(stmt.span, makeUnitType()));
+            return makeHExprStmt(
+                stmt.span,
+                makeHUnitExpr(stmt.span, makeUnitType()),
+            );
         }
         default:
             ctx.addError(`Unknown statement kind: ${stmt.kind}`, stmt.span);
-            return makeHExprStmt(stmt.span, makeHUnitExpr(stmt.span, makeUnitType()));
+            return makeHExprStmt(
+                stmt.span,
+                makeHUnitExpr(stmt.span, makeUnitType()),
+            );
     }
 }
 
@@ -642,12 +638,18 @@ function lowerLiteral(ctx, lit, typeCtx) {
  */
 function convertLiteralKind(astKind) {
     switch (astKind) {
-        case LiteralKind.Int: return HLiteralKind.Int;
-        case LiteralKind.Float: return HLiteralKind.Float;
-        case LiteralKind.Bool: return HLiteralKind.Bool;
-        case LiteralKind.String: return HLiteralKind.String;
-        case LiteralKind.Char: return HLiteralKind.Char;
-        default: return HLiteralKind.Int;
+        case LiteralKind.Int:
+            return HLiteralKind.Int;
+        case LiteralKind.Float:
+            return HLiteralKind.Float;
+        case LiteralKind.Bool:
+            return HLiteralKind.Bool;
+        case LiteralKind.String:
+            return HLiteralKind.String;
+        case LiteralKind.Char:
+            return HLiteralKind.Char;
+        default:
+            return HLiteralKind.Int;
     }
 }
 
@@ -690,18 +692,26 @@ function lowerIdentifier(ctx, ident, typeCtx) {
     // Look up item (function, struct, enum)
     const item = ctx.lookupItem(ident.name);
     if (item) {
-        if (item.kind === 'fn' && item.type) {
+        if (item.kind === "fn" && item.type) {
             // Function reference
             return makeHVarExpr(ident.span, ident.name, -1, item.type);
         }
-        if (item.kind === 'struct') {
+        if (item.kind === "struct") {
             // Struct constructor - return as a reference
-            const structTy = { kind: TypeKind.Struct, name: ident.name, fields: [] };
+            const structTy = {
+                kind: TypeKind.Struct,
+                name: ident.name,
+                fields: [],
+            };
             return makeHVarExpr(ident.span, ident.name, -1, structTy);
         }
-        if (item.kind === 'enum') {
+        if (item.kind === "enum") {
             // Enum reference
-            const enumTy = { kind: TypeKind.Enum, name: ident.name, variants: [] };
+            const enumTy = {
+                kind: TypeKind.Enum,
+                name: ident.name,
+                variants: [],
+            };
             return makeHVarExpr(ident.span, ident.name, -1, enumTy);
         }
     }
@@ -767,7 +777,7 @@ function lowerUnary(ctx, unary, typeCtx) {
  */
 function lowerCall(ctx, call, typeCtx) {
     const callee = lowerExpr(ctx, call.callee, typeCtx);
-    const args = (call.args || []).map(arg => lowerExpr(ctx, arg, typeCtx));
+    const args = (call.args || []).map((arg) => lowerExpr(ctx, arg, typeCtx));
 
     // Get return type from callee type
     let ty = makeUnitType();
@@ -787,7 +797,8 @@ function lowerCall(ctx, call, typeCtx) {
  */
 function lowerField(ctx, field, typeCtx) {
     const base = lowerExpr(ctx, field.receiver, typeCtx);
-    const fieldName = typeof field.field === 'string' ? field.field : field.field.name;
+    const fieldName =
+        typeof field.field === "string" ? field.field : field.field.name;
 
     // Get field index and type
     let index = 0;
@@ -795,14 +806,18 @@ function lowerField(ctx, field, typeCtx) {
 
     if (base.ty && base.ty.kind === TypeKind.Struct) {
         index = ctx.getFieldIndex(base.ty.name, fieldName);
-        const fieldDef = base.ty.fields?.find(f => f.name === fieldName);
+        const fieldDef = base.ty.fields?.find((f) => f.name === fieldName);
         if (fieldDef) {
             ty = fieldDef.type;
         }
     } else if (base.ty && base.ty.kind === TypeKind.Tuple) {
         // Tuple field access by index
         index = parseInt(fieldName, 10);
-        if (!isNaN(index) && base.ty.elements && index < base.ty.elements.length) {
+        if (
+            !isNaN(index) &&
+            base.ty.elements &&
+            index < base.ty.elements.length
+        ) {
             ty = base.ty.elements[index];
         }
     }
@@ -845,7 +860,7 @@ function lowerAssign(ctx, assign, typeCtx) {
     // Extract place from target
     const place = extractPlace(ctx, assign.target, typeCtx);
     if (!place) {
-        ctx.addError('Invalid assignment target', assign.target.span);
+        ctx.addError("Invalid assignment target", assign.target.span);
         return makeHUnitExpr(assign.span, makeUnitType());
     }
 
@@ -864,7 +879,7 @@ function lowerAssign(ctx, assign, typeCtx) {
 function lowerStructExpr(ctx, structExpr, typeCtx) {
     const path = lowerExpr(ctx, structExpr.path, typeCtx);
 
-    const fields = (structExpr.fields || []).map(field => ({
+    const fields = (structExpr.fields || []).map((field) => ({
         name: field.name,
         value: lowerExpr(ctx, field.value, typeCtx),
     }));
@@ -882,7 +897,13 @@ function lowerStructExpr(ctx, structExpr, typeCtx) {
         ty = { kind: TypeKind.Struct, name: ty.name, fields: [] };
     }
 
-    return makeHStructExpr(structExpr.span, path.name || '', fields, spread, ty);
+    return makeHStructExpr(
+        structExpr.span,
+        path.name || "",
+        fields,
+        spread,
+        ty,
+    );
 }
 
 /**
@@ -939,7 +960,9 @@ function lowerDeref(ctx, deref, typeCtx) {
 function lowerBlock(ctx, block, typeCtx) {
     ctx.pushScope();
 
-    const stmts = (block.stmts || []).map(stmt => lowerStmt(ctx, stmt, typeCtx));
+    const stmts = (block.stmts || []).map((stmt) =>
+        lowerStmt(ctx, stmt, typeCtx),
+    );
 
     let expr = null;
     let ty = makeUnitType();
@@ -976,7 +999,7 @@ function lowerIf(ctx, ifExpr, typeCtx) {
                 ifExpr.elseBranch.span,
                 [],
                 elseExpr,
-                elseExpr.ty
+                elseExpr.ty,
             );
         }
     }
@@ -1003,7 +1026,7 @@ function lowerIf(ctx, ifExpr, typeCtx) {
 function lowerMatch(ctx, matchExpr, typeCtx) {
     const scrutinee = lowerExpr(ctx, matchExpr.scrutinee, typeCtx);
 
-    const arms = (matchExpr.arms || []).map(arm => {
+    const arms = (matchExpr.arms || []).map((arm) => {
         ctx.pushScope();
 
         const pat = lowerPattern(ctx, arm.pat, scrutinee.ty, typeCtx);
@@ -1090,7 +1113,7 @@ function lowerFor(ctx, forExpr, typeCtx) {
     const iter = lowerExpr(ctx, forExpr.iter, typeCtx);
 
     // Create iterator variable
-    const iterVarName = '__iter';
+    const iterVarName = "__iter";
     const iterVarInfo = ctx.defineVar(iterVarName, iter.ty, true);
 
     // Lower body
@@ -1150,13 +1173,17 @@ function lowerContinue(ctx, continueExpr, typeCtx) {
  */
 function lowerPath(ctx, pathExpr, typeCtx) {
     if (!pathExpr.segments || pathExpr.segments.length === 0) {
-        ctx.addError('Empty path expression', pathExpr.span);
+        ctx.addError("Empty path expression", pathExpr.span);
         return makeHUnitExpr(pathExpr.span, makeUnitType());
     }
 
     // Simple identifier
     if (pathExpr.segments.length === 1) {
-        return lowerIdentifier(ctx, { name: pathExpr.segments[0], span: pathExpr.span }, typeCtx);
+        return lowerIdentifier(
+            ctx,
+            { name: pathExpr.segments[0], span: pathExpr.span },
+            typeCtx,
+        );
     }
 
     // Qualified path - could be enum variant
@@ -1165,9 +1192,13 @@ function lowerPath(ctx, pathExpr, typeCtx) {
         const variantName = pathExpr.segments[1];
 
         const item = ctx.lookupItem(itemName);
-        if (item && item.kind === 'enum') {
+        if (item && item.kind === "enum") {
             // Enum variant
-            const enumTy = { kind: TypeKind.Enum, name: itemName, variants: [] };
+            const enumTy = {
+                kind: TypeKind.Enum,
+                name: itemName,
+                variants: [],
+            };
             const variantIndex = findEnumVariantIndex(item.node, variantName);
             return makeHEnumExpr(
                 pathExpr.span,
@@ -1175,12 +1206,15 @@ function lowerPath(ctx, pathExpr, typeCtx) {
                 variantName,
                 variantIndex,
                 [],
-                enumTy
+                enumTy,
             );
         }
     }
 
-    ctx.addError(`Unbound path: ${pathExpr.segments.join('::')}`, pathExpr.span);
+    ctx.addError(
+        `Unbound path: ${pathExpr.segments.join("::")}`,
+        pathExpr.span,
+    );
     return makeHUnitExpr(pathExpr.span, makeUnitType());
 }
 
@@ -1210,7 +1244,7 @@ function findEnumVariantIndex(enumNode, variantName) {
 function lowerRange(ctx, rangeExpr, typeCtx) {
     // For now, ranges are not fully implemented
     // Return a placeholder
-    ctx.addError('Range expressions not yet supported', rangeExpr.span);
+    ctx.addError("Range expressions not yet supported", rangeExpr.span);
     return makeHUnitExpr(rangeExpr.span, makeUnitType());
 }
 
@@ -1253,7 +1287,14 @@ function lowerPattern(ctx, pat, expectedType, typeCtx) {
             // Binding pattern: name @ pat
             const innerPat = lowerPattern(ctx, pat.pat, expectedType, typeCtx);
             const varInfo = ctx.defineVar(pat.name, expectedType, false);
-            return makeHIdentPat(pat.span, pat.name, varInfo.id, expectedType, false, false);
+            return makeHIdentPat(
+                pat.span,
+                pat.name,
+                varInfo.id,
+                expectedType,
+                false,
+                false,
+            );
         }
 
         default:
@@ -1299,7 +1340,7 @@ function lowerIdentPat(ctx, pat, expectedType, typeCtx) {
  */
 function lowerStructPat(ctx, pat, expectedType, typeCtx) {
     // Get struct name from path
-    let structName = '';
+    let structName = "";
     if (pat.path) {
         if (pat.path.kind === NodeKind.IdentifierExpr) {
             structName = pat.path.name;
@@ -1313,12 +1354,14 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
     const structNode = structItem?.node;
 
     // Lower field patterns
-    const fields = (pat.fields || []).map(field => {
+    const fields = (pat.fields || []).map((field) => {
         let fieldType = makeUnitType();
 
         // Find field type from struct definition
         if (structNode && structNode.fields) {
-            const fieldDef = structNode.fields.find(f => f.name === field.name);
+            const fieldDef = structNode.fields.find(
+                (f) => f.name === field.name,
+            );
             if (fieldDef && fieldDef.ty) {
                 const typeResult = resolveTypeFromAst(fieldDef.ty, typeCtx);
                 if (typeResult.ok) {
@@ -1333,7 +1376,13 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
         };
     });
 
-    return makeHStructPat(pat.span, structName, fields, pat.rest || false, expectedType);
+    return makeHStructPat(
+        pat.span,
+        structName,
+        fields,
+        pat.rest || false,
+        expectedType,
+    );
 }
 
 /**
@@ -1347,7 +1396,11 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
 function lowerTuplePat(ctx, pat, expectedType, typeCtx) {
     const elements = (pat.elements || []).map((elem, i) => {
         let elemType = makeUnitType();
-        if (expectedType && expectedType.kind === TypeKind.Tuple && expectedType.elements) {
+        if (
+            expectedType &&
+            expectedType.kind === TypeKind.Tuple &&
+            expectedType.elements
+        ) {
             if (i < expectedType.elements.length) {
                 elemType = expectedType.elements[i];
             }
@@ -1367,8 +1420,8 @@ function lowerTuplePat(ctx, pat, expectedType, typeCtx) {
  * @returns {import('./hir.js').HOrPat}
  */
 function lowerOrPat(ctx, pat, expectedType, typeCtx) {
-    const alternatives = (pat.alternatives || []).map(alt =>
-        lowerPattern(ctx, alt, expectedType, typeCtx)
+    const alternatives = (pat.alternatives || []).map((alt) =>
+        lowerPattern(ctx, alt, expectedType, typeCtx),
     );
 
     return makeHOrPat(pat.span, alternatives, expectedType);
@@ -1393,20 +1446,28 @@ function extractPlace(ctx, expr, typeCtx) {
                 ctx.addError(`Unbound identifier: ${expr.name}`, expr.span);
                 return null;
             }
-            return makeHVarPlace(expr.span, varInfo.name, varInfo.id, varInfo.type);
+            return makeHVarPlace(
+                expr.span,
+                varInfo.name,
+                varInfo.id,
+                varInfo.type,
+            );
         }
 
         case NodeKind.FieldExpr: {
             const base = extractPlace(ctx, expr.receiver, typeCtx);
             if (!base) return null;
 
-            const fieldName = typeof expr.field === 'string' ? expr.field : expr.field.name;
+            const fieldName =
+                typeof expr.field === "string" ? expr.field : expr.field.name;
             let index = 0;
             let ty = makeUnitType();
 
             if (base.ty && base.ty.kind === TypeKind.Struct) {
                 index = ctx.getFieldIndex(base.ty.name, fieldName);
-                const fieldDef = base.ty.fields?.find(f => f.name === fieldName);
+                const fieldDef = base.ty.fields?.find(
+                    (f) => f.name === fieldName,
+                );
                 if (fieldDef) {
                     ty = fieldDef.type;
                 }
@@ -1446,9 +1507,9 @@ function extractPlace(ctx, expr, typeCtx) {
         }
 
         default:
-            ctx.addError('Invalid assignment target', expr.span);
+            ctx.addError("Invalid assignment target", expr.span);
             return null;
-        }
+    }
 }
 
 // ============================================================================
@@ -1463,7 +1524,7 @@ function extractPlace(ctx, expr, typeCtx) {
  */
 function resolveTypeFromAst(typeNode, typeCtx) {
     if (!typeNode) {
-        return { ok: false, error: 'No type node' };
+        return { ok: false, error: "No type node" };
     }
 
     switch (typeNode.kind) {
@@ -1477,16 +1538,33 @@ function resolveTypeFromAst(typeNode, typeCtx) {
             // Check type context for user-defined types
             const item = typeCtx.lookupItem(typeNode.name);
             if (item) {
-                if (item.kind === 'struct') {
-                    return { ok: true, type: { kind: TypeKind.Struct, name: typeNode.name, fields: [] } };
+                if (item.kind === "struct") {
+                    return {
+                        ok: true,
+                        type: {
+                            kind: TypeKind.Struct,
+                            name: typeNode.name,
+                            fields: [],
+                        },
+                    };
                 }
-                if (item.kind === 'enum') {
-                    return { ok: true, type: { kind: TypeKind.Enum, name: typeNode.name, variants: [] } };
+                if (item.kind === "enum") {
+                    return {
+                        ok: true,
+                        type: {
+                            kind: TypeKind.Enum,
+                            name: typeNode.name,
+                            variants: [],
+                        },
+                    };
                 }
             }
 
             // Return as named type
-            return { ok: true, type: { kind: TypeKind.Named, name: typeNode.name, args: null } };
+            return {
+                ok: true,
+                type: { kind: TypeKind.Named, name: typeNode.name, args: null },
+            };
         }
 
         case NodeKind.TupleType: {
@@ -1502,21 +1580,34 @@ function resolveTypeFromAst(typeNode, typeCtx) {
         case NodeKind.ArrayType: {
             const elementResult = resolveTypeFromAst(typeNode.element, typeCtx);
             if (!elementResult.ok) return elementResult;
-            return { ok: true, type: { kind: TypeKind.Array, element: elementResult.type, length: 0 } };
+            return {
+                ok: true,
+                type: {
+                    kind: TypeKind.Array,
+                    element: elementResult.type,
+                    length: 0,
+                },
+            };
         }
 
         case NodeKind.RefType: {
             const innerResult = resolveTypeFromAst(typeNode.inner, typeCtx);
             if (!innerResult.ok) return innerResult;
             const mutable = typeNode.mutability === Mutability.Mutable;
-            return { ok: true, type: { kind: TypeKind.Ref, inner: innerResult.type, mutable } };
+            return {
+                ok: true,
+                type: { kind: TypeKind.Ref, inner: innerResult.type, mutable },
+            };
         }
 
         case NodeKind.PtrType: {
             const innerResult = resolveTypeFromAst(typeNode.inner, typeCtx);
             if (!innerResult.ok) return innerResult;
             const mutable = typeNode.mutability === Mutability.Mutable;
-            return { ok: true, type: { kind: TypeKind.Ptr, inner: innerResult.type, mutable } };
+            return {
+                ok: true,
+                type: { kind: TypeKind.Ptr, inner: innerResult.type, mutable },
+            };
         }
 
         case NodeKind.FnType: {
@@ -1534,11 +1625,22 @@ function resolveTypeFromAst(typeNode, typeCtx) {
                 returnType = result.type;
             }
 
-            return { ok: true, type: { kind: TypeKind.Fn, params, returnType, isUnsafe: typeNode.isUnsafe || false } };
+            return {
+                ok: true,
+                type: {
+                    kind: TypeKind.Fn,
+                    params,
+                    returnType,
+                    isUnsafe: typeNode.isUnsafe || false,
+                },
+            };
         }
 
         default:
-            return { ok: false, error: `Unknown type node kind: ${typeNode.kind}` };
+            return {
+                ok: false,
+                error: `Unknown type node kind: ${typeNode.kind}`,
+            };
     }
 }
 
@@ -1549,26 +1651,46 @@ function resolveTypeFromAst(typeNode, typeCtx) {
  */
 function resolveBuiltinType(name) {
     switch (name) {
-        case 'i8': return { kind: TypeKind.Int, width: IntWidth.I8 };
-        case 'i16': return { kind: TypeKind.Int, width: IntWidth.I16 };
-        case 'i32': return { kind: TypeKind.Int, width: IntWidth.I32 };
-        case 'i64': return { kind: TypeKind.Int, width: IntWidth.I64 };
-        case 'i128': return { kind: TypeKind.Int, width: IntWidth.I128 };
-        case 'isize': return { kind: TypeKind.Int, width: IntWidth.Isize };
-        case 'u8': return { kind: TypeKind.Int, width: IntWidth.U8 };
-        case 'u16': return { kind: TypeKind.Int, width: IntWidth.U16 };
-        case 'u32': return { kind: TypeKind.Int, width: IntWidth.U32 };
-        case 'u64': return { kind: TypeKind.Int, width: IntWidth.U64 };
-        case 'u128': return { kind: TypeKind.Int, width: IntWidth.U128 };
-        case 'usize': return { kind: TypeKind.Int, width: IntWidth.Usize };
-        case 'f32': return { kind: TypeKind.Float, width: FloatWidth.F32 };
-        case 'f64': return { kind: TypeKind.Float, width: FloatWidth.F64 };
-        case 'bool': return { kind: TypeKind.Bool };
-        case 'char': return { kind: TypeKind.Char };
-        case 'str': return { kind: TypeKind.String };
-        case '()': return { kind: TypeKind.Unit };
-        case '!': return { kind: TypeKind.Never };
-        default: return null;
+        case "i8":
+            return { kind: TypeKind.Int, width: IntWidth.I8 };
+        case "i16":
+            return { kind: TypeKind.Int, width: IntWidth.I16 };
+        case "i32":
+            return { kind: TypeKind.Int, width: IntWidth.I32 };
+        case "i64":
+            return { kind: TypeKind.Int, width: IntWidth.I64 };
+        case "i128":
+            return { kind: TypeKind.Int, width: IntWidth.I128 };
+        case "isize":
+            return { kind: TypeKind.Int, width: IntWidth.Isize };
+        case "u8":
+            return { kind: TypeKind.Int, width: IntWidth.U8 };
+        case "u16":
+            return { kind: TypeKind.Int, width: IntWidth.U16 };
+        case "u32":
+            return { kind: TypeKind.Int, width: IntWidth.U32 };
+        case "u64":
+            return { kind: TypeKind.Int, width: IntWidth.U64 };
+        case "u128":
+            return { kind: TypeKind.Int, width: IntWidth.U128 };
+        case "usize":
+            return { kind: TypeKind.Int, width: IntWidth.Usize };
+        case "f32":
+            return { kind: TypeKind.Float, width: FloatWidth.F32 };
+        case "f64":
+            return { kind: TypeKind.Float, width: FloatWidth.F64 };
+        case "bool":
+            return { kind: TypeKind.Bool };
+        case "char":
+            return { kind: TypeKind.Char };
+        case "str":
+            return { kind: TypeKind.String };
+        case "()":
+            return { kind: TypeKind.Unit };
+        case "!":
+            return { kind: TypeKind.Never };
+        default:
+            return null;
     }
 }
 

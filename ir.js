@@ -10,7 +10,7 @@
 /** @typedef {number} IcmpOpValue */
 /** @typedef {number} FcmpOpValue */
 
-import { IntWidth, FloatWidth } from './types.js';
+import { IntWidth, FloatWidth } from "./types.js";
 
 const IRTypeKind = {
     Int: 0,
@@ -165,7 +165,7 @@ function makeIRFnType(params, returnType) {
 
 function irTypeEquals(a, b) {
     if (a.kind !== b.kind) return false;
-    
+
     switch (a.kind) {
         case IRTypeKind.Int:
             return a.width === b.width;
@@ -189,7 +189,8 @@ function irTypeEquals(a, b) {
             for (let i = 0; i < a.variants.length; i++) {
                 if (a.variants[i].length !== b.variants[i].length) return false;
                 for (let j = 0; j < a.variants[i].length; j++) {
-                    if (!irTypeEquals(a.variants[i][j], b.variants[i][j])) return false;
+                    if (!irTypeEquals(a.variants[i][j], b.variants[i][j]))
+                        return false;
                 }
             }
             return true;
@@ -215,11 +216,11 @@ function irTypeToString(type) {
         case IRTypeKind.Float:
             return floatWidthToString(type.width);
         case IRTypeKind.Bool:
-            return 'bool';
+            return "bool";
         case IRTypeKind.Ptr:
-            return type.inner ? `*${irTypeToString(type.inner)}` : 'ptr';
+            return type.inner ? `*${irTypeToString(type.inner)}` : "ptr";
         case IRTypeKind.Unit:
-            return '()';
+            return "()";
         case IRTypeKind.Struct:
             return type.name;
         case IRTypeKind.Enum:
@@ -227,37 +228,53 @@ function irTypeToString(type) {
         case IRTypeKind.Array:
             return `[${irTypeToString(type.element)}; ${type.length}]`;
         case IRTypeKind.Fn: {
-            const params = type.params.map(irTypeToString).join(', ');
+            const params = type.params.map(irTypeToString).join(", ");
             return `fn(${params}) -> ${irTypeToString(type.returnType)}`;
         }
         default:
-            return '<unknown>';
+            return "<unknown>";
     }
 }
 
 function intWidthToString(width) {
     switch (width) {
-        case IntWidth.I8: return 'i8';
-        case IntWidth.I16: return 'i16';
-        case IntWidth.I32: return 'i32';
-        case IntWidth.I64: return 'i64';
-        case IntWidth.I128: return 'i128';
-        case IntWidth.Isize: return 'isize';
-        case IntWidth.U8: return 'u8';
-        case IntWidth.U16: return 'u16';
-        case IntWidth.U32: return 'u32';
-        case IntWidth.U64: return 'u64';
-        case IntWidth.U128: return 'u128';
-        case IntWidth.Usize: return 'usize';
-        default: return '<unknown int>';
+        case IntWidth.I8:
+            return "i8";
+        case IntWidth.I16:
+            return "i16";
+        case IntWidth.I32:
+            return "i32";
+        case IntWidth.I64:
+            return "i64";
+        case IntWidth.I128:
+            return "i128";
+        case IntWidth.Isize:
+            return "isize";
+        case IntWidth.U8:
+            return "u8";
+        case IntWidth.U16:
+            return "u16";
+        case IntWidth.U32:
+            return "u32";
+        case IntWidth.U64:
+            return "u64";
+        case IntWidth.U128:
+            return "u128";
+        case IntWidth.Usize:
+            return "usize";
+        default:
+            return "<unknown int>";
     }
 }
 
 function floatWidthToString(width) {
     switch (width) {
-        case FloatWidth.F32: return 'f32';
-        case FloatWidth.F64: return 'f64';
-        default: return '<unknown float>';
+        case FloatWidth.F32:
+            return "f32";
+        case FloatWidth.F64:
+            return "f64";
+        default:
+            return "<unknown float>";
     }
 }
 

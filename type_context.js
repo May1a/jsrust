@@ -97,7 +97,10 @@ class TypeContext {
      */
     defineVar(name, type, mutable = false, span) {
         if (this.currentScope.bindings.has(name)) {
-            return { ok: false, error: `Variable '${name}' already defined in this scope` };
+            return {
+                ok: false,
+                error: `Variable '${name}' already defined in this scope`,
+            };
         }
         this.currentScope.bindings.set(name, { name, type, mutable, span });
         return { ok: true };
@@ -309,7 +312,10 @@ class TypeContext {
         }
         // Check for occurs check (prevent infinite types)
         if (this.occursIn(id, type)) {
-            return { ok: false, error: `Occurs check failed: type variable ${id} occurs in type` };
+            return {
+                ok: false,
+                error: `Occurs check failed: type variable ${id} occurs in type`,
+            };
         }
         tv.bound = type;
         return { ok: true };
@@ -343,7 +349,9 @@ class TypeContext {
                     this.occursIn(id, type.returnType)
                 );
             case TypeKind.Named:
-                return type.args ? type.args.some((t) => this.occursIn(id, t)) : false;
+                return type.args
+                    ? type.args.some((t) => this.occursIn(id, t))
+                    : false;
             default:
                 return false;
         }

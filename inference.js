@@ -145,13 +145,19 @@ function unify(ctx, t1, t2) {
                 ok: false,
                 error: makeTypeError(
                     `Occurs check failed: type variable ?${t1.id} occurs in ${typeToString(t2)}`,
-                    t1.span
+                    t1.span,
                 ),
             };
         }
         const result = ctx.bindTypeVar(t1.id, t2);
         if (!result.ok) {
-            return { ok: false, error: makeTypeError(result.error || "Failed to bind type variable", t1.span) };
+            return {
+                ok: false,
+                error: makeTypeError(
+                    result.error || "Failed to bind type variable",
+                    t1.span,
+                ),
+            };
         }
         return { ok: true };
     }
@@ -163,13 +169,19 @@ function unify(ctx, t1, t2) {
                 ok: false,
                 error: makeTypeError(
                     `Occurs check failed: type variable ?${t2.id} occurs in ${typeToString(t1)}`,
-                    t2.span
+                    t2.span,
                 ),
             };
         }
         const result = ctx.bindTypeVar(t2.id, t1);
         if (!result.ok) {
-            return { ok: false, error: makeTypeError(result.error || "Failed to bind type variable", t2.span) };
+            return {
+                ok: false,
+                error: makeTypeError(
+                    result.error || "Failed to bind type variable",
+                    t2.span,
+                ),
+            };
         }
         return { ok: true };
     }
@@ -189,7 +201,7 @@ function unify(ctx, t1, t2) {
                 ok: false,
                 error: makeTypeError(
                     `Tuple length mismatch: expected ${t1.elements.length}, got ${t2.elements.length}`,
-                    t1.span
+                    t1.span,
                 ),
             };
         }
@@ -207,7 +219,7 @@ function unify(ctx, t1, t2) {
                 ok: false,
                 error: makeTypeError(
                     `Array length mismatch: expected ${t1.length}, got ${t2.length}`,
-                    t1.span
+                    t1.span,
                 ),
             };
         }
@@ -226,7 +238,7 @@ function unify(ctx, t1, t2) {
                 ok: false,
                 error: makeTypeError(
                     `Mutability mismatch: expected ${t1.mutable ? "mut" : "immutable"}, got ${t2.mutable ? "mut" : "immutable"}`,
-                    t1.span
+                    t1.span,
                 ),
             };
         }
@@ -240,7 +252,7 @@ function unify(ctx, t1, t2) {
                 ok: false,
                 error: makeTypeError(
                     `Mutability mismatch: expected ${t1.mutable ? "mut" : "const"}, got ${t2.mutable ? "mut" : "const"}`,
-                    t1.span
+                    t1.span,
                 ),
             };
         }
@@ -254,7 +266,7 @@ function unify(ctx, t1, t2) {
                 ok: false,
                 error: makeTypeError(
                     `Function parameter count mismatch: expected ${t1.params.length}, got ${t2.params.length}`,
-                    t1.span
+                    t1.span,
                 ),
             };
         }
@@ -272,7 +284,7 @@ function unify(ctx, t1, t2) {
                 ok: false,
                 error: makeTypeError(
                     `Type mismatch: expected ${t1.name}, got ${t2.name}`,
-                    t1.span
+                    t1.span,
                 ),
             };
         }
@@ -283,7 +295,7 @@ function unify(ctx, t1, t2) {
                     ok: false,
                     error: makeTypeError(
                         `Generic argument count mismatch for ${t1.name}`,
-                        t1.span
+                        t1.span,
                     ),
                 };
             }
@@ -302,7 +314,7 @@ function unify(ctx, t1, t2) {
                 ok: false,
                 error: makeTypeError(
                     `Struct type mismatch: expected ${t1.name}, got ${t2.name}`,
-                    t1.span
+                    t1.span,
                 ),
             };
         }
@@ -316,7 +328,7 @@ function unify(ctx, t1, t2) {
                 ok: false,
                 error: makeTypeError(
                     `Enum type mismatch: expected ${t1.name}, got ${t2.name}`,
-                    t1.span
+                    t1.span,
                 ),
             };
         }
@@ -330,7 +342,7 @@ function unify(ctx, t1, t2) {
                 ok: false,
                 error: makeTypeError(
                     `Integer type mismatch: expected ${typeToString(t1)}, got ${typeToString(t2)}`,
-                    t1.span
+                    t1.span,
                 ),
             };
         }
@@ -344,7 +356,7 @@ function unify(ctx, t1, t2) {
                 ok: false,
                 error: makeTypeError(
                     `Float type mismatch: expected ${typeToString(t1)}, got ${typeToString(t2)}`,
-                    t1.span
+                    t1.span,
                 ),
             };
         }
@@ -356,7 +368,7 @@ function unify(ctx, t1, t2) {
         ok: false,
         error: makeTypeError(
             `Type mismatch: expected ${typeToString(t1)}, got ${typeToString(t2)}`,
-            t1.span || t2.span
+            t1.span || t2.span,
         ),
     };
 }
@@ -382,31 +394,50 @@ function substitute(ctx, type) {
             return type;
 
         case TypeKind.Tuple:
-            return makeTupleType(type.elements.map((t) => substitute(ctx, t)), type.span);
+            return makeTupleType(
+                type.elements.map((t) => substitute(ctx, t)),
+                type.span,
+            );
 
         case TypeKind.Array:
-            return makeArrayType(substitute(ctx, type.element), type.length, type.span);
+            return makeArrayType(
+                substitute(ctx, type.element),
+                type.length,
+                type.span,
+            );
 
         case TypeKind.Slice:
             return makeSliceType(substitute(ctx, type.element), type.span);
 
         case TypeKind.Ref:
-            return makeRefType(substitute(ctx, type.inner), type.mutable, type.span);
+            return makeRefType(
+                substitute(ctx, type.inner),
+                type.mutable,
+                type.span,
+            );
 
         case TypeKind.Ptr:
-            return makePtrType(substitute(ctx, type.inner), type.mutable, type.span);
+            return makePtrType(
+                substitute(ctx, type.inner),
+                type.mutable,
+                type.span,
+            );
 
         case TypeKind.Fn:
             return makeFnType(
                 type.params.map((t) => substitute(ctx, t)),
                 substitute(ctx, type.returnType),
                 type.isUnsafe,
-                type.span
+                type.span,
             );
 
         case TypeKind.Named:
             if (type.args) {
-                return makeNamedType(type.name, type.args.map((t) => substitute(ctx, t)), type.span);
+                return makeNamedType(
+                    type.name,
+                    type.args.map((t) => substitute(ctx, t)),
+                    type.span,
+                );
             }
             return type;
 
@@ -484,9 +515,22 @@ function gatherDeclaration(ctx, item) {
         case NodeKind.FnItem: {
             const typeResult = inferFnSignature(ctx, item);
             if (!typeResult.ok) return typeResult;
-            const registerResult = ctx.registerFn(item.name, item, typeResult.type);
+            const registerResult = ctx.registerFn(
+                item.name,
+                item,
+                typeResult.type,
+            );
             if (!registerResult.ok) {
-                return { ok: false, errors: [makeTypeError(registerResult.error || "Failed to register function", item.span)] };
+                return {
+                    ok: false,
+                    errors: [
+                        makeTypeError(
+                            registerResult.error ||
+                                "Failed to register function",
+                            item.span,
+                        ),
+                    ],
+                };
             }
             return { ok: true };
         }
@@ -494,7 +538,15 @@ function gatherDeclaration(ctx, item) {
         case NodeKind.StructItem: {
             const registerResult = ctx.registerStruct(item.name, item);
             if (!registerResult.ok) {
-                return { ok: false, errors: [makeTypeError(registerResult.error || "Failed to register struct", item.span)] };
+                return {
+                    ok: false,
+                    errors: [
+                        makeTypeError(
+                            registerResult.error || "Failed to register struct",
+                            item.span,
+                        ),
+                    ],
+                };
             }
             return { ok: true };
         }
@@ -502,7 +554,15 @@ function gatherDeclaration(ctx, item) {
         case NodeKind.EnumItem: {
             const registerResult = ctx.registerEnum(item.name, item);
             if (!registerResult.ok) {
-                return { ok: false, errors: [makeTypeError(registerResult.error || "Failed to register enum", item.span)] };
+                return {
+                    ok: false,
+                    errors: [
+                        makeTypeError(
+                            registerResult.error || "Failed to register enum",
+                            item.span,
+                        ),
+                    ],
+                };
             }
             return { ok: true };
         }
@@ -510,7 +570,15 @@ function gatherDeclaration(ctx, item) {
         case NodeKind.ModItem: {
             const registerResult = ctx.registerMod(item.name, item);
             if (!registerResult.ok) {
-                return { ok: false, errors: [makeTypeError(registerResult.error || "Failed to register module", item.span)] };
+                return {
+                    ok: false,
+                    errors: [
+                        makeTypeError(
+                            registerResult.error || "Failed to register module",
+                            item.span,
+                        ),
+                    ],
+                };
             }
             // Recursively gather declarations from inline modules
             if (item.isInline && item.items) {
@@ -557,7 +625,14 @@ function inferFnSignature(ctx, fnItem) {
         returnType = makeUnitType();
     }
 
-    return ok(makeFnType(paramTypes, returnType, fnItem.isUnsafe || false, fnItem.span));
+    return ok(
+        makeFnType(
+            paramTypes,
+            returnType,
+            fnItem.isUnsafe || false,
+            fnItem.span,
+        ),
+    );
 }
 
 // ============================================================================
@@ -599,7 +674,9 @@ function resolveTypeNode(ctx, typeNode) {
             // Unknown type - keep as named for now
             let args = null;
             if (typeNode.args && typeNode.args.args) {
-                const argsResult = combineResults(typeNode.args.args.map((a) => resolveTypeNode(ctx, a)));
+                const argsResult = combineResults(
+                    typeNode.args.args.map((a) => resolveTypeNode(ctx, a)),
+                );
                 if (!argsResult.ok) {
                     return { ok: false, errors: argsResult.errors };
                 }
@@ -609,7 +686,9 @@ function resolveTypeNode(ctx, typeNode) {
         }
 
         case NodeKind.TupleType: {
-            const elementsResult = combineResults((typeNode.elements || []).map((e) => resolveTypeNode(ctx, e)));
+            const elementsResult = combineResults(
+                (typeNode.elements || []).map((e) => resolveTypeNode(ctx, e)),
+            );
             if (!elementsResult.ok) {
                 return { ok: false, errors: elementsResult.errors };
             }
@@ -639,7 +718,9 @@ function resolveTypeNode(ctx, typeNode) {
         }
 
         case NodeKind.FnType: {
-            const paramsResult = combineResults((typeNode.params || []).map((p) => resolveTypeNode(ctx, p)));
+            const paramsResult = combineResults(
+                (typeNode.params || []).map((p) => resolveTypeNode(ctx, p)),
+            );
             if (!paramsResult.ok) {
                 return { ok: false, errors: paramsResult.errors };
             }
@@ -649,11 +730,21 @@ function resolveTypeNode(ctx, typeNode) {
                 if (!returnResult.ok) return returnResult;
                 returnType = returnResult.type;
             }
-            return ok(makeFnType(paramsResult.types, returnType, typeNode.isUnsafe || false, typeNode.span));
+            return ok(
+                makeFnType(
+                    paramsResult.types,
+                    returnType,
+                    typeNode.isUnsafe || false,
+                    typeNode.span,
+                ),
+            );
         }
 
         default:
-            return err(`Unknown type node kind: ${typeNode.kind}`, typeNode.span);
+            return err(
+                `Unknown type node kind: ${typeNode.kind}`,
+                typeNode.span,
+            );
     }
 }
 
@@ -771,7 +862,15 @@ function checkItem(ctx, item) {
 function checkFnItem(ctx, fnItem) {
     const itemDecl = ctx.lookupItem(fnItem.name);
     if (!itemDecl || !itemDecl.type) {
-        return { ok: false, errors: [makeTypeError(`Function ${fnItem.name} not found in context`, fnItem.span)] };
+        return {
+            ok: false,
+            errors: [
+                makeTypeError(
+                    `Function ${fnItem.name} not found in context`,
+                    fnItem.span,
+                ),
+            ],
+        };
     }
 
     const fnType = itemDecl.type;
@@ -785,11 +884,24 @@ function checkFnItem(ctx, fnItem) {
         const param = fnItem.params[i];
         const paramType = fnType.params[i];
         if (param.name) {
-            const defineResult = ctx.defineVar(param.name, paramType, false, param.span);
+            const defineResult = ctx.defineVar(
+                param.name,
+                paramType,
+                false,
+                param.span,
+            );
             if (!defineResult.ok) {
                 ctx.popScope();
                 ctx.clearCurrentFn();
-                return { ok: false, errors: [makeTypeError(defineResult.error || "Failed to define parameter", param.span)] };
+                return {
+                    ok: false,
+                    errors: [
+                        makeTypeError(
+                            defineResult.error || "Failed to define parameter",
+                            param.span,
+                        ),
+                    ],
+                };
             }
         }
     }
@@ -927,7 +1039,10 @@ function inferLiteral(ctx, literal) {
             return ok(makeCharType(literal.span));
 
         default:
-            return err(`Unknown literal kind: ${literal.literalKind}`, literal.span);
+            return err(
+                `Unknown literal kind: ${literal.literalKind}`,
+                literal.span,
+            );
     }
 }
 
@@ -985,11 +1100,23 @@ function inferBinary(ctx, binary) {
         case BinaryOp.Div:
         case BinaryOp.Rem: {
             // Both operands must be numeric
-            if (!isNumericType(leftType) && leftType.kind !== TypeKind.TypeVar) {
-                return err(`Expected numeric type, got ${typeToString(leftType)}`, binary.left.span);
+            if (
+                !isNumericType(leftType) &&
+                leftType.kind !== TypeKind.TypeVar
+            ) {
+                return err(
+                    `Expected numeric type, got ${typeToString(leftType)}`,
+                    binary.left.span,
+                );
             }
-            if (!isNumericType(rightType) && rightType.kind !== TypeKind.TypeVar) {
-                return err(`Expected numeric type, got ${typeToString(rightType)}`, binary.right.span);
+            if (
+                !isNumericType(rightType) &&
+                rightType.kind !== TypeKind.TypeVar
+            ) {
+                return err(
+                    `Expected numeric type, got ${typeToString(rightType)}`,
+                    binary.right.span,
+                );
             }
 
             // Unify operand types
@@ -1039,11 +1166,23 @@ function inferBinary(ctx, binary) {
         case BinaryOp.Shl:
         case BinaryOp.Shr: {
             // Both operands must be integers
-            if (!isIntegerType(leftType) && leftType.kind !== TypeKind.TypeVar) {
-                return err(`Expected integer type, got ${typeToString(leftType)}`, binary.left.span);
+            if (
+                !isIntegerType(leftType) &&
+                leftType.kind !== TypeKind.TypeVar
+            ) {
+                return err(
+                    `Expected integer type, got ${typeToString(leftType)}`,
+                    binary.left.span,
+                );
             }
-            if (!isIntegerType(rightType) && rightType.kind !== TypeKind.TypeVar) {
-                return err(`Expected integer type, got ${typeToString(rightType)}`, binary.right.span);
+            if (
+                !isIntegerType(rightType) &&
+                rightType.kind !== TypeKind.TypeVar
+            ) {
+                return err(
+                    `Expected integer type, got ${typeToString(rightType)}`,
+                    binary.right.span,
+                );
             }
 
             const unifyResult = unify(ctx, leftType, rightType);
@@ -1082,15 +1221,28 @@ function inferUnary(ctx, unary) {
         }
 
         case UnaryOp.Neg: {
-            if (!isNumericType(operandType) && operandType.kind !== TypeKind.TypeVar) {
-                return err(`Expected numeric type, got ${typeToString(operandType)}`, unary.operand.span);
+            if (
+                !isNumericType(operandType) &&
+                operandType.kind !== TypeKind.TypeVar
+            ) {
+                return err(
+                    `Expected numeric type, got ${typeToString(operandType)}`,
+                    unary.operand.span,
+                );
             }
             return ok(operandType);
         }
 
         case UnaryOp.Deref: {
-            if (operandType.kind !== TypeKind.Ref && operandType.kind !== TypeKind.Ptr && operandType.kind !== TypeKind.TypeVar) {
-                return err(`Cannot dereference non-reference type: ${typeToString(operandType)}`, unary.operand.span);
+            if (
+                operandType.kind !== TypeKind.Ref &&
+                operandType.kind !== TypeKind.Ptr &&
+                operandType.kind !== TypeKind.TypeVar
+            ) {
+                return err(
+                    `Cannot dereference non-reference type: ${typeToString(operandType)}`,
+                    unary.operand.span,
+                );
             }
             if (operandType.kind === TypeKind.Ref) {
                 return ok(operandType.inner);
@@ -1133,8 +1285,14 @@ function inferCall(ctx, call) {
     const calleeType = ctx.resolveType(calleeResult.type);
 
     // Check if callee is a function type
-    if (calleeType.kind !== TypeKind.Fn && calleeType.kind !== TypeKind.TypeVar) {
-        return err(`Cannot call non-function type: ${typeToString(calleeType)}`, call.callee.span);
+    if (
+        calleeType.kind !== TypeKind.Fn &&
+        calleeType.kind !== TypeKind.TypeVar
+    ) {
+        return err(
+            `Cannot call non-function type: ${typeToString(calleeType)}`,
+            call.callee.span,
+        );
     }
 
     // Handle type variable callee
@@ -1164,7 +1322,7 @@ function inferCall(ctx, call) {
     if (call.args.length !== calleeType.params.length) {
         return err(
             `Function expects ${calleeType.params.length} arguments, got ${call.args.length}`,
-            call.span
+            call.span,
         );
     }
 
@@ -1195,10 +1353,14 @@ function inferField(ctx, field) {
 
     // Handle struct field access
     if (receiverType.kind === TypeKind.Struct) {
-        const fieldName = typeof field.field === "string" ? field.field : field.field.name;
+        const fieldName =
+            typeof field.field === "string" ? field.field : field.field.name;
         const fieldDef = receiverType.fields.find((f) => f.name === fieldName);
         if (!fieldDef) {
-            return err(`Field '${fieldName}' not found in struct ${receiverType.name}`, field.span);
+            return err(
+                `Field '${fieldName}' not found in struct ${receiverType.name}`,
+                field.span,
+            );
         }
         return ok(fieldDef.type);
     }
@@ -1207,10 +1369,18 @@ function inferField(ctx, field) {
     if (receiverType.kind === TypeKind.Named) {
         const item = ctx.lookupItem(receiverType.name);
         if (item && item.kind === "struct") {
-            const fieldName = typeof field.field === "string" ? field.field : field.field.name;
-            const structField = item.node.fields?.find((f) => f.name === fieldName);
+            const fieldName =
+                typeof field.field === "string"
+                    ? field.field
+                    : field.field.name;
+            const structField = item.node.fields?.find(
+                (f) => f.name === fieldName,
+            );
             if (!structField) {
-                return err(`Field '${fieldName}' not found in struct ${receiverType.name}`, field.span);
+                return err(
+                    `Field '${fieldName}' not found in struct ${receiverType.name}`,
+                    field.span,
+                );
             }
             if (structField.ty) {
                 return resolveTypeNode(ctx, structField.ty);
@@ -1221,8 +1391,15 @@ function inferField(ctx, field) {
 
     // Handle tuple field access (numeric index)
     if (receiverType.kind === TypeKind.Tuple) {
-        const index = typeof field.field === "number" ? field.field : parseInt(field.field.name, 10);
-        if (isNaN(index) || index < 0 || index >= receiverType.elements.length) {
+        const index =
+            typeof field.field === "number"
+                ? field.field
+                : parseInt(field.field.name, 10);
+        if (
+            isNaN(index) ||
+            index < 0 ||
+            index >= receiverType.elements.length
+        ) {
             return err(`Tuple index out of bounds: ${field.field}`, field.span);
         }
         return ok(receiverType.elements[index]);
@@ -1235,7 +1412,10 @@ function inferField(ctx, field) {
         return ok(fieldType);
     }
 
-    return err(`Cannot access field on type: ${typeToString(receiverType)}`, field.span);
+    return err(
+        `Cannot access field on type: ${typeToString(receiverType)}`,
+        field.span,
+    );
 }
 
 /**
@@ -1604,7 +1784,10 @@ function inferPath(ctx, pathExpr) {
 
     // Simple identifier
     if (pathExpr.segments.length === 1) {
-        return inferIdentifier(ctx, { name: pathExpr.segments[0], span: pathExpr.span });
+        return inferIdentifier(ctx, {
+            name: pathExpr.segments[0],
+            span: pathExpr.span,
+        });
     }
 
     // Qualified path - look up in items
@@ -1631,8 +1814,15 @@ function inferStructExpr(ctx, structExpr) {
     const structType = ctx.resolveType(pathResult.type);
 
     // Check that it's a struct
-    if (structType.kind !== TypeKind.Struct && structType.kind !== TypeKind.Named && structType.kind !== TypeKind.TypeVar) {
-        return err(`Expected struct type, got ${typeToString(structType)}`, structExpr.span);
+    if (
+        structType.kind !== TypeKind.Struct &&
+        structType.kind !== TypeKind.Named &&
+        structType.kind !== TypeKind.TypeVar
+    ) {
+        return err(
+            `Expected struct type, got ${typeToString(structType)}`,
+            structExpr.span,
+        );
     }
 
     // Get struct definition
@@ -1644,7 +1834,10 @@ function inferStructExpr(ctx, structExpr) {
     }
 
     if (!structDef || structDef.kind !== "struct") {
-        return err(`Unknown struct: ${typeToString(structType)}`, structExpr.span);
+        return err(
+            `Unknown struct: ${typeToString(structType)}`,
+            structExpr.span,
+        );
     }
 
     // Check fields
@@ -1654,9 +1847,13 @@ function inferStructExpr(ctx, structExpr) {
     for (const field of structExpr.fields || []) {
         seenFields.add(field.name);
 
-        const fieldDef = structDef.node.fields?.find((f) => f.name === field.name);
+        const fieldDef = structDef.node.fields?.find(
+            (f) => f.name === field.name,
+        );
         if (!fieldDef) {
-            errors.push(makeTypeError(`Unknown field: ${field.name}`, field.span));
+            errors.push(
+                makeTypeError(`Unknown field: ${field.name}`, field.span),
+            );
             continue;
         }
 
@@ -1673,7 +1870,11 @@ function inferStructExpr(ctx, structExpr) {
                 continue;
             }
 
-            const unifyResult = unify(ctx, valueResult.type, fieldTypeResult.type);
+            const unifyResult = unify(
+                ctx,
+                valueResult.type,
+                fieldTypeResult.type,
+            );
             if (!unifyResult.ok) {
                 errors.push(unifyResult.error);
             }
@@ -1683,7 +1884,12 @@ function inferStructExpr(ctx, structExpr) {
     // Check for missing fields
     for (const fieldDef of structDef.node.fields || []) {
         if (!seenFields.has(fieldDef.name) && !fieldDef.defaultValue) {
-            errors.push(makeTypeError(`Missing field: ${fieldDef.name}`, structExpr.span));
+            errors.push(
+                makeTypeError(
+                    `Missing field: ${fieldDef.name}`,
+                    structExpr.span,
+                ),
+            );
         }
     }
 
@@ -1769,7 +1975,10 @@ function inferDeref(ctx, derefExpr) {
         return ok(innerType);
     }
 
-    return err(`Cannot dereference non-reference type: ${typeToString(operandType)}`, derefExpr.span);
+    return err(
+        `Cannot dereference non-reference type: ${typeToString(operandType)}`,
+        derefExpr.span,
+    );
 }
 
 // ============================================================================
@@ -1796,7 +2005,15 @@ function checkStmt(ctx, stmt) {
         }
 
         default:
-            return { ok: false, errors: [makeTypeError(`Unknown statement kind: ${stmt.kind}`, stmt.span)] };
+            return {
+                ok: false,
+                errors: [
+                    makeTypeError(
+                        `Unknown statement kind: ${stmt.kind}`,
+                        stmt.span,
+                    ),
+                ],
+            };
     }
 }
 
@@ -1843,7 +2060,12 @@ function checkLetStmt(ctx, letStmt) {
         varType = initType;
     } else {
         // No type annotation and no initializer - error
-        errors.push(makeTypeError("Cannot infer type for variable without initializer or type annotation", letStmt.span));
+        errors.push(
+            makeTypeError(
+                "Cannot infer type for variable without initializer or type annotation",
+                letStmt.span,
+            ),
+        );
         varType = ctx.freshTypeVar();
     }
 
@@ -1886,13 +2108,23 @@ function checkExprStmt(ctx, exprStmt) {
 function inferPattern(ctx, pattern) {
     switch (pattern.kind) {
         case NodeKind.IdentPat: {
-            const type = pattern.ty ? resolveTypeNode(ctx, pattern.ty) : ok(ctx.freshTypeVar());
+            const type = pattern.ty
+                ? resolveTypeNode(ctx, pattern.ty)
+                : ok(ctx.freshTypeVar());
             if (!type.ok) return type;
 
             const mutable = pattern.mutability === Mutability.Mutable;
-            const defineResult = ctx.defineVar(pattern.name, type.type, mutable, pattern.span);
+            const defineResult = ctx.defineVar(
+                pattern.name,
+                type.type,
+                mutable,
+                pattern.span,
+            );
             if (!defineResult.ok) {
-                return err(defineResult.error || "Failed to define variable", pattern.span);
+                return err(
+                    defineResult.error || "Failed to define variable",
+                    pattern.span,
+                );
             }
 
             return ok(type.type);
@@ -1914,12 +2146,17 @@ function inferPattern(ctx, pattern) {
                 case LiteralKind.Char:
                     return ok(makeCharType(pattern.span));
                 default:
-                    return err(`Unknown literal pattern kind: ${pattern.literalKind}`, pattern.span);
+                    return err(
+                        `Unknown literal pattern kind: ${pattern.literalKind}`,
+                        pattern.span,
+                    );
             }
         }
 
         case NodeKind.TuplePat: {
-            const elementsResult = combineResults(pattern.elements.map((e) => inferPattern(ctx, e)));
+            const elementsResult = combineResults(
+                pattern.elements.map((e) => inferPattern(ctx, e)),
+            );
             if (!elementsResult.ok) {
                 return { ok: false, errors: elementsResult.errors };
             }
@@ -1932,8 +2169,14 @@ function inferPattern(ctx, pattern) {
             if (!pathResult.ok) return pathResult;
 
             const structType = ctx.resolveType(pathResult.type);
-            if (structType.kind !== TypeKind.Struct && structType.kind !== TypeKind.Named) {
-                return err(`Expected struct type in pattern, got ${typeToString(structType)}`, pattern.span);
+            if (
+                structType.kind !== TypeKind.Struct &&
+                structType.kind !== TypeKind.Named
+            ) {
+                return err(
+                    `Expected struct type in pattern, got ${typeToString(structType)}`,
+                    pattern.span,
+                );
             }
 
             // Bind fields
@@ -1950,9 +2193,17 @@ function inferPattern(ctx, pattern) {
             const innerResult = inferPattern(ctx, pattern.pat);
             if (!innerResult.ok) return innerResult;
 
-            const defineResult = ctx.defineVar(pattern.name, innerResult.type, false, pattern.span);
+            const defineResult = ctx.defineVar(
+                pattern.name,
+                innerResult.type,
+                false,
+                pattern.span,
+            );
             if (!defineResult.ok) {
-                return err(defineResult.error || "Failed to define binding", pattern.span);
+                return err(
+                    defineResult.error || "Failed to define binding",
+                    pattern.span,
+                );
             }
 
             return ok(innerResult.type);
@@ -1971,7 +2222,11 @@ function inferPattern(ctx, pattern) {
                 const altResult = inferPattern(ctx, pattern.alternatives[i]);
                 if (!altResult.ok) return altResult;
 
-                const unifyResult = unify(ctx, firstResult.type, altResult.type);
+                const unifyResult = unify(
+                    ctx,
+                    firstResult.type,
+                    altResult.type,
+                );
                 if (!unifyResult.ok) {
                     return { ok: false, errors: [unifyResult.error] };
                 }
@@ -2042,9 +2297,22 @@ function checkPattern(ctx, pattern, expectedType) {
             }
 
             const mutable = pattern.mutability === Mutability.Mutable;
-            const defineResult = ctx.defineVar(pattern.name, varType, mutable, pattern.span);
+            const defineResult = ctx.defineVar(
+                pattern.name,
+                varType,
+                mutable,
+                pattern.span,
+            );
             if (!defineResult.ok) {
-                return { ok: false, errors: [makeTypeError(defineResult.error || "Failed to define variable", pattern.span)] };
+                return {
+                    ok: false,
+                    errors: [
+                        makeTypeError(
+                            defineResult.error || "Failed to define variable",
+                            pattern.span,
+                        ),
+                    ],
+                };
             }
 
             return { ok: true };
@@ -2072,7 +2340,15 @@ function checkPattern(ctx, pattern, expectedType) {
                     literalType = makeCharType(pattern.span);
                     break;
                 default:
-                    return { ok: false, errors: [makeTypeError(`Unknown literal pattern kind: ${pattern.literalKind}`, pattern.span)] };
+                    return {
+                        ok: false,
+                        errors: [
+                            makeTypeError(
+                                `Unknown literal pattern kind: ${pattern.literalKind}`,
+                                pattern.span,
+                            ),
+                        ],
+                    };
             }
 
             const unifyResult = unify(ctx, literalType, expectedType);
@@ -2099,16 +2375,22 @@ function checkPattern(ctx, pattern, expectedType) {
             if (pattern.elements.length !== expectedType.elements.length) {
                 return {
                     ok: false,
-                    errors: [makeTypeError(
-                        `Tuple pattern length mismatch: expected ${expectedType.elements.length}, got ${pattern.elements.length}`,
-                        pattern.span
-                    )],
+                    errors: [
+                        makeTypeError(
+                            `Tuple pattern length mismatch: expected ${expectedType.elements.length}, got ${pattern.elements.length}`,
+                            pattern.span,
+                        ),
+                    ],
                 };
             }
 
             const errors = [];
             for (let i = 0; i < pattern.elements.length; i++) {
-                const result = checkPattern(ctx, pattern.elements[i], expectedType.elements[i]);
+                const result = checkPattern(
+                    ctx,
+                    pattern.elements[i],
+                    expectedType.elements[i],
+                );
                 if (!result.ok) {
                     errors.push(...(result.errors || []));
                 }
@@ -2144,7 +2426,15 @@ function checkPattern(ctx, pattern, expectedType) {
             }
 
             if (!structDef || structDef.kind !== "struct") {
-                return { ok: false, errors: [makeTypeError(`Unknown struct: ${typeToString(structType)}`, pattern.span)] };
+                return {
+                    ok: false,
+                    errors: [
+                        makeTypeError(
+                            `Unknown struct: ${typeToString(structType)}`,
+                            pattern.span,
+                        ),
+                    ],
+                };
             }
 
             // Check fields
@@ -2154,9 +2444,16 @@ function checkPattern(ctx, pattern, expectedType) {
             for (const field of pattern.fields || []) {
                 seenFields.add(field.name);
 
-                const fieldDef = structDef.node.fields?.find((f) => f.name === field.name);
+                const fieldDef = structDef.node.fields?.find(
+                    (f) => f.name === field.name,
+                );
                 if (!fieldDef) {
-                    errors.push(makeTypeError(`Unknown field: ${field.name}`, field.span));
+                    errors.push(
+                        makeTypeError(
+                            `Unknown field: ${field.name}`,
+                            field.span,
+                        ),
+                    );
                     continue;
                 }
 
@@ -2182,7 +2479,12 @@ function checkPattern(ctx, pattern, expectedType) {
             if (!pattern.rest) {
                 for (const fieldDef of structDef.node.fields || []) {
                     if (!seenFields.has(fieldDef.name)) {
-                        errors.push(makeTypeError(`Missing field in pattern: ${fieldDef.name}`, pattern.span));
+                        errors.push(
+                            makeTypeError(
+                                `Missing field in pattern: ${fieldDef.name}`,
+                                pattern.span,
+                            ),
+                        );
                     }
                 }
             }
@@ -2197,9 +2499,22 @@ function checkPattern(ctx, pattern, expectedType) {
             const innerResult = checkPattern(ctx, pattern.pat, expectedType);
             if (!innerResult.ok) return innerResult;
 
-            const defineResult = ctx.defineVar(pattern.name, expectedType, false, pattern.span);
+            const defineResult = ctx.defineVar(
+                pattern.name,
+                expectedType,
+                false,
+                pattern.span,
+            );
             if (!defineResult.ok) {
-                return { ok: false, errors: [makeTypeError(defineResult.error || "Failed to define binding", pattern.span)] };
+                return {
+                    ok: false,
+                    errors: [
+                        makeTypeError(
+                            defineResult.error || "Failed to define binding",
+                            pattern.span,
+                        ),
+                    ],
+                };
             }
 
             return { ok: true };
@@ -2226,10 +2541,18 @@ function checkPattern(ctx, pattern, expectedType) {
 
         case NodeKind.RangePat: {
             // Check that expected type is numeric
-            if (!isNumericType(expectedType) && expectedType.kind !== TypeKind.TypeVar) {
+            if (
+                !isNumericType(expectedType) &&
+                expectedType.kind !== TypeKind.TypeVar
+            ) {
                 return {
                     ok: false,
-                    errors: [makeTypeError(`Range pattern requires numeric type, got ${typeToString(expectedType)}`, pattern.span)],
+                    errors: [
+                        makeTypeError(
+                            `Range pattern requires numeric type, got ${typeToString(expectedType)}`,
+                            pattern.span,
+                        ),
+                    ],
                 };
             }
 
@@ -2275,7 +2598,12 @@ function checkPattern(ctx, pattern, expectedType) {
             } else {
                 return {
                     ok: false,
-                    errors: [makeTypeError(`Slice pattern requires array or slice type, got ${typeToString(expectedType)}`, pattern.span)],
+                    errors: [
+                        makeTypeError(
+                            `Slice pattern requires array or slice type, got ${typeToString(expectedType)}`,
+                            pattern.span,
+                        ),
+                    ],
                 };
             }
 
@@ -2294,7 +2622,15 @@ function checkPattern(ctx, pattern, expectedType) {
         }
 
         default:
-            return { ok: false, errors: [makeTypeError(`Unknown pattern kind: ${pattern.kind}`, pattern.span)] };
+            return {
+                ok: false,
+                errors: [
+                    makeTypeError(
+                        `Unknown pattern kind: ${pattern.kind}`,
+                        pattern.span,
+                    ),
+                ],
+            };
     }
 }
 
@@ -2313,10 +2649,12 @@ function finalizeInference(ctx) {
     // Check for unresolved type variables
     for (const [id, tv] of ctx.typeVars) {
         if (tv.bound === null) {
-            errors.push(makeTypeError(
-                `Ambiguous type: cannot infer type for type variable ?${id}`,
-                tv.span
-            ));
+            errors.push(
+                makeTypeError(
+                    `Ambiguous type: cannot infer type for type variable ?${id}`,
+                    tv.span,
+                ),
+            );
         }
     }
 

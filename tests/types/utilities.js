@@ -1,4 +1,10 @@
-import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib.js";
+import {
+    test,
+    assertEqual,
+    assertTrue,
+    getResults,
+    clearErrors,
+} from "../lib.js";
 import {
     IntWidth,
     FloatWidth,
@@ -231,59 +237,95 @@ test("typeToString formats primitive types", () => {
 
 test("typeToString formats tuple types", () => {
     assertEqual(typeToString(makeTupleType([])), "()");
-    assertEqual(typeToString(makeTupleType([makeIntType(IntWidth.I32)])), "(i32)");
     assertEqual(
-        typeToString(makeTupleType([makeIntType(IntWidth.I32), makeBoolType()])),
-        "(i32, bool)"
+        typeToString(makeTupleType([makeIntType(IntWidth.I32)])),
+        "(i32)",
+    );
+    assertEqual(
+        typeToString(
+            makeTupleType([makeIntType(IntWidth.I32), makeBoolType()]),
+        ),
+        "(i32, bool)",
     );
 });
 
 test("typeToString formats array types", () => {
-    assertEqual(typeToString(makeArrayType(makeIntType(IntWidth.I32), 0)), "[i32; 0]");
-    assertEqual(typeToString(makeArrayType(makeBoolType(), 100)), "[bool; 100]");
+    assertEqual(
+        typeToString(makeArrayType(makeIntType(IntWidth.I32), 0)),
+        "[i32; 0]",
+    );
+    assertEqual(
+        typeToString(makeArrayType(makeBoolType(), 100)),
+        "[bool; 100]",
+    );
 });
 
 test("typeToString formats slice types", () => {
-    assertEqual(typeToString(makeSliceType(makeIntType(IntWidth.I32))), "[i32]");
+    assertEqual(
+        typeToString(makeSliceType(makeIntType(IntWidth.I32))),
+        "[i32]",
+    );
     assertEqual(typeToString(makeSliceType(makeBoolType())), "[bool]");
 });
 
 test("typeToString formats reference types", () => {
-    assertEqual(typeToString(makeRefType(makeIntType(IntWidth.I32), false)), "&i32");
-    assertEqual(typeToString(makeRefType(makeIntType(IntWidth.I32), true)), "&mut i32");
     assertEqual(
-        typeToString(makeRefType(makeRefType(makeIntType(IntWidth.I32), false), true)),
-        "&mut &i32"
+        typeToString(makeRefType(makeIntType(IntWidth.I32), false)),
+        "&i32",
+    );
+    assertEqual(
+        typeToString(makeRefType(makeIntType(IntWidth.I32), true)),
+        "&mut i32",
+    );
+    assertEqual(
+        typeToString(
+            makeRefType(makeRefType(makeIntType(IntWidth.I32), false), true),
+        ),
+        "&mut &i32",
     );
 });
 
 test("typeToString formats pointer types", () => {
-    assertEqual(typeToString(makePtrType(makeIntType(IntWidth.I32), false)), "*const i32");
-    assertEqual(typeToString(makePtrType(makeIntType(IntWidth.I32), true)), "*mut i32");
+    assertEqual(
+        typeToString(makePtrType(makeIntType(IntWidth.I32), false)),
+        "*const i32",
+    );
+    assertEqual(
+        typeToString(makePtrType(makeIntType(IntWidth.I32), true)),
+        "*mut i32",
+    );
 });
 
 test("typeToString formats function types", () => {
     assertEqual(
         typeToString(makeFnType([], makeUnitType(), false)),
-        "fn() -> ()"
+        "fn() -> ()",
     );
     assertEqual(
-        typeToString(makeFnType([makeIntType(IntWidth.I32)], makeBoolType(), false)),
-        "fn(i32) -> bool"
+        typeToString(
+            makeFnType([makeIntType(IntWidth.I32)], makeBoolType(), false),
+        ),
+        "fn(i32) -> bool",
     );
     assertEqual(
         typeToString(
             makeFnType(
                 [makeIntType(IntWidth.I32), makeFloatType(FloatWidth.F64)],
                 makeUnitType(),
-                false
-            )
+                false,
+            ),
         ),
-        "fn(i32, f64) -> ()"
+        "fn(i32, f64) -> ()",
     );
     assertEqual(
-        typeToString(makeFnType([makeIntType(IntWidth.I32)], makeIntType(IntWidth.I32), true)),
-        "unsafe fn(i32) -> i32"
+        typeToString(
+            makeFnType(
+                [makeIntType(IntWidth.I32)],
+                makeIntType(IntWidth.I32),
+                true,
+            ),
+        ),
+        "unsafe fn(i32) -> i32",
     );
 });
 
@@ -300,13 +342,21 @@ test("typeToString formats enum types", () => {
 test("typeToString formats nested types", () => {
     // Array of references
     assertEqual(
-        typeToString(makeArrayType(makeRefType(makeIntType(IntWidth.I32), false), 10)),
-        "[&i32; 10]"
+        typeToString(
+            makeArrayType(makeRefType(makeIntType(IntWidth.I32), false), 10),
+        ),
+        "[&i32; 10]",
     );
     // Function returning reference
     assertEqual(
-        typeToString(makeFnType([], makeRefType(makeIntType(IntWidth.I32), false), false)),
-        "fn() -> &i32"
+        typeToString(
+            makeFnType(
+                [],
+                makeRefType(makeIntType(IntWidth.I32), false),
+                false,
+            ),
+        ),
+        "fn() -> &i32",
     );
     // Tuple with arrays
     assertEqual(
@@ -314,9 +364,9 @@ test("typeToString formats nested types", () => {
             makeTupleType([
                 makeArrayType(makeIntType(IntWidth.I32), 10),
                 makeSliceType(makeBoolType()),
-            ])
+            ]),
         ),
-        "([i32; 10], [bool])"
+        "([i32; 10], [bool])",
     );
 });
 

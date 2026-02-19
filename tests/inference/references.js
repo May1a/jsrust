@@ -85,7 +85,7 @@ testGroup("Dereference Inference", () => {
         const innerType = { kind: TypeKind.Int, width: IntWidth.I32 };
         const refType = makeRefType(innerType, false);
         ctx.defineVar("r", refType);
-        
+
         const operand = makeIdentifierExpr("r");
         const derefExpr = makeDerefExpr(operand);
         const result = inferDeref(ctx, derefExpr);
@@ -98,7 +98,7 @@ testGroup("Dereference Inference", () => {
         const innerType = { kind: TypeKind.Int, width: IntWidth.I32 };
         const refType = makeRefType(innerType, true);
         ctx.defineVar("r", refType);
-        
+
         const operand = makeIdentifierExpr("r");
         const derefExpr = makeDerefExpr(operand);
         const result = inferDeref(ctx, derefExpr);
@@ -109,7 +109,7 @@ testGroup("Dereference Inference", () => {
     assert("dereference non-reference fails", () => {
         const ctx = new TypeContext();
         ctx.defineVar("x", { kind: TypeKind.Int, width: IntWidth.I32 });
-        
+
         const operand = makeIdentifierExpr("x");
         const derefExpr = makeDerefExpr(operand);
         const result = inferDeref(ctx, derefExpr);
@@ -121,16 +121,28 @@ testGroup("Dereference Inference", () => {
 testGroup("Reference Unification", () => {
     assert("same reference types unify", () => {
         const ctx = new TypeContext();
-        const t1 = makeRefType({ kind: TypeKind.Int, width: IntWidth.I32 }, false);
-        const t2 = makeRefType({ kind: TypeKind.Int, width: IntWidth.I32 }, false);
+        const t1 = makeRefType(
+            { kind: TypeKind.Int, width: IntWidth.I32 },
+            false,
+        );
+        const t2 = makeRefType(
+            { kind: TypeKind.Int, width: IntWidth.I32 },
+            false,
+        );
         const result = unify(ctx, t1, t2);
         assert(result.ok);
     });
 
     assert("mutable and immutable don't unify", () => {
         const ctx = new TypeContext();
-        const t1 = makeRefType({ kind: TypeKind.Int, width: IntWidth.I32 }, true);
-        const t2 = makeRefType({ kind: TypeKind.Int, width: IntWidth.I32 }, false);
+        const t1 = makeRefType(
+            { kind: TypeKind.Int, width: IntWidth.I32 },
+            true,
+        );
+        const t2 = makeRefType(
+            { kind: TypeKind.Int, width: IntWidth.I32 },
+            false,
+        );
         const result = unify(ctx, t1, t2);
         assert(!result.ok);
     });
@@ -138,7 +150,10 @@ testGroup("Reference Unification", () => {
     assert("reference with type variable", () => {
         const ctx = new TypeContext();
         const tv = ctx.freshTypeVar();
-        const refType = makeRefType({ kind: TypeKind.Int, width: IntWidth.I32 }, false);
+        const refType = makeRefType(
+            { kind: TypeKind.Int, width: IntWidth.I32 },
+            false,
+        );
         const result = unify(ctx, tv, refType);
         assert(result.ok);
         assertEq(ctx.resolveType(tv).kind, TypeKind.Ref);

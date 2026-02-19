@@ -5,14 +5,10 @@
 /** @typedef {import('./ir.js').IRInstKindValue} IRInstKindValue */
 /** @typedef {import('./ir.js').IRTermKindValue} IRTermKindValue */
 
-import {
-    IRTypeKind,
-    IRInstKind,
-    IRTermKind,
-} from './ir.js';
+import { IRTypeKind, IRInstKind, IRTermKind } from "./ir.js";
 
 // Magic bytes: "JSRS" (0x4A 0x53 0x52 0x53)
-const MAGIC = 0x52534A53; // "JSRS" in little-endian
+const MAGIC = 0x52534a53; // "JSRS" in little-endian
 
 // Current version
 const VERSION = 1;
@@ -29,7 +25,7 @@ const SectionId = {
 };
 
 // Special value for "no value" in terminators
-const NO_VALUE = 0xFFFFFFFF;
+const NO_VALUE = 0xffffffff;
 
 /**
  * String table for deduplicating strings during serialization
@@ -210,7 +206,9 @@ class IRSerializer {
             size += 4; // name string id
             size += 4; // field count
             for (const field of struct.fields) {
-                size += this.calculateTypeSize(field.ty !== undefined ? field.ty : field);
+                size += this.calculateTypeSize(
+                    field.ty !== undefined ? field.ty : field,
+                );
             }
         }
         size += 4; // enum count
@@ -284,11 +282,11 @@ class IRSerializer {
      * @returns {number}
      */
     calculateConstantSize(value) {
-        if (typeof value === 'bigint') {
+        if (typeof value === "bigint") {
             return 8;
-        } else if (typeof value === 'number') {
+        } else if (typeof value === "number") {
             return 8; // Use 64-bit for all numbers
-        } else if (typeof value === 'boolean') {
+        } else if (typeof value === "boolean") {
             return 1;
         }
         return 0;
@@ -384,7 +382,10 @@ class IRSerializer {
             case IRInstKind.Icmp:
             case IRInstKind.Fcmp:
                 size += 4 + 4; // a, b
-                if (inst.kind === IRInstKind.Icmp || inst.kind === IRInstKind.Fcmp) {
+                if (
+                    inst.kind === IRInstKind.Icmp ||
+                    inst.kind === IRInstKind.Fcmp
+                ) {
                     size += 1; // op
                 }
                 break;
@@ -725,7 +726,7 @@ class IRSerializer {
     writeConstant(value, ty) {
         switch (ty.kind) {
             case IRTypeKind.Int:
-                if (typeof value === 'bigint') {
+                if (typeof value === "bigint") {
                     this.writeI64(value);
                 } else {
                     this.writeI64(BigInt(value));
@@ -750,24 +751,24 @@ class IRSerializer {
      */
     writeFunction(fn) {
         this.writeU32(this.strings.addString(fn.name));
-        
+
         // Parameters
         this.writeU32(fn.params.length);
         for (const param of fn.params) {
             this.writeType(param.ty);
             this.writeU32(param.id);
         }
-        
+
         // Return type
         this.writeType(fn.returnType);
-        
+
         // Locals
         this.writeU32(fn.locals.length);
         for (const local of fn.locals) {
             this.writeType(local.ty);
             this.writeU32(local.id);
         }
-        
+
         // Blocks
         this.writeU32(fn.blocks.length);
         for (const block of fn.blocks) {
@@ -785,20 +786,20 @@ class IRSerializer {
      */
     writeBlock(block) {
         this.writeU32(block.id);
-        
+
         // Block parameters
         this.writeU32(block.params.length);
         for (const param of block.params) {
             this.writeType(param.ty);
             this.writeU32(param.id);
         }
-        
+
         // Instructions
         this.writeU32(block.instructions.length);
         for (const inst of block.instructions) {
             this.writeInstruction(inst);
         }
-        
+
         // Terminator
         this.writeTerminator(block.terminator);
     }
@@ -813,36 +814,36 @@ class IRSerializer {
      */
     writeInstruction(inst) {
         this.writeU8(inst.kind);
-        
+
         // Destination value (if present)
         if (inst.id !== null) {
             this.writeU32(inst.id);
         }
-        
+
         // Type
         this.writeType(inst.ty);
-        
+
         switch (inst.kind) {
             case IRInstKind.Iconst:
-                if (typeof inst.value === 'bigint') {
+                if (typeof inst.value === "bigint") {
                     this.writeI64(inst.value);
                 } else {
                     this.writeI64(BigInt(inst.value));
                 }
                 break;
-                
+
             case IRInstKind.Fconst:
                 this.writeF64(inst.value);
                 break;
-                
+
             case IRInstKind.Bconst:
                 this.writeU8(inst.value ? 1 : 0);
                 break;
-                
+
             case IRInstKind.Null:
                 // No additional data
                 break;
-                
+
             case IRInstKind.Iadd:
             case IRInstKind.Isub:
             case IRInstKind.Imul:
@@ -860,44 +861,44 @@ class IRSerializer {
                 this.writeU32(inst.a);
                 this.writeU32(inst.b);
                 break;
-                
+
             case IRInstKind.Icmp:
                 this.writeU32(inst.a);
                 this.writeU32(inst.b);
                 this.writeU8(inst.op);
                 break;
-                
+
             case IRInstKind.Fcmp:
                 this.writeU32(inst.a);
                 this.writeU32(inst.b);
                 this.writeU8(inst.op);
                 break;
-                
+
             case IRInstKind.Ineg:
             case IRInstKind.Fneg:
                 this.writeU32(inst.a);
                 break;
-                
+
             case IRInstKind.Alloca:
                 this.writeU32(inst.localId);
                 break;
-                
+
             case IRInstKind.Load:
                 this.writeU32(inst.ptr);
                 break;
-                
+
             case IRInstKind.Store:
                 this.writeU32(inst.ptr);
                 this.writeU32(inst.value);
                 this.writeType(inst.valueType);
                 break;
-                
+
             case IRInstKind.Memcpy:
                 this.writeU32(inst.dest);
                 this.writeU32(inst.src);
                 this.writeU32(inst.size);
                 break;
-                
+
             case IRInstKind.Gep:
                 this.writeU32(inst.ptr);
                 this.writeU32(inst.indices.length);
@@ -905,19 +906,19 @@ class IRSerializer {
                     this.writeU32(idx);
                 }
                 break;
-                
+
             case IRInstKind.Ptradd:
                 this.writeU32(inst.ptr);
                 this.writeU32(inst.offset);
                 break;
-                
+
             case IRInstKind.Trunc:
             case IRInstKind.Sext:
             case IRInstKind.Zext:
                 this.writeU32(inst.val);
                 this.writeType(inst.fromTy);
                 break;
-                
+
             case IRInstKind.Fptoui:
             case IRInstKind.Fptosi:
             case IRInstKind.Uitofp:
@@ -925,7 +926,7 @@ class IRSerializer {
             case IRInstKind.Bitcast:
                 this.writeU32(inst.val);
                 break;
-                
+
             case IRInstKind.Call:
                 this.writeU32(inst.fn);
                 this.writeU32(inst.args.length);
@@ -933,19 +934,19 @@ class IRSerializer {
                     this.writeU32(arg);
                 }
                 break;
-                
+
             case IRInstKind.StructCreate:
                 this.writeU32(inst.fields.length);
                 for (const field of inst.fields) {
                     this.writeU32(field);
                 }
                 break;
-                
+
             case IRInstKind.StructGet:
                 this.writeU32(inst.struct);
                 this.writeU32(inst.fieldIndex);
                 break;
-                
+
             case IRInstKind.EnumCreate:
                 this.writeU32(inst.variant);
                 if (inst.data !== null && inst.data !== undefined) {
@@ -955,11 +956,11 @@ class IRSerializer {
                     this.writeU8(0);
                 }
                 break;
-                
+
             case IRInstKind.EnumGetTag:
                 this.writeU32(inst.enum);
                 break;
-                
+
             case IRInstKind.EnumGetData:
                 this.writeU32(inst.enum);
                 this.writeU32(inst.variant);
@@ -981,9 +982,9 @@ class IRSerializer {
             this.writeU8(IRTermKind.Unreachable);
             return;
         }
-        
+
         this.writeU8(term.kind);
-        
+
         switch (term.kind) {
             case IRTermKind.Ret:
                 if (term.value !== null && term.value !== undefined) {
@@ -993,7 +994,7 @@ class IRSerializer {
                     this.writeU8(0);
                 }
                 break;
-                
+
             case IRTermKind.Br:
                 this.writeU32(term.target);
                 this.writeU32(term.args.length);
@@ -1001,7 +1002,7 @@ class IRSerializer {
                     this.writeU32(arg);
                 }
                 break;
-                
+
             case IRTermKind.BrIf:
                 this.writeU32(term.cond);
                 this.writeU32(term.thenBlock);
@@ -1015,12 +1016,12 @@ class IRSerializer {
                     this.writeU32(arg);
                 }
                 break;
-                
+
             case IRTermKind.Switch:
                 this.writeU32(term.value);
                 this.writeU32(term.cases.length);
                 for (const c of term.cases) {
-                    if (typeof c.value === 'bigint') {
+                    if (typeof c.value === "bigint") {
                         this.writeI64(c.value);
                     } else {
                         this.writeI64(BigInt(c.value));
@@ -1037,7 +1038,7 @@ class IRSerializer {
                     this.writeU32(arg);
                 }
                 break;
-                
+
             case IRTermKind.Unreachable:
                 // No additional data
                 break;
