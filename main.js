@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { parseModule } from "./parser.js";
 import { TypeContext } from "./type_context.js";
 import { inferModule } from "./inference.js";
@@ -10,8 +13,8 @@ import { printModule as printIRModule } from "./ir_printer.js";
 import { makeIRModule, addIRFunction, resetIRIds } from "./ir.js";
 import { HItemKind } from "./hir.js";
 import { validateFunction as validateIRFunction } from "./ir_validate.js";
-import * as fs from "fs";
-import * as path from "path";
+import { serializeModule } from "./ir_serialize.js";
+import { runBackendBinary } from "./backend_runner.js";
 
 /**
  * @typedef {object} CompileOptions
@@ -33,6 +36,22 @@ import * as path from "path";
  */
 
 /**
+ * @typedef {CompileResult & { bytes?: Uint8Array }} BinaryCompileResult
+ */
+
+/**
+ * @typedef {object} RunOptions
+ * @property {string} entry
+ * @property {boolean} trace
+ * @property {string | null} traceOutPath
+ * @property {string | null} backendBinary
+ * @property {string | null} outBin
+ * @property {boolean} keepBin
+ * @property {boolean} validate
+ * @property {boolean} buildBackend
+ */
+
+/**
  * Compile a Rust source string to SSA IR module
  * @param {string} source
  * @param {{ emitAst?: boolean, emitHir?: boolean, validate?: boolean }} [options={}]
@@ -47,10 +66,8 @@ function compileToIRModule(source, options = {}) {
 
     const errors = [];
 
-    // Reset IR IDs for consistent output
     resetIRIds();
 
-    // Step 1: Parse
     const parseResult = parseModule(source);
     if (!parseResult.ok) {
         for (const err of parseResult.errors) {
@@ -63,7 +80,6 @@ function compileToIRModule(source, options = {}) {
 
     const ast = parseResult.value;
 
-    // Step 2: Type inference
     const typeCtx = new TypeContext();
     const inferResult = inferModule(typeCtx, ast);
     if (!inferResult.ok) {
@@ -76,7 +92,6 @@ function compileToIRModule(source, options = {}) {
         return { ok: false, errors };
     }
 
-    // Step 3: Lower to HIR
     const hirResult = lowerModule(ast, typeCtx);
     if (!hirResult.module) {
         for (const err of hirResult.errors) {
@@ -89,8 +104,6 @@ function compileToIRModule(source, options = {}) {
     }
 
     const hirModule = hirResult.module;
-
-    // Step 4: Lower to SSA IR
     const irModule = makeIRModule(hirModule.name || "main");
 
     for (const item of hirModule.items || []) {
@@ -98,7 +111,6 @@ function compileToIRModule(source, options = {}) {
             try {
                 const irFn = lowerHirToSsa(item);
 
-                // Validate if requested
                 if (validate) {
                     const validationResult = validateIRFunction(irFn);
                     if (!validationResult.ok) {
@@ -123,7 +135,6 @@ function compileToIRModule(source, options = {}) {
         return { ok: false, errors };
     }
 
-    // Build result
     /** @type {CompileResult} */
     const result = { ok: true, errors: [], module: irModule };
 
@@ -159,6 +170,38 @@ function compile(source, options = {}) {
 }
 
 /**
+ * Compile a Rust source string to binary IR.
+ * @param {string} source
+ * @param {{ emitAst?: boolean, emitHir?: boolean, validate?: boolean }} [options={}]
+ * @returns {BinaryCompileResult}
+ */
+function compileToBinary(source, options = {}) {
+    const result = compileToIRModule(source, options);
+    if (!result.ok) {
+        return result;
+    }
+    if (!result.module) {
+        return {
+            ok: false,
+            errors: ["Failed to build IR module"],
+        };
+    }
+
+    try {
+        const bytes = serializeModule(result.module);
+        return {
+            ...result,
+            bytes,
+        };
+    } catch (e) {
+        return {
+            ok: false,
+            errors: [`Failed to serialize IR module: ${e.message}`],
+        };
+    }
+}
+
+/**
  * Compile a file to SSA IR module
  * @param {string} filePath
  * @param {{ emitAst?: boolean, emitHir?: boolean, validate?: boolean }} [options={}]
@@ -175,6 +218,25 @@ function compileFileToIRModule(filePath, options = {}) {
         };
     }
     return compileToIRModule(source, options);
+}
+
+/**
+ * Compile a file to binary IR.
+ * @param {string} filePath
+ * @param {{ emitAst?: boolean, emitHir?: boolean, validate?: boolean }} [options={}]
+ * @returns {BinaryCompileResult}
+ */
+function compileFileToBinary(filePath, options = {}) {
+    let source;
+    try {
+        source = fs.readFileSync(filePath, "utf-8");
+    } catch (e) {
+        return {
+            ok: false,
+            errors: [`Failed to read file: ${filePath}: ${e.message}`],
+        };
+    }
+    return compileToBinary(source, options);
 }
 
 /**
@@ -196,23 +258,125 @@ function compileFile(filePath, options = {}) {
     return result;
 }
 
-// CLI entry point
-function main() {
-    const args = process.argv.slice(2);
+/**
+ * @param {string} message
+ */
+function printOneLineError(message) {
+    console.error(`error: ${message}`);
+}
 
+/**
+ * @param {string[]} errors
+ * @returns {string}
+ */
+function summarizeErrors(errors) {
+    return errors.join(" | ");
+}
+
+/**
+ * @param {number} [exitCode=0]
+ */
+function printCompileHelp(exitCode = 0) {
+    console.log("JSRust Compiler - Rust to SSA IR");
+    console.log("");
+    console.log("Usage: node main.js [options] <file.rs>");
+    console.log("       node main.js run <file.rs> [options]");
+    console.log("");
+    console.log("Compile options:");
+    console.log("  --emit-ast    Print the AST");
+    console.log("  --emit-hir    Print the HIR");
+    console.log("  --no-ir       Don't print the IR");
+    console.log("  --no-validate Skip IR validation");
+    console.log("  -o <file>     Write output to file");
+    console.log("  -h, --help    Show this help");
+    console.log("");
+    console.log("Run options:");
+    console.log("  run <file.rs> Compile to binary IR and execute with backend");
+    console.log("  --entry <fn>         Entry function (default: main)");
+    console.log("  --trace              Enable backend trace output");
+    console.log("  --trace-out <path>   Write backend trace to file");
+    console.log("  --backend-bin <path> Path to backend executable");
+    console.log("  --out-bin <path>     Write binary IR artifact to path");
+    console.log("  --keep-bin           Keep temp binary IR artifact");
+    console.log("  --no-validate        Skip IR validation");
+    console.log("  --no-build-backend   Don't auto-build backend if missing");
+    process.exit(exitCode);
+}
+
+/**
+ * @param {number} [exitCode=0]
+ */
+function printRunHelp(exitCode = 0) {
+    console.log("JSRust Run - Compile to binary IR and execute backend");
+    console.log("");
+    console.log("Usage: node main.js run <file.rs> [options]");
+    console.log("");
+    console.log("Options:");
+    console.log("  --entry <fn>         Entry function (default: main)");
+    console.log("  --trace              Enable backend trace output");
+    console.log("  --trace-out <path>   Write backend trace to file");
+    console.log("  --backend-bin <path> Path to backend executable");
+    console.log("  --out-bin <path>     Write binary IR artifact to path");
+    console.log("  --keep-bin           Keep temp binary IR artifact");
+    console.log("  --no-validate        Skip IR validation");
+    console.log("  --no-build-backend   Don't auto-build backend if missing");
+    console.log("  -h, --help           Show this help");
+    process.exit(exitCode);
+}
+
+/**
+ * @param {string} inputFile
+ * @param {string | null} outBin
+ * @returns {{ path: string, isTemp: boolean }}
+ */
+function resolveRunBinaryPath(inputFile, outBin) {
+    if (outBin) {
+        return {
+            path: path.resolve(outBin),
+            isTemp: false,
+        };
+    }
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "jsrust-run-"));
+    return {
+        path: path.join(tempDir, `${path.parse(inputFile).name}.jsrbin`),
+        isTemp: true,
+    };
+}
+
+/**
+ * @param {string} filePath
+ * @returns {void}
+ */
+function removeFileIfExists(filePath) {
+    try {
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+    } catch {
+    }
+}
+
+/**
+ * @param {string} dirPath
+ * @returns {void}
+ */
+function removeDirIfExists(dirPath) {
+    try {
+        if (fs.existsSync(dirPath)) {
+            fs.rmdirSync(dirPath);
+        }
+    } catch {
+    }
+}
+
+/**
+ * @param {string[]} args
+ * @returns {number}
+ */
+function runCompileCli(args) {
     if (args.length === 0) {
-        console.log("JSRust Compiler - Rust to SSA IR");
-        console.log("");
-        console.log("Usage: node main.js [options] <file.rs>");
-        console.log("");
-        console.log("Options:");
-        console.log("  --emit-ast    Print the AST");
-        console.log("  --emit-hir    Print the HIR");
-        console.log("  --no-ir       Don't print the IR");
-        console.log("  --no-validate Skip IR validation");
-        console.log("  -o <file>     Write output to file");
-        console.log("  -h, --help    Show this help");
-        process.exit(1);
+        printCompileHelp(1);
     }
 
     /** @type {CompileOptions} */
@@ -239,38 +403,27 @@ function main() {
             i++;
             if (i < args.length) {
                 options.outputFile = args[i];
+            } else {
+                printOneLineError("missing value for -o");
+                return 1;
             }
         } else if (arg === "-h" || arg === "--help") {
-            console.log("JSRust Compiler - Rust to SSA IR");
-            console.log("");
-            console.log("Usage: node main.js [options] <file.rs>");
-            console.log("");
-            console.log("Options:");
-            console.log("  --emit-ast    Print the AST");
-            console.log("  --emit-hir    Print the HIR");
-            console.log("  --no-ir       Don't print the IR");
-            console.log("  --no-validate Skip IR validation");
-            console.log("  -o <file>     Write output to file");
-            console.log("  -h, --help    Show this help");
-            process.exit(0);
+            printCompileHelp(0);
         } else if (!arg.startsWith("-")) {
             inputFile = arg;
         }
     }
 
     if (!inputFile) {
-        console.error("Error: No input file specified");
-        process.exit(1);
+        printOneLineError("no input file specified");
+        return 1;
     }
 
     const result = compileFile(inputFile, options);
 
     if (!result.ok) {
-        console.error("Compilation failed:");
-        for (const err of result.errors) {
-            console.error(`  error: ${err}`);
-        }
-        process.exit(1);
+        printOneLineError(`compilation failed: ${summarizeErrors(result.errors)}`);
+        return 1;
     }
 
     let output = "";
@@ -295,17 +448,186 @@ function main() {
             fs.writeFileSync(options.outputFile, output);
             console.log(`Output written to ${options.outputFile}`);
         } catch (e) {
-            console.error(`Failed to write output file: ${e.message}`);
-            process.exit(1);
+            printOneLineError(`failed to write output file: ${e.message}`);
+            return 1;
         }
     } else {
         console.log(output);
     }
+
+    return 0;
 }
 
-export { compile, compileFile, compileToIRModule, compileFileToIRModule };
+/**
+ * @param {string[]} args
+ * @returns {number}
+ */
+function runBackendCli(args) {
+    if (args.length === 0) {
+        printRunHelp(1);
+    }
 
-// Run CLI if this is the main module
+    /** @type {RunOptions} */
+    const options = {
+        entry: "main",
+        trace: false,
+        traceOutPath: null,
+        backendBinary: null,
+        outBin: null,
+        keepBin: false,
+        validate: true,
+        buildBackend: true,
+    };
+
+    let inputFile = null;
+
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+
+        if (arg === "--entry") {
+            i++;
+            if (i >= args.length) {
+                printOneLineError("missing value for --entry");
+                return 1;
+            }
+            options.entry = args[i];
+        } else if (arg === "--trace") {
+            options.trace = true;
+        } else if (arg === "--trace-out") {
+            i++;
+            if (i >= args.length) {
+                printOneLineError("missing value for --trace-out");
+                return 1;
+            }
+            options.traceOutPath = args[i];
+        } else if (arg === "--backend-bin") {
+            i++;
+            if (i >= args.length) {
+                printOneLineError("missing value for --backend-bin");
+                return 1;
+            }
+            options.backendBinary = args[i];
+        } else if (arg === "--out-bin") {
+            i++;
+            if (i >= args.length) {
+                printOneLineError("missing value for --out-bin");
+                return 1;
+            }
+            options.outBin = args[i];
+        } else if (arg === "--keep-bin") {
+            options.keepBin = true;
+        } else if (arg === "--no-validate") {
+            options.validate = false;
+        } else if (arg === "--no-build-backend") {
+            options.buildBackend = false;
+        } else if (arg === "-h" || arg === "--help") {
+            printRunHelp(0);
+        } else if (arg.startsWith("-")) {
+            printOneLineError(`unknown option for run: ${arg}`);
+            return 1;
+        } else if (!inputFile) {
+            inputFile = arg;
+        } else {
+            printOneLineError(`unexpected positional argument: ${arg}`);
+            return 1;
+        }
+    }
+
+    if (!inputFile) {
+        printOneLineError("no input file specified for run");
+        return 1;
+    }
+
+    if (options.traceOutPath && !options.trace) {
+        printOneLineError("--trace-out requires --trace");
+        return 1;
+    }
+
+    const binaryResult = compileFileToBinary(inputFile, {
+        validate: options.validate,
+    });
+    if (!binaryResult.ok) {
+        printOneLineError(`compilation failed: ${summarizeErrors(binaryResult.errors)}`);
+        return 1;
+    }
+    if (!binaryResult.bytes) {
+        printOneLineError("binary IR serialization produced no bytes");
+        return 1;
+    }
+
+    const artifact = resolveRunBinaryPath(inputFile, options.outBin);
+    try {
+        fs.mkdirSync(path.dirname(artifact.path), { recursive: true });
+        fs.writeFileSync(artifact.path, binaryResult.bytes);
+    } catch (e) {
+        printOneLineError(`failed to write binary artifact: ${e.message}`);
+        return 1;
+    }
+
+    const backendArgs = ["run", "--input", artifact.path];
+    if (options.entry) {
+        backendArgs.push("--entry", options.entry);
+    }
+    if (options.trace) {
+        backendArgs.push("--trace");
+        if (options.traceOutPath) {
+            backendArgs.push("--trace-out", options.traceOutPath);
+        }
+    }
+
+    const runResult = runBackendBinary(backendArgs, {
+        backendBinary: options.backendBinary || undefined,
+        buildIfMissing: options.buildBackend,
+    });
+
+    if (!runResult.ok) {
+        if (runResult.code === "backend_process_failed") {
+            if (runResult.stderr) {
+                process.stderr.write(runResult.stderr);
+            } else {
+                printOneLineError(runResult.message);
+            }
+        } else {
+            printOneLineError(runResult.message);
+        }
+
+        if (artifact.isTemp && !options.keepBin && !options.outBin) {
+            console.error(`error: kept binary artifact at ${artifact.path}`);
+        }
+
+        return runResult.exitCode ?? 1;
+    }
+
+    process.stdout.write(runResult.stdout);
+
+    if (artifact.isTemp && !options.keepBin && !options.outBin) {
+        removeFileIfExists(artifact.path);
+        removeDirIfExists(path.dirname(artifact.path));
+    } else if (artifact.isTemp && options.keepBin) {
+        console.error(`kept binary artifact: ${artifact.path}`);
+    }
+
+    return 0;
+}
+
+function main() {
+    const args = process.argv.slice(2);
+    const exitCode =
+        args[0] === "run"
+            ? runBackendCli(args.slice(1))
+            : runCompileCli(args);
+    process.exit(exitCode);
+}
+
+export {
+    compile,
+    compileFile,
+    compileToIRModule,
+    compileFileToIRModule,
+    compileToBinary,
+    compileFileToBinary,
+};
+
 if (import.meta.url === `file://${process.argv[1]}`) {
     main();
 }

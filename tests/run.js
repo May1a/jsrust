@@ -60,6 +60,10 @@ import { runDiagnosticsCollectionTests } from "./diagnostics/collection.js";
 import { runDiagnosticsRenderingTests } from "./diagnostics/rendering.js";
 import { runE2ETests } from "./e2e.js";
 import { runExamplesTests } from "./examples.js";
+import {
+    canRunBackendIntegrationGate,
+    runBackendIntegrationTests,
+} from "./backend/integration.js";
 
 const { printSummary, clearErrors, beginRun, endRun } = lib;
 
@@ -127,6 +131,15 @@ runDiagnosticsCollectionTests();
 runDiagnosticsRenderingTests();
 runE2ETests();
 runExamplesTests();
+
+const backendIntegrationGate = canRunBackendIntegrationGate();
+if (backendIntegrationGate.ok) {
+    runBackendIntegrationTests();
+} else {
+    console.log(
+        `Skipping backend integration tests: ${backendIntegrationGate.reason}`,
+    );
+}
 
 endRun();
 const success = printSummary();
