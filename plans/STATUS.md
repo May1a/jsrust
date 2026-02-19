@@ -1,77 +1,16 @@
-# Implementation Status
+# Plans Status (Current Structure)
 
-Track completion of all tasks. Mark with:
+This status file tracks only the current planning tracks under `active/` and `future/`.
 
-- `[ ]` Not started
-- `[~]` In progress
-- `[x]` Complete (tests pass)
+For historical completion and archived phase detail, see:
 
-## Phase 1: Foundation
+- `/Users/may/jsrust/plans/old/STATUS.md`
 
-### 01-ast.md
+## Future Track
 
-- [x] All tasks
+- `future/01-new-backend.md`: Not started
 
-### 02-parser.md
+## Active Track
 
-- [x] All tasks (depends on 01-ast)
-
-### 03-types.md
-
-- [x] All tasks
-
-### 04-type-inference.md
-
-- [x] All tasks (depends on 01-ast, 03-types)
-
-## Phase 2: IR
-
-### 05-hir.md
-
-- [x] All tasks (depends on 03-types)
-
-### 06-lowering-hir.md
-
-- [x] All tasks (depends on 01-ast, 05-hir, 04-type-inference)
-
-### 07-ssa-ir.md
-
-- [x] All tasks
-
-### 08-ssa-builder.md
-
-- [x] All tasks (depends on 07-ssa-ir)
-
-### 09-hir-to-ssa.md
-
-- [x] All tasks (depends on 05-hir, 07-ssa-ir, 08-ssa-builder)
-
-## Phase 3: Backend Support
-
-### 10-memory-layout.md
-
-- [x] All tasks (depends on 07-ssa-ir)
-
-### 11-binary-format.md
-
-- [x] All tasks (depends on 07-ssa-ir, 10-memory-layout)
-
-### 12-validation.md
-
-- [x] All tasks (depends on 07-ssa-ir, 09-hir-to-ssa)
-
-### 13-diagnostics.md
-
-- [x] All tasks
-
-### 14-output.md
-
-- [x] All tasks (depends on 07-ssa-ir)
-
-## Legend
-
-When marking complete, ensure:
-
-1. Code is implemented
-2. Tests are written
-3. `node tests/run.js` passes
+- `active/01-prepare-backend.md`: Not started
+- `active/02-compiler-progress.md`: Initialized (baseline progress captured)
