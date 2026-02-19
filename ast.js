@@ -32,36 +32,37 @@ const NodeKind = {
     RangeExpr: 19,
     RefExpr: 20,
     DerefExpr: 21,
-    LetStmt: 22,
-    ExprStmt: 23,
-    ItemStmt: 24,
-    FnItem: 25,
-    StructItem: 26,
-    EnumItem: 27,
-    ModItem: 28,
-    UseItem: 29,
-    IdentPat: 30,
-    WildcardPat: 31,
-    LiteralPat: 32,
-    RangePat: 33,
-    StructPat: 34,
-    TuplePat: 35,
-    SlicePat: 36,
-    OrPat: 37,
-    BindingPat: 38,
-    NamedType: 39,
-    TupleType: 40,
-    ArrayType: 41,
-    RefType: 42,
-    PtrType: 43,
-    FnType: 44,
-    GenericArgs: 45,
-    Module: 46,
-    Param: 47,
-    StructField: 48,
-    EnumVariant: 49,
-    UseTree: 50,
-    MatchArm: 51,
+    MacroExpr: 22,  // New: macro invocation like println!
+    LetStmt: 23,
+    ExprStmt: 24,
+    ItemStmt: 25,
+    FnItem: 26,
+    StructItem: 27,
+    EnumItem: 28,
+    ModItem: 29,
+    UseItem: 30,
+    IdentPat: 31,
+    WildcardPat: 32,
+    LiteralPat: 33,
+    RangePat: 34,
+    StructPat: 35,
+    TuplePat: 36,
+    SlicePat: 37,
+    OrPat: 38,
+    BindingPat: 39,
+    NamedType: 40,
+    TupleType: 41,
+    ArrayType: 42,
+    RefType: 43,
+    PtrType: 44,
+    FnType: 45,
+    GenericArgs: 46,
+    Module: 47,
+    Param: 48,
+    StructField: 49,
+    EnumVariant: 50,
+    UseTree: 51,
+    MatchArm: 52,
 };
 
 const LiteralKind = {
@@ -389,6 +390,16 @@ function makeRefExpr(span, mutability, operand) {
  */
 function makeDerefExpr(span, operand) {
     return makeNode(NodeKind.DerefExpr, span, { operand });
+}
+
+/**
+ * @param {Span} span
+ * @param {string} name
+ * @param {Node[]} args
+ * @returns {Node}
+ */
+function makeMacroExpr(span, name, args) {
+    return makeNode(NodeKind.MacroExpr, span, { name, args });
 }
 
 /**
@@ -731,7 +742,7 @@ function makeModule(span, name, items) {
  * @returns {boolean}
  */
 function isExpr(node) {
-    return node.kind <= NodeKind.DerefExpr;
+    return node.kind <= NodeKind.MacroExpr;
 }
 
 /**
@@ -798,6 +809,7 @@ export {
     makeRangeExpr,
     makeRefExpr,
     makeDerefExpr,
+    makeMacroExpr,
     makeLetStmt,
     makeExprStmt,
     makeItemStmt,

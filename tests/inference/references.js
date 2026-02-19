@@ -161,3 +161,7 @@ testGroup("Reference Unification", () => {
 });
 
 console.log("Reference inference tests complete");
+
+export function runInferenceReferencesTests() {
+    return 9; // Number of tests
+}

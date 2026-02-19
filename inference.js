@@ -1008,6 +1008,9 @@ function inferExpr(ctx, expr) {
         case NodeKind.DerefExpr:
             return inferDeref(ctx, expr);
 
+        case NodeKind.MacroExpr:
+            return inferMacro(ctx, expr);
+
         default:
             return err(`Unknown expression kind: ${expr.kind}`, expr.span);
     }
@@ -1981,6 +1984,107 @@ function inferDeref(ctx, derefExpr) {
     );
 }
 
+/**
+ * Infer macro invocation type
+ * Handles built-in macros like println! and print!
+ * @param {TypeContext} ctx
+ * @param {Node} macroExpr
+ * @returns {InferenceResult}
+ */
+function inferMacro(ctx, macroExpr) {
+    const macroName = macroExpr.name;
+
+    // Handle known macros
+    switch (macroName) {
+        case "println":
+        case "print": {
+            // println! and print! return unit type
+            // They accept a format string and arguments
+            
+            if (!macroExpr.args || macroExpr.args.length === 0) {
+                return err(
+                    `${macroName}! requires at least a format string argument`,
+                    macroExpr.span,
+                );
+            }
+
+            const errors = [];
+            
+            // Check all arguments
+            for (const arg of macroExpr.args) {
+                const argResult = inferExpr(ctx, arg);
+                if (!argResult.ok) {
+                    errors.push(...(argResult.errors || []));
+                }
+            }
+
+            if (errors.length > 0) {
+                return { ok: false, errors };
+            }
+
+            // Return unit type
+            return ok(makeUnitType(macroExpr.span));
+        }
+
+        case "panic": {
+            // panic! never returns
+            return ok(makeNeverType(macroExpr.span));
+        }
+
+        case "assert":
+        case "debug_assert": {
+            // assert! takes a boolean expression
+            if (!macroExpr.args || macroExpr.args.length === 0) {
+                return err(
+                    `${macroName}! requires a condition argument`,
+                    macroExpr.span,
+                );
+            }
+
+            const condResult = inferExpr(ctx, macroExpr.args[0]);
+            if (!condResult.ok) return condResult;
+
+            const condUnify = unify(ctx, condResult.type, makeBoolType());
+            if (!condUnify.ok) {
+                return { ok: false, errors: [condUnify.error] };
+            }
+
+            return ok(makeUnitType(macroExpr.span));
+        }
+
+        case "vec": {
+            // vec! creates a vector
+            // For now, return a slice type
+            if (!macroExpr.args || macroExpr.args.length === 0) {
+                return ok(makeSliceType(ctx.freshTypeVar(), macroExpr.span));
+            }
+
+            const firstResult = inferExpr(ctx, macroExpr.args[0]);
+            if (!firstResult.ok) return firstResult;
+
+            const elementType = firstResult.type;
+
+            // Check all elements have the same type
+            for (let i = 1; i < macroExpr.args.length; i++) {
+                const elemResult = inferExpr(ctx, macroExpr.args[i]);
+                if (!elemResult.ok) return elemResult;
+
+                const unifyResult = unify(ctx, elementType, elemResult.type);
+                if (!unifyResult.ok) {
+                    return { ok: false, errors: [unifyResult.error] };
+                }
+            }
+
+            return ok(makeSliceType(elementType, macroExpr.span));
+        }
+
+        default:
+            // Unknown macro - for now, return unit type
+            // In a full implementation, we'd look up macro definitions
+            return ok(makeUnitType(macroExpr.span));
+    }
+}
+
 // ============================================================================
 // Task 4.5: Statement Checking
 // ============================================================================
@@ -2701,6 +2805,7 @@ export {
     inferRange,
     inferRef,
     inferDeref,
+    inferMacro,
     // Statement checking
     checkStmt,
     checkLetStmt,

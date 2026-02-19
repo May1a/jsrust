@@ -23,6 +23,32 @@ export function test(name, fn) {
 
 /**
  * @param {string} name
+ * @param {() => void} fn
+ */
+export function testGroup(name, fn) {
+    console.log(`\n=== ${name} ===`);
+    fn();
+}
+
+/**
+ * @param {string} msg
+ * @param {() => void} fn
+ */
+export function assert(msg, fn) {
+    test(msg, fn);
+}
+
+/**
+ * @param {any} actual
+ * @param {any} expected
+ * @param {string} [msg]
+ */
+export function assertEq(actual, expected, msg) {
+    assertEqual(actual, expected, msg);
+}
+
+/**
+ * @param {string} name
  * @param {() => void | Promise<void>} fn
  * @returns {Promise<void>}
  */

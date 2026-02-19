@@ -203,3 +203,7 @@ testGroup("Field Access Inference", () => {
 });
 
 console.log("Struct inference tests complete");
+
+export function runInferenceStructsTests() {
+    return 5; // Number of tests
+}

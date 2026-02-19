@@ -1,6 +1,7 @@
 // Memory tests for alloca, load, store, memcpy, gep, ptradd
 import { assertEqual } from "../lib.js";
-import { IRBuilder, IntWidth } from "../../ir_builder.js";
+import { IRBuilder } from "../../ir_builder.js";
+import { IntWidth } from "../../types.js";
 
 // Additional memory-specific tests
 

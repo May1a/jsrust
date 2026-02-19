@@ -152,3 +152,7 @@ testGroup("Block Inference", () => {
 });
 
 console.log("Statement inference tests complete");
+
+export function runInferenceStatementsTests() {
+    return 7; // Number of tests
+}

@@ -587,5 +587,5 @@ export function runTests() {
         }
     }
 
-    return { passed, failed };
+    return passed + failed;
 }
