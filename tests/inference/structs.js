@@ -1,7 +1,12 @@
 import { TypeContext } from "../../type_context.js";
 import { inferModule, inferStructExpr, inferField } from "../../inference.js";
 import { NodeKind, LiteralKind, Mutability } from "../../ast.js";
-import { TypeKind, IntWidth, makeIntType, makeStructType } from "../../types.js";
+import {
+    TypeKind,
+    IntWidth,
+    makeIntType,
+    makeStructType,
+} from "../../types.js";
 import { assert, assertEq, testGroup } from "../lib.js";
 
 function makeSpan(line = 1, column = 1, start = 0, end = 0) {
@@ -95,7 +100,7 @@ testGroup("Struct Definition", () => {
         const struct = makeStructItem("Point", fields);
         const result = ctx.registerStruct("Point", struct);
         assert(result.ok);
-        
+
         const item = ctx.lookupItem("Point");
         assert(item !== null);
         assertEq(item.kind, "struct");
@@ -115,7 +120,7 @@ testGroup("Struct Definition", () => {
 testGroup("Struct Expression Inference", () => {
     assert("struct instantiation", () => {
         const ctx = new TypeContext();
-        
+
         // Register struct
         const fields = [
             makeStructField("x", makeNamedType("i32")),
@@ -123,14 +128,22 @@ testGroup("Struct Expression Inference", () => {
         ];
         const struct = makeStructItem("Point", fields);
         ctx.registerStruct("Point", struct);
-        
+
         // Create struct expression
         const path = makeIdentifierExpr("Point");
         const structExpr = makeStructExpr(path, [
-            { name: "x", value: makeLiteralExpr(LiteralKind.Int, 1, "1"), span: makeSpan() },
-            { name: "y", value: makeLiteralExpr(LiteralKind.Int, 2, "2"), span: makeSpan() },
+            {
+                name: "x",
+                value: makeLiteralExpr(LiteralKind.Int, 1, "1"),
+                span: makeSpan(),
+            },
+            {
+                name: "y",
+                value: makeLiteralExpr(LiteralKind.Int, 2, "2"),
+                span: makeSpan(),
+            },
         ]);
-        
+
         const result = inferStructExpr(ctx, structExpr);
         assert(result.ok);
         assertEq(result.type.kind, TypeKind.Struct);
@@ -139,19 +152,23 @@ testGroup("Struct Expression Inference", () => {
 
     assert("missing field fails", () => {
         const ctx = new TypeContext();
-        
+
         const fields = [
             makeStructField("x", makeNamedType("i32")),
             makeStructField("y", makeNamedType("i32")),
         ];
         const struct = makeStructItem("Point", fields);
         ctx.registerStruct("Point", struct);
-        
+
         const path = makeIdentifierExpr("Point");
         const structExpr = makeStructExpr(path, [
-            { name: "x", value: makeLiteralExpr(LiteralKind.Int, 1, "1"), span: makeSpan() },
+            {
+                name: "x",
+                value: makeLiteralExpr(LiteralKind.Int, 1, "1"),
+                span: makeSpan(),
+            },
         ]);
-        
+
         const result = inferStructExpr(ctx, structExpr);
         assert(!result.ok);
     });
@@ -161,24 +178,24 @@ testGroup("Struct Expression Inference", () => {
 testGroup("Field Access Inference", () => {
     assert("field access on struct", () => {
         const ctx = new TypeContext();
-        
+
         const fields = [
             makeStructField("x", makeNamedType("i32")),
             makeStructField("y", makeNamedType("i32")),
         ];
         const struct = makeStructItem("Point", fields);
         ctx.registerStruct("Point", struct);
-        
+
         // Bind a variable of struct type
         const pointType = makeStructType("Point", [
             { name: "x", type: { kind: TypeKind.Int, width: IntWidth.I32 } },
             { name: "y", type: { kind: TypeKind.Int, width: IntWidth.I32 } },
         ]);
         ctx.defineVar("p", pointType);
-        
+
         const receiver = makeIdentifierExpr("p");
         const fieldExpr = makeFieldExpr(receiver, "x");
-        
+
         const result = inferField(ctx, fieldExpr);
         assert(result.ok);
         assertEq(result.type.kind, TypeKind.Int);

@@ -1,14 +1,6 @@
-import {
-    assertEqual,
-    assertTrue,
-} from '../lib.js';
-import {
-    IRBuilder,
-} from '../../ir_builder.js';
-import {
-    IntWidth,
-    FloatWidth,
-} from '../../types.js';
+import { assertEqual, assertTrue } from "../lib.js";
+import { IRBuilder } from "../../ir_builder.js";
+import { IntWidth, FloatWidth } from "../../types.js";
 
 // ============================================================================
 // Constant Instruction Tests
@@ -16,8 +8,8 @@ import {
 
 export function testIconst() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const value = builder.iconst(42, IntWidth.I32);
@@ -31,8 +23,8 @@ export function testIconst() {
 
 export function testFconst() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'f64');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "f64");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const value = builder.fconst(3.14, FloatWidth.F64);
@@ -44,8 +36,8 @@ export function testFconst() {
 
 export function testBconst() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'bool');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "bool");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const value = builder.bconst(true);
@@ -57,11 +49,11 @@ export function testBconst() {
 
 export function testNull() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'ptr');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "ptr");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
-    const value = builder.null('*i8');
+    const value = builder.null("*i8");
     builder.ret(value);
 
     const fn = builder.build();
@@ -74,8 +66,8 @@ export function testNull() {
 
 export function testIadd() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.iconst(2, IntWidth.I32);
@@ -92,8 +84,8 @@ export function testIadd() {
 
 export function testIsub() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.iconst(5, IntWidth.I32);
@@ -108,8 +100,8 @@ export function testIsub() {
 
 export function testImul() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.iconst(4, IntWidth.I32);
@@ -123,8 +115,8 @@ export function testImul() {
 
 export function testIdiv() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.iconst(10, IntWidth.I32);
@@ -138,8 +130,8 @@ export function testIdiv() {
 
 export function testImod() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.iconst(10, IntWidth.I32);
@@ -153,8 +145,8 @@ export function testImod() {
 
 export function testFadd() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'f64');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "f64");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.fconst(1.5, FloatWidth.F64);
@@ -168,8 +160,8 @@ export function testFadd() {
 
 export function testFsub() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'f64');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "f64");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.fconst(5.5, FloatWidth.F64);
@@ -183,8 +175,8 @@ export function testFsub() {
 
 export function testFmul() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'f64');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "f64");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.fconst(3.0, FloatWidth.F64);
@@ -198,8 +190,8 @@ export function testFmul() {
 
 export function testFdiv() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'f64');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "f64");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.fconst(10.0, FloatWidth.F64);
@@ -213,8 +205,8 @@ export function testFdiv() {
 
 export function testIneg() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.iconst(42, IntWidth.I32);
@@ -227,8 +219,8 @@ export function testIneg() {
 
 export function testFneg() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'f64');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "f64");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.fconst(3.14, FloatWidth.F64);
@@ -245,8 +237,8 @@ export function testFneg() {
 
 export function testIand() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.iconst(0b1100, IntWidth.I32);
@@ -260,8 +252,8 @@ export function testIand() {
 
 export function testIor() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.iconst(0b1100, IntWidth.I32);
@@ -275,8 +267,8 @@ export function testIor() {
 
 export function testIxor() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.iconst(0b1100, IntWidth.I32);
@@ -290,8 +282,8 @@ export function testIxor() {
 
 export function testIshl() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.iconst(1, IntWidth.I32);
@@ -305,8 +297,8 @@ export function testIshl() {
 
 export function testIshr() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.iconst(8, IntWidth.I32);
@@ -324,8 +316,8 @@ export function testIshr() {
 
 export function testIcmp() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'bool');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "bool");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.iconst(5, IntWidth.I32);
@@ -340,8 +332,8 @@ export function testIcmp() {
 
 export function testFcmp() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'bool');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "bool");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const a = builder.fconst(1.5, FloatWidth.F64);
@@ -360,11 +352,11 @@ export function testFcmp() {
 
 export function testAlloca() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'ptr');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "ptr");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
-    const ptr = builder.alloca('i32', 0);
+    const ptr = builder.alloca("i32", 0);
     builder.ret(ptr);
 
     const fn = builder.build();
@@ -373,11 +365,11 @@ export function testAlloca() {
 
 export function testLoad() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
-    const ptr = builder.alloca('i32', 0);
+    const ptr = builder.alloca("i32", 0);
     const load = builder.load(ptr, { kind: 0, width: IntWidth.I32 });
     builder.ret(load);
 
@@ -387,11 +379,11 @@ export function testLoad() {
 
 export function testStore() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'unit');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "unit");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
-    const ptr = builder.alloca('i32', 0);
+    const ptr = builder.alloca("i32", 0);
     const value = builder.iconst(42, IntWidth.I32);
     builder.store(ptr, value, { kind: 0, width: IntWidth.I32 });
     builder.unreachable();
@@ -402,12 +394,12 @@ export function testStore() {
 
 export function testMemcpy() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'unit');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "unit");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
-    const dest = builder.alloca('i8', 1);
-    const src = builder.alloca('i8', 2);
+    const dest = builder.alloca("i8", 1);
+    const src = builder.alloca("i8", 2);
     const size = builder.iconst(10, IntWidth.I32);
     builder.memcpy(dest, src, size);
     builder.unreachable();
@@ -422,13 +414,13 @@ export function testMemcpy() {
 
 export function testGep() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'ptr');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "ptr");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
-    const ptr = builder.alloca('*i32', 0);
+    const ptr = builder.alloca("*i32", 0);
     const indices = [0, 2];
-    const gep = builder.gep(ptr, indices, 'i32');
+    const gep = builder.gep(ptr, indices, "i32");
     builder.ret(gep);
 
     const fn = builder.build();
@@ -437,11 +429,11 @@ export function testGep() {
 
 export function testPtradd() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'ptr');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "ptr");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
-    const ptr = builder.alloca('*i8', 0);
+    const ptr = builder.alloca("*i8", 0);
     const offset = builder.iconst(10, IntWidth.I32);
     const ptrAdd = builder.ptradd(ptr, offset);
     builder.ret(ptrAdd);
@@ -456,12 +448,16 @@ export function testPtradd() {
 
 export function testTrunc() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i16');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i16");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const val = builder.iconst(12345, IntWidth.I32);
-    const truncated = builder.trunc(val, { kind: 0, width: IntWidth.I32 }, { kind: 0, width: IntWidth.I16 });
+    const truncated = builder.trunc(
+        val,
+        { kind: 0, width: IntWidth.I32 },
+        { kind: 0, width: IntWidth.I16 },
+    );
     builder.ret(truncated);
 
     const fn = builder.build();
@@ -470,12 +466,16 @@ export function testTrunc() {
 
 export function testSext() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i64');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i64");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const val = builder.iconst(42, IntWidth.I32);
-    const extended = builder.sext(val, { kind: 0, width: IntWidth.I32 }, { kind: 0, width: IntWidth.I64 });
+    const extended = builder.sext(
+        val,
+        { kind: 0, width: IntWidth.I32 },
+        { kind: 0, width: IntWidth.I64 },
+    );
     builder.ret(extended);
 
     const fn = builder.build();
@@ -484,12 +484,16 @@ export function testSext() {
 
 export function testZext() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i64');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i64");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const val = builder.iconst(42, IntWidth.I32);
-    const extended = builder.zext(val, { kind: 0, width: IntWidth.I32 }, { kind: 0, width: IntWidth.I64 });
+    const extended = builder.zext(
+        val,
+        { kind: 0, width: IntWidth.I32 },
+        { kind: 0, width: IntWidth.I64 },
+    );
     builder.ret(extended);
 
     const fn = builder.build();
@@ -498,8 +502,8 @@ export function testZext() {
 
 export function testFptoui() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const val = builder.fconst(3.14, FloatWidth.F64);
@@ -512,8 +516,8 @@ export function testFptoui() {
 
 export function testFptosi() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const val = builder.fconst(3.14, FloatWidth.F64);
@@ -526,8 +530,8 @@ export function testFptosi() {
 
 export function testUitofp() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'f64');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "f64");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const val = builder.iconst(42, IntWidth.I32);
@@ -540,8 +544,8 @@ export function testUitofp() {
 
 export function testSitofp() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'f64');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "f64");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const val = builder.iconst(42, IntWidth.I32);
@@ -554,8 +558,8 @@ export function testSitofp() {
 
 export function testBitcast() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'f64');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "f64");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const val = builder.iconst(42, IntWidth.I32);
@@ -572,8 +576,8 @@ export function testBitcast() {
 
 export function testCall() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const fnId = 123;
@@ -588,8 +592,8 @@ export function testCall() {
 
 export function testCallVoid() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'unit');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "unit");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const fnId = 123;
@@ -607,16 +611,20 @@ export function testCallVoid() {
 
 export function testStructCreate() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'struct Point');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "struct Point");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const field1 = builder.iconst(1, IntWidth.I32);
     const field2 = builder.iconst(2, IntWidth.I32);
-    const struct = builder.structCreate([field1, field2], { kind: 5, name: 'Point', fields: [
-        { kind: 0, width: IntWidth.I32 },
-        { kind: 0, width: IntWidth.I32 }
-    ]});
+    const struct = builder.structCreate([field1, field2], {
+        kind: 5,
+        name: "Point",
+        fields: [
+            { kind: 0, width: IntWidth.I32 },
+            { kind: 0, width: IntWidth.I32 },
+        ],
+    });
     builder.ret(struct);
 
     const fn = builder.build();
@@ -625,16 +633,20 @@ export function testStructCreate() {
 
 export function testStructGet() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const field1 = builder.iconst(1, IntWidth.I32);
     const field2 = builder.iconst(2, IntWidth.I32);
-    const struct = builder.structCreate([field1, field2], { kind: 5, name: 'Point', fields: [
-        { kind: 0, width: IntWidth.I32 },
-        { kind: 0, width: IntWidth.I32 }
-    ]});
+    const struct = builder.structCreate([field1, field2], {
+        kind: 5,
+        name: "Point",
+        fields: [
+            { kind: 0, width: IntWidth.I32 },
+            { kind: 0, width: IntWidth.I32 },
+        ],
+    });
     const got = builder.structGet(struct, 1, { kind: 0, width: IntWidth.I32 });
     builder.ret(got);
 
@@ -645,13 +657,17 @@ export function testStructGet() {
 
 export function testEnumCreate() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'enum Option');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "enum Option");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const variant = 0; // Some
     const data = builder.iconst(42, IntWidth.I32);
-    const enum_ = builder.enumCreate(variant, data, { kind: 6, name: 'Option', variants: [[{ kind: 0, width: IntWidth.I32 }]] });
+    const enum_ = builder.enumCreate(variant, data, {
+        kind: 6,
+        name: "Option",
+        variants: [[{ kind: 0, width: IntWidth.I32 }]],
+    });
     builder.ret(enum_);
 
     const fn = builder.build();
@@ -660,12 +676,16 @@ export function testEnumCreate() {
 
 export function testEnumGetTag() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const data = builder.iconst(42, IntWidth.I32);
-    const enum_ = builder.enumCreate(0, data, { kind: 6, name: 'Option', variants: [[{ kind: 0, width: IntWidth.I32 }]] });
+    const enum_ = builder.enumCreate(0, data, {
+        kind: 6,
+        name: "Option",
+        variants: [[{ kind: 0, width: IntWidth.I32 }]],
+    });
     const tag = builder.enumGetTag(enum_);
     builder.ret(tag);
 
@@ -675,13 +695,20 @@ export function testEnumGetTag() {
 
 export function testEnumGetData() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
     const data = builder.iconst(42, IntWidth.I32);
-    const enum_ = builder.enumCreate(0, data, { kind: 6, name: 'Option', variants: [[{ kind: 0, width: IntWidth.I32 }]] });
-    const gotData = builder.enumGetData(enum_, 0, 0, { kind: 0, width: IntWidth.I32 });
+    const enum_ = builder.enumCreate(0, data, {
+        kind: 6,
+        name: "Option",
+        variants: [[{ kind: 0, width: IntWidth.I32 }]],
+    });
+    const gotData = builder.enumGetData(enum_, 0, 0, {
+        kind: 0,
+        width: IntWidth.I32,
+    });
     builder.ret(gotData);
 
     const fn = builder.build();
@@ -694,14 +721,14 @@ export function testEnumGetData() {
 
 export function testVariableDeclAndUse() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
-    builder.declareVar('x', { kind: 0, width: IntWidth.I32 });
+    builder.declareVar("x", { kind: 0, width: IntWidth.I32 });
     const value = builder.iconst(42, IntWidth.I32);
-    builder.defineVar('x', value);
-    const used = builder.useVar('x');
+    builder.defineVar("x", value);
+    const used = builder.useVar("x");
     builder.ret(used);
 
     const fn = builder.build();
@@ -710,11 +737,11 @@ export function testVariableDeclAndUse() {
 
 export function testAllocaAndStoreLoad() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
 
-    const ptr = builder.alloca('i32', 0);
+    const ptr = builder.alloca("i32", 0);
     const value = builder.iconst(42, IntWidth.I32);
     builder.store(ptr, value, { kind: 0, width: IntWidth.I32 });
     const loaded = builder.load(ptr, { kind: 0, width: IntWidth.I32 });
@@ -730,8 +757,8 @@ export function testAllocaAndStoreLoad() {
 
 export function testRet() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
     builder.ret(builder.iconst(42, IntWidth.I32));
     const fn = builder.build();
@@ -740,9 +767,9 @@ export function testRet() {
 
 export function testBr() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'unit');
-    builder.createBlock('entry');
-    builder.createBlock('then');
+    builder.createFunction("test", [], "unit");
+    builder.createBlock("entry");
+    builder.createBlock("then");
     builder.switchToBlock(0);
     builder.br(1);
     builder.switchToBlock(1);
@@ -755,16 +782,12 @@ export function testBr() {
 
 export function testBrIf() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'unit');
-    builder.createBlock('entry');
-    builder.createBlock('then');
-    builder.createBlock('else');
+    builder.createFunction("test", [], "unit");
+    builder.createBlock("entry");
+    builder.createBlock("then");
+    builder.createBlock("else");
     builder.switchToBlock(0);
-    builder.brIf(
-        builder.bconst(true),
-        1, [],
-        2, []
-    );
+    builder.brIf(builder.bconst(true), 1, [], 2, []);
     builder.switchToBlock(1);
     builder.unreachable();
     builder.switchToBlock(2);
@@ -778,8 +801,8 @@ export function testBrIf() {
 
 export function testUnreachable() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'unit');
-    builder.createBlock('entry');
+    builder.createFunction("test", [], "unit");
+    builder.createBlock("entry");
     builder.switchToBlock(0);
     builder.unreachable();
     const fn = builder.build();
@@ -792,55 +815,55 @@ export function testUnreachable() {
 
 export function runTests() {
     const tests = [
-        ['Iconst', testIconst],
-        ['Fconst', testFconst],
-        ['Bconst', testBconst],
-        ['Null', testNull],
-        ['Iadd', testIadd],
-        ['Isub', testIsub],
-        ['Imul', testImul],
-        ['Idiv', testIdiv],
-        ['Imod', testImod],
-        ['Fadd', testFadd],
-        ['Fsub', testFsub],
-        ['Fmul', testFmul],
-        ['Fdiv', testFdiv],
-        ['Ineg', testIneg],
-        ['Fneg', testFneg],
-        ['Iand', testIand],
-        ['Ior', testIor],
-        ['Ixor', testIxor],
-        ['Ishl', testIshl],
-        ['Ishr', testIshr],
-        ['Icmp', testIcmp],
-        ['Fcmp', testFcmp],
-        ['Alloca', testAlloca],
-        ['Load', testLoad],
-        ['Store', testStore],
-        ['Memcpy', testMemcpy],
-        ['Gep', testGep],
-        ['Ptradd', testPtradd],
-        ['Trunc', testTrunc],
-        ['Sext', testSext],
-        ['Zext', testZext],
-        ['Fptoui', testFptoui],
-        ['Fptosi', testFptosi],
-        ['Uitofp', testUitofp],
-        ['Sitofp', testSitofp],
-        ['Bitcast', testBitcast],
-        ['Call', testCall],
-        ['Call void', testCallVoid],
-        ['StructCreate', testStructCreate],
-        ['StructGet', testStructGet],
-        ['EnumCreate', testEnumCreate],
-        ['EnumGetTag', testEnumGetTag],
-        ['EnumGetData', testEnumGetData],
-        ['Variable decl and use', testVariableDeclAndUse],
-        ['Alloca + store + load', testAllocaAndStoreLoad],
-        ['Ret', testRet],
-        ['Br', testBr],
-        ['BrIf', testBrIf],
-        ['Unreachable', testUnreachable],
+        ["Iconst", testIconst],
+        ["Fconst", testFconst],
+        ["Bconst", testBconst],
+        ["Null", testNull],
+        ["Iadd", testIadd],
+        ["Isub", testIsub],
+        ["Imul", testImul],
+        ["Idiv", testIdiv],
+        ["Imod", testImod],
+        ["Fadd", testFadd],
+        ["Fsub", testFsub],
+        ["Fmul", testFmul],
+        ["Fdiv", testFdiv],
+        ["Ineg", testIneg],
+        ["Fneg", testFneg],
+        ["Iand", testIand],
+        ["Ior", testIor],
+        ["Ixor", testIxor],
+        ["Ishl", testIshl],
+        ["Ishr", testIshr],
+        ["Icmp", testIcmp],
+        ["Fcmp", testFcmp],
+        ["Alloca", testAlloca],
+        ["Load", testLoad],
+        ["Store", testStore],
+        ["Memcpy", testMemcpy],
+        ["Gep", testGep],
+        ["Ptradd", testPtradd],
+        ["Trunc", testTrunc],
+        ["Sext", testSext],
+        ["Zext", testZext],
+        ["Fptoui", testFptoui],
+        ["Fptosi", testFptosi],
+        ["Uitofp", testUitofp],
+        ["Sitofp", testSitofp],
+        ["Bitcast", testBitcast],
+        ["Call", testCall],
+        ["Call void", testCallVoid],
+        ["StructCreate", testStructCreate],
+        ["StructGet", testStructGet],
+        ["EnumCreate", testEnumCreate],
+        ["EnumGetTag", testEnumGetTag],
+        ["EnumGetData", testEnumGetData],
+        ["Variable decl and use", testVariableDeclAndUse],
+        ["Alloca + store + load", testAllocaAndStoreLoad],
+        ["Ret", testRet],
+        ["Br", testBr],
+        ["BrIf", testBrIf],
+        ["Unreachable", testUnreachable],
     ];
 
     let passed = 0;

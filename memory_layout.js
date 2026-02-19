@@ -1,6 +1,6 @@
 /**
  * Memory Layout Calculation
- * 
+ *
  * Computes size, alignment, and field offsets for IR types.
  */
 
@@ -9,8 +9,8 @@
 /** @typedef {import('./types.js').IntWidthValue} IntWidthValue */
 /** @typedef {import('./types.js').FloatWidthValue} FloatWidthValue */
 
-import { IntWidth, FloatWidth } from './types.js';
-import { IRTypeKind } from './ir.js';
+import { IntWidth, FloatWidth } from "./types.js";
+import { IRTypeKind } from "./ir.js";
 
 // ============================================================================
 // Task 10.1: Layout Structure
@@ -204,7 +204,7 @@ function layoutStruct(fields, layoutCache) {
     for (const field of fields) {
         const fieldLayout = layoutCache.getLayout(field);
         maxAlign = Math.max(maxAlign, fieldLayout.align);
-        
+
         // Align current offset to field's alignment
         currentOffset = alignTo(currentOffset, fieldLayout.align);
         fieldOffsets.push(currentOffset);
@@ -262,19 +262,19 @@ function layoutArray(element, count, layoutCache) {
  */
 function calculateTagSize(variantCount) {
     if (variantCount <= 0) return 0;
-    if (variantCount <= 256) return 1;      // u8
-    if (variantCount <= 65536) return 2;    // u16
+    if (variantCount <= 256) return 1; // u8
+    if (variantCount <= 65536) return 2; // u16
     if (variantCount <= 4294967296) return 4; // u32
     return 8; // u64
 }
 
 /**
  * Layout for enum types
- * 
+ *
  * Enum layout:
  * - Tag field (discriminant) at offset 0
  * - Largest variant data after the tag (aligned)
- * 
+ *
  * @param {IRType[][]} variants - Array of variant field types
  * @param {LayoutCache} layoutCache
  * @returns {TypeLayout}
@@ -317,7 +317,7 @@ function layoutEnum(variants, layoutCache) {
     // Tag at offset 0
     // Variant data starts after tag, aligned to variant alignment
     const dataOffset = alignTo(tagSize, maxVariantAlign);
-    
+
     // Total size = dataOffset + maxVariantSize, aligned to enum alignment
     const totalSize = alignTo(dataOffset + maxVariantSize, enumAlign);
 
@@ -369,11 +369,11 @@ class LayoutCache {
             case IRTypeKind.Float:
                 return `float_${type.width}`;
             case IRTypeKind.Bool:
-                return 'bool';
+                return "bool";
             case IRTypeKind.Ptr:
-                return 'ptr';
+                return "ptr";
             case IRTypeKind.Unit:
-                return 'unit';
+                return "unit";
             case IRTypeKind.Struct:
                 return `struct_${type.name}`;
             case IRTypeKind.Enum:
@@ -381,7 +381,7 @@ class LayoutCache {
             case IRTypeKind.Array:
                 return `array_${this.typeKey(type.element)}_${type.length}`;
             case IRTypeKind.Fn:
-                return `fn_${type.params.map(p => this.typeKey(p)).join('_')}_${this.typeKey(type.returnType)}`;
+                return `fn_${type.params.map((p) => this.typeKey(p)).join("_")}_${this.typeKey(type.returnType)}`;
             default:
                 return `unknown_${type.kind}`;
         }

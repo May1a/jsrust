@@ -53,7 +53,11 @@ function makeSourceSpan(start, end) {
 function spanToSourceSpan(span, file) {
     return {
         start: { line: span.line, column: span.column, file },
-        end: { line: span.line, column: span.column + (span.end - span.start), file },
+        end: {
+            line: span.line,
+            column: span.column + (span.end - span.start),
+            file,
+        },
     };
 }
 
@@ -66,7 +70,13 @@ function spanToSourceSpan(span, file) {
  * @param {string} [file]
  * @returns {SourceSpan}
  */
-function makeSourceSpanFromLC(startLine, startColumn, endLine, endColumn, file) {
+function makeSourceSpanFromLC(
+    startLine,
+    startColumn,
+    endLine,
+    endColumn,
+    file,
+) {
     return {
         start: { line: startLine, column: startColumn, file },
         end: { line: endLine, column: endColumn, file },
@@ -395,7 +405,7 @@ function unwrap(result) {
     throw new Error(
         result.error instanceof Error
             ? result.error.message
-            : String(result.error)
+            : String(result.error),
     );
 }
 
@@ -548,7 +558,10 @@ class SourceContext {
         }
 
         if (span.start.line === span.end.line) {
-            return startLine.substring(span.start.column - 1, span.end.column - 1);
+            return startLine.substring(
+                span.start.column - 1,
+                span.end.column - 1,
+            );
         }
 
         // Multi-line span
@@ -674,9 +687,13 @@ function renderDiagnostic(diag, ctx, options = {}) {
             const noteColor = color ? LEVEL_COLORS[Level.Note] || "" : "";
             lines.push(`  ${noteColor}note${reset}: ${rel.message}`);
             if (rel.span.start.file) {
-                lines.push(`    --> ${rel.span.start.file}:${rel.span.start.line}:${rel.span.start.column}`);
+                lines.push(
+                    `    --> ${rel.span.start.file}:${rel.span.start.line}:${rel.span.start.column}`,
+                );
             } else {
-                lines.push(`    --> ${rel.span.start.line}:${rel.span.start.column}`);
+                lines.push(
+                    `    --> ${rel.span.start.line}:${rel.span.start.column}`,
+                );
             }
         }
     }
@@ -730,7 +747,11 @@ function renderSnippet(span, ctx, color = true) {
             }
 
             // Build the underline
-            const underline = buildUnderline(underlineStart, underlineEnd, color);
+            const underline = buildUnderline(
+                underlineStart,
+                underlineEnd,
+                color,
+            );
             lines.push(`${dim}${" ".repeat(width)} |${reset} ${underline}`);
         } else {
             // Context line
@@ -767,7 +788,8 @@ function buildUnderline(start, end, color = true) {
  * @returns {string}
  */
 function renderDiagnostics(collector, ctx, options = {}) {
-    return collector.getDiagnostics()
+    return collector
+        .getDiagnostics()
         .map((d) => renderDiagnostic(d, ctx, options))
         .join("\n\n");
 }
@@ -784,7 +806,10 @@ function renderDiagnostics(collector, ctx, options = {}) {
  * @returns {Diagnostic}
  */
 function formatTypeMismatch(expected, found, span) {
-    return error(`Type mismatch: expected \`${expected}\`, found \`${found}\``, span);
+    return error(
+        `Type mismatch: expected \`${expected}\`, found \`${found}\``,
+        span,
+    );
 }
 
 /**
@@ -834,7 +859,10 @@ function formatArityMismatch(expected, found, span) {
  * @returns {Diagnostic}
  */
 function formatMissingField(structName, fieldName, span) {
-    return error(`Missing field \`${fieldName}\` in struct \`${structName}\``, span);
+    return error(
+        `Missing field \`${fieldName}\` in struct \`${structName}\``,
+        span,
+    );
 }
 
 /**
@@ -845,7 +873,10 @@ function formatMissingField(structName, fieldName, span) {
  * @returns {Diagnostic}
  */
 function formatUnknownField(structName, fieldName, span) {
-    return error(`Unknown field \`${fieldName}\` in struct \`${structName}\``, span);
+    return error(
+        `Unknown field \`${fieldName}\` in struct \`${structName}\``,
+        span,
+    );
 }
 
 /**
@@ -854,7 +885,10 @@ function formatUnknownField(structName, fieldName, span) {
  * @returns {Diagnostic}
  */
 function formatMissingReturnType(span) {
-    return warning("Function without return type annotation defaults to `()`", span);
+    return warning(
+        "Function without return type annotation defaults to `()`",
+        span,
+    );
 }
 
 /**

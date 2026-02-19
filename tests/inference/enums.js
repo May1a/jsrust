@@ -98,14 +98,11 @@ function makeModule(name, items) {
 testGroup("Enum Definition", () => {
     assert("register enum", () => {
         const ctx = new TypeContext();
-        const variants = [
-            makeEnumVariant("A"),
-            makeEnumVariant("B"),
-        ];
+        const variants = [makeEnumVariant("A"), makeEnumVariant("B")];
         const enumItem = makeEnumItem("MyEnum", variants);
         const result = ctx.registerEnum("MyEnum", enumItem);
         assert(result.ok);
-        
+
         const item = ctx.lookupItem("MyEnum");
         assert(item !== null);
         assertEq(item.kind, "enum");
@@ -125,30 +122,30 @@ testGroup("Enum Definition", () => {
 testGroup("Match Expression Inference", () => {
     assert("simple match on enum", () => {
         const ctx = new TypeContext();
-        
+
         // Register enum
-        const variants = [
-            makeEnumVariant("A"),
-            makeEnumVariant("B"),
-        ];
+        const variants = [makeEnumVariant("A"), makeEnumVariant("B")];
         const enumItem = makeEnumItem("MyEnum", variants);
         ctx.registerEnum("MyEnum", enumItem);
-        
+
         // Bind variable of enum type
-        const enumType = makeEnumType("MyEnum", [
-            { name: "A" },
-            { name: "B" },
-        ]);
+        const enumType = makeEnumType("MyEnum", [{ name: "A" }, { name: "B" }]);
         ctx.defineVar("e", enumType);
-        
+
         // Create match expression
         const scrutinee = makeIdentifierExpr("e");
         const arms = [
-            makeMatchArm(makeIdentPat("_"), makeLiteralExpr(LiteralKind.Int, 1, "1")),
-            makeMatchArm(makeIdentPat("_"), makeLiteralExpr(LiteralKind.Int, 2, "2")),
+            makeMatchArm(
+                makeIdentPat("_"),
+                makeLiteralExpr(LiteralKind.Int, 1, "1"),
+            ),
+            makeMatchArm(
+                makeIdentPat("_"),
+                makeLiteralExpr(LiteralKind.Int, 2, "2"),
+            ),
         ];
         const matchExpr = makeMatchExpr(scrutinee, arms);
-        
+
         const result = inferMatch(ctx, matchExpr);
         assert(result.ok);
         assertEq(result.type.kind, TypeKind.Int);
@@ -156,20 +153,23 @@ testGroup("Match Expression Inference", () => {
 
     assert("match with mismatched arm types fails", () => {
         const ctx = new TypeContext();
-        
-        const enumType = makeEnumType("MyEnum", [
-            { name: "A" },
-            { name: "B" },
-        ]);
+
+        const enumType = makeEnumType("MyEnum", [{ name: "A" }, { name: "B" }]);
         ctx.defineVar("e", enumType);
-        
+
         const scrutinee = makeIdentifierExpr("e");
         const arms = [
-            makeMatchArm(makeIdentPat("_"), makeLiteralExpr(LiteralKind.Int, 1, "1")),
-            makeMatchArm(makeIdentPat("_"), makeLiteralExpr(LiteralKind.Bool, true, "true")),
+            makeMatchArm(
+                makeIdentPat("_"),
+                makeLiteralExpr(LiteralKind.Int, 1, "1"),
+            ),
+            makeMatchArm(
+                makeIdentPat("_"),
+                makeLiteralExpr(LiteralKind.Bool, true, "true"),
+            ),
         ];
         const matchExpr = makeMatchExpr(scrutinee, arms);
-        
+
         const result = inferMatch(ctx, matchExpr);
         assert(!result.ok);
     });

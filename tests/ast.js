@@ -89,7 +89,12 @@ export function runAstTests() {
     });
 
     test("LiteralExpr - string", () => {
-        const node = makeLiteralExpr(span, LiteralKind.String, "hello", '"hello"');
+        const node = makeLiteralExpr(
+            span,
+            LiteralKind.String,
+            "hello",
+            '"hello"',
+        );
         assertEqual(node.kind, NodeKind.LiteralExpr);
         assertEqual(node.literalKind, LiteralKind.String);
         assertEqual(node.value, "hello");
@@ -198,7 +203,12 @@ export function runAstTests() {
     });
 
     test("BlockExpr", () => {
-        const stmt = makeLetStmt(span, makeIdentPat(span, "x", Mutability.Immutable, false, null), null, null);
+        const stmt = makeLetStmt(
+            span,
+            makeIdentPat(span, "x", Mutability.Immutable, false, null),
+            null,
+            null,
+        );
         const expr = makeIdentifierExpr(span, "x");
         const node = makeBlockExpr(span, [stmt], expr);
         assertEqual(node.kind, NodeKind.BlockExpr);
@@ -281,8 +291,14 @@ export function runAstTests() {
     test("StructExpr", () => {
         const path = makePathExpr(span, ["Point"]);
         const fields = [
-            { name: "x", value: makeLiteralExpr(span, LiteralKind.Int, 1, "1") },
-            { name: "y", value: makeLiteralExpr(span, LiteralKind.Int, 2, "2") },
+            {
+                name: "x",
+                value: makeLiteralExpr(span, LiteralKind.Int, 1, "1"),
+            },
+            {
+                name: "y",
+                value: makeLiteralExpr(span, LiteralKind.Int, 2, "2"),
+            },
         ];
         const node = makeStructExpr(span, path, fields, null);
         assertEqual(node.kind, NodeKind.StructExpr);
@@ -356,7 +372,16 @@ export function runAstTests() {
     test("FnItem", () => {
         const body = makeBlockExpr(span, [], null);
         const params = [ast.makeParam(span, "x", null, null)];
-        const node = makeFnItem(span, "add", [], params, null, body, false, false);
+        const node = makeFnItem(
+            span,
+            "add",
+            [],
+            params,
+            null,
+            body,
+            false,
+            false,
+        );
         assertEqual(node.kind, NodeKind.FnItem);
         assertEqual(node.name, "add");
         assertEqual(node.params.length, 1);
@@ -396,7 +421,9 @@ export function runAstTests() {
     });
 
     test("ModItem", () => {
-        const items = [makeFnItem(span, "foo", [], [], null, null, false, false)];
+        const items = [
+            makeFnItem(span, "foo", [], [], null, null, false, false),
+        ];
         const node = makeModItem(span, "utils", items, true);
         assertEqual(node.kind, NodeKind.ModItem);
         assertEqual(node.name, "utils");
@@ -489,7 +516,12 @@ export function runAstTests() {
     test("MatchExpr", () => {
         const scrutinee = makeIdentifierExpr(span, "value");
         const arms = [
-            makeMatchArm(span, makeWildcardPat(span), null, makeLiteralExpr(span, LiteralKind.Int, 0, "0")),
+            makeMatchArm(
+                span,
+                makeWildcardPat(span),
+                null,
+                makeLiteralExpr(span, LiteralKind.Int, 0, "0"),
+            ),
         ];
         const node = makeMatchExpr(span, scrutinee, arms);
         assertEqual(node.kind, NodeKind.MatchExpr);
@@ -568,7 +600,9 @@ export function runAstTests() {
     });
 
     test("Module", () => {
-        const items = [makeFnItem(span, "main", [], [], null, null, false, false)];
+        const items = [
+            makeFnItem(span, "main", [], [], null, null, false, false),
+        ];
         const node = makeModule(span, "main", items);
         assertEqual(node.kind, NodeKind.Module);
         assertEqual(node.name, "main");
@@ -590,14 +624,18 @@ export function runAstTests() {
     });
 
     test("isItem helper", () => {
-        assertTrue(isItem(makeFnItem(span, "f", [], [], null, null, false, false)));
+        assertTrue(
+            isItem(makeFnItem(span, "f", [], [], null, null, false, false)),
+        );
         assertTrue(isItem(makeStructItem(span, "S", [], [], false)));
         assertTrue(isItem(makeEnumItem(span, "E", [], [])));
         assertTrue(!isItem(makeLetStmt(span, null, null, null)));
     });
 
     test("isPat helper", () => {
-        assertTrue(isPat(makeIdentPat(span, "x", Mutability.Immutable, false, null)));
+        assertTrue(
+            isPat(makeIdentPat(span, "x", Mutability.Immutable, false, null)),
+        );
         assertTrue(isPat(makeWildcardPat(span)));
         assertTrue(isPat(makeTuplePat(span, [])));
         assertTrue(!isPat(makeLiteralExpr(span, LiteralKind.Int, 1, "1")));

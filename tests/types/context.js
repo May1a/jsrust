@@ -1,4 +1,10 @@
-import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib.js";
+import {
+    test,
+    assertEqual,
+    assertTrue,
+    getResults,
+    clearErrors,
+} from "../lib.js";
 import { TypeContext } from "../../type_context.js";
 import {
     makeIntType,
@@ -87,7 +93,10 @@ test("lookupVar finds variable in parent scope", () => {
     ctx.pushScope();
     const binding = ctx.lookupVar("x");
     assertTrue(binding !== null);
-    assertEqual(binding.kind === undefined ? binding.type.kind : binding.kind, TypeKind.Int);
+    assertEqual(
+        binding.kind === undefined ? binding.type.kind : binding.kind,
+        TypeKind.Int,
+    );
 });
 
 test("lookupVar returns null for undefined variable", () => {
@@ -159,7 +168,11 @@ test("registerMod adds module item", () => {
 test("registerTypeAlias adds type alias", () => {
     const ctx = new TypeContext();
     const aliasType = makeIntType(2);
-    const result = ctx.registerTypeAlias("MyInt", { kind: 39, name: "MyInt" }, aliasType);
+    const result = ctx.registerTypeAlias(
+        "MyInt",
+        { kind: 39, name: "MyInt" },
+        aliasType,
+    );
     assertTrue(result.ok);
     const resolved = ctx.lookupTypeAlias("MyInt");
     assertTrue(resolved === aliasType);

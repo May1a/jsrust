@@ -15,7 +15,7 @@ import {
     addPredecessor,
     addSuccessor,
     makeIRLocal,
-} from './ir.js';
+} from "./ir.js";
 import {
     IRInstKind,
     makeIconst,
@@ -60,7 +60,7 @@ import {
     makeEnumCreate,
     makeEnumGetTag,
     makeEnumGetData,
-} from './ir_instructions.js';
+} from "./ir_instructions.js";
 import {
     makeRet,
     makeBr,
@@ -68,7 +68,7 @@ import {
     makeSwitch,
     makeSwitchCase,
     makeUnreachable,
-} from './ir_terminators.js';
+} from "./ir_terminators.js";
 
 /**
  * IRBuilder - constructs SSA IR functions incrementally
@@ -103,7 +103,11 @@ export class IRBuilder {
         this.currentFunction = {
             id: this.nextValueId++, // placeholder
             name,
-            params: params.map((ty, i) => ({ id: this.nextValueId++, name: `arg${i}`, ty })),
+            params: params.map((ty, i) => ({
+                id: this.nextValueId++,
+                name: `arg${i}`,
+                ty,
+            })),
             returnType,
             blocks: [],
             locals: [],
@@ -128,7 +132,7 @@ export class IRBuilder {
     }
 
     switchToBlock(blockId) {
-        const block = this.currentFunction.blocks.find(b => b.id === blockId);
+        const block = this.currentFunction.blocks.find((b) => b.id === blockId);
         if (!block) {
             throw new Error(`Block ${blockId} not found in function`);
         }
@@ -144,7 +148,7 @@ export class IRBuilder {
     }
 
     getPredecessors(blockId) {
-        const block = this.currentFunction.blocks.find(b => b.id === blockId);
+        const block = this.currentFunction.blocks.find((b) => b.id === blockId);
         return block ? block.predecessors : [];
     }
 

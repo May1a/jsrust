@@ -8,7 +8,13 @@ import {
     inferIdentifier,
     unify,
 } from "../../inference.js";
-import { NodeKind, LiteralKind, UnaryOp, BinaryOp, Mutability } from "../../ast.js";
+import {
+    NodeKind,
+    LiteralKind,
+    UnaryOp,
+    BinaryOp,
+    Mutability,
+} from "../../ast.js";
 import { TypeKind, IntWidth, FloatWidth, typeToString } from "../../types.js";
 import { assert, assertEq, testGroup } from "../lib.js";
 

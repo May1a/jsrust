@@ -5,10 +5,7 @@
 /** @typedef {import('./ir.js').IcmpOpValue} IcmpOpValue */
 /** @typedef {import('./ir.js').FcmpOpValue} FcmpOpValue */
 
-import {
-    IRInstKind,
-    freshValueId,
-} from './ir.js';
+import { IRInstKind, freshValueId } from "./ir.js";
 
 function makeIRInst(kind, id, ty) {
     return { kind, id, ty };
@@ -464,7 +461,12 @@ function makeEnumGetData(enum_, variant, index, dataTy) {
 }
 
 function isIRInst(node) {
-    return node && typeof node.kind === 'number' && node.kind >= IRInstKind.Iconst && node.kind <= IRInstKind.EnumGetData;
+    return (
+        node &&
+        typeof node.kind === "number" &&
+        node.kind >= IRInstKind.Iconst &&
+        node.kind <= IRInstKind.EnumGetData
+    );
 }
 
 export {

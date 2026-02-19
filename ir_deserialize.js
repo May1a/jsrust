@@ -27,9 +27,9 @@ import {
     addIRBlockParam,
     addIRInstruction,
     setIRTerminator,
-} from './ir.js';
+} from "./ir.js";
 
-import { MAGIC, VERSION } from './ir_serialize.js';
+import { MAGIC, VERSION } from "./ir_serialize.js";
 
 /**
  * Deserialize error types
@@ -99,17 +99,26 @@ class IRDeserializer {
     deserializeModule() {
         // Read and validate header
         if (this.end < 28) {
-            return error(DeserializeErrorKind.TruncatedData, 'Buffer too small for header');
+            return error(
+                DeserializeErrorKind.TruncatedData,
+                "Buffer too small for header",
+            );
         }
 
         const magic = this.readU32();
         if (magic !== MAGIC) {
-            return error(DeserializeErrorKind.InvalidMagic, `Invalid magic bytes: expected 0x${MAGIC.toString(16)}, got 0x${magic.toString(16)}`);
+            return error(
+                DeserializeErrorKind.InvalidMagic,
+                `Invalid magic bytes: expected 0x${MAGIC.toString(16)}, got 0x${magic.toString(16)}`,
+            );
         }
 
         const version = this.readU32();
         if (version !== VERSION) {
-            return error(DeserializeErrorKind.InvalidVersion, `Unsupported version: ${version}`);
+            return error(
+                DeserializeErrorKind.InvalidVersion,
+                `Unsupported version: ${version}`,
+            );
         }
 
         const flags = this.readU32();
@@ -135,7 +144,7 @@ class IRDeserializer {
         const { structs, enums } = typesResult.value;
 
         // Create module
-        const module = makeIRModule('module');
+        const module = makeIRModule("module");
         module.structs = structs;
         module.enums = enums;
 
@@ -280,7 +289,10 @@ class IRDeserializer {
      */
     getString(id) {
         if (id < 0 || id >= this.strings.length) {
-            return error(DeserializeErrorKind.OutOfBoundsReference, `Invalid string ID: ${id}`);
+            return error(
+                DeserializeErrorKind.OutOfBoundsReference,
+                `Invalid string ID: ${id}`,
+            );
         }
         return ok(this.strings[id]);
     }
@@ -399,7 +411,10 @@ class IRDeserializer {
             }
 
             default:
-                return error(DeserializeErrorKind.InvalidTypeTag, `Invalid type tag: ${tag}`);
+                return error(
+                    DeserializeErrorKind.InvalidTypeTag,
+                    `Invalid type tag: ${tag}`,
+                );
         }
     }
 
@@ -457,7 +472,10 @@ class IRDeserializer {
                 return ok(this.readU8() !== 0);
 
             default:
-                return error(DeserializeErrorKind.InvalidTypeTag, `Invalid constant type: ${ty.kind}`);
+                return error(
+                    DeserializeErrorKind.InvalidTypeTag,
+                    `Invalid constant type: ${ty.kind}`,
+                );
         }
     }
 
@@ -506,7 +524,12 @@ class IRDeserializer {
         if (!returnResult.ok) return returnResult;
 
         // Create function
-        const fn = makeIRFunction(0, nameResult.value, params, returnResult.value);
+        const fn = makeIRFunction(
+            0,
+            nameResult.value,
+            params,
+            returnResult.value,
+        );
 
         // Read locals
         const localCount = this.readU32();
@@ -675,7 +698,14 @@ class IRDeserializer {
                 const value = this.readU32();
                 const valueTypeResult = this.readType();
                 if (!valueTypeResult.ok) return valueTypeResult;
-                inst = { kind: opcode, id, ty, ptr, value, valueType: valueTypeResult.value };
+                inst = {
+                    kind: opcode,
+                    id,
+                    ty,
+                    ptr,
+                    value,
+                    valueType: valueTypeResult.value,
+                };
                 break;
             }
 
@@ -711,7 +741,13 @@ class IRDeserializer {
                 const val = this.readU32();
                 const fromTyResult = this.readType();
                 if (!fromTyResult.ok) return fromTyResult;
-                inst = { kind: opcode, id, ty, val, fromTy: fromTyResult.value };
+                inst = {
+                    kind: opcode,
+                    id,
+                    ty,
+                    val,
+                    fromTy: fromTyResult.value,
+                };
                 break;
             }
 
@@ -779,7 +815,10 @@ class IRDeserializer {
             }
 
             default:
-                return error(DeserializeErrorKind.InvalidOpcode, `Invalid instruction opcode: ${opcode}`);
+                return error(
+                    DeserializeErrorKind.InvalidOpcode,
+                    `Invalid instruction opcode: ${opcode}`,
+                );
         }
 
         return ok(inst);
@@ -845,7 +884,14 @@ class IRDeserializer {
                 for (let i = 0; i < elseArgCount; i++) {
                     elseArgs.push(this.readU32());
                 }
-                return ok({ kind: tag, cond, thenBlock, thenArgs, elseBlock, elseArgs });
+                return ok({
+                    kind: tag,
+                    cond,
+                    thenBlock,
+                    thenArgs,
+                    elseBlock,
+                    elseArgs,
+                });
             }
 
             case IRTermKind.Switch: {
@@ -868,14 +914,23 @@ class IRDeserializer {
                 for (let i = 0; i < defaultArgCount; i++) {
                     defaultArgs.push(this.readU32());
                 }
-                return ok({ kind: tag, value, cases, defaultBlock, defaultArgs });
+                return ok({
+                    kind: tag,
+                    value,
+                    cases,
+                    defaultBlock,
+                    defaultArgs,
+                });
             }
 
             case IRTermKind.Unreachable:
                 return ok({ kind: tag });
 
             default:
-                return error(DeserializeErrorKind.InvalidTerminatorTag, `Invalid terminator tag: ${tag}`);
+                return error(
+                    DeserializeErrorKind.InvalidTerminatorTag,
+                    `Invalid terminator tag: ${tag}`,
+                );
         }
     }
 
@@ -903,10 +958,4 @@ function deserializeModule(data) {
     return deserializer.deserializeModule();
 }
 
-export {
-    IRDeserializer,
-    deserializeModule,
-    DeserializeErrorKind,
-    error,
-    ok,
-};
+export { IRDeserializer, deserializeModule, DeserializeErrorKind, error, ok };

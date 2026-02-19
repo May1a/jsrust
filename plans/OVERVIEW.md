@@ -1,6 +1,7 @@
 # JSRust Implementation Plan Overview
 
 ## Goal
+
 Build a Rust-to-SSA-IR compiler in pure JavaScript that outputs a binary IR format.
 
 ## Architecture
@@ -28,12 +29,14 @@ Binary Serialization --> .jsr file
 ```
 
 ## Constraints
+
 - Pure JavaScript, ES modules only
 - No external dependencies
 - Errors-as-values error handling
 - Node-compatible APIs
 
 ## Feature Scope (Moderate Rust Subset)
+
 - Functions with parameters and return types
 - Struct and enum definitions
 - Pattern matching
@@ -44,6 +47,7 @@ Binary Serialization --> .jsr file
 - Basic operators
 
 ## Plan Files
+
 - `01-ast.md` - AST node definitions
 - `02-parser.md` - Parser implementation
 - `03-types.md` - Type system
@@ -58,12 +62,15 @@ Binary Serialization --> .jsr file
 - `12-output.md` - Textual output and debugging
 
 ## Task Status
+
 Each plan file contains tasks marked with status:
+
 - `[ ]` - Not started
 - `[~]` - In progress
 - `[x]` - Complete (tests pass)
 
 ## Agent Workflow
+
 1. Pick a task from a plan file
 2. Implement the code
 3. Write tests

@@ -7,7 +7,7 @@ import {
     setIRTerminator,
     addPredecessor,
     addSuccessor,
-} from '../../ir.js';
+} from "../../ir.js";
 
 import {
     makeRet,
@@ -17,13 +17,19 @@ import {
     makeSwitchCase,
     makeUnreachable,
     isIRTerminator,
-} from '../../ir_terminators.js';
+} from "../../ir_terminators.js";
 
-import { makeIconst } from '../../ir_instructions.js';
-import { IntWidth } from '../../types.js';
-import { test, assertEqual, assertTrue, getResults, clearErrors } from '../lib.js';
+import { makeIconst } from "../../ir_instructions.js";
+import { IntWidth } from "../../types.js";
+import {
+    test,
+    assertEqual,
+    assertTrue,
+    getResults,
+    clearErrors,
+} from "../lib.js";
 
-test('makeIRBlock creates basic block', () => {
+test("makeIRBlock creates basic block", () => {
     resetIRIds();
     const block = makeIRBlock(0);
     assertEqual(block.id, 0);
@@ -34,7 +40,7 @@ test('makeIRBlock creates basic block', () => {
     assertEqual(block.successors.length, 0);
 });
 
-test('addIRBlockParam adds block parameter', () => {
+test("addIRBlockParam adds block parameter", () => {
     resetIRIds();
     const block = makeIRBlock(0);
     const ty = { kind: 0, width: IntWidth.I32 };
@@ -44,7 +50,7 @@ test('addIRBlockParam adds block parameter', () => {
     assertEqual(block.params[0].ty.kind, 0);
 });
 
-test('addIRInstruction adds instruction to block', () => {
+test("addIRInstruction adds instruction to block", () => {
     resetIRIds();
     const block = makeIRBlock(0);
     const inst = makeIconst(42, IntWidth.I32);
@@ -53,7 +59,7 @@ test('addIRInstruction adds instruction to block', () => {
     assertEqual(block.instructions[0].kind, 0);
 });
 
-test('setIRTerminator sets block terminator', () => {
+test("setIRTerminator sets block terminator", () => {
     resetIRIds();
     const block = makeIRBlock(0);
     const term = makeRet(null);
@@ -62,7 +68,7 @@ test('setIRTerminator sets block terminator', () => {
     assertEqual(block.terminator.kind, IRTermKind.Ret);
 });
 
-test('addPredecessor adds predecessor block', () => {
+test("addPredecessor adds predecessor block", () => {
     resetIRIds();
     const block = makeIRBlock(0);
     addPredecessor(block, 1);
@@ -72,7 +78,7 @@ test('addPredecessor adds predecessor block', () => {
     assertTrue(block.predecessors.includes(2));
 });
 
-test('addPredecessor does not duplicate', () => {
+test("addPredecessor does not duplicate", () => {
     resetIRIds();
     const block = makeIRBlock(0);
     addPredecessor(block, 1);
@@ -80,7 +86,7 @@ test('addPredecessor does not duplicate', () => {
     assertEqual(block.predecessors.length, 1);
 });
 
-test('addSuccessor adds successor block', () => {
+test("addSuccessor adds successor block", () => {
     resetIRIds();
     const block = makeIRBlock(0);
     addSuccessor(block, 1);
@@ -90,7 +96,7 @@ test('addSuccessor adds successor block', () => {
     assertTrue(block.successors.includes(2));
 });
 
-test('addSuccessor does not duplicate', () => {
+test("addSuccessor does not duplicate", () => {
     resetIRIds();
     const block = makeIRBlock(0);
     addSuccessor(block, 1);
@@ -98,14 +104,14 @@ test('addSuccessor does not duplicate', () => {
     assertEqual(block.successors.length, 1);
 });
 
-test('makeRet creates return terminator', () => {
+test("makeRet creates return terminator", () => {
     resetIRIds();
     const term = makeRet(null);
     assertEqual(term.kind, IRTermKind.Ret);
     assertEqual(term.value, null);
 });
 
-test('makeRet creates return with value', () => {
+test("makeRet creates return with value", () => {
     resetIRIds();
     const inst = makeIconst(42, IntWidth.I32);
     const term = makeRet(inst.id);
@@ -113,7 +119,7 @@ test('makeRet creates return with value', () => {
     assertEqual(term.value, 0);
 });
 
-test('makeBr creates unconditional branch', () => {
+test("makeBr creates unconditional branch", () => {
     resetIRIds();
     const term = makeBr(1, []);
     assertEqual(term.kind, IRTermKind.Br);
@@ -121,14 +127,14 @@ test('makeBr creates unconditional branch', () => {
     assertEqual(term.args.length, 0);
 });
 
-test('makeBr creates branch with arguments', () => {
+test("makeBr creates branch with arguments", () => {
     resetIRIds();
     const term = makeBr(1, [0, 1]);
     assertEqual(term.target, 1);
     assertEqual(term.args.length, 2);
 });
 
-test('makeBrIf creates conditional branch', () => {
+test("makeBrIf creates conditional branch", () => {
     resetIRIds();
     const term = makeBrIf(0, 1, [], 2, []);
     assertEqual(term.kind, IRTermKind.BrIf);
@@ -137,14 +143,14 @@ test('makeBrIf creates conditional branch', () => {
     assertEqual(term.elseBlock, 2);
 });
 
-test('makeBrIf creates branch with arguments', () => {
+test("makeBrIf creates branch with arguments", () => {
     resetIRIds();
     const term = makeBrIf(0, 1, [2], 3, [4, 5]);
     assertEqual(term.thenArgs.length, 1);
     assertEqual(term.elseArgs.length, 2);
 });
 
-test('makeSwitch creates switch terminator', () => {
+test("makeSwitch creates switch terminator", () => {
     resetIRIds();
     const cases = [makeSwitchCase(0, 1, []), makeSwitchCase(1, 2, [])];
     const term = makeSwitch(0, cases, 3, []);
@@ -154,7 +160,7 @@ test('makeSwitch creates switch terminator', () => {
     assertEqual(term.defaultBlock, 3);
 });
 
-test('makeSwitchCase creates switch case', () => {
+test("makeSwitchCase creates switch case", () => {
     resetIRIds();
     const case_ = makeSwitchCase(42, 1, [2, 3]);
     assertEqual(case_.value, 42);
@@ -162,13 +168,13 @@ test('makeSwitchCase creates switch case', () => {
     assertEqual(case_.args.length, 2);
 });
 
-test('makeUnreachable creates unreachable terminator', () => {
+test("makeUnreachable creates unreachable terminator", () => {
     resetIRIds();
     const term = makeUnreachable();
     assertEqual(term.kind, IRTermKind.Unreachable);
 });
 
-test('isIRTerminator identifies terminators', () => {
+test("isIRTerminator identifies terminators", () => {
     resetIRIds();
     assertTrue(isIRTerminator(makeRet(null)));
     assertTrue(isIRTerminator(makeBr(0, [])));
@@ -180,7 +186,7 @@ test('isIRTerminator identifies terminators', () => {
     assertTrue(!isIRTerminator({}));
 });
 
-test('block can have multiple instructions', () => {
+test("block can have multiple instructions", () => {
     resetIRIds();
     const block = makeIRBlock(0);
     addIRInstruction(block, makeIconst(1, IntWidth.I32));
@@ -189,7 +195,7 @@ test('block can have multiple instructions', () => {
     assertEqual(block.instructions.length, 3);
 });
 
-test('block params have unique IDs', () => {
+test("block params have unique IDs", () => {
     resetIRIds();
     const block = makeIRBlock(0);
     const ty = { kind: 0, width: IntWidth.I32 };

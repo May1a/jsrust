@@ -1,17 +1,12 @@
 // Control flow tests
-import {
-    assertEqual,
-} from '../lib.js';
-import {
-    IRBuilder,
-    IntWidth,
-} from '../../ir_builder.js';
+import { assertEqual } from "../lib.js";
+import { IRBuilder, IntWidth } from "../../ir_builder.js";
 
 export function testBrTarget() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'unit');
-    builder.createBlock('entry');
-    builder.createBlock('target');
+    builder.createFunction("test", [], "unit");
+    builder.createBlock("entry");
+    builder.createBlock("target");
     builder.switchToBlock(0);
     builder.br(1);
     builder.switchToBlock(1);
@@ -24,10 +19,10 @@ export function testBrTarget() {
 
 export function testBrIfFlow() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'unit');
-    builder.createBlock('entry');
-    builder.createBlock('then');
-    builder.createBlock('else');
+    builder.createFunction("test", [], "unit");
+    builder.createBlock("entry");
+    builder.createBlock("then");
+    builder.createBlock("else");
     builder.switchToBlock(0);
 
     const cond = builder.bconst(true);
@@ -48,11 +43,11 @@ export function testBrIfFlow() {
 
 export function testSwitch() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'unit');
-    builder.createBlock('entry');
-    builder.createBlock('case1');
-    builder.createBlock('case2');
-    builder.createBlock('default');
+    builder.createFunction("test", [], "unit");
+    builder.createBlock("entry");
+    builder.createBlock("case1");
+    builder.createBlock("case2");
+    builder.createBlock("default");
     builder.switchToBlock(0);
 
     const val = builder.iconst(1, IntWidth.I32);
@@ -78,11 +73,11 @@ export function testSwitch() {
 
 export function functionWithMultipleBasicBlocks() {
     const builder = new IRBuilder();
-    builder.createFunction('test', [], 'i32');
-    builder.createBlock('entry');
-    builder.createBlock('if_true');
-    builder.createBlock('if_false');
-    builder.createBlock('merge');
+    builder.createFunction("test", [], "i32");
+    builder.createBlock("entry");
+    builder.createBlock("if_true");
+    builder.createBlock("if_false");
+    builder.createBlock("merge");
 
     builder.switchToBlock(0);
     const cond = builder.bconst(true);
@@ -110,10 +105,10 @@ export function functionWithMultipleBasicBlocks() {
 
 export function runTests() {
     const tests = [
-        ['Br target', testBrTarget],
-        ['BrIf flow', testBrIfFlow],
-        ['Switch', testSwitch],
-        ['Multiple basic blocks', functionWithMultipleBasicBlocks],
+        ["Br target", testBrTarget],
+        ["BrIf flow", testBrIfFlow],
+        ["Switch", testSwitch],
+        ["Multiple basic blocks", functionWithMultipleBasicBlocks],
     ];
 
     let passed = 0;

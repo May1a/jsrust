@@ -306,10 +306,19 @@ function typeEquals(a, b) {
 
     switch (a.kind) {
         case TypeKind.Int:
-            return a.width === /** @type {{ kind: TypeKind.Int, width: IntWidthValue }} */ (b).width;
+            return (
+                a.width ===
+                /** @type {{ kind: TypeKind.Int, width: IntWidthValue }} */ (b)
+                    .width
+            );
 
         case TypeKind.Float:
-            return a.width === /** @type {{ kind: TypeKind.Float, width: FloatWidthValue }} */ (b).width;
+            return (
+                a.width ===
+                /** @type {{ kind: TypeKind.Float, width: FloatWidthValue }} */ (
+                    b
+                ).width
+            );
 
         case TypeKind.Bool:
         case TypeKind.Char:
@@ -319,37 +328,53 @@ function typeEquals(a, b) {
             return true;
 
         case TypeKind.Tuple: {
-            const bTuple = /** @type {{ kind: TypeKind.Tuple, elements: Type[] }} */ (b);
+            const bTuple =
+                /** @type {{ kind: TypeKind.Tuple, elements: Type[] }} */ (b);
             if (a.elements.length !== bTuple.elements.length) return false;
             for (let i = 0; i < a.elements.length; i++) {
-                if (!typeEquals(a.elements[i], bTuple.elements[i])) return false;
+                if (!typeEquals(a.elements[i], bTuple.elements[i]))
+                    return false;
             }
             return true;
         }
 
         case TypeKind.Array: {
-            const bArray = /** @type {{ kind: TypeKind.Array, element: Type, length: number }} */ (b);
-            return a.length === bArray.length && typeEquals(a.element, bArray.element);
+            const bArray =
+                /** @type {{ kind: TypeKind.Array, element: Type, length: number }} */ (
+                    b
+                );
+            return (
+                a.length === bArray.length &&
+                typeEquals(a.element, bArray.element)
+            );
         }
 
         case TypeKind.Slice: {
-            const bSlice = /** @type {{ kind: TypeKind.Slice, element: Type }} */ (b);
+            const bSlice =
+                /** @type {{ kind: TypeKind.Slice, element: Type }} */ (b);
             return typeEquals(a.element, bSlice.element);
         }
 
         case TypeKind.Struct: {
-            const bStruct = /** @type {{ kind: TypeKind.Struct, name: string, fields: { name: string, type: Type }[] }} */ (b);
+            const bStruct =
+                /** @type {{ kind: TypeKind.Struct, name: string, fields: { name: string, type: Type }[] }} */ (
+                    b
+                );
             if (a.name !== bStruct.name) return false;
             if (a.fields.length !== bStruct.fields.length) return false;
             for (let i = 0; i < a.fields.length; i++) {
                 if (a.fields[i].name !== bStruct.fields[i].name) return false;
-                if (!typeEquals(a.fields[i].type, bStruct.fields[i].type)) return false;
+                if (!typeEquals(a.fields[i].type, bStruct.fields[i].type))
+                    return false;
             }
             return true;
         }
 
         case TypeKind.Enum: {
-            const bEnum = /** @type {{ kind: TypeKind.Enum, name: string, variants: { name: string, fields?: Type[] }[] }} */ (b);
+            const bEnum =
+                /** @type {{ kind: TypeKind.Enum, name: string, variants: { name: string, fields?: Type[] }[] }} */ (
+                    b
+                );
             if (a.name !== bEnum.name) return false;
             if (a.variants.length !== bEnum.variants.length) return false;
             for (let i = 0; i < a.variants.length; i++) {
@@ -367,17 +392,30 @@ function typeEquals(a, b) {
         }
 
         case TypeKind.Ref: {
-            const bRef = /** @type {{ kind: TypeKind.Ref, inner: Type, mutable: boolean }} */ (b);
-            return a.mutable === bRef.mutable && typeEquals(a.inner, bRef.inner);
+            const bRef =
+                /** @type {{ kind: TypeKind.Ref, inner: Type, mutable: boolean }} */ (
+                    b
+                );
+            return (
+                a.mutable === bRef.mutable && typeEquals(a.inner, bRef.inner)
+            );
         }
 
         case TypeKind.Ptr: {
-            const bPtr = /** @type {{ kind: TypeKind.Ptr, inner: Type, mutable: boolean }} */ (b);
-            return a.mutable === bPtr.mutable && typeEquals(a.inner, bPtr.inner);
+            const bPtr =
+                /** @type {{ kind: TypeKind.Ptr, inner: Type, mutable: boolean }} */ (
+                    b
+                );
+            return (
+                a.mutable === bPtr.mutable && typeEquals(a.inner, bPtr.inner)
+            );
         }
 
         case TypeKind.Fn: {
-            const bFn = /** @type {{ kind: TypeKind.Fn, params: Type[], returnType: Type, isUnsafe: boolean }} */ (b);
+            const bFn =
+                /** @type {{ kind: TypeKind.Fn, params: Type[], returnType: Type, isUnsafe: boolean }} */ (
+                    b
+                );
             if (a.params.length !== bFn.params.length) return false;
             if (a.isUnsafe !== bFn.isUnsafe) return false;
             for (let i = 0; i < a.params.length; i++) {
@@ -387,7 +425,10 @@ function typeEquals(a, b) {
         }
 
         case TypeKind.Named: {
-            const bNamed = /** @type {{ kind: TypeKind.Named, name: string, args: Type[] | null }} */ (b);
+            const bNamed =
+                /** @type {{ kind: TypeKind.Named, name: string, args: Type[] | null }} */ (
+                    b
+                );
             if (a.name !== bNamed.name) return false;
             if (!a.args && !bNamed.args) return true;
             if (!a.args || !bNamed.args) return false;
@@ -483,19 +524,32 @@ function typeToString(type) {
  */
 function intWidthToString(width) {
     switch (width) {
-        case IntWidth.I8: return "i8";
-        case IntWidth.I16: return "i16";
-        case IntWidth.I32: return "i32";
-        case IntWidth.I64: return "i64";
-        case IntWidth.I128: return "i128";
-        case IntWidth.Isize: return "isize";
-        case IntWidth.U8: return "u8";
-        case IntWidth.U16: return "u16";
-        case IntWidth.U32: return "u32";
-        case IntWidth.U64: return "u64";
-        case IntWidth.U128: return "u128";
-        case IntWidth.Usize: return "usize";
-        default: return `<unknown int>`;
+        case IntWidth.I8:
+            return "i8";
+        case IntWidth.I16:
+            return "i16";
+        case IntWidth.I32:
+            return "i32";
+        case IntWidth.I64:
+            return "i64";
+        case IntWidth.I128:
+            return "i128";
+        case IntWidth.Isize:
+            return "isize";
+        case IntWidth.U8:
+            return "u8";
+        case IntWidth.U16:
+            return "u16";
+        case IntWidth.U32:
+            return "u32";
+        case IntWidth.U64:
+            return "u64";
+        case IntWidth.U128:
+            return "u128";
+        case IntWidth.Usize:
+            return "usize";
+        default:
+            return `<unknown int>`;
     }
 }
 
@@ -505,9 +559,12 @@ function intWidthToString(width) {
  */
 function floatWidthToString(width) {
     switch (width) {
-        case FloatWidth.F32: return "f32";
-        case FloatWidth.F64: return "f64";
-        default: return `<unknown float>`;
+        case FloatWidth.F32:
+            return "f32";
+        case FloatWidth.F64:
+            return "f64";
+        default:
+            return `<unknown float>`;
     }
 }
 
