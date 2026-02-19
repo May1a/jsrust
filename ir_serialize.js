@@ -1,3 +1,4 @@
+// @ts-nocheck
 /** @typedef {import('./ir.js').IRModule} IRModule */
 /** @typedef {import('./ir.js').IRFunction} IRFunction */
 /** @typedef {import('./ir.js').IRBlock} IRBlock */

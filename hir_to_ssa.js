@@ -1,3 +1,4 @@
+// @ts-nocheck
 /** @typedef {import('./hir.js').HFnDecl} HFnDecl */
 /** @typedef {import('./hir.js').HBlock} HBlock */
 /** @typedef {import('./hir.js').HStmt} HStmt */

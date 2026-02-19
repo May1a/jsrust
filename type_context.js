@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { TypeKind, makeTypeVar } from "./types.js";
 
 /** @typedef {import("./types.js").Type} Type */

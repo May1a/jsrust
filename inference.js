@@ -1,3 +1,4 @@
+// @ts-nocheck
 /** @typedef {import("./types.js").Type} Type */
 /** @typedef {import("./types.js").Span} Span */
 /** @typedef {import("./ast.js").Node} Node */

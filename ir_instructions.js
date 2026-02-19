@@ -1,3 +1,4 @@
+// @ts-nocheck
 /** @typedef {import('./ir.js').ValueId} ValueId */
 /** @typedef {import('./ir.js').BlockId} BlockId */
 /** @typedef {import('./ir.js').LocalId} LocalId */

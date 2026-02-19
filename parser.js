@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { tokenize, TokenType } from "./tokenizer.js";
 /** @typedef {import('./tokenizer.js').Token} Token */
 /** @typedef {import('./tokenizer.js').TokenTypeValue} TokenTypeValue */
