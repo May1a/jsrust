@@ -4,12 +4,19 @@ A Rust compiler written in pure JavaScript with no dependencies.
 
 ## Plans
 
-See `plans/README.md` for the current implementation plans.
+See `plans/README.md` for the current planning structure.
+
+- Current active/future planning tracks:
+  - `plans/future/01-new-backend.md`
+  - `plans/active/01-prepare-backend.md`
+  - `plans/active/02-compiler-progress.md`
+- Historical plans are archived in `plans/old/`.
 
 ## Plan Status
 
-- 02-parser.md complete
-- 03-types.md complete
+- future/01-new-backend.md not started
+- active/01-prepare-backend.md not started
+- active/02-compiler-progress.md initialized
 
 ## Important
 
