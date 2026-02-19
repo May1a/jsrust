@@ -25,7 +25,7 @@ Track completion of all tasks. Mark with:
 - [x] All tasks (depends on 03-types)
 
 ### 06-lowering-hir.md
-- [ ] All tasks (depends on 01-ast, 05-hir, 04-type-inference)
+- [x] All tasks (depends on 01-ast, 05-hir, 04-type-inference)
 
 ### 07-ssa-ir.md
 - [x] All tasks
