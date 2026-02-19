@@ -39,7 +39,7 @@ Track completion of all tasks. Mark with:
 ## Phase 3: Backend Support
 
 ### 10-memory-layout.md
-- [ ] All tasks (depends on 07-ssa-ir)
+- [x] All tasks (depends on 07-ssa-ir)
 
 ### 11-binary-format.md
 - [ ] All tasks (depends on 07-ssa-ir, 10-memory-layout)
