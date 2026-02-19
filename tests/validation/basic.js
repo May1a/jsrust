@@ -16,13 +16,13 @@ import {
     makeIconst,
     makeIadd,
     makeIsub,
+    makeBconst,
 } from '../../ir_instructions.js';
 
 import {
     makeRet,
     makeBr,
     makeBrIf,
-    makeBconst,
 } from '../../ir_terminators.js';
 
 import {
