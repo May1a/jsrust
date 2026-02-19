@@ -22,6 +22,11 @@ import { runIRTypesTests } from "./ir/types.js";
 import { runIRInstructionsTests } from "./ir/instructions.js";
 import { runIRBlocksTests } from "./ir/blocks.js";
 import { runIRFunctionsTests } from "./ir/functions.js";
+import { runMemoryPrimitivesTests } from "./memory/primitives.js";
+import { runMemoryStructsTests } from "./memory/structs.js";
+import { runMemoryEnumsTests } from "./memory/enums.js";
+import { runMemoryArraysTests } from "./memory/arrays.js";
+import { runMemoryStackAllocTests } from "./memory/stack_alloc.js";
 
 const { printSummary, clearErrors } = lib;
 
@@ -52,6 +57,11 @@ totalTests += runIRTypesTests();
 totalTests += runIRInstructionsTests();
 totalTests += runIRBlocksTests();
 totalTests += runIRFunctionsTests();
+totalTests += runMemoryPrimitivesTests();
+totalTests += runMemoryStructsTests();
+totalTests += runMemoryEnumsTests();
+totalTests += runMemoryArraysTests();
+totalTests += runMemoryStackAllocTests();
 
 const success = printSummary(totalTests);
 process.exit(success ? 0 : 1);

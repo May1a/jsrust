@@ -5,72 +5,72 @@
 **Dependencies**: `ir.js`
 
 ## Task 10.1: Layout Structure
-- [ ] `TypeLayout` - size and alignment info
-- [ ] `size` - in bytes
-- [ ] `align` - alignment requirement in bytes
-- [ ] `fields` - field offsets for structs
+- [x] `TypeLayout` - size and alignment info
+- [x] `size` - in bytes
+- [x] `align` - alignment requirement in bytes
+- [x] `fields` - field offsets for structs
 
 ## Task 10.2: Primitive Layouts
-- [ ] `layoutI8()` -> TypeLayout { size: 1, align: 1 }
-- [ ] `layoutI16()` -> TypeLayout { size: 2, align: 2 }
-- [ ] `layoutI32()` -> TypeLayout { size: 4, align: 4 }
-- [ ] `layoutI64()` -> TypeLayout { size: 8, align: 8 }
-- [ ] `layoutF32()` -> TypeLayout { size: 4, align: 4 }
-- [ ] `layoutF64()` -> TypeLayout { size: 8, align: 8 }
-- [ ] `layoutBool()` -> TypeLayout { size: 1, align: 1 }
-- [ ] `layoutPtr()` -> TypeLayout { size: 8, align: 8 } (64-bit)
+- [x] `layoutI8()` -> TypeLayout { size: 1, align: 1 }
+- [x] `layoutI16()` -> TypeLayout { size: 2, align: 2 }
+- [x] `layoutI32()` -> TypeLayout { size: 4, align: 4 }
+- [x] `layoutI64()` -> TypeLayout { size: 8, align: 8 }
+- [x] `layoutF32()` -> TypeLayout { size: 4, align: 4 }
+- [x] `layoutF64()` -> TypeLayout { size: 8, align: 8 }
+- [x] `layoutBool()` -> TypeLayout { size: 1, align: 1 }
+- [x] `layoutPtr()` -> TypeLayout { size: 8, align: 8 } (64-bit)
 
 ## Task 10.3: Composite Layouts
-- [ ] `layoutStruct(fields)` -> TypeLayout
-- [ ] Calculate field offsets with padding
-- [ ] Calculate total size with tail padding
-- [ ] `layoutTuple(elements)` -> TypeLayout
+- [x] `layoutStruct(fields)` -> TypeLayout
+- [x] Calculate field offsets with padding
+- [x] Calculate total size with tail padding
+- [x] `layoutTuple(elements)` -> TypeLayout
 
 ## Task 10.4: Array Layout
-- [ ] `layoutArray(element, count)` -> TypeLayout
-- [ ] Size = element_size * count
-- [ ] Align = element_align
+- [x] `layoutArray(element, count)` -> TypeLayout
+- [x] Size = element_size * count
+- [x] Align = element_align
 
 ## Task 10.5: Enum Layout
-- [ ] `layoutEnum(variants)` -> TypeLayout
-- [ ] Calculate tag size (smallest fitting)
-- [ ] Calculate largest variant size
-- [ ] Handle discriminant alignment
+- [x] `layoutEnum(variants)` -> TypeLayout
+- [x] Calculate tag size (smallest fitting)
+- [x] Calculate largest variant size
+- [x] Handle discriminant alignment
 
 ## Task 10.6: Layout Cache
-- [ ] `LayoutCache` class
-- [ ] Cache computed layouts by type
-- [ ] Handle recursive types
+- [x] `LayoutCache` class
+- [x] Cache computed layouts by type
+- [x] Handle recursive types
 
 ## Task 10.7: Alignment Utilities
-- [ ] `alignTo(offset, alignment)` -> number
-- [ ] Round up to next alignment boundary
+- [x] `alignTo(offset, alignment)` -> number
+- [x] Round up to next alignment boundary
 
 ## Task 10.8: Stack Slot Allocator
 **File**: `stack_alloc.js`
-- [ ] `StackAllocator` class
-- [ ] Track current frame offset
-- [ ] Track maximum alignment
+- [x] `StackAllocator` class
+- [x] Track current frame offset
+- [x] Track maximum alignment
 
 ## Task 10.9: Slot Allocation
-- [ ] `allocSlot(type, layoutCache)` -> offset
-- [ ] Sort locals by alignment for better packing
-- [ ] Return frame-relative offset
+- [x] `allocSlot(type, layoutCache)` -> offset
+- [x] Sort locals by alignment for better packing
+- [x] Return frame-relative offset
 
 ## Task 10.10: Frame Layout
-- [ ] `FrameLayout` structure
-- [ ] Map LocalId to offset
-- [ ] Total frame size
-- [ ] Frame alignment
+- [x] `FrameLayout` structure
+- [x] Map LocalId to offset
+- [x] Total frame size
+- [x] Frame alignment
 
 ## Task 10.11: Function Frame
-- [ ] `computeFrame(fn, layoutCache)` -> FrameLayout
-- [ ] Process all locals in function
-- [ ] Return complete frame info
+- [x] `computeFrame(fn, layoutCache)` -> FrameLayout
+- [x] Process all locals in function
+- [x] Return complete frame info
 
 ## Testing
-- [ ] Test file: `tests/memory/primitives.js`
-- [ ] Test file: `tests/memory/structs.js`
-- [ ] Test file: `tests/memory/enums.js`
-- [ ] Test file: `tests/memory/arrays.js`
-- [ ] Test file: `tests/memory/stack_alloc.js`
+- [x] Test file: `tests/memory/primitives.js`
+- [x] Test file: `tests/memory/structs.js`
+- [x] Test file: `tests/memory/enums.js`
+- [x] Test file: `tests/memory/arrays.js`
+- [x] Test file: `tests/memory/stack_alloc.js`
