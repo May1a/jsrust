@@ -36,6 +36,11 @@ npm run compile
 npm run test
 ```
 
+## Examples
+
+- Simple Rust examples live in `examples/`
+- The test suite compiles every `examples/*.rs` file via `tests/examples.js`
+
 ## TypeChecking
 
 ```bash

@@ -254,10 +254,14 @@ function validateModule(module) {
 // ============================================================================
 
 /**
+ * Validate a single function.
+ * Supports both internal shared-context use and standalone calls.
  * @param {IRFunction} fn
- * @param {ValidationCtx} ctx
+ * @param {ValidationCtx} [ctx]
+ * @returns {{ ok: boolean, errors: { kind: number, message: string, loc?: object }[] }}
  */
-function validateFunction(fn, ctx) {
+function validateFunction(fn, ctx = makeValidationCtx()) {
+    const startErrorCount = ctx.errors.length;
     setFunction(ctx, fn);
 
     // Check function has at least one block
@@ -283,6 +287,12 @@ function validateFunction(fn, ctx) {
 
     // Validate dominance
     validateDominance(fn, ctx);
+
+    const newErrors = ctx.errors.slice(startErrorCount);
+    return {
+        ok: newErrors.length === 0,
+        errors: newErrors,
+    };
 }
 
 // ============================================================================
