@@ -8,8 +8,8 @@
 - `03-binary-ir-reader.md`: implemented (initial)
 - `04-ir-interpreter-core.md`: implemented (initial)
 - `05-ir-interpreter-runtime-model.md`: implemented (initial)
-- `06-driver-cli-artifacts.md`: implemented (initial)
-- `07-testing-conformance-ci.md`: implemented (initial local suite)
+- `06-driver-cli-artifacts.md`: implemented (initial + JS frontend adapter integration)
+- `07-testing-conformance-ci.md`: implemented (initial local suite + conditional root integration tests)
 - `08-libc-overhaul-plan.md`: started (minimal bootstrap cleanup)
 
 ## Future

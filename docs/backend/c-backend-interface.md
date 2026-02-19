@@ -27,6 +27,34 @@ Optional:
 - `--trace`
 - `--trace-out` (valid only with `--trace`)
 
+## JSRust Frontend Invocation Contract
+
+JSRust frontend integration entrypoint:
+
+```txt
+node /Users/may/jsrust/main.js run <file.rs> [--entry <fn>] [--trace] [--trace-out <path>] [--backend-bin <path>] [--out-bin <path>] [--keep-bin] [--no-validate] [--no-build-backend]
+```
+
+Behavior:
+
+- compile Rust source to binary IR before backend invocation
+- backend binary resolution order:
+  1. `--backend-bin`
+  2. `JSRUST_BACKEND_BIN`
+  3. `/Users/may/jsrust/backend/bin/jsrust-backend-c`
+- if default backend binary is missing and auto-build is enabled, frontend runs:
+
+```txt
+make -C /Users/may/jsrust/backend build
+```
+
+- backend success stdout is forwarded unchanged
+- backend non-zero exit code is forwarded by frontend
+- default binary artifact behavior:
+  - temp `.jsrbin` is deleted on success
+  - kept on failure with emitted path
+  - persisted when `--keep-bin` or `--out-bin` is provided
+
 ## Programmatic API Contract
 
 ```c

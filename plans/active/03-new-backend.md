@@ -20,8 +20,19 @@
 - `/Users/may/jsrust/ir_printer.js`: human-readable textual IR output for debugging.
 - `/Users/may/jsrust/tests/binary/*` and `/Users/may/jsrust/tests/e2e.js`: compatibility and end-to-end behavior checks relevant for backend confidence.
 
-## Planned Integration Shape
+## Integration Shape (Implemented Initial)
 
-- Backend implementation will live in a dedicated repository and be included as a git submodule.
-- JSRust side will emit binary IR artifacts and invoke the backend entrypoint with stable input contracts.
-- Compatibility will be enforced by shared fixture-based conformance tests.
+- Backend implementation lives in `/Users/may/jsrust/backend` as submodule-prep workspace.
+- JSRust now emits binary IR and invokes backend via:
+  - `/Users/may/jsrust/main.js` `run` subcommand
+  - `/Users/may/jsrust/backend_runner.js` adapter (resolution/build/run)
+- Backend binary resolution order is locked (`--backend-bin`, `JSRUST_BACKEND_BIN`, default backend path) with auto-build fallback for default path.
+- Compatibility is enforced by:
+  - `/Users/may/jsrust/tests/binary/conformance.js`
+  - `/Users/may/jsrust/tests/backend/integration.js` (conditional in `npm run test`)
+
+## Next Integration Steps
+
+- Move backend workspace into dedicated git submodule when repository split is finalized.
+- Expand integration tests for entrypoint variants and trace determinism assertions.
+- Keep root/backend status files synchronized at each milestone boundary.

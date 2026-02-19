@@ -31,15 +31,15 @@ See `plans/README.md` for the current planning structure.
 
 - active/01-prepare-backend.md complete
 - active/02-compiler-progress.md initialized
-- active/03-new-backend.md in progress
+- active/03-new-backend.md in progress (JS run-path integration wired)
 - backend/plans/00-master-implementation-plan.md overhauled (interpreter-first)
 - backend/plans/01-prepare-backend.md copied baseline
 - backend/plans/02-backend-scaffold-and-build.md implemented (initial)
 - backend/plans/03-binary-ir-reader.md implemented (initial)
 - backend/plans/04-ir-interpreter-core.md implemented (initial)
 - backend/plans/05-ir-interpreter-runtime-model.md implemented (initial)
-- backend/plans/06-driver-cli-artifacts.md implemented (initial)
-- backend/plans/07-testing-conformance-ci.md implemented (initial local suite)
+- backend/plans/06-driver-cli-artifacts.md implemented (initial + JS adapter integration)
+- backend/plans/07-testing-conformance-ci.md implemented (initial local suite + conditional JS integration tests)
 - backend/plans/08-libc-overhaul-plan.md started (minimal bootstrap cleanup)
 - backend/plans/future/01-wasm-codegen-core.md deferred
 - backend/plans/future/02-wasm-data-memory-abi.md deferred
@@ -80,6 +80,20 @@ Progress and status discipline:
 ```bash
 npm run compile <file>
 ```
+
+```bash
+node main.js run <file.rs>
+```
+
+Optional run flags:
+
+- `--entry <fn>`
+- `--trace --trace-out <path>`
+- `--backend-bin <path>`
+- `--out-bin <path>`
+- `--keep-bin`
+- `--no-validate`
+- `--no-build-backend`
 
 ## Testing
 
