@@ -2,12 +2,16 @@
 
 #include "arena.h"
 #include "exec_core.h"
+#ifndef JSRUST_BACKEND_WASM
 #include "fs.h"
+#endif
 #include "ir_binary.h"
 #include "ir_validate_min.h"
 #include "runtime.h"
 
-#include <stdlib.h>
+#ifndef JSRUST_BACKEND_WASM
+#include <stdio.h>
+#endif
 
 typedef struct {
     Arena arena;
@@ -74,109 +78,181 @@ static jsrust_backend_exec_result Backend_resultFromStatus(BackendStatus status)
     return result;
 }
 
+static jsrust_backend_exec_result Backend_internalError(const char* message)
+{
+    jsrust_backend_exec_result result;
+
+    result.code = JSRUST_BACKEND_ERR_INTERNAL;
+    result.message = message;
+    result.exit_value = 0;
+    result.has_exit_value = 0;
+    return result;
+}
+
+static jsrust_backend_exec_result Backend_runModuleBytes(
+    BackendContext* context,
+    ByteSpan input,
+    ByteSpan entryName,
+    ByteSpan* out_trace,
+    const BackendOutputSink* output_sink)
+{
+    RuntimeOutputSink runtimeOutput;
+    IRReadResult readModule;
+    BackendStatus status;
+    ExecCoreResult execResult;
+    jsrust_backend_exec_result result;
+
+    runtimeOutput.context = output_sink ? output_sink->context : NULL;
+    runtimeOutput.writeByte = output_sink ? output_sink->writeByte : NULL;
+    runtimeOutput.flush = output_sink ? output_sink->flush : NULL;
+
+    readModule = IRBinary_readModule(&context->arena, input);
+    if (readModule.status.code != JSRUST_BACKEND_OK)
+        return Backend_resultFromStatus(readModule.status);
+
+    context->module = readModule.module;
+
+    status = IRValidate_minimal(context->module);
+    if (status.code != JSRUST_BACKEND_OK)
+        return Backend_resultFromStatus(status);
+
+    status = Runtime_init(
+        &context->runtime,
+        &context->arena,
+        context->module,
+        &context->trace,
+        &runtimeOutput);
+    if (status.code != JSRUST_BACKEND_OK)
+        return Backend_resultFromStatus(status);
+
+    execResult = ExecCore_run(&context->runtime, entryName);
+    if (execResult.status.code != JSRUST_BACKEND_OK)
+        return Backend_resultFromStatus(execResult.status);
+
+    if (out_trace)
+        *out_trace = TraceBuffer_span(&context->trace);
+
+    result.code = JSRUST_BACKEND_OK;
+    result.message = "ok";
+    result.has_exit_value = execResult.hasExitValue ? 1 : 0;
+    result.exit_value = execResult.exitValue;
+    return result;
+}
+
+jsrust_backend_exec_result jsrust_backend_run_bytes(
+    const uint8_t* input_data,
+    size_t input_len,
+    const char* entry_fn,
+    int trace_enabled,
+    ByteSpan* out_trace,
+    const BackendOutputSink* output_sink)
+{
+    BackendContext context;
+    ByteSpan entryName;
+    ByteSpan input;
+    jsrust_backend_exec_result result;
+
+    if (out_trace)
+        *out_trace = ByteSpan_fromParts(NULL, 0);
+
+    if (!input_data && input_len > 0)
+        return Backend_internalError("invalid input buffer");
+
+    if (!Arena_init(&context.arena, 2 * 1024 * 1024))
+        return Backend_internalError("failed to initialize backend arena");
+
+    if (!TraceBuffer_init(&context.trace, &context.arena, trace_enabled != 0)) {
+        Arena_destroy(&context.arena);
+        return Backend_internalError("failed to initialize trace buffer");
+    }
+
+    input = ByteSpan_fromParts(input_data, input_len);
+    entryName = entry_fn ? ByteSpan_fromCString(entry_fn) : ByteSpan_fromCString("main");
+
+    result = Backend_runModuleBytes(
+        &context,
+        input,
+        entryName,
+        out_trace,
+        output_sink);
+
+    Arena_destroy(&context.arena);
+    return result;
+}
+
+#ifndef JSRUST_BACKEND_WASM
+static bool Backend_outputWriteStdout(void* context, uint8_t value)
+{
+    FILE* out;
+
+    out = context ? (FILE*)context : stdout;
+    return fputc((int)value, out) != EOF;
+}
+
+static bool Backend_outputFlushStdout(void* context)
+{
+    FILE* out;
+
+    out = context ? (FILE*)context : stdout;
+    return fflush(out) == 0;
+}
+
 jsrust_backend_exec_result jsrust_backend_run_file(
     const char* input_path,
     const char* entry_fn,
     int trace_enabled,
     const char* trace_out_path)
 {
-    BackendContext* context;
+    BackendOutputSink output;
+    BackendContext context;
     ByteSpan entryName;
     FSReadResult readResult;
-    IRReadResult readModule;
+    ByteSpan trace;
     BackendStatus status;
-    ExecCoreResult execResult;
     jsrust_backend_exec_result result;
 
-    context = (BackendContext*)malloc(sizeof(BackendContext));
-    if (!context) {
-        result.code = JSRUST_BACKEND_ERR_INTERNAL;
-        result.message = "failed to allocate backend context";
-        result.exit_value = 0;
-        result.has_exit_value = 0;
+    if (!Arena_init(&context.arena, 2 * 1024 * 1024))
+        return Backend_internalError("failed to initialize backend arena");
+
+    if (!TraceBuffer_init(&context.trace, &context.arena, trace_enabled != 0)) {
+        Arena_destroy(&context.arena);
+        return Backend_internalError("failed to initialize trace buffer");
+    }
+
+    readResult = FS_readWholeFile(&context.arena, input_path, 64 * 1024 * 1024);
+    if (readResult.status.code != JSRUST_BACKEND_OK) {
+        result = Backend_resultFromStatus(readResult.status);
+        Arena_destroy(&context.arena);
         return result;
     }
 
-    if (!Arena_init(&context->arena, 2 * 1024 * 1024)) {
-        free(context);
-        result.code = JSRUST_BACKEND_ERR_INTERNAL;
-        result.message = "failed to initialize backend arena";
-        result.exit_value = 0;
-        result.has_exit_value = 0;
-        return result;
-    }
-
-    if (!TraceBuffer_init(&context->trace, &context->arena, trace_enabled != 0)) {
-        Arena_destroy(&context->arena);
-        free(context);
-        result.code = JSRUST_BACKEND_ERR_INTERNAL;
-        result.message = "failed to initialize trace buffer";
-        result.exit_value = 0;
-        result.has_exit_value = 0;
-        return result;
-    }
+    output.context = stdout;
+    output.writeByte = Backend_outputWriteStdout;
+    output.flush = Backend_outputFlushStdout;
 
     entryName = entry_fn ? ByteSpan_fromCString(entry_fn) : ByteSpan_fromCString("main");
 
-    readResult = FS_readWholeFile(&context->arena, input_path, 64 * 1024 * 1024);
-    if (readResult.status.code != JSRUST_BACKEND_OK) {
-        result = Backend_resultFromStatus(readResult.status);
-        Arena_destroy(&context->arena);
-        free(context);
-        return result;
-    }
-
-    readModule = IRBinary_readModule(&context->arena, readResult.data);
-    if (readModule.status.code != JSRUST_BACKEND_OK) {
-        result = Backend_resultFromStatus(readModule.status);
-        Arena_destroy(&context->arena);
-        free(context);
-        return result;
-    }
-
-    context->module = readModule.module;
-
-    status = IRValidate_minimal(context->module);
-    if (status.code != JSRUST_BACKEND_OK) {
-        result = Backend_resultFromStatus(status);
-        Arena_destroy(&context->arena);
-        free(context);
-        return result;
-    }
-
-    status = Runtime_init(&context->runtime, &context->arena, context->module, &context->trace);
-    if (status.code != JSRUST_BACKEND_OK) {
-        result = Backend_resultFromStatus(status);
-        Arena_destroy(&context->arena);
-        free(context);
-        return result;
-    }
-
-    execResult = ExecCore_run(&context->runtime, entryName);
-    if (execResult.status.code != JSRUST_BACKEND_OK) {
-        result = Backend_resultFromStatus(execResult.status);
-        Arena_destroy(&context->arena);
-        free(context);
+    result = Backend_runModuleBytes(
+        &context,
+        readResult.data,
+        entryName,
+        &trace,
+        &output);
+    if (result.code != JSRUST_BACKEND_OK) {
+        Arena_destroy(&context.arena);
         return result;
     }
 
     if (trace_enabled && trace_out_path) {
-        status = FS_writeFileAtomic(trace_out_path, TraceBuffer_span(&context->trace));
+        status = FS_writeFileAtomic(trace_out_path, trace);
         if (status.code != JSRUST_BACKEND_OK) {
             result = Backend_resultFromStatus(status);
-            Arena_destroy(&context->arena);
-            free(context);
+            Arena_destroy(&context.arena);
             return result;
         }
     }
 
-    result.code = JSRUST_BACKEND_OK;
-    result.message = "ok";
-    result.has_exit_value = execResult.hasExitValue ? 1 : 0;
-    result.exit_value = execResult.exitValue;
-
-    Arena_destroy(&context->arena);
-    free(context);
+    Arena_destroy(&context.arena);
     return result;
 }
-
+#endif

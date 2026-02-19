@@ -23,10 +23,10 @@
 ## Integration Shape (Implemented Initial)
 
 - Backend implementation lives in `/Users/may/jsrust/backend` as submodule-prep workspace.
-- JSRust now emits binary IR and invokes backend via:
+- JSRust emits binary IR and invokes backend via wasm bindings:
   - `/Users/may/jsrust/main.js` `run` subcommand
-  - `/Users/may/jsrust/backend_runner.js` adapter (resolution/build/run)
-- Backend binary resolution order is locked (`--backend-bin`, `JSRUST_BACKEND_BIN`, default backend path) with auto-build fallback for default path.
+  - `/Users/may/jsrust/backend_runner.js` adapter (wasm resolution/build/load/run)
+- Backend wasm resolution order is locked (`JSRUST_BACKEND_WASM`, default backend wasm path) with auto-build fallback for default path.
 - Compatibility is enforced by:
   - `/Users/may/jsrust/tests/binary/conformance.js`
   - `/Users/may/jsrust/tests/backend/integration.js` (conditional in `npm run test`)

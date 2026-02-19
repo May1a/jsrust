@@ -8,10 +8,10 @@ For historical completion and archived phase detail, see:
 
 ## Future Track
 
-- (none)
+- `future/01-node-addon-availability.md`: Deferred (captured as non-priority future work)
 
 ## Active Track
 
 - `active/01-prepare-backend.md`: Completed (contract/docs/fixtures/conformance checks added)
 - `active/02-compiler-progress.md`: Initialized (baseline progress captured)
-- `active/03-new-backend.md`: In progress (implementation moved to backend workspace)
+- `active/03-new-backend.md`: In progress (wasm run-path integration wired as canonical path)

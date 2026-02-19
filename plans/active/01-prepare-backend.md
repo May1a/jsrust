@@ -17,7 +17,7 @@ Prepare a stable, decision-complete handoff surface for the future C backend.
 1. Define and lock binary IR contract/version policy.
 2. Add/verify fixture corpus of `.rs` inputs and expected binary IR artifacts.
 3. Document binary schema invariants and required validation semantics.
-4. Define C backend submodule interface contract (input file format, entrypoint API, error codes, output expectations).
+4. Define backend submodule interface contract (input file format, entrypoint API, error codes, output expectations).
 5. Add CI-oriented conformance checks for serialize/deserialize/validate compatibility.
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Prepare a stable, decision-complete handoff surface for the future C backend.
 
 - Binary contract document: `/Users/may/jsrust/docs/backend/binary-ir-contract-v1.md`
 - Validation semantics document: `/Users/may/jsrust/docs/backend/validation-semantics.md`
-- C backend interface contract: `/Users/may/jsrust/docs/backend/c-backend-interface.md`
+- Backend wasm interface contract: `/Users/may/jsrust/docs/backend/wasm-backend-interface.md`
 - Fixture corpus and manifest: `/Users/may/jsrust/tests/fixtures/backend_ir_v1/`
 - Conformance tests: `/Users/may/jsrust/tests/binary/conformance.js`
 

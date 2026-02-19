@@ -47,6 +47,9 @@ typedef struct {
     Arena* arena;
     const IRModule* module;
     TraceBuffer* trace;
+    void* outputContext;
+    bool (*outputWriteByte)(void* context, uint8_t value);
+    bool (*outputFlush)(void* context);
 
     ExecValue* globals;
 
@@ -66,6 +69,12 @@ typedef struct {
     uint32_t recursionLimit;
 } RuntimeContext;
 
+typedef struct {
+    void* context;
+    bool (*writeByte)(void* context, uint8_t value);
+    bool (*flush)(void* context);
+} RuntimeOutputSink;
+
 ExecValue ExecValue_makeUnit(void);
 ExecValue ExecValue_makeInt(int64_t value);
 ExecValue ExecValue_makeFloat(double value);
@@ -74,7 +83,12 @@ ExecValue ExecValue_makePtr(uint32_t cellIndex);
 ExecValue ExecValue_makeStructRef(uint32_t index);
 ExecValue ExecValue_makeEnumRef(uint32_t index);
 
-BackendStatus Runtime_init(RuntimeContext* runtime, Arena* arena, const IRModule* module, TraceBuffer* trace);
+BackendStatus Runtime_init(
+    RuntimeContext* runtime,
+    Arena* arena,
+    const IRModule* module,
+    TraceBuffer* trace,
+    const RuntimeOutputSink* output);
 const IRFunction* Runtime_findFunctionByEntry(const RuntimeContext* runtime, ByteSpan name);
 const IRFunction* Runtime_findFunctionByHash(const RuntimeContext* runtime, uint32_t hashId);
 
@@ -94,4 +108,5 @@ bool Runtime_traceLiteral(RuntimeContext* runtime, const char* literal);
 bool Runtime_traceU32(RuntimeContext* runtime, uint32_t value);
 bool Runtime_traceI64(RuntimeContext* runtime, int64_t value);
 bool Runtime_traceNewline(RuntimeContext* runtime);
-
+bool Runtime_writeOutputByte(RuntimeContext* runtime, uint8_t value);
+bool Runtime_flushOutput(RuntimeContext* runtime);

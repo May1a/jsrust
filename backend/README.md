@@ -4,15 +4,16 @@ This folder is a dedicated backend workspace that will later be split into its o
 
 ## Immediate Priority
 
-Implement a **C-based IR execution engine** that interprets JSRust binary IR v1 directly.
+Maintain a **C-based IR execution engine** that interprets JSRust binary IR v1 directly and is consumed through wasm bindings from the JS frontend.
 
 - Input: JSRust binary IR (`.bin` / `.jsrbin`)
 - Behavior: parse, validate, execute entry function, report deterministic result/errors
+- Canonical frontend integration: clang-built wasm module called directly from `/Users/may/jsrust/backend_runner.js`
 - No external dependencies
 
 ## Future Priority
 
-WASM generation is explicitly deferred to a future phase.
+Program wasm codegen (emitting target `.wasm` artifacts from IR) is explicitly deferred to a future phase.
 
 Future codegen constraints (already decided):
 

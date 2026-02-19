@@ -15,9 +15,9 @@ if rg -n '\b(strlen|strcpy|strncpy|strcmp|strncmp|strcat|strncat|strstr|memcpy|m
   exit 1
 fi
 
-if rg -n '^\w[\w\s\*]*\s+\w+\(' src/*.c | rg -v '(main\(|jsrust_backend_run_file\(|ByteOps_|ByteSpan_|ByteBuffer_|Arena_|Backend|CLI_|Log_|FS_|IR|Runtime_|Exec|Trace|FrameValueTable_|FrameLocalTable_)' >/dev/null; then
+if rg -n '^\w[\w\s\*]*\s+\w+\(' src/*.c | rg -v '(main\(|malloc\(|realloc\(|free\(|jsrust_backend_run_file\(|jsrust_backend_run_bytes\(|jsrust_wasm_|WasmAllocator_|ByteOps_|ByteSpan_|ByteBuffer_|Arena_|Backend|CLI_|Log_|FS_|IR|Runtime_|Exec|Trace|FrameValueTable_|FrameLocalTable_)' >/dev/null; then
   echo "Policy warning: function name without expected TypeName_action prefix"
-  rg -n '^\w[\w\s\*]*\s+\w+\(' src/*.c | rg -v '(main\(|jsrust_backend_run_file\(|ByteOps_|ByteSpan_|ByteBuffer_|Arena_|Backend|CLI_|Log_|FS_|IR|Runtime_|Exec|Trace|FrameValueTable_|FrameLocalTable_)'
+  rg -n '^\w[\w\s\*]*\s+\w+\(' src/*.c | rg -v '(main\(|malloc\(|realloc\(|free\(|jsrust_backend_run_file\(|jsrust_backend_run_bytes\(|jsrust_wasm_|WasmAllocator_|ByteOps_|ByteSpan_|ByteBuffer_|Arena_|Backend|CLI_|Log_|FS_|IR|Runtime_|Exec|Trace|FrameValueTable_|FrameLocalTable_)'
   exit 1
 fi
 

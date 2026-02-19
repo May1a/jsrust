@@ -2,7 +2,6 @@
 // @ts-nocheck
 
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import { parseModule } from "./parser.js";
 import { TypeContext } from "./type_context.js";
@@ -14,7 +13,7 @@ import { makeIRModule, addIRFunction, resetIRIds } from "./ir.js";
 import { HItemKind } from "./hir.js";
 import { validateFunction as validateIRFunction } from "./ir_validate.js";
 import { serializeModule } from "./ir_serialize.js";
-import { runBackendBinary } from "./backend_runner.js";
+import { runBackendWasm } from "./backend_runner.js";
 
 /**
  * @typedef {object} CompileOptions
@@ -44,11 +43,8 @@ import { runBackendBinary } from "./backend_runner.js";
  * @property {string} entry
  * @property {boolean} trace
  * @property {string | null} traceOutPath
- * @property {string | null} backendBinary
  * @property {string | null} outBin
- * @property {boolean} keepBin
  * @property {boolean} validate
- * @property {boolean} buildBackend
  */
 
 /**
@@ -266,6 +262,14 @@ function printOneLineError(message) {
 }
 
 /**
+ * @param {string} label
+ * @param {string} message
+ */
+function printBackendStatusLine(label, message) {
+    console.error(`error[${label}]: ${message}`);
+}
+
+/**
  * @param {string[]} errors
  * @returns {string}
  */
@@ -291,15 +295,12 @@ function printCompileHelp(exitCode = 0) {
     console.log("  -h, --help    Show this help");
     console.log("");
     console.log("Run options:");
-    console.log("  run <file.rs> Compile to binary IR and execute with backend");
+    console.log("  run <file.rs> Compile to binary IR and execute with wasm backend");
     console.log("  --entry <fn>         Entry function (default: main)");
     console.log("  --trace              Enable backend trace output");
     console.log("  --trace-out <path>   Write backend trace to file");
-    console.log("  --backend-bin <path> Path to backend executable");
     console.log("  --out-bin <path>     Write binary IR artifact to path");
-    console.log("  --keep-bin           Keep temp binary IR artifact");
     console.log("  --no-validate        Skip IR validation");
-    console.log("  --no-build-backend   Don't auto-build backend if missing");
     process.exit(exitCode);
 }
 
@@ -307,7 +308,7 @@ function printCompileHelp(exitCode = 0) {
  * @param {number} [exitCode=0]
  */
 function printRunHelp(exitCode = 0) {
-    console.log("JSRust Run - Compile to binary IR and execute backend");
+    console.log("JSRust Run - Compile to binary IR and execute wasm backend");
     console.log("");
     console.log("Usage: node main.js run <file.rs> [options]");
     console.log("");
@@ -315,58 +316,37 @@ function printRunHelp(exitCode = 0) {
     console.log("  --entry <fn>         Entry function (default: main)");
     console.log("  --trace              Enable backend trace output");
     console.log("  --trace-out <path>   Write backend trace to file");
-    console.log("  --backend-bin <path> Path to backend executable");
     console.log("  --out-bin <path>     Write binary IR artifact to path");
-    console.log("  --keep-bin           Keep temp binary IR artifact");
     console.log("  --no-validate        Skip IR validation");
-    console.log("  --no-build-backend   Don't auto-build backend if missing");
     console.log("  -h, --help           Show this help");
     process.exit(exitCode);
 }
 
 /**
- * @param {string} inputFile
- * @param {string | null} outBin
- * @returns {{ path: string, isTemp: boolean }}
+ * @param {string} outputPath
+ * @param {Uint8Array} bytes
+ * @returns {{ ok: true } | { ok: false, message: string }}
  */
-function resolveRunBinaryPath(inputFile, outBin) {
-    if (outBin) {
+function writeFileAtomic(outputPath, bytes) {
+    const resolved = path.resolve(outputPath);
+    const tempPath = `${resolved}.tmp`;
+
+    try {
+        fs.mkdirSync(path.dirname(resolved), { recursive: true });
+        fs.writeFileSync(tempPath, bytes);
+        fs.renameSync(tempPath, resolved);
+        return { ok: true };
+    } catch (e) {
+        try {
+            if (fs.existsSync(tempPath)) {
+                fs.unlinkSync(tempPath);
+            }
+        } catch {
+        }
         return {
-            path: path.resolve(outBin),
-            isTemp: false,
+            ok: false,
+            message: `failed to write file: ${resolved}: ${e.message}`,
         };
-    }
-
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "jsrust-run-"));
-    return {
-        path: path.join(tempDir, `${path.parse(inputFile).name}.jsrbin`),
-        isTemp: true,
-    };
-}
-
-/**
- * @param {string} filePath
- * @returns {void}
- */
-function removeFileIfExists(filePath) {
-    try {
-        if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-        }
-    } catch {
-    }
-}
-
-/**
- * @param {string} dirPath
- * @returns {void}
- */
-function removeDirIfExists(dirPath) {
-    try {
-        if (fs.existsSync(dirPath)) {
-            fs.rmdirSync(dirPath);
-        }
-    } catch {
     }
 }
 
@@ -472,11 +452,8 @@ function runBackendCli(args) {
         entry: "main",
         trace: false,
         traceOutPath: null,
-        backendBinary: null,
         outBin: null,
-        keepBin: false,
         validate: true,
-        buildBackend: true,
     };
 
     let inputFile = null;
@@ -500,13 +477,6 @@ function runBackendCli(args) {
                 return 1;
             }
             options.traceOutPath = args[i];
-        } else if (arg === "--backend-bin") {
-            i++;
-            if (i >= args.length) {
-                printOneLineError("missing value for --backend-bin");
-                return 1;
-            }
-            options.backendBinary = args[i];
         } else if (arg === "--out-bin") {
             i++;
             if (i >= args.length) {
@@ -514,12 +484,8 @@ function runBackendCli(args) {
                 return 1;
             }
             options.outBin = args[i];
-        } else if (arg === "--keep-bin") {
-            options.keepBin = true;
         } else if (arg === "--no-validate") {
             options.validate = false;
-        } else if (arg === "--no-build-backend") {
-            options.buildBackend = false;
         } else if (arg === "-h" || arg === "--help") {
             printRunHelp(0);
         } else if (arg.startsWith("-")) {
@@ -555,56 +521,39 @@ function runBackendCli(args) {
         return 1;
     }
 
-    const artifact = resolveRunBinaryPath(inputFile, options.outBin);
-    try {
-        fs.mkdirSync(path.dirname(artifact.path), { recursive: true });
-        fs.writeFileSync(artifact.path, binaryResult.bytes);
-    } catch (e) {
-        printOneLineError(`failed to write binary artifact: ${e.message}`);
-        return 1;
-    }
-
-    const backendArgs = ["run", "--input", artifact.path];
-    if (options.entry) {
-        backendArgs.push("--entry", options.entry);
-    }
-    if (options.trace) {
-        backendArgs.push("--trace");
-        if (options.traceOutPath) {
-            backendArgs.push("--trace-out", options.traceOutPath);
+    if (options.outBin) {
+        const outWrite = writeFileAtomic(options.outBin, binaryResult.bytes);
+        if (!outWrite.ok) {
+            printOneLineError(outWrite.message);
+            return 1;
         }
     }
 
-    const runResult = runBackendBinary(backendArgs, {
-        backendBinary: options.backendBinary || undefined,
-        buildIfMissing: options.buildBackend,
+    const runResult = runBackendWasm(binaryResult.bytes, {
+        entry: options.entry,
+        trace: options.trace,
     });
 
     if (!runResult.ok) {
-        if (runResult.code === "backend_process_failed") {
-            if (runResult.stderr) {
-                process.stderr.write(runResult.stderr);
-            } else {
-                printOneLineError(runResult.message);
-            }
-        } else {
-            printOneLineError(runResult.message);
-        }
-
-        if (artifact.isTemp && !options.keepBin && !options.outBin) {
-            console.error(`error: kept binary artifact at ${artifact.path}`);
-        }
-
+        printBackendStatusLine(runResult.label, runResult.message);
         return runResult.exitCode ?? 1;
     }
 
-    process.stdout.write(runResult.stdout);
+    if (runResult.stdoutBytes.length > 0) {
+        process.stdout.write(Buffer.from(runResult.stdoutBytes));
+    }
+    if (runResult.hasExitValue) {
+        process.stdout.write(`ok exit=${runResult.exitValue}\n`);
+    } else {
+        process.stdout.write("ok\n");
+    }
 
-    if (artifact.isTemp && !options.keepBin && !options.outBin) {
-        removeFileIfExists(artifact.path);
-        removeDirIfExists(path.dirname(artifact.path));
-    } else if (artifact.isTemp && options.keepBin) {
-        console.error(`kept binary artifact: ${artifact.path}`);
+    if (options.traceOutPath) {
+        const traceWrite = writeFileAtomic(options.traceOutPath, runResult.traceBytes);
+        if (!traceWrite.ok) {
+            printOneLineError(traceWrite.message);
+            return 1;
+        }
     }
 
     return 0;

@@ -26,6 +26,7 @@ This plan set is execution-focused and decision-complete.
 
 - `future/01-wasm-codegen-core.md`: deferred wasm binary codegen
 - `future/02-wasm-data-memory-abi.md`: deferred wasm memory/data/ABI track
+- Cross-track reference: `/Users/may/jsrust/plans/future/01-node-addon-availability.md` (compiler-level deferred Node addon availability)
 
 ## Execution Order (Immediate)
 

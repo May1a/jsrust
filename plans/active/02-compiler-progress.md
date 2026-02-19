@@ -29,7 +29,7 @@ Use this table for ongoing tracking:
 | Frontend Language Coverage | Baseline subset implemented; loop `break`/`continue` semantics in type inference improved (`break <expr>` for `loop`) |  |  | Add missing Rust subset priorities |
 | Type/Semantic Analysis | Core local inference implemented |  |  | Strengthen semantic checks and diagnostics |
 | IR and Binary Contract | Core SSA + binary pipeline implemented |  |  | Lock schema/version contract for backend |
-| Backend Integration |  |  | C backend not yet started | Implement backend submodule and interface |
+| Backend Integration | C backend workspace and interpreter core implemented | Frontend run path migrated to clang-built wasm backend bindings |  | Expand parity and integration coverage |
 | Toolchain/Runtimes |  |  | Missing final execution/link model | Define runtime model and linking flow |
 | Optimization and Debuggability |  |  | Missing optimization passes | Define initial optimization roadmap |
 
