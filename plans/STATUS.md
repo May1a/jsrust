@@ -31,7 +31,7 @@ Track completion of all tasks. Mark with:
 - [x] All tasks
 
 ### 08-ssa-builder.md
-- [ ] All tasks (depends on 07-ssa-ir)
+- [x] All tasks (depends on 07-ssa-ir)
 
 ### 09-hir-to-ssa.md
 - [ ] All tasks (depends on 05-hir, 07-ssa-ir, 08-ssa-builder)
