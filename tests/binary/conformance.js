@@ -25,7 +25,7 @@ const validationDoc = path.resolve(
 );
 const backendInterfaceDoc = path.resolve(
     process.cwd(),
-    "docs/backend/c-backend-interface.md",
+    "docs/backend/wasm-backend-interface.md",
 );
 
 function sha256Hex(bytes) {

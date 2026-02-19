@@ -155,13 +155,21 @@ ExecValue ExecValue_makeEnumRef(uint32_t index)
     return value;
 }
 
-BackendStatus Runtime_init(RuntimeContext* runtime, Arena* arena, const IRModule* module, TraceBuffer* trace)
+BackendStatus Runtime_init(
+    RuntimeContext* runtime,
+    Arena* arena,
+    const IRModule* module,
+    TraceBuffer* trace,
+    const RuntimeOutputSink* output)
 {
     uint32_t index;
 
     runtime->arena = arena;
     runtime->module = module;
     runtime->trace = trace;
+    runtime->outputContext = output ? output->context : NULL;
+    runtime->outputWriteByte = output ? output->writeByte : NULL;
+    runtime->outputFlush = output ? output->flush : NULL;
     runtime->cells = NULL;
     runtime->cellCount = 0;
     runtime->cellCap = 0;
@@ -382,3 +390,18 @@ bool Runtime_traceNewline(RuntimeContext* runtime)
     return TraceBuffer_appendNewline(runtime->trace);
 }
 
+bool Runtime_writeOutputByte(RuntimeContext* runtime, uint8_t value)
+{
+    if (!runtime->outputWriteByte)
+        return false;
+
+    return runtime->outputWriteByte(runtime->outputContext, value);
+}
+
+bool Runtime_flushOutput(RuntimeContext* runtime)
+{
+    if (!runtime->outputFlush)
+        return true;
+
+    return runtime->outputFlush(runtime->outputContext);
+}

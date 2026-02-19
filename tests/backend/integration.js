@@ -24,32 +24,6 @@ function runMain(args) {
     });
 }
 
-/**
- * @param {string} stderr
- */
-function cleanupKeptArtifact(stderr) {
-    const match = stderr.match(/kept binary artifact at (.+)\n?/);
-    if (!match) {
-        return;
-    }
-
-    const artifactPath = match[1].trim();
-    try {
-        if (fs.existsSync(artifactPath)) {
-            fs.unlinkSync(artifactPath);
-        }
-    } catch {
-    }
-
-    const dirPath = path.dirname(artifactPath);
-    try {
-        if (fs.existsSync(dirPath)) {
-            fs.rmdirSync(dirPath);
-        }
-    } catch {
-    }
-}
-
 export function runBackendIntegrationTests() {
     test("Backend integration: run empty main", () => {
         const result = runMain(["run", "examples/01_empty_main.rs"]);
@@ -87,15 +61,9 @@ export function runBackendIntegrationTests() {
             "expected non-zero status for missing entry",
         );
         assertTrue(
-            result.stderr.includes("execute-error"),
+            result.stderr.includes("error[execute-error]:"),
             `unexpected stderr: ${result.stderr}`,
         );
-        assertTrue(
-            result.stderr.includes("kept binary artifact at"),
-            `missing kept artifact line in stderr: ${result.stderr}`,
-        );
-
-        cleanupKeptArtifact(result.stderr);
     });
 
     test("Backend integration: trace output is written", () => {
@@ -118,5 +86,48 @@ export function runBackendIntegrationTests() {
         } finally {
             fs.rmSync(tempDir, { recursive: true, force: true });
         }
+    });
+
+    test("Backend integration: --backend-bin is rejected", () => {
+        const result = runMain([
+            "run",
+            "examples/01_empty_main.rs",
+            "--backend-bin",
+            "ignored",
+        ]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
+        assertTrue(
+            result.stderr.includes("unknown option for run: --backend-bin"),
+            `unexpected stderr: ${result.stderr}`,
+        );
+    });
+
+    test("Backend integration: --no-build-backend is rejected", () => {
+        const result = runMain([
+            "run",
+            "examples/01_empty_main.rs",
+            "--no-build-backend",
+        ]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
+        assertTrue(
+            result.stderr.includes("unknown option for run: --no-build-backend"),
+            `unexpected stderr: ${result.stderr}`,
+        );
+    });
+
+    test("Backend integration: --keep-bin is rejected", () => {
+        const result = runMain([
+            "run",
+            "examples/01_empty_main.rs",
+            "--keep-bin",
+        ]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
+        assertTrue(
+            result.stderr.includes("unknown option for run: --keep-bin"),
+            `unexpected stderr: ${result.stderr}`,
+        );
     });
 }

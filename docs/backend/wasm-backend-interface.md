@@ -1,0 +1,97 @@
+# Backend WASM Interface Contract (Canonical Run Mode)
+
+This is the canonical integration contract for executing backend runtime behavior from JavaScript.
+
+## Canonical Frontend Invocation
+
+```txt
+node /Users/may/jsrust/main.js run <file.rs> [--entry <fn>] [--trace] [--trace-out <path>] [--out-bin <path>] [--no-validate]
+```
+
+Behavior:
+
+- Rust source is compiled to JSRust binary IR in memory.
+- Frontend calls backend wasm exports directly (no backend process spawn).
+- Backend wasm artifact resolution order:
+  1. `JSRUST_BACKEND_WASM` (optional override)
+  2. `/Users/may/jsrust/backend/bin/jsrust-backend.wasm`
+- If default wasm artifact is missing, frontend auto-builds with:
+
+```txt
+make -C /Users/may/jsrust/backend wasm
+```
+
+- `--out-bin` persists the compiled binary IR artifact for debugging.
+- `--trace --trace-out` writes backend trace bytes atomically in frontend.
+
+## Backend WASM Build Contract
+
+Build output:
+
+- artifact: `/Users/may/jsrust/backend/bin/jsrust-backend.wasm`
+- toolchain: `clang` only
+- target: `wasm32-unknown-unknown`
+- no emscripten
+- no external runtime dependencies
+
+## WASM Export Surface
+
+The wasm module must export these stable symbols:
+
+- `jsrust_wasm_alloc`
+- `jsrust_wasm_reset`
+- `jsrust_wasm_run`
+- `jsrust_wasm_result_code`
+- `jsrust_wasm_result_has_exit_value`
+- `jsrust_wasm_result_exit_value`
+- `jsrust_wasm_result_message_ptr`
+- `jsrust_wasm_result_message_len`
+- `jsrust_wasm_stdout_ptr`
+- `jsrust_wasm_stdout_len`
+- `jsrust_wasm_trace_ptr`
+- `jsrust_wasm_trace_len`
+
+## Call Contract
+
+Execution flow per run:
+
+1. Call `jsrust_wasm_reset()`.
+2. Allocate module bytes with `jsrust_wasm_alloc(len)` and copy bytes into wasm memory.
+3. Allocate entry function bytes (UTF-8) with `jsrust_wasm_alloc(len)` and copy bytes.
+4. Call:
+
+```txt
+jsrust_wasm_run(input_ptr, input_len, entry_ptr, entry_len, trace_enabled)
+```
+
+5. Read result fields using getter exports.
+
+Result transport:
+
+- message, stdout, and trace are returned as `(ptr, len)` byte spans in wasm memory.
+- frontend owns decoding/writing behavior.
+
+## Error Code Contract
+
+Codes match backend error categories:
+
+- `0`: `ok`
+- `10`: `io-error`
+- `11`: `invalid-args`
+- `20`: `deserialize-error`
+- `21`: `unsupported-version`
+- `30`: `validate-error`
+- `40`: `execute-error`
+- `100`: `internal-error`
+
+Frontend run command returns these codes as process exit status on backend failure.
+
+## Native CLI Status
+
+Native backend CLI remains available for backend-internal debugging/testing only:
+
+```txt
+jsrust-backend-c run --input <path/to/module.jsrbin> [--entry <fn>] [--trace] [--trace-out <path>]
+```
+
+It is no longer the frontend execution path.

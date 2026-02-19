@@ -1,7 +1,7 @@
 # JSRust - Rust compiler in JavaScript
 
 A Rust compiler written in pure JavaScript with no dependencies.
-Will be moved to use custom backend
+Uses a custom C backend with a clang-built wasm run-path for frontend execution.
 
 ## Plans
 
@@ -11,6 +11,7 @@ See `plans/README.md` for the current planning structure.
   - `plans/active/01-prepare-backend.md`
   - `plans/active/02-compiler-progress.md`
   - `plans/active/03-new-backend.md`
+  - `plans/future/01-node-addon-availability.md`
 - Historical plans are archived in `plans/old/`.
 - Backend workspace plans (submodule-prep):
   - `backend/plans/README.md`
@@ -31,14 +32,15 @@ See `plans/README.md` for the current planning structure.
 
 - active/01-prepare-backend.md complete
 - active/02-compiler-progress.md initialized
-- active/03-new-backend.md in progress (JS run-path integration wired)
+- active/03-new-backend.md in progress (JS wasm run-path integration wired)
+- plans/future/01-node-addon-availability.md deferred (non-priority)
 - backend/plans/00-master-implementation-plan.md overhauled (interpreter-first)
 - backend/plans/01-prepare-backend.md copied baseline
 - backend/plans/02-backend-scaffold-and-build.md implemented (initial)
 - backend/plans/03-binary-ir-reader.md implemented (initial)
 - backend/plans/04-ir-interpreter-core.md implemented (initial)
 - backend/plans/05-ir-interpreter-runtime-model.md implemented (initial)
-- backend/plans/06-driver-cli-artifacts.md implemented (initial + JS adapter integration)
+- backend/plans/06-driver-cli-artifacts.md implemented (initial + JS wasm adapter integration)
 - backend/plans/07-testing-conformance-ci.md implemented (initial local suite + conditional JS integration tests)
 - backend/plans/08-libc-overhaul-plan.md started (minimal bootstrap cleanup)
 - backend/plans/future/01-wasm-codegen-core.md deferred
@@ -89,11 +91,8 @@ Optional run flags:
 
 - `--entry <fn>`
 - `--trace --trace-out <path>`
-- `--backend-bin <path>`
 - `--out-bin <path>`
-- `--keep-bin`
 - `--no-validate`
-- `--no-build-backend`
 
 ## Testing
 

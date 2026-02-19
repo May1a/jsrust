@@ -1,6 +1,6 @@
 #include "bytes.h"
 
-#include <stdlib.h>
+#include "alloc.h"
 
 size_t ByteOps_cstrLen(const char* text)
 {
@@ -142,7 +142,7 @@ bool ByteBuffer_reserve(ByteBuffer* buffer, size_t requiredCap)
     if (requiredCap <= buffer->cap)
         return true;
 
-    nextCap = buffer->cap;
+    nextCap = buffer->cap ? buffer->cap : 64;
     while (nextCap < requiredCap)
         nextCap *= 2;
 
@@ -182,4 +182,3 @@ bool ByteBuffer_appendLiteral(ByteBuffer* buffer, const char* literal)
 {
     return ByteBuffer_appendSpan(buffer, ByteSpan_fromCString(literal));
 }
-

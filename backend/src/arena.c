@@ -2,7 +2,7 @@
 
 #include "bytes.h"
 
-#include <stdlib.h>
+#include "alloc.h"
 
 static bool Arena_grow(Arena* arena, size_t requiredCap)
 {
