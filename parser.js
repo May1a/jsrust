@@ -1151,6 +1151,18 @@ const binaryOps = new Map([
     [TokenType.Percent, { prec: 10, op: BinaryOp.Rem, assoc: "left" }],
 ]);
 
+/** @type {Map<number, BinaryOpValue>} */
+const compoundAssignOps = new Map([
+    [TokenType.PlusEq, BinaryOp.Add],
+    [TokenType.MinusEq, BinaryOp.Sub],
+    [TokenType.StarEq, BinaryOp.Mul],
+    [TokenType.SlashEq, BinaryOp.Div],
+    [TokenType.PercentEq, BinaryOp.Rem],
+    [TokenType.AndEq, BinaryOp.BitAnd],
+    [TokenType.PipeEq, BinaryOp.BitOr],
+    [TokenType.CaretEq, BinaryOp.BitXor],
+]);
+
 /**
  * @param {ParserState} state
  * @returns {{ token: Token, inclusive: boolean } | null}
@@ -1193,12 +1205,22 @@ function parseExpr(state, minPrec = 0, allowStructLiteral = true) {
             continue;
         }
 
-        if (minPrec <= 1 && check(state, TokenType.Eq)) {
+        const compoundOp = compoundAssignOps.get(peek(state).type) ?? null;
+        if (minPrec <= 1 && (check(state, TokenType.Eq) || compoundOp !== null)) {
             advance(state);
             const right = parseExpr(state, 1, allowStructLiteral);
             if (!right) return left;
+            const value =
+                compoundOp !== null
+                    ? makeBinaryExpr(
+                          mergeSpans(left.span, right.span),
+                          compoundOp,
+                          left,
+                          right,
+                      )
+                    : right;
             const span = mergeSpans(left.span, right.span);
-            left = makeAssignExpr(span, left, right);
+            left = makeAssignExpr(span, left, value);
             continue;
         }
 

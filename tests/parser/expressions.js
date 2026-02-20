@@ -43,5 +43,22 @@ export function runParserExpressionTests() {
         assertEqual(result.value.inclusive, true);
     });
 
-    return 5;
+    test("compound assignment expression", () => {
+        const result = parseExpression("x += 2");
+        assertTrue(result.ok);
+        assertEqual(result.value.kind, NodeKind.AssignExpr);
+        assertEqual(result.value.target.kind, NodeKind.IdentifierExpr);
+        assertEqual(result.value.value.kind, NodeKind.BinaryExpr);
+        assertEqual(result.value.value.op, BinaryOp.Add);
+    });
+
+    test("bitwise compound assignment expression", () => {
+        const result = parseExpression("x ^= 7");
+        assertTrue(result.ok);
+        assertEqual(result.value.kind, NodeKind.AssignExpr);
+        assertEqual(result.value.value.kind, NodeKind.BinaryExpr);
+        assertEqual(result.value.value.op, BinaryOp.BitXor);
+    });
+
+    return 7;
 }
