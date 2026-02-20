@@ -1,0 +1,32 @@
+; Module: root
+
+; String literals:
+;   lit0 = "Hello, world!"
+;   lit1 = "{}"
+
+fn main() -> () {
+
+    block0:
+        v0 = sconst lit0
+        v1 = sconst lit1
+        v2 = iconst i32 0
+        v3 = call 862609(v1, v2, v0)
+        v4 = iconst i32 42
+        v5 = sconst lit1
+        v6 = iconst i32 1
+        v7 = call 862609(v5, v6, v4)
+        v8 = fconst f64 3.14
+        v9 = sconst lit1
+        v10 = iconst i32 2
+        v11 = call 862609(v9, v10, v8)
+        v12 = bconst true
+        v13 = sconst lit1
+        v14 = iconst i32 3
+        v15 = call 862609(v13, v14, v12)
+        v16 = iconst u32 97
+        v17 = sconst lit1
+        v18 = iconst i32 4
+        v19 = call 862609(v17, v18, v16)
+        ret
+
+}

@@ -7,7 +7,7 @@ import { compileFileToIRModule } from "../main.js";
 import { serializeModule, VERSION as BINARY_IR_VERSION } from "../ir_serialize.js";
 import { validateModule } from "../ir_validate.js";
 
-const fixtureDir = path.resolve(process.cwd(), "tests/fixtures/backend_ir_v1");
+const fixtureDir = path.resolve(process.cwd(), "tests/fixtures/backend_ir_v2");
 
 /**
  * @typedef {{ source: string, artifact: string, bytes: number, sha256: string }} BackendFixtureManifestEntry

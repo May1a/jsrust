@@ -13,11 +13,11 @@ import {
     clearErrors,
 } from "../lib.js";
 
-const fixtureDir = path.resolve(process.cwd(), "tests/fixtures/backend_ir_v1");
+const fixtureDir = path.resolve(process.cwd(), "tests/fixtures/backend_ir_v2");
 const manifestPath = path.join(fixtureDir, "manifest.json");
 const binaryContractDoc = path.resolve(
     process.cwd(),
-    "docs/backend/binary-ir-contract-v1.md",
+    "docs/backend/binary-ir-contract-v2.md",
 );
 const validationDoc = path.resolve(
     process.cwd(),
@@ -59,12 +59,12 @@ export function runBinaryConformanceTests() {
 
     test("Conformance: binary contract document references live version", () => {
         const text = fs.readFileSync(binaryContractDoc, "utf-8");
-        assertTrue(text.includes("Binary IR Contract v1"));
+        assertTrue(text.includes("Binary IR Contract v2"));
         assertTrue(
             text.includes(`Version: \`${BINARY_IR_VERSION}\``) ||
                 text.includes(`Version: ${BINARY_IR_VERSION}`),
         );
-        assertTrue(text.includes("28 bytes"));
+        assertTrue(text.includes("32 bytes"));
     });
 
     for (const fixture of manifest.fixtures) {

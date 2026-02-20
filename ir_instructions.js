@@ -461,12 +461,22 @@ function makeEnumGetData(enum_, variant, index, dataTy) {
     };
 }
 
+function makeSconst(literalId) {
+    const id = freshValueId();
+    return {
+        kind: IRInstKind.Sconst,
+        id,
+        ty: { kind: 3, inner: null },
+        literalId,
+    };
+}
+
 function isIRInst(node) {
     return (
         node &&
         typeof node.kind === "number" &&
         node.kind >= IRInstKind.Iconst &&
-        node.kind <= IRInstKind.EnumGetData
+        node.kind <= IRInstKind.Sconst
     );
 }
 
@@ -514,5 +524,6 @@ export {
     makeEnumCreate,
     makeEnumGetTag,
     makeEnumGetData,
+    makeSconst,
     isIRInst,
 };

@@ -3,8 +3,8 @@
 #include "bytes.h"
 
 #define IR_MAGIC 0x52534A53u
-#define IR_VERSION 1u
-#define IR_HEADER_SIZE 28u
+#define IR_VERSION 2u
+#define IR_HEADER_SIZE 32u
 #define IR_MAX_TYPE_DEPTH 64u
 
 typedef struct {
@@ -380,6 +380,49 @@ static bool IRReader_readConstant(IRReader* reader, IRType* type, IRGlobal* glob
     }
 }
 
+static bool IRReader_readStringLiterals(IRReader* reader, size_t start, size_t end)
+{
+    uint32_t count;
+    uint32_t index;
+
+    reader->pos = start;
+    reader->sectionEnd = end;
+
+    if (!IRReader_readU32(reader, &count))
+        return false;
+
+    reader->module->stringLiteralCount = count;
+    if (count == 0) {
+        reader->module->stringLiterals = NULL;
+        return true;
+    }
+
+    if (!IRReader_alloc(reader, count * sizeof(ByteSpan), _Alignof(ByteSpan), (void**)&reader->module->stringLiterals))
+        return false;
+
+    for (index = 0; index < count; ++index) {
+        const uint8_t* source;
+        uint8_t* copy;
+        uint32_t len;
+
+        if (!IRReader_readU32(reader, &len))
+            return false;
+        if (!IRReader_readBytes(reader, len, &source))
+            return false;
+
+        if (len > 0) {
+            if (!IRReader_alloc(reader, len, 1, (void**)&copy))
+                return false;
+            ByteOps_copy(copy, source, len);
+            reader->module->stringLiterals[index] = ByteSpan_fromParts(copy, len);
+        } else {
+            reader->module->stringLiterals[index] = ByteSpan_fromParts(NULL, 0);
+        }
+    }
+
+    return true;
+}
+
 static bool IRReader_readGlobals(IRReader* reader, size_t start, size_t end)
 {
     uint32_t count;
@@ -500,6 +543,8 @@ static bool IRReader_readInstruction(IRReader* reader, IRInstruction* inst)
         return IRReader_readU32(reader, &inst->enumValue);
     case IRInstKind_EnumGetData:
         return IRReader_readU32(reader, &inst->enumValue) && IRReader_readU32(reader, &inst->variant) && IRReader_readU32(reader, &inst->index);
+    case IRInstKind_Sconst:
+        return IRReader_readU32(reader, &inst->literalId);
     default:
         return IRReader_setError(reader, JSRUST_BACKEND_ERR_DESERIALIZE, "invalid instruction opcode");
     }
@@ -683,6 +728,7 @@ IRReadResult IRBinary_readModule(Arena* arena, ByteSpan input)
     uint32_t flags;
     uint32_t stringOffset;
     uint32_t typesOffset;
+    uint32_t literalsOffset;
     uint32_t globalsOffset;
     uint32_t functionsOffset;
 
@@ -702,13 +748,14 @@ IRReadResult IRBinary_readModule(Arena* arena, ByteSpan input)
     }
 
     if (input.len < IR_HEADER_SIZE) {
-        result.status = IRReader_error(JSRUST_BACKEND_ERR_DESERIALIZE, "binary input shorter than 28-byte header");
+        result.status = IRReader_error(JSRUST_BACKEND_ERR_DESERIALIZE, "binary input shorter than 32-byte header");
         return result;
     }
 
     if (!IRReader_readU32(&reader, &magic) || !IRReader_readU32(&reader, &version) || !IRReader_readU32(&reader, &flags)
         || !IRReader_readU32(&reader, &stringOffset) || !IRReader_readU32(&reader, &typesOffset)
-        || !IRReader_readU32(&reader, &globalsOffset) || !IRReader_readU32(&reader, &functionsOffset)) {
+        || !IRReader_readU32(&reader, &literalsOffset) || !IRReader_readU32(&reader, &globalsOffset)
+        || !IRReader_readU32(&reader, &functionsOffset)) {
         result.status = reader.status;
         return result;
     }
@@ -725,14 +772,16 @@ IRReadResult IRBinary_readModule(Arena* arena, ByteSpan input)
 
     (void)flags;
 
-    if (stringOffset < IR_HEADER_SIZE || stringOffset > typesOffset || typesOffset > globalsOffset || globalsOffset > functionsOffset
+    if (stringOffset < IR_HEADER_SIZE || stringOffset > typesOffset || typesOffset > literalsOffset || literalsOffset > globalsOffset
+        || globalsOffset > functionsOffset
         || functionsOffset > input.len) {
         result.status = IRReader_error(JSRUST_BACKEND_ERR_DESERIALIZE, "invalid section offsets in header");
         return result;
     }
 
     if (!IRReader_readStrings(&reader, stringOffset, typesOffset)
-        || !IRReader_readTypesSection(&reader, typesOffset, globalsOffset)
+        || !IRReader_readTypesSection(&reader, typesOffset, literalsOffset)
+        || !IRReader_readStringLiterals(&reader, literalsOffset, globalsOffset)
         || !IRReader_readGlobals(&reader, globalsOffset, functionsOffset)
         || !IRReader_readFunctions(&reader, functionsOffset, input.len)) {
         result.status = reader.status;

@@ -12,5 +12,5 @@ For historical completion and archived phase detail, see:
 
 ## Active Track
 
-- `active/01-compiler-progress.md`: Initialized (baseline progress captured)
-- `active/02-new-backend.md`: In progress (wasm run-path integration wired as canonical path)
+- `active/01-compiler-progress.md`: Updated (IR v2 string-literal pool + backend-side format-print pipeline captured)
+- `active/02-new-backend.md`: In progress (wasm run-path integration wired; binary IR v2 + formatter builtins integrated)

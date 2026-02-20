@@ -12,7 +12,7 @@ import { IRTypeKind, IRInstKind, IRTermKind } from "./ir.js";
 const MAGIC = 0x52534a53; // "JSRS" in little-endian
 
 // Current version
-const VERSION = 1;
+const VERSION = 2;
 
 // Flags
 const FLAGS = 0;
@@ -21,8 +21,9 @@ const FLAGS = 0;
 const SectionId = {
     StringTable: 0,
     Types: 1,
-    Globals: 2,
-    Functions: 3,
+    StringLiterals: 2,
+    Globals: 3,
+    Functions: 4,
 };
 
 // Special value for "no value" in terminators
@@ -89,14 +90,16 @@ class IRSerializer {
         // Calculate sizes for each section
         const stringTableSize = this.calculateStringTableSize();
         const typesSize = this.calculateTypesSize(module);
+        const stringLiteralsSize = this.calculateStringLiteralsSize(module);
         const globalsSize = this.calculateGlobalsSize(module);
         const functionsSize = this.calculateFunctionsSize(module);
 
-        // Calculate offsets (header is 28 bytes: magic + version + flags + 4 section offsets)
-        const headerSize = 28;
+        // Calculate offsets (header is 32 bytes: magic + version + flags + 5 section offsets)
+        const headerSize = 32;
         const stringTableOffset = headerSize;
         const typesOffset = stringTableOffset + stringTableSize;
-        const globalsOffset = typesOffset + typesSize;
+        const literalsOffset = typesOffset + typesSize;
+        const globalsOffset = literalsOffset + stringLiteralsSize;
         const functionsOffset = globalsOffset + globalsSize;
         const totalSize = functionsOffset + functionsSize;
 
@@ -111,12 +114,14 @@ class IRSerializer {
         this.writeU32(FLAGS);
         this.writeU32(stringTableOffset);
         this.writeU32(typesOffset);
+        this.writeU32(literalsOffset);
         this.writeU32(globalsOffset);
         this.writeU32(functionsOffset);
 
         // Write sections
         this.writeStringTableSection();
         this.writeTypesSection(module);
+        this.writeStringLiteralsSection(module);
         this.writeGlobalsSection(module);
         this.writeFunctionsSection(module);
 
@@ -268,6 +273,21 @@ class IRSerializer {
                     size += this.calculateTypeSize(field);
                 }
             }
+        }
+        return size;
+    }
+
+    /**
+     * Calculate the size of the string literal section.
+     * @param {IRModule} module
+     * @returns {number}
+     */
+    calculateStringLiteralsSize(module) {
+        const literals = module.stringLiterals || [];
+        let size = 4; // count
+        for (const literal of literals) {
+            size += 4; // byte length
+            size += this.utf8ByteLength(literal);
         }
         return size;
     }
@@ -501,6 +521,9 @@ class IRSerializer {
             case IRInstKind.EnumGetData:
                 size += 4 + 4 + 4; // enum, variant, index
                 break;
+            case IRInstKind.Sconst:
+                size += 4; // literal id
+                break;
         }
         return size;
     }
@@ -687,6 +710,20 @@ class IRSerializer {
                     this.writeType(field);
                 }
             }
+        }
+    }
+
+    /**
+     * Write the string literal section.
+     * @param {IRModule} module
+     */
+    writeStringLiteralsSection(module) {
+        const literals = module.stringLiterals || [];
+        this.writeU32(literals.length);
+        for (const literal of literals) {
+            const bytes = this.encodeUtf8(literal);
+            this.writeU32(bytes.length);
+            this.writeBytes(bytes);
         }
     }
 
@@ -1012,6 +1049,10 @@ class IRSerializer {
                 this.writeU32(inst.enum);
                 this.writeU32(inst.variant);
                 this.writeU32(inst.index);
+                break;
+
+            case IRInstKind.Sconst:
+                this.writeU32(inst.literalId);
                 break;
         }
     }

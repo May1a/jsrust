@@ -74,6 +74,7 @@ const IRInstKind = {
     EnumCreate: 39,
     EnumGetTag: 40,
     EnumGetData: 41,
+    Sconst: 42,
 };
 
 const IRTermKind = {
@@ -332,7 +333,26 @@ function makeIRModule(name) {
         globals: [],
         structs: new Map(),
         enums: new Map(),
+        stringLiterals: [],
+        stringLiteralIds: new Map(),
     };
+}
+
+/**
+ * Intern a string literal in the module literal pool and return its stable ID.
+ * @param {IRModule} module
+ * @param {string} value
+ * @returns {number}
+ */
+function internIRStringLiteral(module, value) {
+    const existing = module.stringLiteralIds.get(value);
+    if (existing !== undefined) {
+        return existing;
+    }
+    const id = module.stringLiterals.length;
+    module.stringLiterals.push(value);
+    module.stringLiteralIds.set(value, id);
+    return id;
 }
 
 function addIRFunction(module, fn) {
@@ -456,6 +476,7 @@ export {
     addIRGlobal,
     addIRStruct,
     addIREnum,
+    internIRStringLiteral,
     makeIRFunction,
     makeIRParam,
     addIRBlock,

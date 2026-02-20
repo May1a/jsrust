@@ -57,6 +57,19 @@ export function runBackendIntegrationTests() {
         assertEqual(lines[lines.length - 1], "ok");
     });
 
+    test("Backend integration: run format print vars example", () => {
+        const result = runMain(["run", "examples/13_format_print_var.rs"]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertEqual(result.status, 0, `stderr: ${result.stderr}`);
+        const lines = result.stdout.trimEnd().split("\n");
+        assertEqual(lines[0], "Hello, world!");
+        assertEqual(lines[1], "42");
+        assertEqual(lines[2], "3.14");
+        assertEqual(lines[3], "true");
+        assertEqual(lines[4], "a");
+        assertEqual(lines[lines.length - 1], "ok");
+    });
+
     test("Backend integration: missing entry returns execute error", () => {
         const result = runMain([
             "run",

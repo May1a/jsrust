@@ -155,6 +155,16 @@ ExecValue ExecValue_makeEnumRef(uint32_t index)
     return value;
 }
 
+ExecValue ExecValue_makeStringRef(uint32_t literalId)
+{
+    ExecValue value;
+
+    value = ExecValue_makeUnit();
+    value.kind = ExecValueKind_StringRef;
+    value.index = literalId;
+    return value;
+}
+
 BackendStatus Runtime_init(
     RuntimeContext* runtime,
     Arena* arena,
@@ -367,6 +377,15 @@ BackendStatus Runtime_readEnumData(RuntimeContext* runtime, uint32_t enumIndex, 
         return Runtime_error("enum payload requested but missing");
 
     *outData = object->data;
+    return BackendStatus_ok();
+}
+
+BackendStatus Runtime_getStringLiteral(const RuntimeContext* runtime, uint32_t literalId, ByteSpan* out)
+{
+    if (literalId >= runtime->module->stringLiteralCount)
+        return Runtime_error("string literal reference out of bounds");
+
+    *out = runtime->module->stringLiterals[literalId];
     return BackendStatus_ok();
 }
 

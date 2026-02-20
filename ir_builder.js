@@ -60,6 +60,7 @@ import {
     makeEnumCreate,
     makeEnumGetTag,
     makeEnumGetData,
+    makeSconst,
 } from "./ir_instructions.js";
 import {
     makeRet,
@@ -566,6 +567,12 @@ export class IRBuilder {
 
     enumGetData(enum_, variant, index, dataTy) {
         const inst = makeEnumGetData(enum_, variant, index, dataTy);
+        addIRInstruction(this.currentBlock, inst);
+        return inst;
+    }
+
+    sconst(literalId) {
+        const inst = makeSconst(literalId);
         addIRInstruction(this.currentBlock, inst);
         return inst;
     }

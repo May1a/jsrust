@@ -36,6 +36,9 @@ import {
     makeIRArrayType,
     makeIRFnType,
     addIRInstruction,
+    makeIRModule,
+    addIRFunction,
+    internIRStringLiteral,
 } from "./ir.js";
 import { IntWidth, FloatWidth, TypeKind } from "./types.js";
 import { BinaryOp, UnaryOp } from "./ast.js";
@@ -48,9 +51,20 @@ import { BinaryOp, UnaryOp } from "./ast.js";
  * Context for HIR -> SSA lowering
  */
 export class HirToSsaCtx {
-    constructor() {
+    /**
+     * @param {{ irModule?: import('./ir.js').IRModule }} [options]
+     */
+    constructor(options = {}) {
         /** @type {IRBuilder} */
         this.builder = new IRBuilder();
+        /** @type {import('./ir.js').IRModule | null} */
+        this.irModule = options.irModule || null;
+        /** @type {import('./ir.js').IRModule} */
+        this.internalLiteralModule =
+            this.irModule || {
+                stringLiterals: [],
+                stringLiteralIds: new Map(),
+            };
 
         /** @type {BlockId[]} Stack of block IDs for break targets */
         this.breakStack = [];
@@ -445,13 +459,19 @@ export class HirToSsaCtx {
                 return inst.id;
             }
             case HLiteralKind.String: {
-                // String literals need special handling
-                // For now, return a null pointer
-                const inst = this.builder.null(makeIRPtrType(null));
+                const literalId = internIRStringLiteral(
+                    this.internalLiteralModule,
+                    String(expr.value),
+                );
+                const inst = this.builder.sconst(literalId);
                 return inst.id;
             }
             case HLiteralKind.Char: {
-                const inst = this.builder.iconst(expr.value, IntWidth.U8);
+                const codePoint =
+                    typeof expr.value === "string"
+                        ? (expr.value.codePointAt(0) ?? 0)
+                        : Number(expr.value);
+                const inst = this.builder.iconst(codePoint, IntWidth.U32);
                 return inst.id;
             }
             default:
@@ -1570,7 +1590,7 @@ export class HirToSsaCtx {
             case TypeKind.Bool:
                 return makeIRBoolType();
             case TypeKind.Char:
-                return makeIRIntType(IntWidth.U8);
+                return makeIRIntType(IntWidth.U32);
             case TypeKind.String:
                 return makeIRPtrType(null);
             case TypeKind.Unit:
@@ -1749,8 +1769,8 @@ export class HirToSsaCtx {
  * @param {HFnDecl} hirFn
  * @returns {IRFunction}
  */
-export function lowerHirToSsa(hirFn) {
-    const ctx = new HirToSsaCtx();
+export function lowerHirToSsa(hirFn, options = {}) {
+    const ctx = new HirToSsaCtx(options);
     return ctx.lowerFunction(hirFn);
 }
 
@@ -1760,13 +1780,11 @@ export function lowerHirToSsa(hirFn) {
  * @returns {import('./ir.js').IRModule}
  */
 export function lowerModuleToSsa(hirModule) {
-    const { makeIRModule, addIRFunction } = require("./ir.js");
     const irModule = makeIRModule(hirModule.name);
-
-    const ctx = new HirToSsaCtx();
 
     for (const item of hirModule.items) {
         if (item.kind === HItemKind.Fn) {
+            const ctx = new HirToSsaCtx({ irModule });
             const irFn = ctx.lowerFunction(item);
             addIRFunction(irModule, irFn);
         }

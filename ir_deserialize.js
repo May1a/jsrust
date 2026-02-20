@@ -101,7 +101,7 @@ class IRDeserializer {
      */
     deserializeModule() {
         // Read and validate header
-        if (this.end < 28) {
+        if (this.end < 32) {
             return error(
                 DeserializeErrorKind.TruncatedData,
                 "Buffer too small for header",
@@ -127,6 +127,7 @@ class IRDeserializer {
         const flags = this.readU32();
         const stringTableOffset = this.readU32();
         const typesOffset = this.readU32();
+        const literalsOffset = this.readU32();
         const globalsOffset = this.readU32();
         const functionsOffset = this.readU32();
 
@@ -150,6 +151,17 @@ class IRDeserializer {
         const module = makeIRModule("module");
         module.structs = structs;
         module.enums = enums;
+
+        // Read string literals section
+        this.pos = literalsOffset;
+        const literalsResult = this.readStringLiteralsSection();
+        if (!literalsResult.ok) {
+            return literalsResult;
+        }
+        module.stringLiterals = literalsResult.value;
+        module.stringLiteralIds = new Map(
+            literalsResult.value.map((value, index) => [value, index]),
+        );
 
         // Read globals section
         this.pos = globalsOffset;
@@ -302,6 +314,21 @@ class IRDeserializer {
             );
         }
         return ok(this.strings[id]);
+    }
+
+    /**
+     * Read string literal section.
+     * @returns {Result<string[]>}
+     */
+    readStringLiteralsSection() {
+        const count = this.readU32();
+        const literals = [];
+        for (let i = 0; i < count; i++) {
+            const length = this.readU32();
+            const bytes = this.readBytes(length);
+            literals.push(this.decodeUtf8(bytes));
+        }
+        return ok(literals);
     }
 
     // ========================================================================
@@ -818,6 +845,12 @@ class IRDeserializer {
                 const variant = this.readU32();
                 const index = this.readU32();
                 inst = { kind: opcode, id, ty, enum: enum_, variant, index };
+                break;
+            }
+
+            case IRInstKind.Sconst: {
+                const literalId = this.readU32();
+                inst = { kind: opcode, id, ty, literalId };
                 break;
             }
 

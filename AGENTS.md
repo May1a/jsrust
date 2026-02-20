@@ -28,16 +28,16 @@ See `plans/README.md` for the current planning structure.
 
 ## Plan Status
 
-- active/01-compiler-progress.md initialized
-- active/02-new-backend.md in progress (JS wasm run-path integration wired)
+- active/01-compiler-progress.md updated (IR v2 string-literal pool + backend format-print milestone captured)
+- active/02-new-backend.md in progress (JS wasm run-path integration wired; binary IR v2 + formatter builtins integrated)
 - plans/future/01-node-addon-availability.md deferred (non-priority)
 - backend/plans/00-master-implementation-plan.md overhauled (interpreter-first)
 - backend/plans/02-backend-scaffold-and-build.md implemented (initial)
-- backend/plans/03-binary-ir-reader.md implemented (initial)
-- backend/plans/04-ir-interpreter-core.md implemented (initial)
+- backend/plans/03-binary-ir-reader.md implemented (initial + IR v2 literal-section ingest)
+- backend/plans/04-ir-interpreter-core.md implemented (initial + formatter builtins + `sconst` execution)
 - backend/plans/05-ir-interpreter-runtime-model.md implemented (initial)
-- backend/plans/06-driver-cli-artifacts.md implemented (initial + JS wasm adapter integration)
-- backend/plans/07-testing-conformance-ci.md implemented (initial local suite + conditional JS integration tests)
+- backend/plans/06-driver-cli-artifacts.md implemented (initial + JS wasm adapter integration; formatter run-path active)
+- backend/plans/07-testing-conformance-ci.md implemented (initial local suite + conditional JS integration tests + v2 fixture corpus)
 - backend/plans/08-libc-overhaul-plan.md started (minimal bootstrap cleanup)
 - backend/plans/future/01-wasm-codegen-core.md deferred
 - backend/plans/future/02-wasm-data-memory-abi.md deferred

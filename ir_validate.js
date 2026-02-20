@@ -373,6 +373,7 @@ function validateInstruction(inst, blockId, ctx) {
             break;
 
         case IRInstKind.Alloca:
+        case IRInstKind.Sconst:
             // Alloca has no value operands
             break;
 
@@ -974,6 +975,7 @@ function getInstructionOperands(inst) {
         case IRInstKind.Bconst:
         case IRInstKind.Null:
         case IRInstKind.Alloca:
+        case IRInstKind.Sconst:
             return [];
 
         case IRInstKind.Iadd:

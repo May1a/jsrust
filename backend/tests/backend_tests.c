@@ -86,12 +86,12 @@ static int Test_writeFile(const char* path, const uint8_t* data, size_t len)
 static void Test_positiveFixtures(void)
 {
     const char* fixtures[] = {
-        "../tests/fixtures/backend_ir_v1/01_empty_main.bin",
-        "../tests/fixtures/backend_ir_v1/02_literals.bin",
-        "../tests/fixtures/backend_ir_v1/03_arithmetic.bin",
-        "../tests/fixtures/backend_ir_v1/04_functions.bin",
-        "../tests/fixtures/backend_ir_v1/07_structs.bin",
-        "../tests/fixtures/backend_ir_v1/09_references.bin"
+        "../tests/fixtures/backend_ir_v2/01_empty_main.bin",
+        "../tests/fixtures/backend_ir_v2/02_literals.bin",
+        "../tests/fixtures/backend_ir_v2/03_arithmetic.bin",
+        "../tests/fixtures/backend_ir_v2/04_functions.bin",
+        "../tests/fixtures/backend_ir_v2/07_structs.bin",
+        "../tests/fixtures/backend_ir_v2/09_references.bin"
     };
     size_t count;
     size_t index;
@@ -113,7 +113,7 @@ static void Test_negativeMagic(void)
     uint8_t* data;
     size_t len;
 
-    if (!Test_readFile("../tests/fixtures/backend_ir_v1/01_empty_main.bin", &data, &len)) {
+    if (!Test_readFile("../tests/fixtures/backend_ir_v2/01_empty_main.bin", &data, &len)) {
         Test_fail("failed to read fixture for magic mutation");
         return;
     }
@@ -144,13 +144,13 @@ static void Test_negativeVersion(void)
     uint8_t* data;
     size_t len;
 
-    if (!Test_readFile("../tests/fixtures/backend_ir_v1/01_empty_main.bin", &data, &len)) {
+    if (!Test_readFile("../tests/fixtures/backend_ir_v2/01_empty_main.bin", &data, &len)) {
         Test_fail("failed to read fixture for version mutation");
         return;
     }
 
     if (len >= 8) {
-        data[4] = 2;
+        data[4] = 3;
         data[5] = 0;
         data[6] = 0;
         data[7] = 0;
@@ -175,7 +175,7 @@ static void Test_truncated(void)
     uint8_t* data;
     size_t len;
 
-    if (!Test_readFile("../tests/fixtures/backend_ir_v1/03_arithmetic.bin", &data, &len)) {
+    if (!Test_readFile("../tests/fixtures/backend_ir_v2/03_arithmetic.bin", &data, &len)) {
         Test_fail("failed to read fixture for truncation");
         return;
     }
@@ -204,7 +204,7 @@ static void Test_runtimeMissingFunction(void)
     size_t index;
     int found;
 
-    if (!Test_readFile("../tests/fixtures/backend_ir_v1/04_functions.bin", &data, &len)) {
+    if (!Test_readFile("../tests/fixtures/backend_ir_v2/04_functions.bin", &data, &len)) {
         Test_fail("failed to read fixture for call mutation");
         return;
     }
@@ -247,12 +247,12 @@ static void Test_traceDeterminism(void)
     size_t index;
 
     Test_expectCode(
-        jsrust_backend_run_file("../tests/fixtures/backend_ir_v1/03_arithmetic.bin", "main", 1, "tests/tmp_trace_one.txt"),
+        jsrust_backend_run_file("../tests/fixtures/backend_ir_v2/03_arithmetic.bin", "main", 1, "tests/tmp_trace_one.txt"),
         JSRUST_BACKEND_OK,
         "trace run one should succeed");
 
     Test_expectCode(
-        jsrust_backend_run_file("../tests/fixtures/backend_ir_v1/03_arithmetic.bin", "main", 1, "tests/tmp_trace_two.txt"),
+        jsrust_backend_run_file("../tests/fixtures/backend_ir_v2/03_arithmetic.bin", "main", 1, "tests/tmp_trace_two.txt"),
         JSRUST_BACKEND_OK,
         "trace run two should succeed");
 
@@ -303,4 +303,3 @@ int main(void)
     fprintf(stdout, "Backend tests passed\n");
     return 0;
 }
-
