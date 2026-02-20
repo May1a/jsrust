@@ -838,7 +838,7 @@ function parseAtom(state, allowStructLiteral = true) {
         const startToken = advance(state);
         const elements = [];
         let hasComma = false;
-        
+
         // Parse tuple or grouped expression
         if (!check(state, TokenType.CloseParen)) {
             while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
@@ -851,11 +851,11 @@ function parseAtom(state, allowStructLiteral = true) {
                 }
             }
         }
-        
+
         const end =
             expectToken(state, TokenType.CloseParen, "Expected )") ??
             startToken;
-        
+
         // Empty parens = unit literal
         if (elements.length === 0) {
             return makeLiteralExpr(
@@ -865,13 +865,13 @@ function parseAtom(state, allowStructLiteral = true) {
                 "()",
             );
         }
-        
+
         // Single element without comma = grouped expression
         if (elements.length === 1 && !hasComma) {
             elements[0].span = mergeSpans(spanFromToken(startToken), spanFromToken(end));
             return elements[0];
         }
-        
+
         // Multiple elements or trailing comma = tuple
         // For now, return as a struct expression (tuple is a struct with numeric fields)
         const span = mergeSpans(spanFromToken(startToken), spanFromToken(end));
@@ -947,16 +947,16 @@ function parseAtom(state, allowStructLiteral = true) {
         let node =
             segments.length > 1
                 ? makePathExpr(
-                      mergeSpans(
-                          spanFromToken(startToken),
-                          spanFromToken(endToken),
-                      ),
-                      segments,
-                  )
+                    mergeSpans(
+                        spanFromToken(startToken),
+                        spanFromToken(endToken),
+                    ),
+                    segments,
+                )
                 : makeIdentifierExpr(
-                      spanFromToken(startToken),
-                      segments[0] ?? startToken.value,
-                  );
+                    spanFromToken(startToken),
+                    segments[0] ?? startToken.value,
+                );
         if (allowStructLiteral && check(state, TokenType.OpenCurly)) {
             node = parseStructExpr(state, node);
         }
@@ -977,7 +977,7 @@ function parseAtom(state, allowStructLiteral = true) {
 function parseMacroArgs(state) {
     /** @type {Node[]} */
     const args = [];
-    
+
     // Determine the delimiter
     let endToken = TokenType.CloseParen;
     if (check(state, TokenType.OpenSquare)) {
@@ -988,10 +988,10 @@ function parseMacroArgs(state) {
         // No arguments
         return args;
     }
-    
+
     // Consume opening delimiter
     advance(state);
-    
+
     // Parse arguments
     if (!check(state, endToken)) {
         while (!check(state, endToken) && !isAtEnd(state)) {
@@ -1000,10 +1000,10 @@ function parseMacroArgs(state) {
             if (!matchToken(state, TokenType.Comma)) break;
         }
     }
-    
+
     // Consume closing delimiter
     expectToken(state, endToken, "Expected closing delimiter after macro arguments");
-    
+
     return args;
 }
 
@@ -1039,7 +1039,7 @@ function parsePostfix(state, expr) {
                     // For paths, use the last segment
                     macroName = result.segments[result.segments.length - 1];
                 }
-                
+
                 if (macroName) {
                     const args = parseMacroArgs(state);
                     const endToken = previous(state);
@@ -1327,11 +1327,11 @@ function parseExpr(state, minPrec = 0, allowStructLiteral = true) {
         if (rangeOp) {
             const endExpr =
                 check(state, TokenType.CloseParen) ||
-                check(state, TokenType.CloseSquare) ||
-                check(state, TokenType.CloseCurly) ||
-                check(state, TokenType.Comma) ||
-                check(state, TokenType.Semicolon) ||
-                check(state, TokenType.Eof)
+                    check(state, TokenType.CloseSquare) ||
+                    check(state, TokenType.CloseCurly) ||
+                    check(state, TokenType.Comma) ||
+                    check(state, TokenType.Semicolon) ||
+                    check(state, TokenType.Eof)
                     ? null
                     : parseExpr(state, 0, allowStructLiteral);
             const span = endExpr
@@ -1349,11 +1349,11 @@ function parseExpr(state, minPrec = 0, allowStructLiteral = true) {
             const value =
                 compoundOp !== null
                     ? makeBinaryExpr(
-                          mergeSpans(left.span, right.span),
-                          compoundOp,
-                          left,
-                          right,
-                      )
+                        mergeSpans(left.span, right.span),
+                        compoundOp,
+                        left,
+                        right,
+                    )
                     : right;
             const span = mergeSpans(left.span, right.span);
             left = makeAssignExpr(span, left, value);
@@ -1566,10 +1566,11 @@ function parseParamList(state, options = {}) {
  * @param {ParserState} state
  * @param {boolean} isUnsafe
  * @param {boolean} isPub
+ * @param {boolean} [isConst=false]
  * @param {boolean} [allowReceiver=false]
  * @returns {Node}
  */
-function parseFnItem(state, isUnsafe, isPub, allowReceiver = false) {
+function parseFnItem(state, isUnsafe, isPub, isConst = false, allowReceiver = false) {
     const start =
         expectToken(state, TokenType.Fn, "Expected fn") ?? peek(state);
     const nameToken =
@@ -1606,12 +1607,15 @@ function parseFnItem(state, isUnsafe, isPub, allowReceiver = false) {
         params,
         returnType,
         body,
-        false,
+        false, // isAsync
         isUnsafe,
+        isConst,
         isPub,
         genericParams,
         whereClause,
         ignoredLifetimeParams,
+        false, // isTest
+        null,  // expectedOutput
     );
 }
 
@@ -1720,8 +1724,12 @@ function parseTraitItem(state, isUnsafe, isPub) {
     expectToken(state, TokenType.OpenCurly, "Expected { after trait name");
     while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
         parseOuterAttributes(state);
+        let methodIsConst = false;
+        if (matchToken(state, TokenType.Const)) {
+            methodIsConst = true;
+        }
         if (check(state, TokenType.Fn)) {
-            const method = parseFnItem(state, false, false, true);
+            const method = parseFnItem(state, false, false, methodIsConst, true);
             if (method.body) {
                 addError(
                     state,
@@ -1778,13 +1786,16 @@ function parseImplItem(state, isUnsafe) {
         parseOuterAttributes(state);
         let methodIsPub = false;
         let methodIsUnsafe = false;
+        let methodIsConst = false;
         if (matchToken(state, TokenType.Pub)) methodIsPub = true;
         if (matchToken(state, TokenType.Unsafe)) methodIsUnsafe = true;
+        if (matchToken(state, TokenType.Const)) methodIsConst = true;
         if (check(state, TokenType.Fn)) {
             const method = parseFnItem(
                 state,
                 methodIsUnsafe,
                 methodIsPub,
+                methodIsConst,
                 true,
             );
             methods.push(method);
@@ -1796,6 +1807,7 @@ function parseImplItem(state, isUnsafe) {
             TokenType.Fn,
             TokenType.Pub,
             TokenType.Unsafe,
+            TokenType.Const,
         ]);
     }
     const endToken =
@@ -2068,15 +2080,24 @@ function parseItem(state) {
     const { derives, isTest, expectedOutput, consumedOnlyInert } = parseOuterAttributes(state);
     let isPub = false;
     let isUnsafe = false;
+    let isConst = false;
     if (matchToken(state, TokenType.Pub)) {
         isPub = true;
     }
     if (matchToken(state, TokenType.Unsafe)) {
         isUnsafe = true;
     }
+    if (matchToken(state, TokenType.Const)) {
+        if (check(state, TokenType.Fn)) {
+            isConst = true;
+        } else {
+            addError(state, "Expected `fn` after `const`", peek(state), ["Fn"]);
+            return null;
+        }
+    }
     /** @type {Node | null} */
     let item = null;
-    if (check(state, TokenType.Fn)) item = parseFnItem(state, isUnsafe, isPub);
+    if (check(state, TokenType.Fn)) item = parseFnItem(state, isUnsafe, isPub, isConst);
     else if (check(state, TokenType.Struct)) item = parseStructItem(state, isPub);
     else if (check(state, TokenType.Enum)) item = parseEnumItem(state, isPub);
     else if (check(state, TokenType.Trait)) item = parseTraitItem(state, isUnsafe, isPub);
@@ -2161,7 +2182,7 @@ function parsePatternAtom(state) {
         const startToken = token;
         const segments = parsePathSegments(state);
         const name = segments[segments.length - 1];
-        
+
         // Check if this is a qualified path (e.g., Color::Red)
         if (segments.length > 1) {
             // This is a qualified path like Color::Red - could be enum variant or struct
@@ -2182,7 +2203,7 @@ function parsePatternAtom(state) {
                 null,
             );
         }
-        
+
         if (matchInvalidSymbol(state, "@")) {
             const inner = parsePattern(state);
             const span = inner
@@ -2457,10 +2478,14 @@ function parseType(state) {
             inner ?? makeNamedType(span, "unknown", null),
         );
     }
-    if (token.type === TokenType.Fn || token.type === TokenType.Unsafe) {
+    if (token.type === TokenType.Fn || token.type === TokenType.Unsafe || token.type === TokenType.Const) {
         let isUnsafe = false;
         if (matchToken(state, TokenType.Unsafe)) {
             isUnsafe = true;
+        }
+        let isConst = false;
+        if (matchToken(state, TokenType.Const)) {
+            isConst = true;
         }
         const start =
             expectToken(state, TokenType.Fn, "Expected fn type") ?? token;
@@ -2488,7 +2513,7 @@ function parseType(state) {
         }
         const endSpan = returnType ? returnType.span : spanFromToken(start);
         const span = mergeSpans(spanFromToken(start), endSpan);
-        return makeFnType(span, params, returnType, isUnsafe);
+        return makeFnType(span, params, returnType, isUnsafe, isConst);
     }
     if (token.type === TokenType.OpenParen) {
         const start = advance(state);
@@ -2577,12 +2602,12 @@ function parseIfExpr(state) {
     return makeIfExpr(
         span,
         condition ??
-            makeLiteralExpr(
-                spanFromToken(start),
-                LiteralKind.Bool,
-                false,
-                "false",
-            ),
+        makeLiteralExpr(
+            spanFromToken(start),
+            LiteralKind.Bool,
+            false,
+            "false",
+        ),
         thenBranch,
         elseBranch,
     );
@@ -2629,7 +2654,7 @@ function parseMatchExpr(state) {
     return makeMatchExpr(
         span,
         scrutinee ??
-            makeLiteralExpr(spanFromToken(start), LiteralKind.Int, 0, "0"),
+        makeLiteralExpr(spanFromToken(start), LiteralKind.Int, 0, "0"),
         arms,
     );
 }
@@ -2724,12 +2749,12 @@ function parseWhileExpr(state) {
         span,
         null,
         condition ??
-            makeLiteralExpr(
-                spanFromToken(start),
-                LiteralKind.Bool,
-                false,
-                "false",
-            ),
+        makeLiteralExpr(
+            spanFromToken(start),
+            LiteralKind.Bool,
+            false,
+            "false",
+        ),
         body,
     );
 }

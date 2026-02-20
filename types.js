@@ -92,7 +92,7 @@ const TypeKind = {
  * @typedef {{ kind: EnumKind, name: string, variants: { name: string, fields?: Type[] }[], span?: Span }} EnumType
  * @typedef {{ kind: RefKind, inner: Type, mutable: boolean, span?: Span }} RefType
  * @typedef {{ kind: PtrKind, inner: Type, mutable: boolean, span?: Span }} PtrType
- * @typedef {{ kind: FnKind, params: Type[], returnType: Type, isUnsafe: boolean, span?: Span }} FnType
+ * @typedef {{ kind: FnKind, params: Type[], returnType: Type, isUnsafe: boolean, isConst: boolean, span?: Span }} FnType
  * @typedef {{ kind: TypeVarKind, id: number, bound: Type | null, span?: Span }} TypeVarType
  * @typedef {{ kind: NamedKind, name: string, args: Type[] | null, span?: Span }} NamedType
  *
@@ -271,11 +271,12 @@ function makePtrType(inner, mutable, span) {
  * @param {Type[]} params
  * @param {Type} returnType
  * @param {boolean} isUnsafe
+ * @param {boolean} [isConst=false]
  * @param {Span} [span]
  * @returns {Type}
  */
-function makeFnType(params, returnType, isUnsafe, span) {
-    return { kind: TypeKind.Fn, params, returnType, isUnsafe, span };
+function makeFnType(params, returnType, isUnsafe, isConst = false, span) {
+    return { kind: TypeKind.Fn, params, returnType, isUnsafe, isConst, span };
 }
 
 // ============================================================================
@@ -354,7 +355,7 @@ function makeNamedType(name, args, span) {
 function typeEquals(a, b) {
     // Handle null/undefined
     if (!a || !b) return a === b;
-    
+
     // Handle type variables
     if (a.kind === TypeKind.TypeVar && b.kind === TypeKind.TypeVar) {
         if (a.id !== b.id) return false;
@@ -466,11 +467,12 @@ function typeEquals(a, b) {
 
         case TypeKind.Fn: {
             const bFn =
-                /** @type {{ kind: typeof TypeKind.Fn, params: Type[], returnType: Type, isUnsafe: boolean }} */ (
+                /** @type {{ kind: typeof TypeKind.Fn, params: Type[], returnType: Type, isUnsafe: boolean, isConst: boolean }} */ (
                     b
                 );
             if (a.params.length !== bFn.params.length) return false;
             if (a.isUnsafe !== bFn.isUnsafe) return false;
+            if (a.isConst !== bFn.isConst) return false;
             for (let i = 0; i < a.params.length; i++) {
                 if (!typeEquals(a.params[i], bFn.params[i])) return false;
             }
@@ -550,7 +552,8 @@ function typeToString(type) {
             const params = type.params.map(typeToString).join(", ");
             const ret = typeToString(type.returnType);
             const unsafe = type.isUnsafe ? "unsafe " : "";
-            return `${unsafe}fn(${params}) -> ${ret}`;
+            const const_ = type.isConst ? "const " : "";
+            return `${const_}${unsafe}fn(${params}) -> ${ret}`;
         }
 
         case TypeKind.TypeVar:
