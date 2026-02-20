@@ -548,6 +548,181 @@ function runCompileCli(args) {
 }
 
 /**
+ * @param {number} [exitCode=0]
+ */
+function printTestHelp(exitCode = 0) {
+    console.log("JSRust Test - Run test functions");
+    console.log("");
+    console.log("Usage: node main.js test <file.rs> [options]");
+    console.log("");
+    console.log("Options:");
+    console.log("  --no-validate        Skip IR validation");
+    console.log("  --codegen-wasm       Compile binary IR to wasm and run generated wasm");
+    console.log("  -h, --help           Show this help");
+    console.log("");
+    console.log("Description:");
+    console.log("  Discovers and runs all functions marked with #[test] attribute.");
+    console.log("  Reports test results and exits with code 0 if all tests pass,");
+    console.log("  or 1 if any test fails.");
+    process.exit(exitCode);
+}
+
+/**
+ * @param {string[]} args
+ * @returns {number}
+ */
+function runTestCli(args) {
+    if (args.length === 0) {
+        printTestHelp(1);
+    }
+
+    let validate = true;
+    let codegenWasm = false;
+    let inputFile = null;
+
+    for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        if (arg === "--no-validate") {
+            validate = false;
+        } else if (arg === "--codegen-wasm") {
+            codegenWasm = true;
+        } else if (arg === "-h" || arg === "--help") {
+            printTestHelp(0);
+        } else if (arg.startsWith("-")) {
+            printOneLineError(`unknown option for test: ${arg}`);
+            return 1;
+        } else if (!inputFile) {
+            inputFile = arg;
+        } else {
+            printOneLineError(`unexpected positional argument: ${arg}`);
+            return 1;
+        }
+    }
+
+    if (!inputFile) {
+        printOneLineError("no input file specified for test");
+        return 1;
+    }
+
+    const source = (() => {
+        try { return fs.readFileSync(inputFile, "utf-8"); } catch { return ""; }
+    })();
+
+    // Compile to get the HIR with test functions
+    const parseResult = parseModule(source);
+    if (!parseResult.ok) {
+        for (const err of parseResult.errors) {
+            console.error(`error: ${err.message} at line ${err.span.line}`);
+        }
+        return 1;
+    }
+
+    const ast = parseResult.value;
+    const resolveResult = resolveModuleTree(ast, { sourcePath: inputFile });
+    if (!resolveResult.ok || !resolveResult.module) {
+        for (const err of resolveResult.errors || []) {
+            console.error(`error: ${err.message}`);
+        }
+        return 1;
+    }
+
+    const resolvedAst = resolveResult.module;
+    const deriveResult = expandDerives(resolvedAst);
+    if (!deriveResult.ok || !deriveResult.module) {
+        for (const err of deriveResult.errors || []) {
+            console.error(`error: ${err.message}`);
+        }
+        return 1;
+    }
+
+    const expandedAst = deriveResult.module;
+
+    const typeCtx = new TypeContext();
+    const inferResult = inferModule(typeCtx, expandedAst);
+    if (!inferResult.ok) {
+        for (const err of inferResult.errors || []) {
+            console.error(`error: ${err.message}`);
+        }
+        return 1;
+    }
+
+    const hirResult = lowerModule(expandedAst, typeCtx);
+    if (!hirResult.module) {
+        for (const err of hirResult.errors) {
+            console.error(`error: ${err.message}`);
+        }
+        return 1;
+    }
+
+    const hirModule = hirResult.module;
+
+    // Find all test functions
+    const testFns = [];
+    for (const item of hirModule.items || []) {
+        if (item.kind === HItemKind.Fn && item.isTest) {
+            testFns.push(item.name);
+        }
+    }
+
+    if (testFns.length === 0) {
+        console.log("No test functions found.");
+        return 0;
+    }
+
+    // Compile to binary IR
+    const irModule = makeIRModule(hirModule.name || "main");
+    for (const item of hirModule.items || []) {
+        if (item.kind === HItemKind.Fn) {
+            try {
+                const irFn = lowerHirToSsa(/** @type {import('./hir.js').HFnDecl} */(item), { irModule });
+                if (validate) {
+                    const validationResult = validateIRFunction(irFn);
+                    if (!validationResult.ok) {
+                        for (const err of validationResult.errors || []) {
+                            console.error(`error: in function \`${item.name}\`: ${err.message}`);
+                        }
+                    }
+                }
+                addIRFunction(irModule, irFn);
+            } catch (e) {
+                console.error(`error: lowering function \`${item.name}\`: ${e instanceof Error ? e.message : String(e)}`);
+            }
+        }
+    }
+
+    let bytes;
+    try {
+        bytes = serializeModule(irModule);
+    } catch (e) {
+        printOneLineError(`failed to serialize IR module: ${e instanceof Error ? e.message : String(e)}`);
+        return 1;
+    }
+
+    // Run each test
+    let passed = 0;
+    let failed = 0;
+
+    for (const testName of testFns) {
+        const runResult = codegenWasm
+            ? runBackendCodegenWasm(bytes, { entry: testName, trace: false })
+            : runBackendWasm(bytes, { entry: testName, trace: false });
+
+        if (runResult.ok) {
+            console.log(`test ${testName} ... ok`);
+            passed++;
+        } else {
+            console.log(`test ${testName} ... FAILED`);
+            failed++;
+        }
+    }
+
+    console.log("");
+    console.log(`test result: ${failed === 0 ? 'ok' : 'FAILED'}. ${passed} passed; ${failed} failed; 0 ignored`);
+
+    return failed > 0 ? 1 : 0;
+}
+
+/**
  * @param {string[]} args
  * @returns {number}
  */
@@ -686,10 +861,14 @@ function runBackendCli(args) {
 
 function main() {
     const args = process.argv.slice(2);
-    const exitCode =
-        args[0] === "run"
-            ? runBackendCli(args.slice(1))
-            : runCompileCli(args);
+    let exitCode;
+    if (args[0] === "run") {
+        exitCode = runBackendCli(args.slice(1));
+    } else if (args[0] === "test") {
+        exitCode = runTestCli(args.slice(1));
+    } else {
+        exitCode = runCompileCli(args);
+    }
     process.exit(exitCode);
 }
 

@@ -110,7 +110,8 @@ function makeHModule(span, name, items) {
  *   returnType: Type,
  *   body: HBlock | null,
  *   isAsync: boolean,
- *   isUnsafe: boolean
+ *   isUnsafe: boolean,
+ *   isTest: boolean
  * }} HFnDecl
  */
 
@@ -127,6 +128,7 @@ function makeHModule(span, name, items) {
  * @param {HBlock | null} body
  * @param {boolean} isAsync
  * @param {boolean} isUnsafe
+ * @param {boolean} [isTest=false]
  * @returns {HFnDecl}
  */
 function makeHFnDecl(
@@ -138,6 +140,7 @@ function makeHFnDecl(
     body,
     isAsync,
     isUnsafe,
+    isTest = false,
 ) {
     return {
         kind: HItemKind.Fn,
@@ -149,6 +152,7 @@ function makeHFnDecl(
         body,
         isAsync,
         isUnsafe,
+        isTest,
     };
 }
 
