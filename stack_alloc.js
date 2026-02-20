@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Stack Allocation
  *
@@ -9,7 +8,6 @@
 /** @typedef {import('./ir.js').IRLocal} IRLocal */
 /** @typedef {import('./ir.js').LocalId} LocalId */
 /** @typedef {import('./memory_layout.js').TypeLayout} TypeLayout */
-/** @typedef {import('./memory_layout.js').LayoutCache} LayoutCache */
 
 import { LayoutCache } from "./memory_layout.js";
 

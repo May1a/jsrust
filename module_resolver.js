@@ -1,4 +1,3 @@
-// @ts-nocheck
 import * as fs from "fs";
 import * as path from "path";
 import { parseModule } from "./parser.js";
@@ -220,7 +219,7 @@ function expandModuleItems(state, items, modulePath, filePath) {
         } catch (e) {
             pushError(
                 state.errors,
-                `Failed to read module file ${resolved.filePath}: ${e.message}`,
+                `Failed to read module file ${resolved.filePath}: ${e instanceof Error ? e.message : String(e)}`,
                 item.span,
             );
             item.items = item.items || [];
@@ -287,8 +286,8 @@ function registerModuleItems(state, items, modulePath) {
                     item.kind === NodeKind.FnItem
                         ? "fn"
                         : item.kind === NodeKind.StructItem
-                          ? "struct"
-                          : "enum",
+                            ? "struct"
+                            : "enum",
             });
             scope.items.set(item.name, qname);
             continue;
@@ -319,16 +318,12 @@ function registerModuleItems(state, items, modulePath) {
 }
 
 /**
- * @param {{
- *   moduleScopes: Map<string, ModuleScope>,
- *   itemDecls: Map<string, any>,
- *   moduleDecls: Map<string, any>,
- * }} state
+ * @param {{ moduleScopes: Map<string, ModuleScope>, itemDecls: Map<string, any>, moduleDecls: Map<string, any> }} state
  * @param {string[]} modulePath
  * @returns {ModuleScope}
  */
 function getScope(state, modulePath) {
-    return ensureScope(state, modulePath);
+    return ensureScope(/** @type {any} */(state), modulePath);
 }
 
 /**
@@ -343,18 +338,18 @@ function resolveNameInScope(state, modulePath, name) {
     if (alias) return alias;
 
     if (scope.items.has(name)) {
-        return { kind: "item", qualifiedName: scope.items.get(name) };
+        return { kind: "item", qualifiedName: /** @type {string} */ (scope.items.get(name)) };
     }
     if (scope.modules.has(name)) {
-        return { kind: "module", qualifiedName: scope.modules.get(name) };
+        return { kind: "module", qualifiedName: /** @type {string} */ (scope.modules.get(name)) };
     }
 
     const rootScope = getScope(state, []);
     if (rootScope.items.has(name)) {
-        return { kind: "item", qualifiedName: rootScope.items.get(name) };
+        return { kind: "item", qualifiedName: /** @type {string} */ (rootScope.items.get(name)) };
     }
     if (rootScope.modules.has(name)) {
-        return { kind: "module", qualifiedName: rootScope.modules.get(name) };
+        return { kind: "module", qualifiedName: /** @type {string} */ (rootScope.modules.get(name)) };
     }
     return null;
 }
@@ -381,12 +376,12 @@ function resolveAbsolutePath(state, segments) {
     const root = getScope(state, []);
     if (segments.length === 1) {
         if (root.items.has(segments[0])) {
-            return { kind: "item", qualifiedName: root.items.get(segments[0]) };
+            return { kind: "item", qualifiedName: /** @type {string} */ (root.items.get(segments[0])) };
         }
         if (root.modules.has(segments[0])) {
             return {
                 kind: "module",
-                qualifiedName: root.modules.get(segments[0]),
+                qualifiedName: /** @type {string} */ (root.modules.get(segments[0])),
             };
         }
         return null;
@@ -407,10 +402,10 @@ function resolveAbsolutePath(state, segments) {
     const finalScope = getScope(state, modulePath);
     const last = segments[segments.length - 1];
     if (finalScope.items.has(last)) {
-        return { kind: "item", qualifiedName: finalScope.items.get(last) };
+        return { kind: "item", qualifiedName: /** @type {string} */ (finalScope.items.get(last)) };
     }
     if (finalScope.modules.has(last)) {
-        return { kind: "module", qualifiedName: finalScope.modules.get(last) };
+        return { kind: "module", qualifiedName: /** @type {string} */ (finalScope.modules.get(last)) };
     }
     return null;
 }
@@ -444,10 +439,10 @@ function resolvePathFromModule(state, currentModulePath, segments) {
     const finalScope = getScope(state, modulePath);
     const last = segments[segments.length - 1];
     if (finalScope.items.has(last)) {
-        return { kind: "item", qualifiedName: finalScope.items.get(last) };
+        return { kind: "item", qualifiedName: /** @type {string} */ (finalScope.items.get(last)) };
     }
     if (finalScope.modules.has(last)) {
-        return { kind: "module", qualifiedName: finalScope.modules.get(last) };
+        return { kind: "module", qualifiedName: /** @type {string} */ (finalScope.modules.get(last)) };
     }
     return null;
 }
@@ -942,7 +937,7 @@ function resolveModuleTree(ast, options = {}) {
         return { ok: false, errors };
     }
 
-    const flattened = [];
+    const /** @type {any[]} */ flattened = [];
     flattenItems(ast.items || [], flattened);
     ast.items = flattened;
     return { ok: true, module: ast };

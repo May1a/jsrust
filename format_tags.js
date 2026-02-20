@@ -1,4 +1,3 @@
-// @ts-nocheck
 
 const FORMAT_TAG_STRING = 0;
 const FORMAT_TAG_INT = 1;

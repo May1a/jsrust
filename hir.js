@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** @typedef {number} HNodeKindValue */
 /** @typedef {number} HPlaceKindValue */
 /** @typedef {number} HExprKindValue */
@@ -839,7 +838,7 @@ function makeHMatchArm(span, pat, guard, body) {
 function hirToString(hir) {
     if ("items" in hir) {
         // HModule
-        return `module ${hir.name} {\n${hir.items.map((i) => "  " + hirToString(i)).join("\n")}\n}`;
+        return `module ${hir.name} {\n${hir.items.map((/** @type {any} */ i) => "  " + hirToString(i)).join("\n")}\n}`;
     }
 
     if ("kind" in hir) {

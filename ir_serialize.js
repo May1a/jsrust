@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** @typedef {import('./ir.js').IRModule} IRModule */
 /** @typedef {import('./ir.js').IRFunction} IRFunction */
 /** @typedef {import('./ir.js').IRBlock} IRBlock */
@@ -70,8 +69,8 @@ class StringTable {
  */
 class IRSerializer {
     constructor() {
-        /** @type {DataView|null} */
-        this.view = null;
+        /** @type {DataView} */
+        this.view = new DataView(new ArrayBuffer(0));
         /** @type {number} */
         this.pos = 0;
         /** @type {StringTable} */
@@ -310,14 +309,15 @@ class IRSerializer {
             case IRTypeKind.Enum:
                 return 5; // tag + name string id
             case IRTypeKind.Array:
-                return 5 + this.calculateTypeSize(type.element); // tag + length + element
-            case IRTypeKind.Fn:
+                return 5 + this.calculateTypeSize(/** @type {IRType} */(type.element)); // tag + length + element
+            case IRTypeKind.Fn: {
                 let size = 5; // tag + param count
-                for (const param of type.params) {
+                for (const param of (type.params ?? [])) {
                     size += this.calculateTypeSize(param);
                 }
-                size += this.calculateTypeSize(type.returnType);
+                size += this.calculateTypeSize(/** @type {IRType} */(type.returnType));
                 return size;
+            }
             default:
                 return 1;
         }
@@ -768,10 +768,10 @@ class IRSerializer {
         this.writeU8(type.kind);
         switch (type.kind) {
             case IRTypeKind.Int:
-                this.writeU8(type.width);
+                this.writeU8(/** @type {number} */(type.width));
                 break;
             case IRTypeKind.Float:
-                this.writeU8(type.width);
+                this.writeU8(/** @type {number} */(type.width));
                 break;
             case IRTypeKind.Bool:
             case IRTypeKind.Ptr:
@@ -779,21 +779,21 @@ class IRSerializer {
                 // No additional data
                 break;
             case IRTypeKind.Struct:
-                this.writeU32(this.strings.addString(type.name));
+                this.writeU32(this.strings.addString(/** @type {string} */(type.name)));
                 break;
             case IRTypeKind.Enum:
-                this.writeU32(this.strings.addString(type.name));
+                this.writeU32(this.strings.addString(/** @type {string} */(type.name)));
                 break;
             case IRTypeKind.Array:
-                this.writeU32(type.length);
-                this.writeType(type.element);
+                this.writeU32(/** @type {number} */(type.length));
+                this.writeType(/** @type {IRType} */(type.element));
                 break;
             case IRTypeKind.Fn:
-                this.writeU32(type.params.length);
-                for (const param of type.params) {
+                this.writeU32((type.params ?? []).length);
+                for (const param of (type.params ?? [])) {
                     this.writeType(param);
                 }
-                this.writeType(type.returnType);
+                this.writeType(/** @type {IRType} */(type.returnType));
                 break;
         }
     }

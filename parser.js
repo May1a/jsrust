@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { tokenize, TokenType } from "./tokenizer.js";
 /** @typedef {import('./tokenizer.js').Token} Token */
 /** @typedef {import('./tokenizer.js').TokenTypeValue} TokenTypeValue */
@@ -667,6 +666,7 @@ function parseAtom(state, allowStructLiteral = true) {
  * @returns {Node[]}
  */
 function parseMacroArgs(state) {
+    /** @type {Node[]} */
     const args = [];
     
     // Determine the delimiter

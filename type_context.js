@@ -1,7 +1,9 @@
-// @ts-nocheck
 import { TypeKind, makeTypeVar } from "./types.js";
 
 /** @typedef {import("./types.js").Type} Type */
+/** @typedef {import("./types.js").TypeVarType} TypeVarType */
+/** @typedef {import("./types.js").FnType} FnType */
+/** @typedef {import("./types.js").NamedType} NamedType */
 /** @typedef {import("./ast.js").Node} Node */
 
 /**
@@ -61,7 +63,7 @@ class TypeContext {
         /** @type {Type | null} */
         this.currentReturnType = null;
 
-        /** @type {Map<number, Type>} */
+        /** @type {Map<number, TypeVarType>} */
         this.typeVars = new Map();
 
         /** @type {Map<string, Type>} - Interned types for deduplication */
@@ -129,6 +131,7 @@ class TypeContext {
      * @returns {VarBinding | null}
      */
     lookupVar(name) {
+        /** @type {Scope | null} */
         let scope = this.currentScope;
         while (scope) {
             const binding = scope.bindings.get(name);
@@ -406,7 +409,7 @@ class TypeContext {
      * @returns {Type}
      */
     freshTypeVar() {
-        const tv = makeTypeVar();
+        const tv = /** @type {TypeVarType} */ (makeTypeVar());
         this.typeVars.set(tv.id, tv);
         return tv;
     }
@@ -545,7 +548,7 @@ class TypeContext {
             case TypeKind.Named:
                 return `Named(${type.name}${type.args ? `<${type.args.map((t) => this.typeToKey(t)).join(",")}>` : ""})`;
             default:
-                return `Unknown(${type.kind})`;
+                return `Unknown(${/** @type {any} */ (type).kind})`;
         }
     }
 }

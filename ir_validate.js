@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** @typedef {import('./ir.js').ValueId} ValueId */
 /** @typedef {import('./ir.js').BlockId} BlockId */
 /** @typedef {import('./ir.js').FunctionId} FunctionId */
@@ -7,7 +6,7 @@
 /** @typedef {import('./ir.js').IRFunction} IRFunction */
 /** @typedef {import('./ir.js').IRBlock} IRBlock */
 /** @typedef {import('./ir.js').IRInst} IRInst */
-/** @typedef {import('./ir.js').IRTerminator} IRTerminator */
+/** @typedef {import('./ir.js').IRTerm} IRTerminator */
 
 import {
     IRTypeKind,
@@ -48,7 +47,7 @@ function makeValidationError(kind, message, loc) {
     return { kind, message, loc };
 }
 
-/** @param {ValueId} valueId @param {string} context @returns {{ kind: number, message: string, loc: object }} */
+/** @param {ValueId} valueId @param {string} context @returns {{ kind: number, message: string, loc?: object }} */
 function errUndefinedValue(valueId, context) {
     return makeValidationError(
         ValidationErrorKind.UndefinedValue,
@@ -57,7 +56,7 @@ function errUndefinedValue(valueId, context) {
     );
 }
 
-/** @param {string} expected @param {string} actual @param {string} context @returns {{ kind: number, message: string, loc: object }} */
+/** @param {string} expected @param {string} actual @param {string} context @returns {{ kind: number, message: string, loc?: object }} */
 function errTypeMismatch(expected, actual, context) {
     return makeValidationError(
         ValidationErrorKind.TypeMismatch,
@@ -66,7 +65,7 @@ function errTypeMismatch(expected, actual, context) {
     );
 }
 
-/** @param {BlockId} blockId @returns {{ kind: number, message: string, loc: object }} */
+/** @param {BlockId} blockId @returns {{ kind: number, message: string, loc?: object }} */
 function errMissingTerminator(blockId) {
     return makeValidationError(
         ValidationErrorKind.MissingTerminator,
@@ -75,7 +74,7 @@ function errMissingTerminator(blockId) {
     );
 }
 
-/** @param {BlockId} blockId @param {number} expected @param {number} actual @returns {{ kind: number, message: string, loc: object }} */
+/** @param {BlockId} blockId @param {number} expected @param {number} actual @returns {{ kind: number, message: string, loc?: object }} */
 function errInvalidBlockArg(blockId, expected, actual) {
     return makeValidationError(
         ValidationErrorKind.InvalidBlockArg,
@@ -84,7 +83,7 @@ function errInvalidBlockArg(blockId, expected, actual) {
     );
 }
 
-/** @param {BlockId} blockId @returns {{ kind: number, message: string, loc: object }} */
+/** @param {BlockId} blockId @returns {{ kind: number, message: string, loc?: object }} */
 function errUndefinedBlock(blockId) {
     return makeValidationError(
         ValidationErrorKind.UndefinedBlock,
@@ -93,7 +92,7 @@ function errUndefinedBlock(blockId) {
     );
 }
 
-/** @param {string} name @returns {{ kind: number, message: string, loc: object }} */
+/** @param {string} name @returns {{ kind: number, message: string, loc?: object }} */
 function errUndefinedFunction(name) {
     return makeValidationError(
         ValidationErrorKind.UndefinedFunction,
@@ -102,7 +101,7 @@ function errUndefinedFunction(name) {
     );
 }
 
-/** @param {string} name @param {string} kind @returns {{ kind: number, message: string, loc: object }} */
+/** @param {string} name @param {string} kind @returns {{ kind: number, message: string, loc?: object }} */
 function errDuplicateDefinition(name, kind) {
     return makeValidationError(
         ValidationErrorKind.DuplicateDefinition,
@@ -111,7 +110,7 @@ function errDuplicateDefinition(name, kind) {
     );
 }
 
-/** @param {BlockId} blockId @returns {{ kind: number, message: string, loc: object }} */
+/** @param {BlockId} blockId @returns {{ kind: number, message: string, loc?: object }} */
 function errUnreachableBlock(blockId) {
     return makeValidationError(
         ValidationErrorKind.UnreachableBlock,
@@ -120,7 +119,7 @@ function errUnreachableBlock(blockId) {
     );
 }
 
-/** @param {ValueId} valueId @param {BlockId} useBlock @param {BlockId} defBlock @returns {{ kind: number, message: string, loc: object }} */
+/** @param {ValueId} valueId @param {BlockId} useBlock @param {BlockId} defBlock @returns {{ kind: number, message: string, loc?: object }} */
 function errDominanceViolation(valueId, useBlock, defBlock) {
     return makeValidationError(
         ValidationErrorKind.DominanceViolation,
@@ -129,12 +128,15 @@ function errDominanceViolation(valueId, useBlock, defBlock) {
     );
 }
 
-/** @param {string} message @returns {{ kind: number, message: string, loc: object }} */
+/** @param {string} message @returns {{ kind: number, message: string, loc?: object }} */
 function errInvalidOperand(message) {
     return makeValidationError(ValidationErrorKind.InvalidOperand, message, {});
 }
 
-/** @param {string} fnName @returns {{ kind: number, message: string, loc: object }} */
+/**
+ * @param {string} fnName
+ * @returns {{ kind: number, message: string, loc?: object }}
+ */
 function errMissingReturn(fnName) {
     return makeValidationError(
         ValidationErrorKind.MissingReturn,
@@ -268,12 +270,12 @@ function validateFunction(fn, ctx = makeValidationCtx()) {
     // Check function has at least one block
     if (fn.blocks.length === 0) {
         addError(ctx, errMissingReturn(fn.name));
-        return;
+        return { ok: false, errors: [] };
     }
 
     // Register function parameters
     for (const param of fn.params) {
-        defineValue(ctx, param.id, param.ty, fn.entry.id);
+        defineValue(ctx, param.id, param.ty, /** @type {import('./ir.js').IRBlock} */(fn.entry).id);
     }
 
     // Validate all blocks
@@ -863,7 +865,7 @@ function computeDominators(fn) {
     const allBlocks = new Set(blockIds);
 
     for (const block of fn.blocks) {
-        if (block.id === fn.entry.id) {
+        if (fn.entry && block.id === fn.entry.id) {
             dominators.set(block.id, new Set([block.id]));
         } else {
             dominators.set(block.id, new Set(allBlocks));
@@ -876,7 +878,7 @@ function computeDominators(fn) {
         changed = false;
 
         for (const block of fn.blocks) {
-            if (block.id === fn.entry.id) continue;
+            if (fn.entry && block.id === fn.entry.id) continue;
 
             const dom = dominators.get(block.id);
             const oldSize = dom.size;
@@ -1099,7 +1101,7 @@ function validateReachability(entry, ctx) {
         if (visited.has(blockId)) continue;
         visited.add(blockId);
 
-        const block = getBlock(ctx, blockId);
+        const block = getBlock(ctx, /** @type {BlockId} */(blockId));
         if (!block || !block.terminator) continue;
 
         // Add successors to worklist
