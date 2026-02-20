@@ -92,7 +92,7 @@ export function runExamplesTests() {
             assertEqual(
                 result.ok,
                 true,
-                `Example ${file} failed to compile/validate. Errors: ${result.errors.join(", ")}`,
+                `Example ${file} failed to compile/validate. Errors: ${result.errors.map((e) => e.message).join(", ")}`,
             );
             assertTrue(result.ir, `Example ${file} should produce IR output`);
 

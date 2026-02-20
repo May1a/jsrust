@@ -25,9 +25,13 @@ import { runBackendWasm } from "./backend_runner.js";
  */
 
 /**
+ * @typedef {{ message: string, span?: { line: number, column: number, length?: number }, kind?: string }} CompileDiagnostic
+ */
+
+/**
  * @typedef {object} CompileResult
  * @property {boolean} ok
- * @property {string[]} errors
+ * @property {CompileDiagnostic[]} errors
  * @property {string} [ir]
  * @property {object} [ast]
  * @property {object} [hir]
@@ -60,6 +64,7 @@ function compileToIRModule(source, options = {}) {
         validate = true,
     } = options;
 
+    /** @type {CompileDiagnostic[]} */
     const errors = [];
 
     resetIRIds();
@@ -67,9 +72,11 @@ function compileToIRModule(source, options = {}) {
     const parseResult = parseModule(source);
     if (!parseResult.ok) {
         for (const err of parseResult.errors) {
-            errors.push(
-                `Parse error at line ${err.span.line}, column ${err.span.column}: ${err.message}`,
-            );
+            errors.push({
+                message: err.message,
+                span: err.span,
+                kind: "parse",
+            });
         }
         return { ok: false, errors };
     }
@@ -80,10 +87,11 @@ function compileToIRModule(source, options = {}) {
     const inferResult = inferModule(typeCtx, ast);
     if (!inferResult.ok) {
         for (const err of inferResult.errors || []) {
-            const location = err.span
-                ? ` at line ${err.span.line}, column ${err.span.column}`
-                : "";
-            errors.push(`Type error${location}: ${err.message}`);
+            errors.push({
+                message: err.message,
+                span: err.span,
+                kind: "type",
+            });
         }
         return { ok: false, errors };
     }
@@ -91,10 +99,11 @@ function compileToIRModule(source, options = {}) {
     const hirResult = lowerModule(ast, typeCtx);
     if (!hirResult.module) {
         for (const err of hirResult.errors) {
-            const location = err.span
-                ? ` at line ${err.span.line}, column ${err.span.column}`
-                : "";
-            errors.push(`Lowering error${location}: ${err.message}`);
+            errors.push({
+                message: err.message,
+                span: err.span,
+                kind: "lower",
+            });
         }
         return { ok: false, errors };
     }
@@ -111,18 +120,21 @@ function compileToIRModule(source, options = {}) {
                     const validationResult = validateIRFunction(irFn);
                     if (!validationResult.ok) {
                         for (const err of validationResult.errors || []) {
-                            errors.push(
-                                `Validation error in function ${item.name}: ${err.message}`,
-                            );
+                            errors.push({
+                                message: `in function \`${item.name}\`: ${err.message}`,
+                                span: err.span,
+                                kind: "validation",
+                            });
                         }
                     }
                 }
 
                 addIRFunction(irModule, irFn);
             } catch (e) {
-                errors.push(
-                    `Error lowering function ${item.name}: ${e.message}`,
-                );
+                errors.push({
+                    message: `lowering function \`${item.name}\`: ${e.message}`,
+                    kind: "lower",
+                });
             }
         }
     }
@@ -270,11 +282,68 @@ function printBackendStatusLine(label, message) {
 }
 
 /**
- * @param {string[]} errors
+ * Map internal error kind to a short human-readable label.
+ * @param {string} [kind]
  * @returns {string}
  */
-function summarizeErrors(errors) {
-    return errors.join(" | ");
+function errorKindLabel(kind) {
+    switch (kind) {
+        case "parse": return "E0001";
+        case "type": return "E0308";
+        case "lower": return "E0000";
+        case "validation": return "E0000";
+        default: return "E0000";
+    }
+}
+
+/**
+ * Print a list of compiler diagnostics in rustc-style multi-line format.
+ *
+ * Example output:
+ *   error[E0308]: Qualified paths not yet supported for: math
+ *    --> examples/15_modules.rs:8:18
+ *     |
+ *   8 |     let result = math::add(1, 2);
+ *     |                  ^^^^
+ *
+ * @param {CompileDiagnostic[]} errors
+ * @param {string} filePath  - path shown in the `-->` line (relative or absolute)
+ * @param {string} [source]  - full source text (used to extract the faulting line)
+ */
+function printRustcStyleErrors(errors, filePath, source) {
+    const sourceLines = source ? source.split("\n") : [];
+
+    for (const diag of errors) {
+        const code = errorKindLabel(diag.kind);
+        // Header
+        console.error(`error[${code}]: ${diag.message}`);
+
+        if (diag.span) {
+            const { line, column } = diag.span;
+            // --> file:line:col
+            console.error(` --> ${filePath}:${line}:${column}`);
+
+            // Source line (1-indexed)
+            const srcLine = sourceLines[line - 1];
+            if (srcLine !== undefined) {
+                const lineNumStr = String(line);
+                const pad = " ".repeat(lineNumStr.length);
+
+                console.error(`${pad} |`);
+                console.error(`${lineNumStr} | ${srcLine}`);
+
+                // Caret
+                // column is 1-indexed; offset by the leading spaces in the source
+                const caretOffset = column - 1;
+                // length: prefer explicit length, fall back to end-of-token heuristic
+                const caretLen = diag.span.length ?? 1;
+                const caret = "^".repeat(Math.max(1, caretLen));
+                console.error(`${pad} | ${" ".repeat(caretOffset)}${caret}`);
+            }
+        }
+
+        console.error("");
+    }
 }
 
 /**
@@ -399,10 +468,14 @@ function runCompileCli(args) {
         return 1;
     }
 
+    const source = (() => {
+        try { return fs.readFileSync(inputFile, "utf-8"); } catch { return ""; }
+    })();
     const result = compileFile(inputFile, options);
 
     if (!result.ok) {
-        printOneLineError(`compilation failed: ${summarizeErrors(result.errors)}`);
+        printRustcStyleErrors(result.errors, inputFile, source);
+        console.error(`aborting due to ${result.errors.length} error${result.errors.length === 1 ? "" : "s"}`);
         return 1;
     }
 
@@ -509,11 +582,15 @@ function runBackendCli(args) {
         return 1;
     }
 
+    const source = (() => {
+        try { return fs.readFileSync(inputFile, "utf-8"); } catch { return ""; }
+    })();
     const binaryResult = compileFileToBinary(inputFile, {
         validate: options.validate,
     });
     if (!binaryResult.ok) {
-        printOneLineError(`compilation failed: ${summarizeErrors(binaryResult.errors)}`);
+        printRustcStyleErrors(binaryResult.errors, inputFile, source);
+        console.error(`aborting due to ${binaryResult.errors.length} error${binaryResult.errors.length === 1 ? "" : "s"}`);
         return 1;
     }
     if (!binaryResult.bytes) {
