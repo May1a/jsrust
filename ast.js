@@ -452,6 +452,7 @@ function makeParam(span, name, ty, pat) {
  * @param {Node | null} body
  * @param {boolean} isAsync
  * @param {boolean} isUnsafe
+ * @param {boolean} [isPub=false]
  * @returns {Node}
  */
 function makeFnItem(
@@ -463,6 +464,7 @@ function makeFnItem(
     body,
     isAsync,
     isUnsafe,
+    isPub = false,
 ) {
     return makeNode(NodeKind.FnItem, span, {
         name,
@@ -472,6 +474,7 @@ function makeFnItem(
         body,
         isAsync,
         isUnsafe,
+        isPub,
     });
 }
 
@@ -492,14 +495,16 @@ function makeStructField(span, name, ty, defaultValue) {
  * @param {string[] | null} generics
  * @param {Node[]} fields
  * @param {boolean} isTuple
+ * @param {boolean} [isPub=false]
  * @returns {Node}
  */
-function makeStructItem(span, name, generics, fields, isTuple) {
+function makeStructItem(span, name, generics, fields, isTuple, isPub = false) {
     return makeNode(NodeKind.StructItem, span, {
         name,
         generics,
         fields,
         isTuple,
+        isPub,
     });
 }
 
@@ -519,10 +524,11 @@ function makeEnumVariant(span, name, fields, discriminant) {
  * @param {string} name
  * @param {string[] | null} generics
  * @param {Node[]} variants
+ * @param {boolean} [isPub=false]
  * @returns {Node}
  */
-function makeEnumItem(span, name, generics, variants) {
-    return makeNode(NodeKind.EnumItem, span, { name, generics, variants });
+function makeEnumItem(span, name, generics, variants, isPub = false) {
+    return makeNode(NodeKind.EnumItem, span, { name, generics, variants, isPub });
 }
 
 /**
@@ -530,10 +536,11 @@ function makeEnumItem(span, name, generics, variants) {
  * @param {string} name
  * @param {Node[]} items
  * @param {boolean} isInline
+ * @param {boolean} [isPub=false]
  * @returns {Node}
  */
-function makeModItem(span, name, items, isInline) {
-    return makeNode(NodeKind.ModItem, span, { name, items, isInline });
+function makeModItem(span, name, items, isInline, isPub = false) {
+    return makeNode(NodeKind.ModItem, span, { name, items, isInline, isPub });
 }
 
 /**

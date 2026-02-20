@@ -59,6 +59,7 @@ import { runTests as runHirToSsaExpressionsTests } from "./hir_to_ssa/expression
 import { runDiagnosticsCollectionTests } from "./diagnostics/collection.js";
 import { runDiagnosticsRenderingTests } from "./diagnostics/rendering.js";
 import { runE2ETests } from "./e2e.js";
+import { runModuleTests } from "./modules.js";
 import { runExamplesTests } from "./examples.js";
 import {
     canRunBackendIntegrationGate,
@@ -130,6 +131,7 @@ runHirToSsaExpressionsTests();
 runDiagnosticsCollectionTests();
 runDiagnosticsRenderingTests();
 runE2ETests();
+runModuleTests();
 runExamplesTests();
 
 const backendIntegrationGate = canRunBackendIntegrationGate();
