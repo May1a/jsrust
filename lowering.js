@@ -478,7 +478,29 @@ function lowerFnItem(ctx, fn, typeCtx) {
 
     // Get function type from type context
     const itemDecl = typeCtx.lookupItem(fn.name);
-    const fnType = itemDecl?.type;
+    let fnType = itemDecl?.type;
+    if (
+        fnType &&
+        fnType.kind === TypeKind.Fn &&
+        (fn.generics || []).length > 0 &&
+        itemDecl?.genericBindings
+    ) {
+        const genericNames = new Set(fn.generics || []);
+        const bindings = itemDecl.genericBindings;
+        fnType = makeFnType(
+            fnType.params.map((/** @type {Type} */ p) =>
+                substituteLoweringGenericType(typeCtx, p, genericNames, bindings),
+            ),
+            substituteLoweringGenericType(
+                typeCtx,
+                fnType.returnType,
+                genericNames,
+                bindings,
+            ),
+            fnType.isUnsafe || false,
+            fnType.span,
+        );
+    }
 
     // Lower parameters
     const params = [];

@@ -3,10 +3,10 @@
 ; String literals:
 ;   lit0 = "{}"
 
-fn id(arg0: ()) -> () {
+fn id(arg0: i32) -> i32 {
 
     block0:
-        ret
+        ret v0
 
 }
 
