@@ -33,6 +33,7 @@ const TokenType = {
     For: iota(),
     While: iota(),
     Loop: iota(),
+    Where: iota(),
     Self: iota(),
     Mut: iota(),
     FatArrow: iota(),
@@ -99,6 +100,7 @@ const KEYWORDS = {
     for: TokenType.For,
     while: TokenType.While,
     loop: TokenType.Loop,
+    where: TokenType.Where,
     self: TokenType.Self,
     mut: TokenType.Mut,
 };

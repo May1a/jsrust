@@ -20,6 +20,7 @@ import { TypeKind, makeTypeVar } from "./types.js";
  * @property {'fn' | 'struct' | 'enum' | 'mod' | 'type' | 'trait'} kind
  * @property {Node} node
  * @property {Type} [type]
+ * @property {Map<string, Type>} [genericBindings]
  */
 
 /**
@@ -211,7 +212,13 @@ class TypeContext {
         if (this.items.has(name)) {
             return { ok: false, error: `Item '${name}' already defined` };
         }
-        this.items.set(name, { name, kind: "fn", node: decl, type });
+        this.items.set(name, {
+            name,
+            kind: "fn",
+            node: decl,
+            type,
+            genericBindings: new Map(),
+        });
         return { ok: true };
     }
 

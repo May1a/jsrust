@@ -116,6 +116,11 @@ export function runKeywordsTests() {
         assertTokensMatch(tokens, [{ type: T.Loop, value: "loop" }]);
     });
 
+    test("where keyword", () => {
+        const tokens = tokenize("where");
+        assertTokensMatch(tokens, [{ type: T.Where, value: "where" }]);
+    });
+
     test("self keyword", () => {
         const tokens = tokenize("self");
         assertTokensMatch(tokens, [{ type: T.Self, value: "self" }]);
@@ -136,5 +141,5 @@ export function runKeywordsTests() {
         ]);
     });
 
-    return 26;
+    return 27;
 }

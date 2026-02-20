@@ -1,0 +1,23 @@
+; Module: root
+
+; String literals:
+;   lit0 = "{}"
+
+fn id(arg0: ()) -> () {
+
+    block0:
+        ret
+
+}
+
+fn main() -> () {
+
+    block0:
+        v1 = sconst lit0
+        v2 = iconst i32 1
+        v3 = iconst i32 1
+        v4 = call 3355(v3)
+        v5 = call 862609(v1, v2, v4)
+        ret
+
+}
