@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 
 import * as fs from "fs";
 import * as path from "path";
@@ -129,7 +128,7 @@ function compileToIRModule(source, options = {}) {
     for (const item of hirModule.items || []) {
         if (item.kind === HItemKind.Fn) {
             try {
-                const irFn = lowerHirToSsa(item, { irModule });
+                const irFn = lowerHirToSsa(/** @type {import('./hir.js').HFnDecl} */(item), { irModule });
 
                 if (validate) {
                     const validationResult = validateIRFunction(irFn);
@@ -137,7 +136,7 @@ function compileToIRModule(source, options = {}) {
                         for (const err of validationResult.errors || []) {
                             errors.push({
                                 message: `in function \`${item.name}\`: ${err.message}`,
-                                span: err.span,
+                                span: /** @type {any} */ (err).span,
                                 kind: "validation",
                             });
                         }
@@ -147,7 +146,7 @@ function compileToIRModule(source, options = {}) {
                 addIRFunction(irModule, irFn);
             } catch (e) {
                 errors.push({
-                    message: `lowering function \`${item.name}\`: ${e.message}`,
+                    message: `lowering function \`${item.name}\`: ${e instanceof Error ? e.message : String(e)}`,
                     kind: "lower",
                 });
             }
@@ -206,7 +205,7 @@ function compileToBinary(source, options = {}) {
     if (!result.module) {
         return {
             ok: false,
-            errors: ["Failed to build IR module"],
+            errors: [/** @type {import('./main.js').CompileDiagnostic} */ ({ message: "Failed to build IR module", kind: "internal" })],
         };
     }
 
@@ -219,7 +218,7 @@ function compileToBinary(source, options = {}) {
     } catch (e) {
         return {
             ok: false,
-            errors: [`Failed to serialize IR module: ${e.message}`],
+            errors: [{ message: `Failed to serialize IR module: ${e instanceof Error ? e.message : String(e)}`, kind: "internal" }],
         };
     }
 }
@@ -237,7 +236,7 @@ function compileFileToIRModule(filePath, options = {}) {
     } catch (e) {
         return {
             ok: false,
-            errors: [`Failed to read file: ${filePath}: ${e.message}`],
+            errors: [{ message: `Failed to read file: ${filePath}: ${e instanceof Error ? e.message : String(e)}`, kind: "internal" }],
         };
     }
     return compileToIRModule(source, {
@@ -259,12 +258,11 @@ function compileFileToBinary(filePath, options = {}) {
     } catch (e) {
         return {
             ok: false,
-            errors: [`Failed to read file: ${filePath}: ${e.message}`],
+            errors: [{ message: `Failed to read file: ${filePath}: ${e instanceof Error ? e.message : String(e)}`, kind: "internal" }],
         };
     }
     return compileToBinary(source, {
         ...options,
-        sourcePath: path.resolve(filePath),
     });
 }
 
@@ -436,7 +434,7 @@ function writeFileAtomic(outputPath, bytes) {
         }
         return {
             ok: false,
-            message: `failed to write file: ${resolved}: ${e.message}`,
+            message: `failed to write file: ${resolved}: ${e instanceof Error ? e.message : String(e)}`,
         };
     }
 }
@@ -523,7 +521,7 @@ function runCompileCli(args) {
             fs.writeFileSync(options.outputFile, output);
             console.log(`Output written to ${options.outputFile}`);
         } catch (e) {
-            printOneLineError(`failed to write output file: ${e.message}`);
+            printOneLineError(`failed to write output file: ${e instanceof Error ? e.message : String(e)}`);
             return 1;
         }
     } else {

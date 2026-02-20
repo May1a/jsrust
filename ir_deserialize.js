@@ -1,9 +1,11 @@
-// @ts-nocheck
 /** @typedef {import('./ir.js').IRModule} IRModule */
 /** @typedef {import('./ir.js').IRFunction} IRFunction */
 /** @typedef {import('./ir.js').IRBlock} IRBlock */
 /** @typedef {import('./ir.js').IRType} IRType */
-/** @typedef {{ ok: true, value: T } | { ok: false, error: DeserializeError }} Result<T> */
+/**
+ * @template T
+ * @typedef {{ ok: true, value: T } | { ok: false, error: DeserializeError }} Result
+ */
 
 import {
     IRTypeKind,
@@ -995,7 +997,7 @@ class IRDeserializer {
  */
 function deserializeModule(data) {
     const deserializer = new IRDeserializer(
-        data.buffer,
+        /** @type {ArrayBuffer} */(data.buffer),
         data.byteOffset,
         data.byteLength,
     );

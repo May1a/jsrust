@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** @typedef {import('./types.js').Type} Type */
 /** @typedef {import('./types.js').Span} Span */
 /** @typedef {import('./ast.js').Node} Node */
@@ -84,7 +83,7 @@ const BUILTIN_PRINT_FMT_FN = "__jsrust_builtin_print_fmt";
  */
 function parseFormatString(str) {
     const segments = [];
-    const errors = [];
+    const /** @type {any[]} */ errors = [];
     let literal = "";
     let i = 0;
     let placeholderIndex = 0;
@@ -130,7 +129,7 @@ function parseFormatString(str) {
         segments.push({ type: "literal", value: literal });
     }
 
-    return { segments, placeholderCount: placeholderIndex, errors };
+    return { segments: /** @type {any} */ (segments), placeholderCount: placeholderIndex, errors };
 }
 
 /**
@@ -266,7 +265,7 @@ class LoweringCtx {
     pushScope() {
         // Save current bindings
         if (!this._scopeStack) {
-            this._scopeStack = [];
+            this._scopeStack = /** @type {any[]} */ ([]);
         }
         this._scopeStack.push(new Map(this.varBindings));
     }
@@ -322,7 +321,7 @@ function lowerModule(ast, typeCtx) {
     }
 
     // Second pass: lower all items
-    const items = [];
+    const /** @type {import("./hir.js").HItem[]} */ items = [];
     for (const item of ast.items || []) {
         lowerItemIntoList(ctx, item, typeCtx, items);
     }
@@ -476,13 +475,13 @@ function lowerFnItem(ctx, fn, typeCtx) {
     const params = [];
     for (let i = 0; i < (fn.params || []).length; i++) {
         const param = fn.params[i];
-        const paramType = fnType?.params?.[i] || makeUnitType();
+        const paramType = /** @type {any} */ (fnType)?.params?.[i] || makeUnitType();
         const hParam = lowerParam(ctx, param, paramType, typeCtx);
         params.push(hParam);
     }
 
     // Get return type
-    let returnType = fnType?.returnType || makeUnitType();
+    let returnType = /** @type {any} */ (fnType)?.returnType || makeUnitType();
 
     // Lower body
     let body = null;
@@ -560,7 +559,7 @@ function lowerStructItem(ctx, struct, typeCtx) {
         }
 
         fields.push(
-            makeHStructField(field.span, field.name, fieldType, defaultValue),
+            makeHStructField(field.span, field.name, fieldType || makeUnitType(), defaultValue),
         );
     }
 
@@ -593,7 +592,7 @@ function lowerEnumItem(ctx, enum_, typeCtx) {
                     fieldType = typeResult.type;
                 }
             }
-            fields.push(fieldType);
+            fields.push(fieldType || makeUnitType());
         }
 
         let discriminant = null;
@@ -986,7 +985,7 @@ function lowerCall(ctx, call, typeCtx) {
                     }
                     const args = [
                         receiverArg,
-                        ...(call.args || []).map((arg) => lowerExpr(ctx, arg, typeCtx)),
+                        ...(call.args || []).map((/**@type{any}*/ arg) => lowerExpr(ctx, arg, typeCtx)),
                     ];
                     const callee = makeHVarExpr(
                         call.callee.span,
@@ -1010,7 +1009,7 @@ function lowerCall(ctx, call, typeCtx) {
     }
 
     const callee = lowerExpr(ctx, call.callee, typeCtx);
-    const args = (call.args || []).map((arg) => lowerExpr(ctx, arg, typeCtx));
+    const args = (call.args || []).map((/**@type{any}*/ arg) => lowerExpr(ctx, arg, typeCtx));
 
     // Get return type from callee type
     let ty = makeUnitType();
@@ -1112,7 +1111,7 @@ function lowerPrintMacro(ctx, macroExpr, typeCtx, builtinName) {
 
     const unitType = makeUnitType(macroExpr.span);
     const calleeType = makeFnType(
-        hirArgs.map((arg) => arg.ty || byteType),
+        hirArgs.map((/**@type{any}*/ arg) => arg.ty || byteType),
         unitType,
         false,
         macroExpr.span,
@@ -1145,20 +1144,20 @@ function lowerField(ctx, field, typeCtx) {
     let ty = makeUnitType();
 
     if (baseType && baseType.kind === TypeKind.Struct) {
-        index = ctx.getFieldIndex(baseType.name, fieldName);
-        const fieldDef = baseType.fields?.find((f) => f.name === fieldName);
+        index = ctx.getFieldIndex(/** @type {any} */(baseType).name, fieldName);
+        const fieldDef = /** @type {any} */ (baseType).fields?.find((/** @type {any} */ f) => f.name === fieldName);
         if (fieldDef) {
             ty = fieldDef.type;
         } else {
-            const item = typeCtx.lookupItem(baseType.name);
+            const item = typeCtx.lookupItem(/** @type {any} */(baseType).name);
             if (item && item.kind === "struct") {
                 const structField = item.node.fields?.find(
-                    (f) => f.name === fieldName,
+                    (/** @type {any} */ f) => f.name === fieldName,
                 );
                 if (structField?.ty) {
                     const resolvedType = resolveTypeFromAst(structField.ty, typeCtx);
                     if (resolvedType.ok) {
-                        ty = resolvedType.type;
+                        ty = resolvedType.type || makeUnitType();
                     }
                 }
             }
@@ -1232,7 +1231,7 @@ function lowerAssign(ctx, assign, typeCtx) {
 function lowerStructExpr(ctx, structExpr, typeCtx) {
     const path = lowerExpr(ctx, structExpr.path, typeCtx);
 
-    const fields = (structExpr.fields || []).map((field) => ({
+    const fields = (structExpr.fields || []).map((/**@type{any}*/ field) => ({
         name: field.name,
         value: lowerExpr(ctx, field.value, typeCtx),
     }));
@@ -1313,7 +1312,7 @@ function lowerDeref(ctx, deref, typeCtx) {
 function lowerBlock(ctx, block, typeCtx) {
     ctx.pushScope();
 
-    const stmts = (block.stmts || []).map((stmt) =>
+    const stmts = (block.stmts || []).map((/**@type{any}*/ stmt) =>
         lowerStmt(ctx, stmt, typeCtx),
     );
 
@@ -1379,7 +1378,7 @@ function lowerIf(ctx, ifExpr, typeCtx) {
 function lowerMatch(ctx, matchExpr, typeCtx) {
     const scrutinee = lowerExpr(ctx, matchExpr.scrutinee, typeCtx);
 
-    const arms = (matchExpr.arms || []).map((arm) => {
+    const arms = (matchExpr.arms || []).map((/**@type{any}*/ arm) => {
         ctx.pushScope();
 
         const pat = lowerPattern(ctx, arm.pat, scrutinee.ty, typeCtx);
@@ -1538,11 +1537,11 @@ function lowerPath(ctx, pathExpr, typeCtx) {
     if (pathExpr.resolvedItemName) {
         return lowerIdentifier(
             ctx,
-            {
+            /** @type {any} */({
                 name: pathExpr.segments[pathExpr.segments.length - 1] || "",
                 resolvedItemName: pathExpr.resolvedItemName,
                 span: pathExpr.span,
-            },
+            }),
             typeCtx,
         );
     }
@@ -1551,11 +1550,11 @@ function lowerPath(ctx, pathExpr, typeCtx) {
     if (pathExpr.segments.length === 1) {
         return lowerIdentifier(
             ctx,
-            {
+            /** @type {any} */({
                 name: pathExpr.segments[0],
                 resolvedItemName: pathExpr.resolvedItemName || null,
                 span: pathExpr.span,
-            },
+            }),
             typeCtx,
         );
     }
@@ -1737,13 +1736,13 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
     const structNode = structItem?.node;
 
     // Lower field patterns
-    const fields = (pat.fields || []).map((field) => {
+    const fields = (pat.fields || []).map((/**@type{any}*/ field) => {
         let fieldType = makeUnitType();
 
         // Find field type from struct definition
         if (structNode && structNode.fields) {
             const fieldDef = structNode.fields.find(
-                (f) => f.name === field.name,
+                (/** @type {any} */ f) => f.name === field.name,
             );
             if (fieldDef && fieldDef.ty) {
                 const typeResult = resolveTypeFromAst(fieldDef.ty, typeCtx);
@@ -1777,7 +1776,7 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
  * @returns {import('./hir.js').HTuplePat}
  */
 function lowerTuplePat(ctx, pat, expectedType, typeCtx) {
-    const elements = (pat.elements || []).map((elem, i) => {
+    const elements = (pat.elements || []).map((/**@type{any}*/ elem, /**@type{number}*/ i) => {
         let elemType = makeUnitType();
         if (
             expectedType &&
@@ -1803,7 +1802,7 @@ function lowerTuplePat(ctx, pat, expectedType, typeCtx) {
  * @returns {import('./hir.js').HOrPat}
  */
 function lowerOrPat(ctx, pat, expectedType, typeCtx) {
-    const alternatives = (pat.alternatives || []).map((alt) =>
+    const alternatives = (pat.alternatives || []).map((/**@type{any}*/ alt) =>
         lowerPattern(ctx, alt, expectedType, typeCtx),
     );
 
@@ -1846,10 +1845,10 @@ function extractPlace(ctx, expr, typeCtx) {
             let index = 0;
             let ty = makeUnitType();
 
-            if (base.ty && base.ty.kind === TypeKind.Struct) {
-                index = ctx.getFieldIndex(base.ty.name, fieldName);
-                const fieldDef = base.ty.fields?.find(
-                    (f) => f.name === fieldName,
+            if (base.ty && /** @type {any} */ (base.ty).kind === TypeKind.Struct) {
+                index = ctx.getFieldIndex(/** @type {any} */(base.ty).name, fieldName);
+                const fieldDef = /** @type {any} */ (base.ty).fields?.find(
+                    (/** @type {any} */ f) => f.name === fieldName,
                 );
                 if (fieldDef) {
                     ty = fieldDef.type;
@@ -1903,7 +1902,7 @@ function extractPlace(ctx, expr, typeCtx) {
  * Resolve an AST type node to a Type
  * @param {Node} typeNode
  * @param {TypeContext} typeCtx
- * @returns {{ ok: boolean, type?: Type, error?: string }}
+ * @returns {{ ok: true, type: Type } | { ok: false, error?: string }}
  */
 function resolveTypeFromAst(typeNode, typeCtx) {
     if (!typeNode) {

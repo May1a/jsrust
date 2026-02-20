@@ -1,21 +1,48 @@
-// @ts-nocheck
 /** @typedef {number} TypeKindValue */
 /** @typedef {number} IntWidthValue */
 /** @typedef {number} FloatWidthValue */
 /** @typedef {number} TypeVarId */
 
 /** @typedef {{ line: number, column: number, start: number, end: number }} Span */
-/**
- * Structural type model used throughout the compiler.
- * This is intentionally broad because the project relies on runtime `kind` checks.
- * @typedef {{
- *   kind: TypeKindValue,
- *   span?: Span
- * } & Record<string, any>} Type
- */
+/** @typedef {0} IntKind */
+/** @typedef {1} FloatKind */
+/** @typedef {2} BoolKind */
+/** @typedef {3} CharKind */
+/** @typedef {4} StringKind */
+/** @typedef {5} UnitKind */
+/** @typedef {6} NeverKind */
+/** @typedef {7} TupleKind */
+/** @typedef {8} ArrayKind */
+/** @typedef {9} SliceKind */
+/** @typedef {10} StructKind */
+/** @typedef {11} EnumKind */
+/** @typedef {12} RefKind */
+/** @typedef {13} PtrKind */
+/** @typedef {14} FnKind */
+/** @typedef {15} TypeVarKind */
+/** @typedef {16} NamedKind */
 
 /**
  * Type kinds for the type system
+ * @type {{
+ *   Int: IntKind,
+ *   Float: FloatKind,
+ *   Bool: BoolKind,
+ *   Char: CharKind,
+ *   String: StringKind,
+ *   Unit: UnitKind,
+ *   Never: NeverKind,
+ *   Tuple: TupleKind,
+ *   Array: ArrayKind,
+ *   Slice: SliceKind,
+ *   Struct: StructKind,
+ *   Enum: EnumKind,
+ *   Ref: RefKind,
+ *   Ptr: PtrKind,
+ *   Fn: FnKind,
+ *   TypeVar: TypeVarKind,
+ *   Named: NamedKind
+ * }}
  */
 const TypeKind = {
     // Primitive types
@@ -47,6 +74,30 @@ const TypeKind = {
     // Named type (for user-defined types before resolution)
     Named: 16,
 };
+
+/**
+ * Structural type model used throughout the compiler.
+ *
+ * @typedef {{ kind: IntKind, width: IntWidthValue, span?: Span }} IntType
+ * @typedef {{ kind: FloatKind, width: FloatWidthValue, span?: Span }} FloatType
+ * @typedef {{ kind: BoolKind, span?: Span }} BoolType
+ * @typedef {{ kind: CharKind, span?: Span }} CharType
+ * @typedef {{ kind: StringKind, span?: Span }} StringType
+ * @typedef {{ kind: UnitKind, span?: Span }} UnitType
+ * @typedef {{ kind: NeverKind, span?: Span }} NeverType
+ * @typedef {{ kind: TupleKind, elements: Type[], span?: Span }} TupleType
+ * @typedef {{ kind: ArrayKind, element: Type, length: number, span?: Span }} ArrayType
+ * @typedef {{ kind: SliceKind, element: Type, span?: Span }} SliceType
+ * @typedef {{ kind: StructKind, name: string, fields: { name: string, type: Type }[], span?: Span }} StructType
+ * @typedef {{ kind: EnumKind, name: string, variants: { name: string, fields?: Type[] }[], span?: Span }} EnumType
+ * @typedef {{ kind: RefKind, inner: Type, mutable: boolean, span?: Span }} RefType
+ * @typedef {{ kind: PtrKind, inner: Type, mutable: boolean, span?: Span }} PtrType
+ * @typedef {{ kind: FnKind, params: Type[], returnType: Type, isUnsafe: boolean, span?: Span }} FnType
+ * @typedef {{ kind: TypeVarKind, id: number, bound: Type | null, span?: Span }} TypeVarType
+ * @typedef {{ kind: NamedKind, name: string, args: Type[] | null, span?: Span }} NamedType
+ *
+ * @typedef {IntType | FloatType | BoolType | CharType | StringType | UnitType | NeverType | TupleType | ArrayType | SliceType | StructType | EnumType | RefType | PtrType | FnType | TypeVarType | NamedType} Type
+ */
 
 /**
  * Integer type widths
@@ -342,7 +393,7 @@ function typeEquals(a, b) {
 
         case TypeKind.Array: {
             const bArray =
-                /** @type {{ kind: TypeKind.Array, element: Type, length: number }} */ (
+                /** @type {{ kind: typeof TypeKind.Array, element: Type, length: number }} */ (
                     b
                 );
             return (
@@ -353,13 +404,13 @@ function typeEquals(a, b) {
 
         case TypeKind.Slice: {
             const bSlice =
-                /** @type {{ kind: TypeKind.Slice, element: Type }} */ (b);
+                /** @type {{ kind: typeof TypeKind.Slice, element: Type }} */ (b);
             return typeEquals(a.element, bSlice.element);
         }
 
         case TypeKind.Struct: {
             const bStruct =
-                /** @type {{ kind: TypeKind.Struct, name: string, fields: { name: string, type: Type }[] }} */ (
+                /** @type {{ kind: typeof TypeKind.Struct, name: string, fields: { name: string, type: Type }[] }} */ (
                     b
                 );
             if (a.name !== bStruct.name) return false;
@@ -374,7 +425,7 @@ function typeEquals(a, b) {
 
         case TypeKind.Enum: {
             const bEnum =
-                /** @type {{ kind: TypeKind.Enum, name: string, variants: { name: string, fields?: Type[] }[] }} */ (
+                /** @type {{ kind: typeof TypeKind.Enum, name: string, variants: { name: string, fields?: Type[] }[] }} */ (
                     b
                 );
             if (a.name !== bEnum.name) return false;
@@ -395,7 +446,7 @@ function typeEquals(a, b) {
 
         case TypeKind.Ref: {
             const bRef =
-                /** @type {{ kind: TypeKind.Ref, inner: Type, mutable: boolean }} */ (
+                /** @type {{ kind: typeof TypeKind.Ref, inner: Type, mutable: boolean }} */ (
                     b
                 );
             return (
@@ -405,7 +456,7 @@ function typeEquals(a, b) {
 
         case TypeKind.Ptr: {
             const bPtr =
-                /** @type {{ kind: TypeKind.Ptr, inner: Type, mutable: boolean }} */ (
+                /** @type {{ kind: typeof TypeKind.Ptr, inner: Type, mutable: boolean }} */ (
                     b
                 );
             return (
@@ -415,7 +466,7 @@ function typeEquals(a, b) {
 
         case TypeKind.Fn: {
             const bFn =
-                /** @type {{ kind: TypeKind.Fn, params: Type[], returnType: Type, isUnsafe: boolean }} */ (
+                /** @type {{ kind: typeof TypeKind.Fn, params: Type[], returnType: Type, isUnsafe: boolean }} */ (
                     b
                 );
             if (a.params.length !== bFn.params.length) return false;
@@ -428,7 +479,7 @@ function typeEquals(a, b) {
 
         case TypeKind.Named: {
             const bNamed =
-                /** @type {{ kind: TypeKind.Named, name: string, args: Type[] | null }} */ (
+                /** @type {{ kind: typeof TypeKind.Named, name: string, args: Type[] | null }} */ (
                     b
                 );
             if (a.name !== bNamed.name) return false;

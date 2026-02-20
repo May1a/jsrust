@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** @typedef {number} ValueId */
 /** @typedef {number} BlockId */
 /** @typedef {number} FunctionId */
@@ -10,12 +9,81 @@
 /** @typedef {number} FloatWidthValue */
 /** @typedef {number} IcmpOpValue */
 /** @typedef {number} FcmpOpValue */
-/** @typedef {any} IRType */
-/** @typedef {any} IRInst */
-/** @typedef {any} IRTerm */
-/** @typedef {any} IRBlock */
-/** @typedef {any} IRFunction */
-/** @typedef {any} IRModule */
+
+/**
+ * @typedef {{
+ *   kind: IRTypeKindValue,
+ *   width?: number,
+ *   inner?: IRType | null,
+ *   name?: string,
+ *   fields?: IRType[],
+ *   variants?: IRType[][],
+ *   element?: IRType,
+ *   length?: number,
+ *   params?: IRType[],
+ *   returnType?: IRType,
+ * }} IRType
+ */
+
+/**
+ * @typedef {{
+ *   kind: IRInstKindValue,
+ *   id: ValueId | null,
+ *   ty: IRType,
+ *   [key: string]: any,
+ * }} IRInst
+ */
+
+/**
+ * @typedef {{
+ *   kind: IRTermKindValue,
+ *   [key: string]: any,
+ * }} IRTerm
+ */
+
+/**
+ * @typedef {{
+ *   id: BlockId,
+ *   name?: string,
+ *   params: Array<{ id: ValueId, ty: IRType }>,
+ *   instructions: IRInst[],
+ *   terminator: IRTerm | null,
+ *   predecessors: BlockId[],
+ *   successors: BlockId[],
+ * }} IRBlock
+ */
+
+/**
+ * @typedef {{
+ *   id: FunctionId,
+ *   name: string,
+ *   params: Array<{ id: ValueId, name: string | null, ty: IRType }>,
+ *   returnType: IRType,
+ *   blocks: IRBlock[],
+ *   locals: IRLocal[],
+ *   entry: IRBlock | null,
+ * }} IRFunction
+ */
+
+/**
+ * @typedef {{
+ *   id: LocalId,
+ *   ty: IRType,
+ *   name: string | null,
+ * }} IRLocal
+ */
+
+/**
+ * @typedef {{
+ *   name: string,
+ *   functions: IRFunction[],
+ *   globals: Array<{ name: string, ty: IRType, init?: any }>,
+ *   structs: Map<string, any>,
+ *   enums: Map<string, any>,
+ *   stringLiterals: string[],
+ *   stringLiteralIds: Map<string, number>,
+ * }} IRModule
+ */
 
 import { IntWidth, FloatWidth } from "./types.js";
 
@@ -119,58 +187,101 @@ function resetIRIds() {
     nextLocalId = 0;
 }
 
+/** @returns {ValueId} */
 function freshValueId() {
     return nextValueId++;
 }
 
+/** @returns {BlockId} */
 function freshBlockId() {
     return nextBlockId++;
 }
 
+/** @returns {FunctionId} */
 function freshFunctionId() {
     return nextFunctionId++;
 }
 
+/** @returns {LocalId} */
 function freshLocalId() {
     return nextLocalId++;
 }
 
+/**
+ * @param {IntWidthValue} width
+ * @returns {IRType}
+ */
 function makeIRIntType(width) {
     return { kind: IRTypeKind.Int, width };
 }
 
+/**
+ * @param {FloatWidthValue} width
+ * @returns {IRType}
+ */
 function makeIRFloatType(width) {
     return { kind: IRTypeKind.Float, width };
 }
 
+/** @returns {IRType} */
 function makeIRBoolType() {
     return { kind: IRTypeKind.Bool };
 }
 
+/**
+ * @param {IRType | null} inner
+ * @returns {IRType}
+ */
 function makeIRPtrType(inner) {
     return { kind: IRTypeKind.Ptr, inner };
 }
 
+/** @returns {IRType} */
 function makeIRUnitType() {
     return { kind: IRTypeKind.Unit };
 }
 
+/**
+ * @param {string} name
+ * @param {IRType[]} fields
+ * @returns {IRType}
+ */
 function makeIRStructType(name, fields) {
     return { kind: IRTypeKind.Struct, name, fields };
 }
 
+/**
+ * @param {string} name
+ * @param {IRType[][]} variants
+ * @returns {IRType}
+ */
 function makeIREnumType(name, variants) {
     return { kind: IRTypeKind.Enum, name, variants };
 }
 
+/**
+ * @param {IRType} element
+ * @param {number} length
+ * @returns {IRType}
+ */
 function makeIRArrayType(element, length) {
     return { kind: IRTypeKind.Array, element, length };
 }
 
+/**
+ * @param {IRType[]} params
+ * @param {IRType} returnType
+ * @returns {IRType}
+ */
 function makeIRFnType(params, returnType) {
     return { kind: IRTypeKind.Fn, params, returnType };
 }
 
+/**
+ * @param {IRType} a
+ * @param {IRType} b
+ * @returns {boolean}
+ */
 function irTypeEquals(a, b) {
     if (a.kind !== b.kind) return false;
 
@@ -185,44 +296,50 @@ function irTypeEquals(a, b) {
             return true;
         case IRTypeKind.Struct: {
             if (a.name !== b.name) return false;
-            if (a.fields.length !== b.fields.length) return false;
-            for (let i = 0; i < a.fields.length; i++) {
-                if (!irTypeEquals(a.fields[i], b.fields[i])) return false;
+            if ((a.fields?.length ?? 0) !== (b.fields?.length ?? 0)) return false;
+            for (let i = 0; i < (a.fields?.length ?? 0); i++) {
+                if (!irTypeEquals(/** @type {IRType} */(a.fields?.[i]), /** @type {IRType} */(b.fields?.[i]))) return false;
             }
             return true;
         }
         case IRTypeKind.Enum: {
             if (a.name !== b.name) return false;
-            if (a.variants.length !== b.variants.length) return false;
-            for (let i = 0; i < a.variants.length; i++) {
-                if (a.variants[i].length !== b.variants[i].length) return false;
-                for (let j = 0; j < a.variants[i].length; j++) {
-                    if (!irTypeEquals(a.variants[i][j], b.variants[i][j]))
+            if ((a.variants?.length ?? 0) !== (b.variants?.length ?? 0)) return false;
+            for (let i = 0; i < (a.variants?.length ?? 0); i++) {
+                const av = /** @type {IRType[]} */ (a.variants?.[i] ?? []);
+                const bv = /** @type {IRType[]} */ (b.variants?.[i] ?? []);
+                if (av.length !== bv.length) return false;
+                for (let j = 0; j < av.length; j++) {
+                    if (!irTypeEquals(av[j], bv[j]))
                         return false;
                 }
             }
             return true;
         }
         case IRTypeKind.Array:
-            return a.length === b.length && irTypeEquals(a.element, b.element);
+            return a.length === b.length && irTypeEquals(/** @type {IRType} */(a.element), /** @type {IRType} */(b.element));
         case IRTypeKind.Fn: {
-            if (a.params.length !== b.params.length) return false;
-            for (let i = 0; i < a.params.length; i++) {
-                if (!irTypeEquals(a.params[i], b.params[i])) return false;
+            if ((a.params?.length ?? 0) !== (b.params?.length ?? 0)) return false;
+            for (let i = 0; i < (a.params?.length ?? 0); i++) {
+                if (!irTypeEquals(/** @type {IRType} */(a.params?.[i]), /** @type {IRType} */(b.params?.[i]))) return false;
             }
-            return irTypeEquals(a.returnType, b.returnType);
+            return irTypeEquals(/** @type {IRType} */(a.returnType), /** @type {IRType} */(b.returnType));
         }
         default:
             return false;
     }
 }
 
+/**
+ * @param {IRType} type
+ * @returns {string}
+ */
 function irTypeToString(type) {
     switch (type.kind) {
         case IRTypeKind.Int:
-            return intWidthToString(type.width);
+            return intWidthToString(/** @type {IntWidthValue} */(type.width));
         case IRTypeKind.Float:
-            return floatWidthToString(type.width);
+            return floatWidthToString(/** @type {FloatWidthValue} */(type.width));
         case IRTypeKind.Bool:
             return "bool";
         case IRTypeKind.Ptr:
@@ -230,20 +347,24 @@ function irTypeToString(type) {
         case IRTypeKind.Unit:
             return "()";
         case IRTypeKind.Struct:
-            return type.name;
+            return type.name ?? "<struct>";
         case IRTypeKind.Enum:
-            return type.name;
+            return type.name ?? "<enum>";
         case IRTypeKind.Array:
-            return `[${irTypeToString(type.element)}; ${type.length}]`;
+            return `[${irTypeToString(/** @type {IRType} */(type.element))}; ${type.length}]`;
         case IRTypeKind.Fn: {
-            const params = type.params.map(irTypeToString).join(", ");
-            return `fn(${params}) -> ${irTypeToString(type.returnType)}`;
+            const params = (type.params ?? []).map(irTypeToString).join(", ");
+            return `fn(${params}) -> ${irTypeToString(/** @type {IRType} */(type.returnType))}`;
         }
         default:
             return "<unknown>";
     }
 }
 
+/**
+ * @param {IntWidthValue} width
+ * @returns {string}
+ */
 function intWidthToString(width) {
     switch (width) {
         case IntWidth.I8:
@@ -275,6 +396,10 @@ function intWidthToString(width) {
     }
 }
 
+/**
+ * @param {FloatWidthValue} width
+ * @returns {string}
+ */
 function floatWidthToString(width) {
     switch (width) {
         case FloatWidth.F32:
@@ -286,46 +411,92 @@ function floatWidthToString(width) {
     }
 }
 
+/**
+ * @param {IRType} type
+ * @returns {boolean}
+ */
 function isIRIntType(type) {
     return type.kind === IRTypeKind.Int;
 }
 
+/**
+ * @param {IRType} type
+ * @returns {boolean}
+ */
 function isIRFloatType(type) {
     return type.kind === IRTypeKind.Float;
 }
 
+/**
+ * @param {IRType} type
+ * @returns {boolean}
+ */
 function isIRBoolType(type) {
     return type.kind === IRTypeKind.Bool;
 }
 
+/**
+ * @param {IRType} type
+ * @returns {boolean}
+ */
 function isIRPtrType(type) {
     return type.kind === IRTypeKind.Ptr;
 }
 
+/**
+ * @param {IRType} type
+ * @returns {boolean}
+ */
 function isIRUnitType(type) {
     return type.kind === IRTypeKind.Unit;
 }
 
+/**
+ * @param {IRType} type
+ * @returns {boolean}
+ */
 function isIRStructType(type) {
     return type.kind === IRTypeKind.Struct;
 }
 
+/**
+ * @param {IRType} type
+ * @returns {boolean}
+ */
 function isIREnumType(type) {
     return type.kind === IRTypeKind.Enum;
 }
 
+/**
+ * @param {IRType} type
+ * @returns {boolean}
+ */
 function isIRArrayType(type) {
     return type.kind === IRTypeKind.Array;
 }
 
+/**
+ * @param {IRType} type
+ * @returns {boolean}
+ */
 function isIRFnType(type) {
     return type.kind === IRTypeKind.Fn;
 }
 
+/**
+ * @param {string} name
+ * @param {IRType} ty
+ * @param {any} [init]
+ * @returns {{ name: string, ty: IRType, init?: any }}
+ */
 function makeIRGlobal(name, ty, init) {
     return { name, ty, init };
 }
 
+/**
+ * @param {string} name
+ * @returns {IRModule}
+ */
 function makeIRModule(name) {
     return {
         name,
@@ -355,22 +526,47 @@ function internIRStringLiteral(module, value) {
     return id;
 }
 
+/**
+ * @param {IRModule} module
+ * @param {IRFunction} fn
+ */
 function addIRFunction(module, fn) {
     module.functions.push(fn);
 }
 
+/**
+ * @param {IRModule} module
+ * @param {{ name: string, ty: IRType, init?: any }} global
+ */
 function addIRGlobal(module, global) {
     module.globals.push(global);
 }
 
+/**
+ * @param {IRModule} module
+ * @param {string} name
+ * @param {any} struct
+ */
 function addIRStruct(module, name, struct) {
     module.structs.set(name, struct);
 }
 
+/**
+ * @param {IRModule} module
+ * @param {string} name
+ * @param {any} enum_
+ */
 function addIREnum(module, name, enum_) {
     module.enums.set(name, enum_);
 }
 
+/**
+ * @param {FunctionId} id
+ * @param {string} name
+ * @param {Array<{ id: ValueId, name: string | null, ty: IRType }>} params
+ * @param {IRType} returnType
+ * @returns {IRFunction}
+ */
 function makeIRFunction(id, name, params, returnType) {
     return {
         id,
@@ -383,10 +579,20 @@ function makeIRFunction(id, name, params, returnType) {
     };
 }
 
+/**
+ * @param {ValueId} id
+ * @param {string | null} name
+ * @param {IRType} ty
+ * @returns {{ id: ValueId, name: string | null, ty: IRType }}
+ */
 function makeIRParam(id, name, ty) {
     return { id, name, ty };
 }
 
+/**
+ * @param {IRFunction} fn
+ * @param {IRBlock} block
+ */
 function addIRBlock(fn, block) {
     fn.blocks.push(block);
     if (fn.entry === null) {
@@ -394,10 +600,18 @@ function addIRBlock(fn, block) {
     }
 }
 
+/**
+ * @param {IRFunction} fn
+ * @param {IRLocal} local
+ */
 function addIRLocal(fn, local) {
     fn.locals.push(local);
 }
 
+/**
+ * @param {BlockId} id
+ * @returns {IRBlock}
+ */
 function makeIRBlock(id) {
     return {
         id,
@@ -409,30 +623,57 @@ function makeIRBlock(id) {
     };
 }
 
+/**
+ * @param {IRBlock} block
+ * @param {ValueId} id
+ * @param {IRType} ty
+ */
 function addIRBlockParam(block, id, ty) {
     block.params.push({ id, ty });
 }
 
+/**
+ * @param {IRBlock} block
+ * @param {IRInst} inst
+ */
 function addIRInstruction(block, inst) {
     block.instructions.push(inst);
 }
 
+/**
+ * @param {IRBlock} block
+ * @param {IRTerm} term
+ */
 function setIRTerminator(block, term) {
     block.terminator = term;
 }
 
+/**
+ * @param {IRBlock} block
+ * @param {BlockId} pred
+ */
 function addPredecessor(block, pred) {
     if (!block.predecessors.includes(pred)) {
         block.predecessors.push(pred);
     }
 }
 
+/**
+ * @param {IRBlock} block
+ * @param {BlockId} succ
+ */
 function addSuccessor(block, succ) {
     if (!block.successors.includes(succ)) {
         block.successors.push(succ);
     }
 }
 
+/**
+ * @param {LocalId} id
+ * @param {IRType} ty
+ * @param {string | null} [name]
+ * @returns {IRLocal}
+ */
 function makeIRLocal(id, ty, name) {
     return { id, ty, name: name ?? null };
 }

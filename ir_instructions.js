@@ -1,17 +1,30 @@
-// @ts-nocheck
 /** @typedef {import('./ir.js').ValueId} ValueId */
-/** @typedef {import('./ir.js').BlockId} BlockId */
 /** @typedef {import('./ir.js').LocalId} LocalId */
 /** @typedef {import('./ir.js').IRType} IRType */
+/** @typedef {import('./ir.js').IRInst} IRInst */
 /** @typedef {import('./ir.js').IcmpOpValue} IcmpOpValue */
 /** @typedef {import('./ir.js').FcmpOpValue} FcmpOpValue */
+/** @typedef {import('./ir.js').IRInstKindValue} IRInstKindValue */
+/** @typedef {import('./ir.js').IntWidthValue} IntWidthValue */
+/** @typedef {import('./ir.js').FloatWidthValue} FloatWidthValue */
 
 import { IRInstKind, freshValueId } from "./ir.js";
 
+/**
+ * @param {IRInstKindValue} kind
+ * @param {ValueId | null} id
+ * @param {IRType} ty
+ * @returns {IRInst}
+ */
 function makeIRInst(kind, id, ty) {
     return { kind, id, ty };
 }
 
+/**
+ * @param {number} value
+ * @param {IntWidthValue} width
+ * @returns {IRInst}
+ */
 function makeIconst(value, width) {
     const id = freshValueId();
     return {
@@ -22,6 +35,11 @@ function makeIconst(value, width) {
     };
 }
 
+/**
+ * @param {number} value
+ * @param {FloatWidthValue} width
+ * @returns {IRInst}
+ */
 function makeFconst(value, width) {
     const id = freshValueId();
     return {
@@ -32,6 +50,10 @@ function makeFconst(value, width) {
     };
 }
 
+/**
+ * @param {boolean} value
+ * @returns {IRInst}
+ */
 function makeBconst(value) {
     const id = freshValueId();
     return {
@@ -42,6 +64,10 @@ function makeBconst(value) {
     };
 }
 
+/**
+ * @param {IRType} ty
+ * @returns {IRInst}
+ */
 function makeNull(ty) {
     const id = freshValueId();
     return {
@@ -51,6 +77,12 @@ function makeNull(ty) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {IntWidthValue} width
+ * @returns {IRInst}
+ */
 function makeIadd(a, b, width) {
     const id = freshValueId();
     return {
@@ -62,6 +94,12 @@ function makeIadd(a, b, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {IntWidthValue} width
+ * @returns {IRInst}
+ */
 function makeIsub(a, b, width) {
     const id = freshValueId();
     return {
@@ -73,6 +111,12 @@ function makeIsub(a, b, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {IntWidthValue} width
+ * @returns {IRInst}
+ */
 function makeImul(a, b, width) {
     const id = freshValueId();
     return {
@@ -84,6 +128,12 @@ function makeImul(a, b, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {IntWidthValue} width
+ * @returns {IRInst}
+ */
 function makeIdiv(a, b, width) {
     const id = freshValueId();
     return {
@@ -95,6 +145,12 @@ function makeIdiv(a, b, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {IntWidthValue} width
+ * @returns {IRInst}
+ */
 function makeImod(a, b, width) {
     const id = freshValueId();
     return {
@@ -106,6 +162,12 @@ function makeImod(a, b, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {FloatWidthValue} width
+ * @returns {IRInst}
+ */
 function makeFadd(a, b, width) {
     const id = freshValueId();
     return {
@@ -117,6 +179,12 @@ function makeFadd(a, b, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {FloatWidthValue} width
+ * @returns {IRInst}
+ */
 function makeFsub(a, b, width) {
     const id = freshValueId();
     return {
@@ -128,6 +196,12 @@ function makeFsub(a, b, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {FloatWidthValue} width
+ * @returns {IRInst}
+ */
 function makeFmul(a, b, width) {
     const id = freshValueId();
     return {
@@ -139,6 +213,12 @@ function makeFmul(a, b, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {FloatWidthValue} width
+ * @returns {IRInst}
+ */
 function makeFdiv(a, b, width) {
     const id = freshValueId();
     return {
@@ -150,6 +230,11 @@ function makeFdiv(a, b, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {IntWidthValue} width
+ * @returns {IRInst}
+ */
 function makeIneg(a, width) {
     const id = freshValueId();
     return {
@@ -160,6 +245,11 @@ function makeIneg(a, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {FloatWidthValue} width
+ * @returns {IRInst}
+ */
 function makeFneg(a, width) {
     const id = freshValueId();
     return {
@@ -170,6 +260,12 @@ function makeFneg(a, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {IntWidthValue} width
+ * @returns {IRInst}
+ */
 function makeIand(a, b, width) {
     const id = freshValueId();
     return {
@@ -181,6 +277,12 @@ function makeIand(a, b, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {IntWidthValue} width
+ * @returns {IRInst}
+ */
 function makeIor(a, b, width) {
     const id = freshValueId();
     return {
@@ -192,6 +294,12 @@ function makeIor(a, b, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {IntWidthValue} width
+ * @returns {IRInst}
+ */
 function makeIxor(a, b, width) {
     const id = freshValueId();
     return {
@@ -203,6 +311,12 @@ function makeIxor(a, b, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {IntWidthValue} width
+ * @returns {IRInst}
+ */
 function makeIshl(a, b, width) {
     const id = freshValueId();
     return {
@@ -214,6 +328,12 @@ function makeIshl(a, b, width) {
     };
 }
 
+/**
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @param {IntWidthValue} width
+ * @returns {IRInst}
+ */
 function makeIshr(a, b, width) {
     const id = freshValueId();
     return {
@@ -225,6 +345,12 @@ function makeIshr(a, b, width) {
     };
 }
 
+/**
+ * @param {IcmpOpValue} op
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @returns {IRInst}
+ */
 function makeIcmp(op, a, b) {
     const id = freshValueId();
     return {
@@ -237,6 +363,12 @@ function makeIcmp(op, a, b) {
     };
 }
 
+/**
+ * @param {FcmpOpValue} op
+ * @param {ValueId} a
+ * @param {ValueId} b
+ * @returns {IRInst}
+ */
 function makeFcmp(op, a, b) {
     const id = freshValueId();
     return {
@@ -249,6 +381,11 @@ function makeFcmp(op, a, b) {
     };
 }
 
+/**
+ * @param {IRType} ty
+ * @param {LocalId | null} localId
+ * @returns {IRInst}
+ */
 function makeAlloca(ty, localId) {
     const id = freshValueId();
     return {
@@ -259,6 +396,11 @@ function makeAlloca(ty, localId) {
     };
 }
 
+/**
+ * @param {ValueId} ptr
+ * @param {IRType} ty
+ * @returns {IRInst}
+ */
 function makeLoad(ptr, ty) {
     const id = freshValueId();
     return {
@@ -269,6 +411,12 @@ function makeLoad(ptr, ty) {
     };
 }
 
+/**
+ * @param {ValueId} ptr
+ * @param {ValueId} value
+ * @param {IRType} ty
+ * @returns {IRInst}
+ */
 function makeStore(ptr, value, ty) {
     return {
         kind: IRInstKind.Store,
@@ -280,6 +428,12 @@ function makeStore(ptr, value, ty) {
     };
 }
 
+/**
+ * @param {ValueId} dest
+ * @param {ValueId} src
+ * @param {ValueId} size
+ * @returns {IRInst}
+ */
 function makeMemcpy(dest, src, size) {
     return {
         kind: IRInstKind.Memcpy,
@@ -291,6 +445,12 @@ function makeMemcpy(dest, src, size) {
     };
 }
 
+/**
+ * @param {ValueId} ptr
+ * @param {ValueId[]} indices
+ * @param {IRType} resultTy
+ * @returns {IRInst}
+ */
 function makeGep(ptr, indices, resultTy) {
     const id = freshValueId();
     return {
@@ -302,6 +462,11 @@ function makeGep(ptr, indices, resultTy) {
     };
 }
 
+/**
+ * @param {ValueId} ptr
+ * @param {ValueId} offset
+ * @returns {IRInst}
+ */
 function makePtradd(ptr, offset) {
     const id = freshValueId();
     return {
@@ -313,6 +478,12 @@ function makePtradd(ptr, offset) {
     };
 }
 
+/**
+ * @param {ValueId} val
+ * @param {IRType} fromTy
+ * @param {IRType} toTy
+ * @returns {IRInst}
+ */
 function makeTrunc(val, fromTy, toTy) {
     const id = freshValueId();
     return {
@@ -324,6 +495,12 @@ function makeTrunc(val, fromTy, toTy) {
     };
 }
 
+/**
+ * @param {ValueId} val
+ * @param {IRType} fromTy
+ * @param {IRType} toTy
+ * @returns {IRInst}
+ */
 function makeSext(val, fromTy, toTy) {
     const id = freshValueId();
     return {
@@ -335,6 +512,12 @@ function makeSext(val, fromTy, toTy) {
     };
 }
 
+/**
+ * @param {ValueId} val
+ * @param {IRType} fromTy
+ * @param {IRType} toTy
+ * @returns {IRInst}
+ */
 function makeZext(val, fromTy, toTy) {
     const id = freshValueId();
     return {
@@ -346,6 +529,11 @@ function makeZext(val, fromTy, toTy) {
     };
 }
 
+/**
+ * @param {ValueId} val
+ * @param {IRType} toTy
+ * @returns {IRInst}
+ */
 function makeFptoui(val, toTy) {
     const id = freshValueId();
     return {
@@ -356,6 +544,11 @@ function makeFptoui(val, toTy) {
     };
 }
 
+/**
+ * @param {ValueId} val
+ * @param {IRType} toTy
+ * @returns {IRInst}
+ */
 function makeFptosi(val, toTy) {
     const id = freshValueId();
     return {
@@ -366,6 +559,11 @@ function makeFptosi(val, toTy) {
     };
 }
 
+/**
+ * @param {ValueId} val
+ * @param {IRType} toTy
+ * @returns {IRInst}
+ */
 function makeUitofp(val, toTy) {
     const id = freshValueId();
     return {
@@ -376,6 +574,11 @@ function makeUitofp(val, toTy) {
     };
 }
 
+/**
+ * @param {ValueId} val
+ * @param {IRType} toTy
+ * @returns {IRInst}
+ */
 function makeSitofp(val, toTy) {
     const id = freshValueId();
     return {
@@ -386,6 +589,11 @@ function makeSitofp(val, toTy) {
     };
 }
 
+/**
+ * @param {ValueId} val
+ * @param {IRType} toTy
+ * @returns {IRInst}
+ */
 function makeBitcast(val, toTy) {
     const id = freshValueId();
     return {
@@ -396,6 +604,12 @@ function makeBitcast(val, toTy) {
     };
 }
 
+/**
+ * @param {ValueId} fn
+ * @param {ValueId[]} args
+ * @param {IRType | null} returnType
+ * @returns {IRInst}
+ */
 function makeCall(fn, args, returnType) {
     const id = returnType ? freshValueId() : null;
     return {
@@ -407,6 +621,11 @@ function makeCall(fn, args, returnType) {
     };
 }
 
+/**
+ * @param {ValueId[]} fields
+ * @param {IRType} ty
+ * @returns {IRInst}
+ */
 function makeStructCreate(fields, ty) {
     const id = freshValueId();
     return {
@@ -417,6 +636,12 @@ function makeStructCreate(fields, ty) {
     };
 }
 
+/**
+ * @param {ValueId} struct
+ * @param {number} fieldIndex
+ * @param {IRType} fieldTy
+ * @returns {IRInst}
+ */
 function makeStructGet(struct, fieldIndex, fieldTy) {
     const id = freshValueId();
     return {
@@ -428,6 +653,12 @@ function makeStructGet(struct, fieldIndex, fieldTy) {
     };
 }
 
+/**
+ * @param {number} variant
+ * @param {ValueId | null} data
+ * @param {IRType} ty
+ * @returns {IRInst}
+ */
 function makeEnumCreate(variant, data, ty) {
     const id = freshValueId();
     return {
@@ -439,6 +670,10 @@ function makeEnumCreate(variant, data, ty) {
     };
 }
 
+/**
+ * @param {ValueId} enum_
+ * @returns {IRInst}
+ */
 function makeEnumGetTag(enum_) {
     const id = freshValueId();
     return {
@@ -449,6 +684,13 @@ function makeEnumGetTag(enum_) {
     };
 }
 
+/**
+ * @param {ValueId} enum_
+ * @param {number} variant
+ * @param {number} index
+ * @param {IRType} dataTy
+ * @returns {IRInst}
+ */
 function makeEnumGetData(enum_, variant, index, dataTy) {
     const id = freshValueId();
     return {
@@ -461,6 +703,10 @@ function makeEnumGetData(enum_, variant, index, dataTy) {
     };
 }
 
+/**
+ * @param {number} literalId
+ * @returns {IRInst}
+ */
 function makeSconst(literalId) {
     const id = freshValueId();
     return {
@@ -471,6 +717,10 @@ function makeSconst(literalId) {
     };
 }
 
+/**
+ * @param {any} node
+ * @returns {boolean}
+ */
 function isIRInst(node) {
     return (
         node &&

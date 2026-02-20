@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** @typedef {number} ValueId */
 /** @typedef {number} BlockId */
 /** @typedef {import('./ir.js').IRType} IRType */
@@ -7,7 +6,6 @@
 
 import {
     freshValueId,
-    freshBlockId,
     makeIRBlock,
     addIRBlock,
     addIRBlockParam,
@@ -16,6 +14,7 @@ import {
     addPredecessor,
     addSuccessor,
     makeIRLocal,
+    addIRLocal,
 } from "./ir.js";
 import {
     makeIconst,
@@ -251,7 +250,7 @@ export class IRBuilder {
         // Find the defining block that dominates this block
         // Simplified: look for definition in current block first, then predecessors
         if (defs.has(blockId)) {
-            return defs.get(blockId);
+            return /** @type {import('./ir.js').ValueId} */ (defs.get(blockId));
         }
 
         // Need to create phi node (simplified)
@@ -270,13 +269,23 @@ export class IRBuilder {
         } else {
             existing.push(phiValueId);
         }
-        return phiValueId;
+        return /** @type {import('./ir.js').ValueId} */ (phiValueId);
     }
 
+    /**
+     * @param {string} name
+     * @param {import('./ir.js').BlockId} blockId
+     * @param {import('./ir.js').ValueId} value
+     */
     writeVar(name, blockId, value) {
         this.defineVar(name, value, blockId);
     }
 
+    /**
+     * @param {string} name
+     * @param {import('./ir.js').BlockId | null} [blockId]
+     * @returns {import('./ir.js').ValueId}
+     */
     readVar(name, blockId = null) {
         return this.useVar(name, blockId);
     }
@@ -285,27 +294,45 @@ export class IRBuilder {
     // Constant Instructions
     // ============================================================================
 
+    /**
+     * @param {number} value
+     * @param {import('./ir.js').IntWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     iconst(value, width) {
         const inst = makeIconst(value, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {number} value
+     * @param {import('./ir.js').FloatWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     fconst(value, width) {
         const inst = makeFconst(value, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {boolean} value
+     * @returns {import('./ir.js').IRInst}
+     */
     bconst(value) {
         const inst = makeBconst(value);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').IRType} ty
+     * @returns {import('./ir.js').IRInst}
+     */
     null(ty) {
         const inst = makeNull(ty);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
@@ -313,69 +340,133 @@ export class IRBuilder {
     // Arithmetic Instructions
     // ============================================================================
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').IntWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     iadd(a, b, width) {
         const inst = makeIadd(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').IntWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     isub(a, b, width) {
         const inst = makeIsub(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').IntWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     imul(a, b, width) {
         const inst = makeImul(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').IntWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     idiv(a, b, width) {
         const inst = makeIdiv(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').IntWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     imod(a, b, width) {
         const inst = makeImod(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').FloatWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     fadd(a, b, width) {
         const inst = makeFadd(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').FloatWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     fsub(a, b, width) {
         const inst = makeFsub(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').FloatWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     fmul(a, b, width) {
         const inst = makeFmul(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').FloatWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     fdiv(a, b, width) {
         const inst = makeFdiv(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').IntWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     ineg(a, width) {
         const inst = makeIneg(a, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').FloatWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     fneg(a, width) {
         const inst = makeFneg(a, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
@@ -383,33 +474,63 @@ export class IRBuilder {
     // Bitwise Instructions
     // ============================================================================
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').IntWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     iand(a, b, width) {
         const inst = makeIand(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').IntWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     ior(a, b, width) {
         const inst = makeIor(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').IntWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     ixor(a, b, width) {
         const inst = makeIxor(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').IntWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     ishl(a, b, width) {
         const inst = makeIshl(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @param {import('./ir.js').IntWidthValue} width
+     * @returns {import('./ir.js').IRInst}
+     */
     ishr(a, b, width) {
         const inst = makeIshr(a, b, width);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
@@ -417,15 +538,27 @@ export class IRBuilder {
     // Comparison Instructions
     // ============================================================================
 
+    /**
+     * @param {import('./ir.js').IcmpOpValue} op
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @returns {import('./ir.js').IRInst}
+     */
     icmp(op, a, b) {
         const inst = makeIcmp(op, a, b);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').FcmpOpValue} op
+     * @param {import('./ir.js').ValueId} a
+     * @param {import('./ir.js').ValueId} b
+     * @returns {import('./ir.js').IRInst}
+     */
     fcmp(op, a, b) {
         const inst = makeFcmp(op, a, b);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
@@ -433,27 +566,49 @@ export class IRBuilder {
     // Memory Instructions
     // ============================================================================
 
+    /**
+     * @param {import('./ir.js').IRType} ty
+     * @param {import('./ir.js').LocalId | null} [localId]
+     * @returns {import('./ir.js').IRInst}
+     */
     alloca(ty, localId = null) {
         const inst = makeAlloca(ty, localId);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} ptr
+     * @param {import('./ir.js').IRType} ty
+     * @returns {import('./ir.js').IRInst}
+     */
     load(ptr, ty) {
         const inst = makeLoad(ptr, ty);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} ptr
+     * @param {import('./ir.js').ValueId} value
+     * @param {import('./ir.js').IRType} ty
+     * @returns {import('./ir.js').IRInst}
+     */
     store(ptr, value, ty) {
         const inst = makeStore(ptr, value, ty);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} dest
+     * @param {import('./ir.js').ValueId} src
+     * @param {import('./ir.js').ValueId} size
+     * @returns {import('./ir.js').IRInst}
+     */
     memcpy(dest, src, size) {
         const inst = makeMemcpy(dest, src, size);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
@@ -461,15 +616,26 @@ export class IRBuilder {
     // Address Instructions
     // ============================================================================
 
+    /**
+     * @param {import('./ir.js').ValueId} ptr
+     * @param {import('./ir.js').ValueId[]} indices
+     * @param {import('./ir.js').IRType} resultTy
+     * @returns {import('./ir.js').IRInst}
+     */
     gep(ptr, indices, resultTy) {
         const inst = makeGep(ptr, indices, resultTy);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} ptr
+     * @param {import('./ir.js').ValueId} offset
+     * @returns {import('./ir.js').IRInst}
+     */
     ptradd(ptr, offset) {
         const inst = makePtradd(ptr, offset);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
@@ -477,51 +643,94 @@ export class IRBuilder {
     // Conversion Instructions
     // ============================================================================
 
+    /**
+     * @param {import('./ir.js').ValueId} val
+     * @param {import('./ir.js').IRType} fromType
+     * @param {import('./ir.js').IRType} toType
+     * @returns {import('./ir.js').IRInst}
+     */
     trunc(val, fromType, toType) {
         const inst = makeTrunc(val, fromType, toType);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} val
+     * @param {import('./ir.js').IRType} fromType
+     * @param {import('./ir.js').IRType} toType
+     * @returns {import('./ir.js').IRInst}
+     */
     sext(val, fromType, toType) {
         const inst = makeSext(val, fromType, toType);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} val
+     * @param {import('./ir.js').IRType} fromType
+     * @param {import('./ir.js').IRType} toType
+     * @returns {import('./ir.js').IRInst}
+     */
     zext(val, fromType, toType) {
         const inst = makeZext(val, fromType, toType);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} val
+     * @param {import('./ir.js').IRType} toType
+     * @returns {import('./ir.js').IRInst}
+     */
     fptoui(val, toType) {
         const inst = makeFptoui(val, toType);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} val
+     * @param {import('./ir.js').IRType} toType
+     * @returns {import('./ir.js').IRInst}
+     */
     fptosi(val, toType) {
         const inst = makeFptosi(val, toType);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} val
+     * @param {import('./ir.js').IRType} toType
+     * @returns {import('./ir.js').IRInst}
+     */
     uitofp(val, toType) {
         const inst = makeUitofp(val, toType);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} val
+     * @param {import('./ir.js').IRType} toType
+     * @returns {import('./ir.js').IRInst}
+     */
     sitofp(val, toType) {
         const inst = makeSitofp(val, toType);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} val
+     * @param {import('./ir.js').IRType} toType
+     * @returns {import('./ir.js').IRInst}
+     */
     bitcast(val, toType) {
         const inst = makeBitcast(val, toType);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
@@ -529,9 +738,15 @@ export class IRBuilder {
     // Call Instruction
     // ============================================================================
 
+    /**
+     * @param {import('./ir.js').ValueId} fn
+     * @param {import('./ir.js').ValueId[]} args
+     * @param {import('./ir.js').IRType | null} [returnType]
+     * @returns {import('./ir.js').IRInst}
+     */
     call(fn, args, returnType = null) {
         const inst = makeCall(fn, args, returnType);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
@@ -539,39 +754,71 @@ export class IRBuilder {
     // Struct/Enum Instructions
     // ============================================================================
 
+    /**
+     * @param {import('./ir.js').ValueId[]} fields
+     * @param {import('./ir.js').IRType} ty
+     * @returns {import('./ir.js').IRInst}
+     */
     structCreate(fields, ty) {
         const inst = makeStructCreate(fields, ty);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} struct
+     * @param {number} fieldIndex
+     * @param {import('./ir.js').IRType} fieldTy
+     * @returns {import('./ir.js').IRInst}
+     */
     structGet(struct, fieldIndex, fieldTy) {
         const inst = makeStructGet(struct, fieldIndex, fieldTy);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {number} variant
+     * @param {import('./ir.js').ValueId | null} data
+     * @param {import('./ir.js').IRType} ty
+     * @returns {import('./ir.js').IRInst}
+     */
     enumCreate(variant, data, ty) {
         const inst = makeEnumCreate(variant, data, ty);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} enum_
+     * @returns {import('./ir.js').IRInst}
+     */
     enumGetTag(enum_) {
         const inst = makeEnumGetTag(enum_);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} enum_
+     * @param {number} variant
+     * @param {number} index
+     * @param {import('./ir.js').IRType} dataTy
+     * @returns {import('./ir.js').IRInst}
+     */
     enumGetData(enum_, variant, index, dataTy) {
         const inst = makeEnumGetData(enum_, variant, index, dataTy);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
+    /**
+     * @param {number} literalId
+     * @returns {import('./ir.js').IRInst}
+     */
     sconst(literalId) {
         const inst = makeSconst(literalId);
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }
 
@@ -579,44 +826,68 @@ export class IRBuilder {
     // Terminators
     // ============================================================================
 
+    /**
+     * @param {import('./ir.js').ValueId | null} [value]
+     */
     ret(value = null) {
-        const term = makeRet(value);
-        setIRTerminator(this.currentBlock, term);
+        const term = makeRet(value ?? null);
+        setIRTerminator(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), term);
     }
 
+    /**
+     * @param {import('./ir.js').BlockId} target
+     * @param {import('./ir.js').ValueId[]} [args]
+     */
     br(target, args = []) {
         const term = makeBr(target, args);
-        setIRTerminator(this.currentBlock, term);
-        addSuccessor(this.currentBlock, target);
+        setIRTerminator(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), term);
+        addSuccessor(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), target);
     }
 
-    brIf(cond, thenBlock, thenArgs = [], elseBlock, elseArgs = []) {
+    /**
+     * @param {import('./ir.js').ValueId} cond
+     * @param {import('./ir.js').BlockId} thenBlock
+     * @param {import('./ir.js').ValueId[] | undefined} thenArgs
+     * @param {import('./ir.js').BlockId} elseBlock
+     * @param {import('./ir.js').ValueId[] | undefined} [elseArgs]
+     */
+    brIf(cond, thenBlock, thenArgs, elseBlock, elseArgs = []) {
         const term = makeBrIf(cond, thenBlock, thenArgs, elseBlock, elseArgs);
-        setIRTerminator(this.currentBlock, term);
-        addSuccessor(this.currentBlock, thenBlock);
-        addSuccessor(this.currentBlock, elseBlock);
+        setIRTerminator(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), term);
+        addSuccessor(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), thenBlock);
+        addSuccessor(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), elseBlock);
     }
 
+    /**
+     * @param {import('./ir.js').ValueId} value
+     * @param {Array<{ value: any, target: import('./ir.js').BlockId, args: import('./ir.js').ValueId[] }>} cases
+     * @param {import('./ir.js').BlockId} defaultBlock
+     * @param {import('./ir.js').ValueId[]} [defaultArgs]
+     */
     switch(value, cases, defaultBlock, defaultArgs = []) {
         const term = makeSwitch(value, cases, defaultBlock, defaultArgs);
-        setIRTerminator(this.currentBlock, term);
+        setIRTerminator(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), term);
         for (const c of cases) {
-            addSuccessor(this.currentBlock, c.target);
+            addSuccessor(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), c.target);
         }
-        addSuccessor(this.currentBlock, defaultBlock);
+        addSuccessor(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), defaultBlock);
     }
 
     unreachable() {
         const term = makeUnreachable();
-        setIRTerminator(this.currentBlock, term);
+        setIRTerminator(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), term);
     }
 
     // ============================================================================
     // Instruction Adding
     // ============================================================================
 
+    /**
+     * @param {import('./ir.js').IRInst} inst
+     * @returns {import('./ir.js').ValueId | null}
+     */
     add(inst) {
-        addIRInstruction(this.currentBlock, inst);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst.id;
     }
 
@@ -624,7 +895,13 @@ export class IRBuilder {
     // Finalization
     // ============================================================================
 
+    /**
+     * @returns {import('./ir.js').IRFunction}
+     */
     build() {
+        if (!this.currentFunction) {
+            throw new Error("No current function");
+        }
         // Verify all blocks terminated
         for (const block of this.currentFunction.blocks) {
             if (!block.terminator) {

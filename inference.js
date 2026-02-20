@@ -1,5 +1,6 @@
-// @ts-nocheck
 /** @typedef {import("./types.js").Type} Type */
+/** @typedef {import("./types.js").FnType} FnType */
+/** @typedef {import("./types.js").TypeVarType} TypeVarType */
 /** @typedef {import("./types.js").Span} Span */
 /** @typedef {import("./ast.js").Node} Node */
 /** @typedef {import("./type_context.js").TypeContext} TypeContextModel */
@@ -69,12 +70,9 @@ function makeTypeError(message, span, notes) {
     return { message, span, notes };
 }
 
-/**
- * @typedef {object} InferenceResult
- * @property {boolean} ok
- * @property {Type} [type]
- * @property {TypeError[]} [errors]
- */
+/** @typedef {{ ok: true, type: Type }} InferenceSuccess */
+/** @typedef {{ ok: false, errors: TypeError[] }} InferenceError */
+/** @typedef {InferenceSuccess | InferenceError} InferenceResult */
 
 /**
  * Create a successful inference result
@@ -97,17 +95,21 @@ function err(message, span, notes) {
 }
 
 /**
+ * @typedef {{ ok: true, types: Type[] } | { ok: false, errors: TypeError[] }} CombinedResult
+ */
+
+/**
  * Combine multiple results, collecting all errors
  * @param {InferenceResult[]} results
- * @returns {{ ok: boolean, types?: Type[], errors?: TypeError[] }}
+ * @returns {CombinedResult}
  */
 function combineResults(results) {
     const errors = [];
     const types = [];
     for (const result of results) {
         if (!result.ok) {
-            errors.push(...(result.errors || []));
-        } else if (result.type !== undefined) {
+            errors.push(...result.errors);
+        } else {
             types.push(result.type);
         }
     }
@@ -121,12 +123,16 @@ function combineResults(results) {
 // Task 4.8: Unification
 // ============================================================================
 
+/** @typedef {{ ok: true }} UnifySuccess */
+/** @typedef {{ ok: false, error: TypeError }} UnifyError */
+/** @typedef {UnifySuccess | UnifyError} UnifyResult */
+
 /**
  * Unify two types, making them equal
  * @param {TypeContext} ctx
  * @param {Type} t1
  * @param {Type} t2
- * @returns {{ ok: boolean, error?: TypeError }}
+ * @returns {UnifyResult}
  */
 function unify(ctx, t1, t2) {
     // Resolve type variables first
@@ -791,7 +797,7 @@ function resolveTypeNode(ctx, typeNode) {
             let args = null;
             if (typeNode.args && typeNode.args.args) {
                 const argsResult = combineResults(
-                    typeNode.args.args.map((a) => resolveTypeNode(ctx, a)),
+                    typeNode.args.args.map((/** @type {Node} */ a) => resolveTypeNode(ctx, a)),
                 );
                 if (!argsResult.ok) {
                     return { ok: false, errors: argsResult.errors };
@@ -803,7 +809,7 @@ function resolveTypeNode(ctx, typeNode) {
 
         case NodeKind.TupleType: {
             const elementsResult = combineResults(
-                (typeNode.elements || []).map((e) => resolveTypeNode(ctx, e)),
+                (typeNode.elements || []).map((/** @type {Node} */ e) => resolveTypeNode(ctx, e)),
             );
             if (!elementsResult.ok) {
                 return { ok: false, errors: elementsResult.errors };
@@ -838,7 +844,7 @@ function resolveTypeNode(ctx, typeNode) {
 
         case NodeKind.FnType: {
             const paramsResult = combineResults(
-                (typeNode.params || []).map((p) => resolveTypeNode(ctx, p)),
+                (typeNode.params || []).map((/** @type {Node} */ p) => resolveTypeNode(ctx, p)),
             );
             if (!paramsResult.ok) {
                 return { ok: false, errors: paramsResult.errors };
@@ -925,7 +931,7 @@ function resolveBuiltinType(name) {
  * Check all items in a module
  * @param {TypeContext} ctx
  * @param {Node} module
- * @returns {{ ok: boolean, errors?: TypeError[] }}
+ * @returns {CheckResult}
  */
 function checkModuleItems(ctx, module) {
     const errors = [];
@@ -943,11 +949,13 @@ function checkModuleItems(ctx, module) {
     return { ok: true };
 }
 
+/** @typedef {{ ok: true } | { ok: false, errors: TypeError[] }} CheckResult */
+
 /**
  * Check a single item
  * @param {TypeContext} ctx
  * @param {Node} item
- * @returns {{ ok: boolean, errors?: TypeError[] }}
+ * @returns {CheckResult}
  */
 function checkItem(ctx, item) {
     switch (item.kind) {
@@ -959,8 +967,11 @@ function checkItem(ctx, item) {
             const targetType = makeStructType(targetName, [], item.span);
             ctx.pushImplSelfType(targetType);
             const result = checkModuleItems(ctx, {
-                items: (item.methods || []).map((method) => ({
+                kind: NodeKind.Module,
+                span: item.span,
+                items: (item.methods || []).map((/** @type {Node} */ method) => ({
                     ...method,
+                    kind: NodeKind.FnItem,
                     name: `${targetName}::${method.name}`,
                     implTargetName: targetName,
                 })),
@@ -991,7 +1002,7 @@ function checkItem(ctx, item) {
  * Check a function item
  * @param {TypeContext} ctx
  * @param {Node} fnItem
- * @returns {{ ok: boolean, errors?: TypeError[] }}
+ * @returns {CheckResult}
  */
 function checkFnItem(ctx, fnItem) {
     const itemDecl = ctx.lookupItem(fnItem.name);
@@ -1007,7 +1018,7 @@ function checkFnItem(ctx, fnItem) {
         };
     }
 
-    const fnType = itemDecl.type;
+    const fnType = /** @type {FnType} */ (itemDecl.type);
     if (fnItem.implTargetName) {
         ctx.pushImplSelfType(makeStructType(fnItem.implTargetName, [], fnItem.span));
     }
@@ -1044,6 +1055,7 @@ function checkFnItem(ctx, fnItem) {
     }
 
     // Check function body
+    /** @type {TypeError[]} */
     let errors = [];
     if (fnItem.body) {
         const bodyResult = inferExpr(ctx, fnItem.body);
@@ -1077,7 +1089,7 @@ function checkFnItem(ctx, fnItem) {
  * @param {Type} [expectedType=null]
  * @returns {InferenceResult}
  */
-function inferExpr(ctx, expr, expectedType = null) {
+function inferExpr(ctx, expr, expectedType = undefined) {
     switch (expr.kind) {
         case NodeKind.LiteralExpr:
             return inferLiteral(ctx, expr, expectedType);
@@ -1160,7 +1172,7 @@ function inferExpr(ctx, expr, expectedType = null) {
  * @param {Type} [expectedType=null]
  * @returns {InferenceResult}
  */
-function inferLiteral(ctx, literal, expectedType = null) {
+function inferLiteral(ctx, literal, expectedType = undefined) {
     switch (literal.literalKind) {
         case LiteralKind.Int: {
             if (expectedType) {
@@ -1518,17 +1530,18 @@ function inferField(ctx, field) {
 
     // Handle struct field access
     if (accessType.kind === TypeKind.Struct) {
-        const fieldDef = accessType.fields.find((f) => f.name === fieldName);
+        const structType = /** @type {import("./types.js").StructType} */ (accessType);
+        const fieldDef = structType.fields.find((/** @type {any} */ f) => f.name === fieldName);
         if (fieldDef) {
             return ok(fieldDef.type);
         }
 
         // Some lowering paths keep struct names but omit field metadata.
         // Fall back to the declared item definition in type context.
-        const item = ctx.lookupItem(accessType.name);
+        const item = ctx.lookupItem(structType.name);
         if (item && item.kind === "struct") {
             const structField = item.node.fields?.find(
-                (f) => f.name === fieldName,
+                (/** @type {any} */ f) => f.name === fieldName,
             );
             if (structField) {
                 if (structField.ty) {
@@ -1536,12 +1549,13 @@ function inferField(ctx, field) {
                 }
                 return ok(ctx.freshTypeVar());
             }
-            const method = ctx.lookupMethod(accessType.name, fieldName);
+            const method = ctx.lookupMethod(structType.name, fieldName);
             if (method && method.type?.kind === TypeKind.Fn) {
+                const fnType = /** @type {FnType} */ (method.type);
                 const boundType = makeFnType(
-                    method.type.params.slice(1),
-                    method.type.returnType,
-                    method.type.isUnsafe || false,
+                    fnType.params.slice(1),
+                    fnType.returnType,
+                    fnType.isUnsafe || false,
                     field.span,
                 );
                 field.resolvedMethodSymbolName = method.symbolName;
@@ -1550,32 +1564,34 @@ function inferField(ctx, field) {
         }
 
         return err(
-            `Field '${fieldName}' not found in struct ${accessType.name}`,
+            `Field '${fieldName}' not found in struct ${structType.name}`,
             field.span,
         );
     }
 
     // Handle named type (unresolved struct)
     if (accessType.kind === TypeKind.Named) {
-        const item = ctx.lookupItem(accessType.name);
+        const namedType = /** @type {import("./types.js").NamedType} */ (accessType);
+        const item = ctx.lookupItem(namedType.name);
         if (item && item.kind === "struct") {
             const structField = item.node.fields?.find(
-                (f) => f.name === fieldName,
+                (/** @type {any} */ f) => f.name === fieldName,
             );
             if (!structField) {
-                const method = ctx.lookupMethod(accessType.name, fieldName);
+                const method = ctx.lookupMethod(namedType.name, fieldName);
                 if (method && method.type?.kind === TypeKind.Fn) {
+                    const fnType = /** @type {FnType} */ (method.type);
                     const boundType = makeFnType(
-                        method.type.params.slice(1),
-                        method.type.returnType,
-                        method.type.isUnsafe || false,
+                        fnType.params.slice(1),
+                        fnType.returnType,
+                        fnType.isUnsafe || false,
                         field.span,
                     );
                     field.resolvedMethodSymbolName = method.symbolName;
                     return ok(boundType);
                 }
                 return err(
-                    `Field '${fieldName}' not found in struct ${accessType.name}`,
+                    `Field '${fieldName}' not found in struct ${namedType.name}`,
                     field.span,
                 );
             }
@@ -1588,6 +1604,7 @@ function inferField(ctx, field) {
 
     // Handle tuple field access (numeric index)
     if (accessType.kind === TypeKind.Tuple) {
+        const tupleType = /** @type {import("./types.js").TupleType} */ (accessType);
         const index =
             typeof field.field === "number"
                 ? field.field
@@ -1595,11 +1612,11 @@ function inferField(ctx, field) {
         if (
             isNaN(index) ||
             index < 0 ||
-            index >= accessType.elements.length
+            index >= tupleType.elements.length
         ) {
             return err(`Tuple index out of bounds: ${field.field}`, field.span);
         }
-        return ok(accessType.elements[index]);
+        return ok(tupleType.elements[index]);
     }
 
     // Type variable - might be a struct
@@ -1748,7 +1765,9 @@ function inferMatch(ctx, matchExpr) {
         return ok(makeUnitType(matchExpr.span));
     }
 
+    /** @type {Type | null} */
     let resultType = null;
+    /** @type {TypeError[]} */
     const errors = [];
 
     for (const arm of matchExpr.arms) {
@@ -1757,14 +1776,14 @@ function inferMatch(ctx, matchExpr) {
         // Check pattern
         const patResult = checkPattern(ctx, arm.pat, scrutineeType);
         if (!patResult.ok) {
-            errors.push(...(patResult.errors || []));
+            errors.push(...patResult.errors);
         }
 
         // Check guard
         if (arm.guard) {
             const guardResult = inferExpr(ctx, arm.guard);
             if (!guardResult.ok) {
-                errors.push(...(guardResult.errors || []));
+                errors.push(...guardResult.errors);
             } else {
                 const guardUnify = unify(ctx, guardResult.type, makeBoolType());
                 if (!guardUnify.ok) {
@@ -1776,7 +1795,7 @@ function inferMatch(ctx, matchExpr) {
         // Infer body
         const bodyResult = inferExpr(ctx, arm.body);
         if (!bodyResult.ok) {
-            errors.push(...(bodyResult.errors || []));
+            errors.push(...bodyResult.errors);
         } else if (resultType === null) {
             resultType = bodyResult.type;
         } else {
@@ -1805,15 +1824,17 @@ function inferMatch(ctx, matchExpr) {
 function inferBlock(ctx, block) {
     ctx.pushScope();
 
+    /** @type {TypeError[]} */
     const errors = [];
     let diverges = false;
+    /** @type {Type | null} */
     let neverType = null;
 
     // Check statements
     for (const stmt of block.stmts || []) {
         const result = checkStmt(ctx, stmt);
         if (!result.ok) {
-            errors.push(...(result.errors || []));
+            errors.push(...result.errors);
         } else if (result.type && result.type.kind === TypeKind.Never) {
             diverges = true;
             neverType = result.type;
@@ -1825,7 +1846,7 @@ function inferBlock(ctx, block) {
     if (block.expr) {
         const exprResult = inferExpr(ctx, block.expr);
         if (!exprResult.ok) {
-            errors.push(...(exprResult.errors || []));
+            errors.push(...exprResult.errors);
         } else {
             resultType = exprResult.type;
             if (resultType.kind === TypeKind.Never) {
@@ -1841,7 +1862,7 @@ function inferBlock(ctx, block) {
         return { ok: false, errors };
     }
 
-    return ok(diverges ? neverType : resultType);
+    return ok(diverges && neverType ? neverType : resultType);
 }
 
 /**
@@ -2058,6 +2079,7 @@ function inferPath(ctx, pathExpr) {
     // Simple identifier
     if (pathExpr.segments.length === 1) {
         return inferIdentifier(ctx, {
+            kind: NodeKind.IdentifierExpr,
             name: pathExpr.segments[0],
             resolvedItemName: pathExpr.resolvedItemName || null,
             span: pathExpr.span,
@@ -2087,7 +2109,7 @@ function inferPath(ctx, pathExpr) {
 
         // Find the variant
         const variants = enumNode.variants || [];
-        const variantIndex = variants.findIndex(v => v.name === variantName);
+        const variantIndex = variants.findIndex((/** @type {any} */ v) => v.name === variantName);
         if (variantIndex === -1) {
             return err(`Unknown variant: ${variantName}`, pathExpr.span);
         }
@@ -2096,12 +2118,13 @@ function inferPath(ctx, pathExpr) {
         const variantFields = variant.fields || [];
 
         // Build the enum type
+        /** @type {import("./types.js").EnumType} */
         const enumType = {
             kind: TypeKind.Enum,
             name: itemName,
-            variants: variants.map(v => ({
+            variants: variants.map((/** @type {any} */ v) => ({
                 name: v.name,
-                fields: (v.fields || []).map(f => f.ty || null),
+                fields: (v.fields || []).map((/** @type {any} */ f) => f.ty || null),
             })),
             span: pathExpr.span,
         };
@@ -2133,12 +2156,13 @@ function inferPath(ctx, pathExpr) {
 
     // Handle struct constructors: StructName::new or just StructName
     if (item.kind === "struct") {
+        /** @type {import("./types.js").StructType} */
         const structType = {
             kind: TypeKind.Struct,
             name: itemName,
-            fields: (item.node.fields || []).map(f => ({
+            fields: (item.node.fields || []).map((/** @type {any} */ f) => ({
                 name: f.name,
-                type: f.ty,
+                type: f.ty ? (resolveTypeNode(ctx, f.ty).ok ? /** @type {InferenceSuccess} */(resolveTypeNode(ctx, f.ty)).type : ctx.freshTypeVar()) : ctx.freshTypeVar(),
             })),
             span: pathExpr.span,
         };
@@ -2220,7 +2244,7 @@ function inferStructExpr(ctx, structExpr) {
         seenFields.add(field.name);
 
         const fieldDef = structDef.node.fields?.find(
-            (f) => f.name === field.name,
+            (/** @type {any} f */ f) => f.name === field.name,
         );
         if (!fieldDef) {
             errors.push(
@@ -2581,13 +2605,15 @@ function checkStmt(ctx, stmt) {
  * @returns {InferenceResult}
  */
 function checkLetStmt(ctx, letStmt) {
+    /** @type {TypeError[]} */
     const errors = [];
 
-    let declaredType = null;
+    /** @type {Type | undefined} */
+    let declaredType = undefined;
     if (letStmt.ty) {
         const typeResult = resolveTypeNode(ctx, letStmt.ty);
         if (!typeResult.ok) {
-            errors.push(...(typeResult.errors || []));
+            errors.push(...typeResult.errors);
         } else {
             declaredType = typeResult.type;
         }
@@ -2722,7 +2748,7 @@ function inferPattern(ctx, pattern) {
 
         case NodeKind.TuplePat: {
             const elementsResult = combineResults(
-                pattern.elements.map((e) => inferPattern(ctx, e)),
+                pattern.elements.map((/** @type {Node} */ e) => inferPattern(ctx, e)),
             );
             if (!elementsResult.ok) {
                 return { ok: false, errors: elementsResult.errors };
@@ -2750,7 +2776,6 @@ function inferPattern(ctx, pattern) {
             for (const field of pattern.fields || []) {
                 const fieldResult = inferPattern(ctx, field.pat);
                 if (!fieldResult.ok) return fieldResult;
-                // TODO: Check field type matches
             }
 
             return ok(structType);
@@ -2841,7 +2866,7 @@ function inferPattern(ctx, pattern) {
  * @param {TypeContext} ctx
  * @param {Node} pattern
  * @param {Type} expectedType
- * @returns {{ ok: boolean, errors?: TypeError[] }}
+ * @returns {CheckResult}
  */
 function checkPattern(ctx, pattern, expectedType) {
     expectedType = ctx.resolveType(expectedType);
@@ -2939,12 +2964,14 @@ function checkPattern(ctx, pattern, expectedType) {
                 return { ok: true };
             }
 
-            if (pattern.elements.length !== expectedType.elements.length) {
+            const tupleType = /** @type {import("./types.js").TupleType} */ (expectedType);
+
+            if (pattern.elements.length !== tupleType.elements.length) {
                 return {
                     ok: false,
                     errors: [
                         makeTypeError(
-                            `Tuple pattern length mismatch: expected ${expectedType.elements.length}, got ${pattern.elements.length}`,
+                            `Tuple pattern length mismatch: expected ${tupleType.elements.length}, got ${pattern.elements.length}`,
                             pattern.span,
                         ),
                     ],
@@ -2956,10 +2983,10 @@ function checkPattern(ctx, pattern, expectedType) {
                 const result = checkPattern(
                     ctx,
                     pattern.elements[i],
-                    expectedType.elements[i],
+                    tupleType.elements[i],
                 );
                 if (!result.ok) {
-                    errors.push(...(result.errors || []));
+                    errors.push(...result.errors);
                 }
             }
 
@@ -2987,9 +3014,11 @@ function checkPattern(ctx, pattern, expectedType) {
             // Get struct definition
             let structDef = null;
             if (structType.kind === TypeKind.Struct) {
-                structDef = ctx.lookupItem(structType.name);
+                const sType = /** @type {import("./types.js").StructType} */ (structType);
+                structDef = ctx.lookupItem(sType.name);
             } else if (structType.kind === TypeKind.Named) {
-                structDef = ctx.lookupItem(structType.name);
+                const nType = /** @type {import("./types.js").NamedType} */ (structType);
+                structDef = ctx.lookupItem(nType.name);
             }
 
             if (!structDef || structDef.kind !== "struct") {
@@ -3012,7 +3041,7 @@ function checkPattern(ctx, pattern, expectedType) {
                 seenFields.add(field.name);
 
                 const fieldDef = structDef.node.fields?.find(
-                    (f) => f.name === field.name,
+                    (/** @type {any} */ f) => f.name === field.name,
                 );
                 if (!fieldDef) {
                     errors.push(

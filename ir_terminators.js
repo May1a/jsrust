@@ -1,10 +1,15 @@
-// @ts-nocheck
 /** @typedef {import('./ir.js').ValueId} ValueId */
 /** @typedef {import('./ir.js').BlockId} BlockId */
 /** @typedef {import('./ir.js').IRType} IRType */
+/** @typedef {import('./ir.js').IRTerm} IRTerm */
+/** @typedef {import('./ir.js').IRTermKindValue} IRTermKindValue */
 
 import { IRTermKind } from "./ir.js";
 
+/**
+ * @param {ValueId | null} value
+ * @returns {IRTerm}
+ */
 function makeRet(value) {
     return {
         kind: IRTermKind.Ret,
@@ -12,6 +17,11 @@ function makeRet(value) {
     };
 }
 
+/**
+ * @param {BlockId} target
+ * @param {ValueId[] | undefined} args
+ * @returns {IRTerm}
+ */
 function makeBr(target, args) {
     return {
         kind: IRTermKind.Br,
@@ -20,6 +30,14 @@ function makeBr(target, args) {
     };
 }
 
+/**
+ * @param {ValueId} cond
+ * @param {BlockId} thenBlock
+ * @param {ValueId[] | undefined} thenArgs
+ * @param {BlockId} elseBlock
+ * @param {ValueId[] | undefined} elseArgs
+ * @returns {IRTerm}
+ */
 function makeBrIf(cond, thenBlock, thenArgs, elseBlock, elseArgs) {
     return {
         kind: IRTermKind.BrIf,
@@ -31,6 +49,13 @@ function makeBrIf(cond, thenBlock, thenArgs, elseBlock, elseArgs) {
     };
 }
 
+/**
+ * @param {ValueId} value
+ * @param {Array<{ value: any, target: BlockId, args: ValueId[] }>} cases
+ * @param {BlockId} defaultBlock
+ * @param {ValueId[]} [defaultArgs]
+ * @returns {IRTerm}
+ */
 function makeSwitch(value, cases, defaultBlock, defaultArgs) {
     return {
         kind: IRTermKind.Switch,
@@ -41,6 +66,12 @@ function makeSwitch(value, cases, defaultBlock, defaultArgs) {
     };
 }
 
+/**
+ * @param {any} value
+ * @param {BlockId} target
+ * @param {ValueId[]} [args]
+ * @returns {{ value: any, target: BlockId, args: ValueId[] }}
+ */
 function makeSwitchCase(value, target, args) {
     return {
         value,
@@ -49,12 +80,17 @@ function makeSwitchCase(value, target, args) {
     };
 }
 
+/** @returns {IRTerm} */
 function makeUnreachable() {
     return {
         kind: IRTermKind.Unreachable,
     };
 }
 
+/**
+ * @param {any} node
+ * @returns {boolean}
+ */
 function isIRTerminator(node) {
     return (
         node &&

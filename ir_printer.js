@@ -1,4 +1,3 @@
-// @ts-nocheck
 /** @typedef {import('./ir.js').IRType} IRType */
 /** @typedef {import('./ir.js').IRInst} IRInst */
 /** @typedef {import('./ir.js').IRTerm} IRTerm */
@@ -177,10 +176,10 @@ function printInstruction(inst, ctx) {
 
     switch (inst.kind) {
         case IRInstKind.Iconst:
-            return `${resultPrefix}iconst ${intWidthToString(inst.ty.width)} ${inst.value}`;
+            return `${resultPrefix}iconst ${intWidthToString(/** @type {number} */(inst.ty.width))} ${inst.value}`;
 
         case IRInstKind.Fconst:
-            return `${resultPrefix}fconst ${floatWidthToString(inst.ty.width)} ${inst.value}`;
+            return `${resultPrefix}fconst ${floatWidthToString(/** @type {number} */(inst.ty.width))} ${inst.value}`;
 
         case IRInstKind.Bconst:
             return `${resultPrefix}bconst ${inst.value}`;
@@ -243,7 +242,7 @@ function printInstruction(inst, ctx) {
             return `${resultPrefix}fcmp ${fcmpOpToString(inst.op)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
 
         case IRInstKind.Alloca:
-            return `${resultPrefix}alloca ${printType(inst.ty.inner)} ; ${ctx.getLocalName(inst.localId)}`;
+            return `${resultPrefix}alloca ${printType(/** @type {import('./ir.js').IRType} */(inst.ty.inner))} ; ${ctx.getLocalName(inst.localId)}`;
 
         case IRInstKind.Load:
             return `${resultPrefix}load ${printType(inst.ty)}, ${ctx.getValueName(inst.ptr)}`;
@@ -256,7 +255,7 @@ function printInstruction(inst, ctx) {
 
         case IRInstKind.Gep: {
             const indices = inst.indices
-                .map((i) => ctx.getValueName(i))
+                .map((/** @type {any} */ i) => ctx.getValueName(i))
                 .join(", ");
             return `${resultPrefix}gep ${ctx.getValueName(inst.ptr)}, [${indices}]`;
         }
@@ -289,13 +288,13 @@ function printInstruction(inst, ctx) {
             return `${resultPrefix}bitcast -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
 
         case IRInstKind.Call: {
-            const args = inst.args.map((a) => ctx.getValueName(a)).join(", ");
+            const args = inst.args.map((/**@type{any}*/ a) => ctx.getValueName(a)).join(", ");
             return `${resultPrefix}call ${inst.fn}(${args})`;
         }
 
         case IRInstKind.StructCreate: {
             const fields = inst.fields
-                .map((f) => ctx.getValueName(f))
+                .map((/** @type {any} */ f) => ctx.getValueName(f))
                 .join(", ");
             return `${resultPrefix}struct_create ${printType(inst.ty)} { ${fields} }`;
         }
@@ -344,31 +343,31 @@ function printTerminator(term, ctx) {
             return `ret ${ctx.getValueName(term.value)}`;
 
         case IRTermKind.Br: {
-            const args = term.args.map((a) => ctx.getValueName(a)).join(", ");
+            const args = term.args.map((/**@type{any}*/ a) => ctx.getValueName(a)).join(", ");
             return `br ${ctx.getBlockName(term.target)}${args ? `(${args})` : ""}`;
         }
 
         case IRTermKind.BrIf: {
             const thenArgs = term.thenArgs
-                .map((a) => ctx.getValueName(a))
+                .map((/**@type{any}*/ a) => ctx.getValueName(a))
                 .join(", ");
             const elseArgs = term.elseArgs
-                .map((a) => ctx.getValueName(a))
+                .map((/**@type{any}*/ a) => ctx.getValueName(a))
                 .join(", ");
             return `br_if ${ctx.getValueName(term.cond)}, then: ${ctx.getBlockName(term.thenBlock)}(${thenArgs}), else: ${ctx.getBlockName(term.elseBlock)}(${elseArgs})`;
         }
 
         case IRTermKind.Switch: {
             const cases = term.cases
-                .map((c) => {
+                .map((/**@type{any}*/ c) => {
                     const args = c.args
-                        .map((a) => ctx.getValueName(a))
+                        .map((/**@type{any}*/ a) => ctx.getValueName(a))
                         .join(", ");
                     return `${ctx.getValueName(c.value)} => ${ctx.getBlockName(c.target)}(${args})`;
                 })
                 .join(", ");
             const defaultArgs = term.defaultArgs
-                .map((a) => ctx.getValueName(a))
+                .map((/**@type{any}*/ a) => ctx.getValueName(a))
                 .join(", ");
             return `switch ${ctx.getValueName(term.value)} { ${cases}, default: ${ctx.getBlockName(term.defaultBlock)}(${defaultArgs}) }`;
         }
@@ -513,7 +512,7 @@ function printModule(module) {
         lines.push("; Structs:");
         for (const [name, struct] of module.structs) {
             const fields = struct.fields
-                .map((f, i) => `${i}: ${printType(f)}`)
+                .map(( /**@type{any}*/ f, /**@type{number}*/ i) => `${i}: ${printType(f)}`)
                 .join(", ");
             lines.push(`;   struct ${name} { ${fields} }`);
         }
@@ -524,11 +523,11 @@ function printModule(module) {
         lines.push("; Enums:");
         for (const [name, enum_] of module.enums) {
             const variants = enum_.variants
-                .map((v, i) => {
+                .map(( /**@type{any}*/ v, /**@type{number}*/ i) => {
                     if (v.length === 0) {
                         return `${i}`;
                     }
-                    const fields = v.map((t) => printType(t)).join(", ");
+                    const fields = v.map((/**@type{any}*/ t) => printType(t)).join(", ");
                     return `${i}(${fields})`;
                 })
                 .join(", ");
