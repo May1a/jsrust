@@ -48,10 +48,15 @@
   - `--codegen-wasm` now passes all current `examples/*.rs` except known loop hang parity exclusion (`examples/06_loops.rs` also hangs in interpreter mode).
   - backend codegen fixtures `07_structs` and `09_references` promoted to positive coverage in backend C tests.
   - root backend integration tests now include a codegen parity matrix across non-hanging examples.
+- Frontend/backend callable-value dispatch path expanded with `CallDyn`:
+  - JS IR pipeline includes `CallDyn` instruction serialization/deserialization/validation/printing.
+  - backend binary reader, validator, and interpreter execute `CallDyn` by resolving runtime callable hash values.
+  - wasm codegen intentionally stages `CallDyn` as a deterministic validation error (`wasm codegen: dynamic calls are not supported yet`) until table/`call_indirect` lowering lands.
 
 ## Next Integration Steps
 
 - Move backend workspace into dedicated git submodule when repository split is finalized.
 - Expand integration tests for entrypoint variants and trace determinism assertions.
 - Address the shared interpreter/generated-wasm non-termination issue for `examples/06_loops.rs` and then fold it into parity gating.
+- Implement wasm `CallDyn` lowering via function table + `call_indirect` and move current deterministic failure gate to parity coverage.
 - Keep root/backend status files synchronized at each milestone boundary.

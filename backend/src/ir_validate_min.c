@@ -131,6 +131,14 @@ static BackendStatus IRValidate_instruction(const IRFunction* function, const IR
                 return IRValidate_error("undefined call argument");
         }
         break;
+    case IRInstKind_CallDyn:
+        if (IRValidate_operandExists(function, inst->fn).code != JSRUST_BACKEND_OK)
+            return IRValidate_error("undefined dynamic call callee");
+        for (index = 0; index < inst->callArgs.count; ++index) {
+            if (IRValidate_operandExists(function, inst->callArgs.items[index]).code != JSRUST_BACKEND_OK)
+                return IRValidate_error("undefined dynamic call argument");
+        }
+        break;
     case IRInstKind_StructCreate:
         for (index = 0; index < inst->fields.count; ++index) {
             if (IRValidate_operandExists(function, inst->fields.items[index]).code != JSRUST_BACKEND_OK)

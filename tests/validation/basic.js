@@ -17,6 +17,7 @@ import {
     makeIadd,
     makeIsub,
     makeBconst,
+    makeCallDyn,
 } from "../../ir_instructions.js";
 
 import { makeRet, makeBr, makeBrIf } from "../../ir_terminators.js";
@@ -129,6 +130,30 @@ test("undefined value in instruction", () => {
     assertTrue(
         result.errors.some(
             (e) => e.kind === ValidationErrorKind.UndefinedValue,
+        ),
+    );
+});
+
+test("undefined callee value in call_dyn instruction", () => {
+    resetIRIds();
+    const mod = makeIRModule("test");
+    const fn = makeIRFunction(0, "bad_call_dyn", [], makeIRIntType(IntWidth.I32));
+    const block = makeIRBlock(0);
+    const callDyn = makeCallDyn(999, [], makeIRIntType(IntWidth.I32));
+    const ret = makeRet(callDyn.id);
+
+    addIRInstruction(block, callDyn);
+    setIRTerminator(block, ret);
+    addIRBlock(fn, block);
+    addIRFunction(mod, fn);
+
+    const result = validateModule(mod);
+    assertTrue(!result.ok, "Module should be invalid");
+    assertTrue(
+        result.errors.some(
+            (e) =>
+                e.kind === ValidationErrorKind.UndefinedValue &&
+                String(e.message || "").includes("call_dyn callee"),
         ),
     );
 });

@@ -29,7 +29,9 @@ import {
     makeNamedType,
 } from "../../ast.js";
 import { lowerModule, lowerExpr, LoweringCtx } from "../../lowering.js";
-import { HExprKind, HLiteralKind, HPlaceKind } from "../../hir.js";
+import { HExprKind, HItemKind, HLiteralKind, HPlaceKind } from "../../hir.js";
+import { parseModule } from "../../parser.js";
+import { inferModule } from "../../inference.js";
 import {
     TypeKind,
     IntWidth,
@@ -53,6 +55,21 @@ import { TypeContext } from "../../type_context.js";
 function createTestTypeContext() {
     const typeCtx = new TypeContext();
     return typeCtx;
+}
+
+/**
+ * Parse + infer + lower a module for integration-style lowering assertions.
+ * @param {string} source
+ */
+function lowerSource(source) {
+    const parseResult = parseModule(source);
+    assertTrue(parseResult.ok, `parse failed: ${parseResult.errors?.map((e) => e.message).join(", ")}`);
+    const typeCtx = new TypeContext();
+    const inferResult = inferModule(typeCtx, parseResult.value);
+    assertTrue(inferResult.ok, `inference failed: ${inferResult.errors?.map((e) => e.message).join(", ")}`);
+    const lowered = lowerModule(parseResult.value, typeCtx);
+    assertTrue(!!lowered.module, `lowering failed: ${lowered.errors?.map((e) => e.message).join(", ")}`);
+    return /** @type {import("../../hir.js").HModule} */ (lowered.module);
 }
 
 /**
@@ -495,6 +512,35 @@ function testLowerStaticMethodPath() {
     assertEqual(hir.name, "Point::new", "Should resolve to method symbol");
 }
 
+function testLowerClosureSynthesizesHelperFn() {
+    const module = lowerSource(
+        "fn main() { let add_one = |z| z + 1; let _y: i32 = add_one(2); }",
+    );
+    const helper = module.items.find(
+        (item) => item.kind === HItemKind.Fn && item.name.includes("__closure_"),
+    );
+    assertTrue(!!helper, "Expected synthesized closure helper function");
+    assertEqual(helper.params.length, 1, "Non-capturing helper should only have explicit params");
+}
+
+function testLowerCapturingClosureRewritesDirectCallWithCaptureArgs() {
+    const module = lowerSource(
+        "fn main() { let x: i32 = 5; let add = |z: i32| z + x; let _y: i32 = add(2); }",
+    );
+    const mainFn = module.items.find((item) => item.kind === HItemKind.Fn && item.name === "main");
+    assertTrue(!!mainFn, "Expected main function");
+    const callLet = mainFn.body.stmts.find(
+        (stmt) => stmt.kind === 0 && stmt.init && stmt.init.kind === HExprKind.Call,
+    );
+    assertTrue(!!callLet, "Expected lowered direct helper call");
+    assertEqual(callLet.init.args.length, 2, "Capturing helper call should include capture argument");
+    assertTrue(
+        callLet.init.callee.kind === HExprKind.Var &&
+            callLet.init.callee.name.includes("__closure_"),
+        "Call should target synthesized helper symbol",
+    );
+}
+
 // ============================================================================
 // Run Tests
 // ============================================================================
@@ -519,6 +565,8 @@ export function runTests() {
         ["Lower field expression", testLowerFieldExpression],
         ["Lower method call expression", testLowerMethodCallExpression],
         ["Lower static method path", testLowerStaticMethodPath],
+        ["Lower closure helper synthesis", testLowerClosureSynthesizesHelperFn],
+        ["Lower capturing closure direct call rewrite", testLowerCapturingClosureRewritesDirectCallWithCaptureArgs],
     ];
 
     for (const [name, fn] of tests) {

@@ -52,5 +52,14 @@ export function runParserTypeTests() {
         assertEqual(result.value.kind, NodeKind.FnType);
     });
 
-    return 7;
+    test("function type with named params ignores names", () => {
+        const result = parseType("fn(x: i32, y: i32) -> i32");
+        assertTrue(result.ok);
+        assertEqual(result.value.kind, NodeKind.FnType);
+        assertEqual(result.value.params.length, 2);
+        assertEqual(result.value.params[0].kind, NodeKind.NamedType);
+        assertEqual(result.value.params[1].kind, NodeKind.NamedType);
+    });
+
+    return 8;
 }

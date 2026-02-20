@@ -414,6 +414,10 @@ function validateInstruction(inst, blockId, ctx) {
             validateCall(inst, blockId, ctx);
             break;
 
+        case IRInstKind.CallDyn:
+            validateCallDyn(inst, blockId, ctx);
+            break;
+
         case IRInstKind.StructCreate:
             validateStructCreate(inst, blockId, ctx);
             break;
@@ -578,11 +582,21 @@ function validateConversion(inst, blockId, ctx) {
 
 /** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
 function validateCall(inst, blockId, ctx) {
-    // For now, fn is a string (function name)
-    // Validate arguments
     for (let i = 0; i < inst.args.length; i++) {
         if (!isValueDefined(ctx, inst.args[i])) {
             addError(ctx, errUndefinedValue(inst.args[i], "call argument"));
+        }
+    }
+}
+
+/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
+function validateCallDyn(inst, blockId, ctx) {
+    if (!isValueDefined(ctx, inst.fn)) {
+        addError(ctx, errUndefinedValue(inst.fn, "call_dyn callee"));
+    }
+    for (let i = 0; i < inst.args.length; i++) {
+        if (!isValueDefined(ctx, inst.args[i])) {
+            addError(ctx, errUndefinedValue(inst.args[i], "call_dyn argument"));
         }
     }
 }
@@ -1029,6 +1043,9 @@ function getInstructionOperands(inst) {
 
         case IRInstKind.Call:
             return [...inst.args];
+
+        case IRInstKind.CallDyn:
+            return [inst.fn, ...inst.args];
 
         case IRInstKind.StructCreate:
             return [...inst.fields];

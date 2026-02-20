@@ -52,6 +52,7 @@ import {
     makeSitofp,
     makeBitcast,
     makeCall,
+    makeCallDyn,
     makeStructCreate,
     makeStructGet,
     makeEnumCreate,
@@ -290,6 +291,13 @@ test("printInstruction prints memcpy", () => {
     const output = printInstruction(inst);
     assertIncludes(output, "memcpy");
     assertIncludes(output, "100");
+});
+
+test("printInstruction prints call_dyn", () => {
+    resetIRIds();
+    const inst = makeCallDyn(3, [1, 2], { kind: 0, width: IntWidth.I32 });
+    const output = printInstruction(inst);
+    assertIncludes(output, "call_dyn");
 });
 
 test("printInstruction prints gep", () => {

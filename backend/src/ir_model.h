@@ -61,7 +61,8 @@ typedef enum {
     IRInstKind_EnumCreate = 39,
     IRInstKind_EnumGetTag = 40,
     IRInstKind_EnumGetData = 41,
-    IRInstKind_Sconst = 42
+    IRInstKind_Sconst = 42,
+    IRInstKind_CallDyn = 43
 } IRInstKind;
 
 typedef enum {

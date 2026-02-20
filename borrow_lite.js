@@ -375,6 +375,25 @@ function checkExpr(expr, env) {
         case NodeKind.MacroExpr:
             for (const arg of expr.args || []) checkExpr(arg, env);
             return;
+        case NodeKind.ClosureExpr:
+            pushScope(env);
+            for (const param of expr.params || []) {
+                if (!param.name || param.name === "_") continue;
+                defineBinding(env, param.name, {
+                    kind: "local",
+                    depth: currentDepth(env),
+                    refOrigin: null,
+                });
+            }
+            if (expr.body) {
+                if (expr.body.kind === NodeKind.BlockExpr) {
+                    checkBlock(expr.body, env, false);
+                } else {
+                    checkExpr(expr.body, env);
+                }
+            }
+            popScope(env);
+            return;
         default:
             return;
     }

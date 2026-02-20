@@ -54,6 +54,7 @@ import {
     makeSitofp,
     makeBitcast,
     makeCall,
+    makeCallDyn,
     makeStructCreate,
     makeStructGet,
     makeEnumCreate,
@@ -746,6 +747,18 @@ export class IRBuilder {
      */
     call(fn, args, returnType = null) {
         const inst = makeCall(fn, args, returnType);
+        addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
+        return inst;
+    }
+
+    /**
+     * @param {import('./ir.js').ValueId} fn
+     * @param {import('./ir.js').ValueId[]} args
+     * @param {import('./ir.js').IRType | null} [returnType]
+     * @returns {import('./ir.js').IRInst}
+     */
+    callDyn(fn, args, returnType = null) {
+        const inst = makeCallDyn(fn, args, returnType);
         addIRInstruction(/** @type {import('./ir.js').IRBlock} */(this.currentBlock), inst);
         return inst;
     }

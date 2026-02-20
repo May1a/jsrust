@@ -362,6 +362,27 @@ test("Serialize and deserialize Call instruction", () => {
     assertEqual(inst.args.length, 3);
 });
 
+test("Serialize and deserialize CallDyn instruction", () => {
+    const module = createModuleWithInstructions([
+        {
+            kind: IRInstKind.CallDyn,
+            id: 0,
+            ty: makeIRIntType(IntWidth.I32),
+            fn: 7,
+            args: [1, 2],
+        },
+    ]);
+
+    const data = serializeModule(module);
+    const result = deserializeModule(data);
+
+    assertTrue(result.ok);
+    const inst = result.value.functions[0].blocks[0].instructions[0];
+    assertEqual(inst.kind, IRInstKind.CallDyn);
+    assertEqual(inst.fn, 7);
+    assertEqual(inst.args.length, 2);
+});
+
 test("Serialize and deserialize StructCreate instruction", () => {
     const module = createModuleWithInstructions([
         {
@@ -529,5 +550,5 @@ test("Serialize and deserialize conversion instructions", () => {
 export function runInstructionsTests() {
     const result = getResults();
     clearErrors();
-    return 20;
+    return 21;
 }
