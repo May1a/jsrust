@@ -71,6 +71,76 @@ fn main() {
         );
     });
 
+    test("Modules: pub use re-export is visible across modules", () => {
+        const source = `
+mod a {
+    mod b {
+        pub fn f() -> i32 { 7 }
+    }
+    pub use b::f;
+}
+
+fn main() {
+    let value = a::f();
+    println!("{}", value);
+}
+`;
+        const result = compile(source, { validate: false });
+        assertEqual(
+            result.ok,
+            true,
+            `pub use re-export should compile: ${result.errors.map((e) => e.message).join(", ")}`,
+        );
+    });
+
+    test("Modules: pub use grouped re-exports compile", () => {
+        const source = `
+mod input {
+    pub fn mk() -> i32 { 1 }
+}
+mod reader {
+    pub fn end() -> i32 { 2 }
+    pub fn read() -> i32 { 3 }
+}
+pub use { input::mk, reader::{end, read} };
+
+fn main() {
+    let a = mk();
+    let b = end();
+    let c = read();
+    println!("{}", a + b + c);
+}
+`;
+        const result = compile(source, { validate: false });
+        assertEqual(
+            result.ok,
+            true,
+            `pub use grouped re-exports should compile: ${result.errors.map((e) => e.message).join(", ")}`,
+        );
+    });
+
+    test("Modules: private use alias is not visible across modules", () => {
+        const source = `
+mod a {
+    mod b {
+        pub fn f() -> i32 { 7 }
+    }
+    use b::f;
+}
+
+fn main() {
+    let value = a::f();
+    println!("{}", value);
+}
+`;
+        const result = compile(source, { validate: false });
+        assertEqual(result.ok, false, "private use alias should not be exported");
+        assertTrue(
+            result.errors.some((e) => String(e.message).includes("Path is not visible here") || String(e.message).includes("Unresolved path")),
+            `expected visibility/path error, got: ${result.errors.map((e) => e.message).join(", ")}`,
+        );
+    });
+
     test("Modules: file module resolves name.rs", () => {
         const dir = makeTempDir("jsrust-mod-name-rs-");
         try {
@@ -259,4 +329,3 @@ fn main() {}
         );
     });
 }
-

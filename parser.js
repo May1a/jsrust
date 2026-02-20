@@ -2117,10 +2117,17 @@ function parseUsePath(state) {
  */
 function parseUseTree(state) {
     const startToken = peek(state);
-    const { path, hasWildcard } = parseUsePath(state);
+    let path = [];
+    let hasWildcard = false;
+    const startsWithGroup = check(state, TokenType.OpenCurly);
+    if (!startsWithGroup) {
+        const parsed = parseUsePath(state);
+        path = parsed.path;
+        hasWildcard = parsed.hasWildcard;
+    }
     /** @type {string | null} */
     let alias = null;
-    if (isIdentifierValue(peek(state), "as")) {
+    if (!startsWithGroup && isIdentifierValue(peek(state), "as")) {
         advance(state);
         const aliasToken =
             expectToken(state, TokenType.Identifier, "Expected alias name") ??
