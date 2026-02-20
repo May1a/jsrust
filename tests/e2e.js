@@ -235,6 +235,15 @@ export function runE2ETests() {
         testsRun++;
     });
 
+    test("E2E: function call with &str parameter", () => {
+        const result = assertCompiles(
+            `fn print_msg(msg: &str) {} fn main() { let hello = "hello"; print_msg(hello); }`,
+            "function call with &str parameter"
+        );
+        assertIRContains(result, "call", "call instruction");
+        testsRun++;
+    });
+
     test("E2E: multiple functions", () => {
         const result = assertCompiles(
             `fn a() -> i32 { 1 } fn b() -> i32 { 2 } fn main() { let x = a() + b(); }`,
