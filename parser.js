@@ -707,7 +707,7 @@ function parseGenericParamList(state) {
         const bounds = [];
         if (matchToken(state, TokenType.Colon)) {
             while (!isAtEnd(state)) {
-                const bound = parsePathTypeNode(state) || parseType(state);
+                const bound = parseTypeBound(state);
                 if (bound) bounds.push(bound);
                 if (!matchToken(state, TokenType.Plus)) break;
             }
@@ -745,7 +745,7 @@ function parseOptionalWhereClause(state) {
         const bounds = [];
         if (matchToken(state, TokenType.Colon)) {
             while (!isAtEnd(state)) {
-                const bound = parsePathTypeNode(state) || parseType(state);
+                const bound = parseTypeBound(state);
                 if (bound) bounds.push(bound);
                 if (!matchToken(state, TokenType.Plus)) break;
             }
@@ -762,6 +762,95 @@ function parseOptionalWhereClause(state) {
         if (!matchToken(state, TokenType.Comma)) break;
     }
     return whereClause;
+}
+
+/**
+ * Parse a generic/where bound and consume Rust function-trait bound tails
+ * like `FnOnce(A, B) -> R` for syntax compatibility.
+ * @param {ParserState} state
+ * @returns {Node | null}
+ */
+function parseTypeBound(state) {
+    const bound = parsePathTypeNode(state) || parseType(state);
+    if (!bound || bound.kind !== NodeKind.NamedType || !check(state, TokenType.OpenParen)) {
+        return bound;
+    }
+    const pathName = typeof bound.name === "string" ? bound.name : "";
+    const tailName = pathName.includes("::")
+        ? pathName.slice(pathName.lastIndexOf("::") + 2)
+        : pathName;
+    if (tailName !== "Fn" && tailName !== "FnMut" && tailName !== "FnOnce") {
+        return bound;
+    }
+
+    expectToken(state, TokenType.OpenParen, "Expected ( in function trait bound");
+    if (!check(state, TokenType.CloseParen)) {
+        while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
+            parseType(state);
+            if (!matchToken(state, TokenType.Comma)) break;
+        }
+    }
+    expectToken(
+        state,
+        TokenType.CloseParen,
+        "Expected ) in function trait bound",
+    );
+    if (matchArrow(state)) {
+        parseType(state);
+    }
+    return bound;
+}
+
+/**
+ * Parse `pub` and restricted `pub(...)` visibility for syntax compatibility.
+ * Restriction details are intentionally discarded and mapped to boolean public.
+ * @param {ParserState} state
+ * @returns {boolean}
+ */
+function parseOptionalVisibility(state) {
+    if (!matchToken(state, TokenType.Pub)) {
+        return false;
+    }
+    if (!matchToken(state, TokenType.OpenParen)) {
+        return true;
+    }
+
+    const first = peek(state);
+    if (!isIdentifierToken(first)) {
+        addError(
+            state,
+            "Expected visibility restriction in pub(...)",
+            first,
+            ["Identifier"],
+        );
+    } else {
+        advance(state);
+        while (
+            check(state, TokenType.Colon) &&
+            peek(state, 1).type === TokenType.Colon
+        ) {
+            advance(state);
+            advance(state);
+            const next = peek(state);
+            if (!isIdentifierToken(next)) {
+                addError(
+                    state,
+                    "Expected identifier segment in pub(...)",
+                    next,
+                    ["Identifier"],
+                );
+                break;
+            }
+            advance(state);
+        }
+    }
+
+    if (!matchToken(state, TokenType.CloseParen)) {
+        addError(state, "Expected ) after pub(...)", peek(state), [")"]);
+        skipToRecovery(state, [TokenType.CloseParen]);
+        matchToken(state, TokenType.CloseParen);
+    }
+    return true;
 }
 
 /**
@@ -1022,6 +1111,14 @@ function parsePostfix(state, expr) {
             peek(state, 1).type === TokenType.Dot
         ) {
             return result;
+        }
+        if (
+            check(state, TokenType.Invalid) &&
+            peek(state).value === "?"
+        ) {
+            // Parse-only compatibility: consume try-operator suffix.
+            advance(state);
+            continue;
         }
         // Handle macro invocation: identifier! followed by args
         if (matchToken(state, TokenType.Bang)) {
@@ -1642,7 +1739,7 @@ function parseStructItem(state, isPub) {
     let isTuple = false;
     if (matchToken(state, TokenType.OpenCurly)) {
         while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
-            const fieldIsPub = matchToken(state, TokenType.Pub) !== null;
+            const fieldIsPub = parseOptionalVisibility(state);
             const fieldNameToken =
                 expectToken(
                     state,
@@ -1787,7 +1884,7 @@ function parseImplItem(state, isUnsafe) {
         let methodIsPub = false;
         let methodIsUnsafe = false;
         let methodIsConst = false;
-        if (matchToken(state, TokenType.Pub)) methodIsPub = true;
+        if (parseOptionalVisibility(state)) methodIsPub = true;
         if (matchToken(state, TokenType.Unsafe)) methodIsUnsafe = true;
         if (matchToken(state, TokenType.Const)) methodIsConst = true;
         if (check(state, TokenType.Fn)) {
@@ -2081,9 +2178,7 @@ function parseItem(state) {
     let isPub = false;
     let isUnsafe = false;
     let isConst = false;
-    if (matchToken(state, TokenType.Pub)) {
-        isPub = true;
-    }
+    isPub = parseOptionalVisibility(state);
     if (matchToken(state, TokenType.Unsafe)) {
         isUnsafe = true;
     }

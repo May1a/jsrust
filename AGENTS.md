@@ -34,7 +34,7 @@ See `plans/README.md` for the current planning structure.
 - active/02-new-backend.md in progress (JS wasm run-path integration wired; binary IR v2 + formatter builtins integrated; `run --codegen-wasm` generated-wasm in-memory execution integrated; parity milestone expanded: pointer/memory/aggregate lowering + data/memory sections + dynamic format host writers + non-hanging example parity matrix; `CallDyn` interpreter-first support landed in reader/validator/exec with staged wasm deterministic failure pending table/`call_indirect` follow-up)
 - active/03-relaxed-borrow-model.md implemented (lifetime tokenization + parser lifetime erasure + borrow-lite pass integration + stable reference-slot lowering + focused tests)
 - plans/future/01-node-addon-availability.md deferred (non-priority)
-- plans/future/02-untrusted-compatibility.md deferred (`third_party/untrusted` submodule added; compatibility milestone tracked)
+- plans/future/02-untrusted-compatibility.md in progress (`third_party/untrusted` submodule added; `input.rs` syntax blockers addressed: function-trait bound tails in `where`/bounds + restricted visibility parse support for `pub(...)` + parse-only postfix `?` consumption)
 - backend/plans/00-master-implementation-plan.md overhauled (interpreter-first)
 - backend/plans/02-backend-scaffold-and-build.md implemented (initial)
 - backend/plans/03-binary-ir-reader.md implemented (initial + IR v2 literal-section ingest)
