@@ -16,6 +16,10 @@ Track incremental frontend/runtime compatibility work needed to compile the upst
 - Submodule added:
   - `third_party/untrusted`
 - Not expected to compile yet with current JSRust subset.
+- Parser syntax-compat slice landed for `third_party/untrusted/src/input.rs`:
+  - Consumes function-trait bound tails in bounds/`where` (`FnOnce(...) -> ...`).
+  - Accepts restricted visibility syntax forms such as `pub(super)`.
+  - Consumes postfix try-operator syntax (`expr?`) as parse-only compatibility.
 
 ## Planned Milestones (Future / Deferred)
 

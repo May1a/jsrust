@@ -190,6 +190,36 @@ export function runParserItemTests() {
         assertEqual(implItem.methods.length, 1);
     });
 
+    test("where bound with function trait tail parses", () => {
+        const result = parseModule(
+            "fn parse<'a, F, R, E>(read: F) -> Result<R, E> where F: FnOnce(&mut Reader<'a>) -> Result<R, E> { read }",
+        );
+        assertTrue(result.ok);
+        const item = result.value.items[0];
+        assertEqual(item.kind, NodeKind.FnItem);
+        assertEqual(item.whereClause.length, 1);
+        assertEqual(item.whereClause[0].bounds.length, 1);
+        assertEqual(item.whereClause[0].bounds[0].name, "FnOnce");
+    });
+
+    test("pub(super) method visibility parses in impl", () => {
+        const result = parseModule(
+            "struct S {} impl S { pub(super) fn hidden(&self) {} }",
+        );
+        assertTrue(result.ok);
+        const implItem = result.value.items[1];
+        assertEqual(implItem.kind, NodeKind.ImplItem);
+        assertEqual(implItem.methods.length, 1);
+        assertEqual(implItem.methods[0].isPub, true);
+    });
+
+    test("postfix try operator is consumed for syntax compatibility", () => {
+        const result = parseModule(
+            "fn f() { let v = read()?; consume(v)?; }",
+        );
+        assertTrue(result.ok);
+    });
+
     test("generic turbofish call expression", () => {
         const result = parseModule("fn main() { id::<i32>(1); }");
         assertTrue(result.ok);
@@ -200,5 +230,5 @@ export function runParserItemTests() {
         assertEqual(call.typeArgs.length, 1);
     });
 
-    return 18;
+    return 21;
 }
