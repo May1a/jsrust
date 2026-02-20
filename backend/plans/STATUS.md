@@ -13,5 +13,5 @@
 
 ## Future
 
-- `future/01-wasm-codegen-core.md`: deferred
+- `future/01-wasm-codegen-core.md`: in progress (initial MVP library API + scalar/control-flow wasm emission)
 - `future/02-wasm-data-memory-abi.md`: deferred

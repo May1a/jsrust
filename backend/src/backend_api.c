@@ -8,6 +8,9 @@
 #include "ir_binary.h"
 #include "ir_validate_min.h"
 #include "runtime.h"
+#ifndef JSRUST_BACKEND_WASM
+#include "wasm_emit.h"
+#endif
 
 #ifndef JSRUST_BACKEND_WASM
 #include <stdio.h>
@@ -19,6 +22,10 @@ typedef struct {
     RuntimeContext runtime;
     IRModule* module;
 } BackendContext;
+
+#ifndef JSRUST_BACKEND_WASM
+static ByteBuffer g_codegenOutput;
+#endif
 
 static const char* Backend_messageFromCode(jsrust_backend_error_code code)
 {
@@ -88,6 +95,33 @@ static jsrust_backend_exec_result Backend_internalError(const char* message)
     result.has_exit_value = 0;
     return result;
 }
+
+#ifndef JSRUST_BACKEND_WASM
+static jsrust_backend_codegen_result Backend_codegenResultFromStatus(BackendStatus status)
+{
+    jsrust_backend_codegen_result result;
+
+    result.code = status.code;
+    if (status.message.len > 0)
+        result.message = Backend_messageFromSpan(status.message);
+    else
+        result.message = Backend_messageFromCode(status.code);
+    result.wasm_data = NULL;
+    result.wasm_len = 0;
+    return result;
+}
+
+static jsrust_backend_codegen_result Backend_codegenInternalError(const char* message)
+{
+    jsrust_backend_codegen_result result;
+
+    result.code = JSRUST_BACKEND_ERR_INTERNAL;
+    result.message = message;
+    result.wasm_data = NULL;
+    result.wasm_len = 0;
+    return result;
+}
+#endif
 
 static jsrust_backend_exec_result Backend_runModuleBytes(
     BackendContext* context,
@@ -179,6 +213,73 @@ jsrust_backend_exec_result jsrust_backend_run_bytes(
     Arena_destroy(&context.arena);
     return result;
 }
+
+#ifndef JSRUST_BACKEND_WASM
+jsrust_backend_codegen_result jsrust_backend_codegen_wasm_bytes(
+    const uint8_t* input_data,
+    size_t input_len,
+    const char* entry_fn)
+{
+    Arena arena;
+    ByteSpan input;
+    ByteSpan entryName;
+    IRReadResult readModule;
+    BackendStatus status;
+    WasmEmitResult emitResult;
+    jsrust_backend_codegen_result result;
+
+    if (!input_data && input_len > 0)
+        return Backend_codegenInternalError("invalid input buffer");
+
+    if (!Arena_init(&arena, 2 * 1024 * 1024))
+        return Backend_codegenInternalError("failed to initialize backend arena");
+
+    input = ByteSpan_fromParts(input_data, input_len);
+    entryName = entry_fn ? ByteSpan_fromCString(entry_fn) : ByteSpan_fromCString("main");
+
+    readModule = IRBinary_readModule(&arena, input);
+    if (readModule.status.code != JSRUST_BACKEND_OK) {
+        result = Backend_codegenResultFromStatus(readModule.status);
+        Arena_destroy(&arena);
+        return result;
+    }
+
+    status = IRValidate_minimal(readModule.module);
+    if (status.code != JSRUST_BACKEND_OK) {
+        result = Backend_codegenResultFromStatus(status);
+        Arena_destroy(&arena);
+        return result;
+    }
+
+    emitResult = WasmEmit_emitModule(&arena, readModule.module, entryName);
+    if (emitResult.status.code != JSRUST_BACKEND_OK) {
+        result = Backend_codegenResultFromStatus(emitResult.status);
+        Arena_destroy(&arena);
+        return result;
+    }
+
+    if (!g_codegenOutput.data) {
+        if (!ByteBuffer_init(&g_codegenOutput, emitResult.wasmBytes.len + 64)) {
+            Arena_destroy(&arena);
+            return Backend_codegenInternalError("failed to initialize codegen output buffer");
+        }
+    }
+
+    g_codegenOutput.len = 0;
+    if (!ByteBuffer_appendSpan(&g_codegenOutput, emitResult.wasmBytes)) {
+        Arena_destroy(&arena);
+        return Backend_codegenInternalError("failed to persist codegen wasm output");
+    }
+
+    result.code = JSRUST_BACKEND_OK;
+    result.message = "ok";
+    result.wasm_data = g_codegenOutput.data;
+    result.wasm_len = g_codegenOutput.len;
+
+    Arena_destroy(&arena);
+    return result;
+}
+#endif
 
 #ifndef JSRUST_BACKEND_WASM
 static bool Backend_outputWriteStdout(void* context, uint8_t value)

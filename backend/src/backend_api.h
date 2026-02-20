@@ -13,6 +13,13 @@ typedef struct {
 } jsrust_backend_exec_result;
 
 typedef struct {
+    jsrust_backend_error_code code;
+    const char* message;
+    const uint8_t* wasm_data;
+    size_t wasm_len;
+} jsrust_backend_codegen_result;
+
+typedef struct {
     void* context;
     bool (*writeByte)(void* context, uint8_t value);
     bool (*flush)(void* context);
@@ -31,3 +38,8 @@ jsrust_backend_exec_result jsrust_backend_run_file(
     const char* entry_fn,
     int trace_enabled,
     const char* trace_out_path);
+
+jsrust_backend_codegen_result jsrust_backend_codegen_wasm_bytes(
+    const uint8_t* input_data,
+    size_t input_len,
+    const char* entry_fn);

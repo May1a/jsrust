@@ -19,11 +19,12 @@ This plan set is execution-focused and decision-complete.
 - `06-driver-cli-artifacts.md`: execution CLI/API contract and result handling
 - `07-testing-conformance-ci.md`: fixture execution matrix, negative tests, CI gates
 - `08-libc-overhaul-plan.md`: cleanup track for local `libc.h` bootstrap
+- `09-wasm-codegen-api-contract.md`: additive library-only wasm codegen API contract
 - `STATUS.md`: execution status tracker
 
 ## Future Plans
 
-- `future/01-wasm-codegen-core.md`: deferred wasm binary codegen
+- `future/01-wasm-codegen-core.md`: wasm binary codegen (in progress, MVP active)
 - `future/02-wasm-data-memory-abi.md`: deferred wasm memory/data/ABI track
 - Cross-track reference: `/Users/may/jsrust/plans/future/01-node-addon-availability.md` (compiler-level deferred Node addon availability)
 

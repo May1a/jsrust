@@ -15,6 +15,12 @@ Maintain a **C-based IR execution engine** that interprets JSRust binary IR v2 d
 
 Program wasm codegen (emitting target `.wasm` artifacts from IR) is explicitly deferred to a future phase.
 
+Current status update: an initial **library-only** wasm codegen API is now available for MVP scalar/control-flow IR:
+
+- `jsrust_backend_codegen_wasm_bytes(...)` emits `.wasm` bytes from binary IR v2
+- existing interpreter run-path remains default and unchanged
+- unsupported memory/aggregate instructions fail deterministically at emit-time
+
 Future codegen constraints (already decided):
 
 - Output target: wasm binary (`.wasm`) only
