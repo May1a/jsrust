@@ -1,0 +1,47 @@
+; Module: root
+
+; String literals:
+;   lit0 = "{} {}"
+
+fn id(arg0: i32) -> i32 {
+
+    block0:
+        ret v0
+
+}
+
+fn pick_left(arg0: i32, arg1: i32) -> i32 {
+
+    block0:
+        ret v1
+
+}
+
+fn pick_right(arg0: i32, arg1: i32) -> i32 {
+
+    block0:
+        ret v4
+
+}
+
+fn main() -> () {
+
+    block0:
+        v5 = iconst i32 40
+        v6 = call 3355(v5)
+        v7 = iconst i32 2
+        v8 = iadd v6, v7
+        v9 = call 3355(v8)
+        v10 = iconst i32 999
+        v11 = call 22875(v9, v10)
+        v12 = iconst i32 0
+        v13 = iconst i32 1
+        v14 = iadd v11, v13
+        v15 = call 375170(v12, v14)
+        v16 = sconst lit0
+        v17 = iconst i32 1
+        v18 = iconst i32 1
+        v19 = call 862609(v16, v17, v11, v18, v15)
+        ret
+
+}

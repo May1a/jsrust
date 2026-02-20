@@ -177,9 +177,16 @@ function lookupDirectFunctionItemForCall(ctx, callee) {
  * @param {Type} type
  * @param {Set<string>} genericNames
  * @param {Map<string, Type>} bindings
+ * @param {boolean} [createMissingBindings=true]
  * @returns {Type}
  */
-function substituteGenericTypeBindings(ctx, type, genericNames, bindings) {
+function substituteGenericTypeBindings(
+    ctx,
+    type,
+    genericNames,
+    bindings,
+    createMissingBindings = true,
+) {
     const resolved = ctx.resolveType(type);
     switch (resolved.kind) {
         case TypeKind.Named: {
@@ -188,15 +195,24 @@ function substituteGenericTypeBindings(ctx, type, genericNames, bindings) {
                 if (existing) {
                     return ctx.resolveType(existing);
                 }
-                const fresh = ctx.freshTypeVar();
-                bindings.set(resolved.name, fresh);
-                return fresh;
+                if (createMissingBindings) {
+                    const fresh = ctx.freshTypeVar();
+                    bindings.set(resolved.name, fresh);
+                    return fresh;
+                }
+                return resolved;
             }
             if (!resolved.args) return resolved;
             return makeNamedType(
                 resolved.name,
                 resolved.args.map((/** @type {Type} */ t) =>
-                    substituteGenericTypeBindings(ctx, t, genericNames, bindings),
+                    substituteGenericTypeBindings(
+                        ctx,
+                        t,
+                        genericNames,
+                        bindings,
+                        createMissingBindings,
+                    ),
                 ),
                 resolved.span,
             );
@@ -204,7 +220,13 @@ function substituteGenericTypeBindings(ctx, type, genericNames, bindings) {
         case TypeKind.Tuple:
             return makeTupleType(
                 resolved.elements.map((/** @type {Type} */ t) =>
-                    substituteGenericTypeBindings(ctx, t, genericNames, bindings),
+                    substituteGenericTypeBindings(
+                        ctx,
+                        t,
+                        genericNames,
+                        bindings,
+                        createMissingBindings,
+                    ),
                 ),
                 resolved.span,
             );
@@ -215,6 +237,7 @@ function substituteGenericTypeBindings(ctx, type, genericNames, bindings) {
                     resolved.element,
                     genericNames,
                     bindings,
+                    createMissingBindings,
                 ),
                 resolved.length,
                 resolved.span,
@@ -226,6 +249,7 @@ function substituteGenericTypeBindings(ctx, type, genericNames, bindings) {
                     resolved.element,
                     genericNames,
                     bindings,
+                    createMissingBindings,
                 ),
                 resolved.span,
             );
@@ -236,6 +260,7 @@ function substituteGenericTypeBindings(ctx, type, genericNames, bindings) {
                     resolved.inner,
                     genericNames,
                     bindings,
+                    createMissingBindings,
                 ),
                 resolved.mutable,
                 resolved.span,
@@ -247,6 +272,7 @@ function substituteGenericTypeBindings(ctx, type, genericNames, bindings) {
                     resolved.inner,
                     genericNames,
                     bindings,
+                    createMissingBindings,
                 ),
                 resolved.mutable,
                 resolved.span,
@@ -254,13 +280,20 @@ function substituteGenericTypeBindings(ctx, type, genericNames, bindings) {
         case TypeKind.Fn:
             return makeFnType(
                 resolved.params.map((/** @type {Type} */ t) =>
-                    substituteGenericTypeBindings(ctx, t, genericNames, bindings),
+                    substituteGenericTypeBindings(
+                        ctx,
+                        t,
+                        genericNames,
+                        bindings,
+                        createMissingBindings,
+                    ),
                 ),
                 substituteGenericTypeBindings(
                     ctx,
                     resolved.returnType,
                     genericNames,
                     bindings,
+                    createMissingBindings,
                 ),
                 resolved.isUnsafe,
                 resolved.span,
@@ -338,6 +371,22 @@ function inferGenericFunctionCall(ctx, call, itemDecl) {
         fnType.returnType,
         genericSet,
         bindings,
+    );
+    const concreteParams = fnType.params.map((/** @type {Type} */ p) =>
+        substituteGenericTypeBindings(ctx, p, genericSet, bindings, false),
+    );
+    const concreteReturn = substituteGenericTypeBindings(
+        ctx,
+        fnType.returnType,
+        genericSet,
+        bindings,
+        false,
+    );
+    itemDecl.type = makeFnType(
+        concreteParams,
+        concreteReturn,
+        fnType.isUnsafe || false,
+        fnType.span,
     );
     return ok(returnType);
 }
