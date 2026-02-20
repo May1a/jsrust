@@ -1851,6 +1851,10 @@ function parseUsePath(state) {
             advance(state);
             break;
         }
+        // Stop if we encounter a grouped import { ... }
+        if (next.type === TokenType.OpenCurly) {
+            break;
+        }
         if (!isIdentifierToken(next)) {
             addError(state, "Expected identifier segment", next, [
                 "Identifier",
@@ -1881,12 +1885,6 @@ function parseUseTree(state) {
     /** @type {Node[] | null} */
     let children = null;
     if (matchToken(state, TokenType.OpenCurly)) {
-        addError(
-            state,
-            "Grouped imports are not supported yet",
-            previous(state),
-            null,
-        );
         children = [];
         if (!check(state, TokenType.CloseCurly)) {
             while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
@@ -2390,31 +2388,10 @@ function parseType(state) {
         );
     }
     if (isIdentifierToken(token)) {
-        const start = advance(state);
-        let args = null;
-        if (matchToken(state, TokenType.Lt)) {
-            const typeArgs = [];
-            while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
-                if (check(state, TokenType.Lifetime)) {
-                    advance(state);
-                } else {
-                    const arg = parseType(state);
-                    if (arg) typeArgs.push(arg);
-                }
-                if (!matchToken(state, TokenType.Comma)) break;
-            }
-            const endToken =
-                expectToken(
-                    state,
-                    TokenType.Gt,
-                    "Expected > in generic args",
-                ) ?? start;
-            args = makeGenericArgs(
-                mergeSpans(spanFromToken(start), spanFromToken(endToken)),
-                typeArgs,
-            );
+        const pathType = parsePathTypeNode(state);
+        if (pathType) {
+            return pathType;
         }
-        return makeNamedType(spanFromToken(start), start.value ?? "", args);
     }
     addError(state, "Expected type", token, null);
     advance(state);

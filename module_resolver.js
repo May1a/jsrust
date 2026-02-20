@@ -509,62 +509,120 @@ function canAccessTarget(state, currentModulePath, target) {
  *   moduleDecls: Map<string, any>,
  *   errors: ResolverError[]
  * }} state
+ * @param {any} tree
+ * @param {string[]} parentPath
+ * @param {{ kind: "item" | "module", qualifiedName: string } | null} parentTarget
+ * @param {ModuleScope} scope
+ * @param {any} useItem
+ */
+function resolveUseTree(state, tree, parentPath, parentTarget, scope, useItem) {
+    if (!tree || !Array.isArray(tree.path)) {
+        pushError(state.errors, "Malformed use item", useItem.span);
+        return;
+    }
+
+    // Build the full path for this tree node
+    const fullPath = parentPath.length > 0 && tree.path.length > 0
+        ? [...parentPath, ...tree.path]
+        : tree.path.length > 0
+            ? tree.path
+            : parentPath;
+
+    // Resolve the target for this path
+    let target = null;
+    if (fullPath.length > 0) {
+        target = resolveAbsolutePath(state, fullPath);
+    } else if (parentTarget) {
+        target = parentTarget;
+    }
+
+    // If this tree has children, it's a grouped import - process each child
+    if (tree.children && tree.children.length > 0) {
+        if (!target) {
+            pushError(
+                state.errors,
+                `Unresolved import path: ${fullPath.join("::")}`,
+                useItem.span,
+            );
+            return;
+        }
+        if (target.kind !== "module" && target.kind !== "item") {
+            pushError(
+                state.errors,
+                `Cannot use grouped imports on non-module/item: ${fullPath.join("::")}`,
+                useItem.span,
+            );
+            return;
+        }
+        if (!canAccessTarget(state, scope.path, target)) {
+            pushError(
+                state.errors,
+                `Import path is not visible here: ${fullPath.join("::")}`,
+                useItem.span,
+            );
+            return;
+        }
+
+        // Process each child
+        for (const child of tree.children) {
+            resolveUseTree(state, child, fullPath, target, scope, useItem);
+        }
+        return;
+    }
+
+    // Simple import (no children)
+    if (!target) {
+        pushError(
+            state.errors,
+            `Unresolved import path: ${fullPath.join("::")}`,
+            useItem.span,
+        );
+        return;
+    }
+    if (!canAccessTarget(state, scope.path, target)) {
+        pushError(
+            state.errors,
+            `Import path is not visible here: ${fullPath.join("::")}`,
+            useItem.span,
+        );
+        return;
+    }
+
+    const alias = tree.alias || fullPath[fullPath.length - 1];
+    if (!alias) {
+        pushError(state.errors, "Import alias is empty", useItem.span);
+        return;
+    }
+
+    if (
+        scope.aliases.has(alias) ||
+        scope.items.has(alias) ||
+        scope.modules.has(alias)
+    ) {
+        pushError(
+            state.errors,
+            `Duplicate import alias in module: ${alias}`,
+            useItem.span,
+        );
+        return;
+    }
+
+    scope.aliases.set(alias, target);
+}
+
+/**
+ * @param {{
+ *   moduleScopes: Map<string, ModuleScope>,
+ *   itemDecls: Map<string, any>,
+ *   moduleDecls: Map<string, any>,
+ *   errors: ResolverError[]
+ * }} state
  */
 function resolveUseItems(state) {
     for (const scope of state.moduleScopes.values()) {
         for (const useItem of scope.uses) {
             const tree = useItem.tree;
-            if (!tree || !Array.isArray(tree.path)) {
-                pushError(state.errors, "Malformed use item", useItem.span);
-                continue;
-            }
-            if (tree.children) {
-                pushError(
-                    state.errors,
-                    "Grouped imports are not supported yet",
-                    useItem.span,
-                );
-                continue;
-            }
-
-            const target = resolveAbsolutePath(state, tree.path);
-            if (!target) {
-                pushError(
-                    state.errors,
-                    `Unresolved import path: ${tree.path.join("::")}`,
-                    useItem.span,
-                );
-                continue;
-            }
-            if (!canAccessTarget(state, scope.path, target)) {
-                pushError(
-                    state.errors,
-                    `Import path is not visible here: ${tree.path.join("::")}`,
-                    useItem.span,
-                );
-                continue;
-            }
-
-            const alias = tree.alias || tree.path[tree.path.length - 1];
-            if (!alias) {
-                pushError(state.errors, "Import alias is empty", useItem.span);
-                continue;
-            }
-
-            if (
-                scope.aliases.has(alias) ||
-                scope.items.has(alias) ||
-                scope.modules.has(alias)
-            ) {
-                pushError(
-                    state.errors,
-                    `Duplicate import alias in module: ${alias}`,
-                    useItem.span,
-                );
-                continue;
-            }
-
-            scope.aliases.set(alias, target);
+            resolveUseTree(state, tree, [], null, scope, useItem);
         }
     }
 }
