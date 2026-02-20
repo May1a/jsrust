@@ -35,8 +35,8 @@
         {
             "source": "09_references.rs",
             "artifact": "09_references.bin",
-            "bytes": 173,
-            "sha256": "5adfd65d5d76ea63e284f0102b1420e7f54d1a1a938cc4676286a7b7eaaee74a"
+            "bytes": 151,
+            "sha256": "8eb621e25e4929ea165b6a19e2b187794d13f55afe0ff3e6cbf0e9c35dcccf74"
         }
     ]
 }

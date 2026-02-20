@@ -380,6 +380,16 @@ export function runE2ETests() {
         testsRun++;
     });
 
+    test("E2E: mutable reference write then read", () => {
+        const result = assertCompiles(
+            `fn main() { let mut x = 1; let r = &mut x; *r = 2; let y = *r; }`,
+            "mutable reference write then read",
+        );
+        assertIRContains(result, "store i32", "mutable ref store");
+        assertIRContains(result, "load i32", "mutable ref load");
+        testsRun++;
+    });
+
     // Type annotations
     test("E2E: integer types", () => {
         const types = ["i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize"];

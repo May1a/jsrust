@@ -10,6 +10,7 @@ This directory is organized into three tracks:
 
 - `active/01-compiler-progress.md`: long-term progress vs. remaining work for a functioning Rust compiler.
 - `active/02-new-backend.md`: active C backend initiative and backend-oriented repository overview.
+- `active/03-relaxed-borrow-model.md`: relaxed borrow semantics + lifetime erasure implementation track.
 - `future/01-node-addon-availability.md`: deferred compiler availability track for a Node addon surface.
 - `future/02-untrusted-compatibility.md`: deferred compatibility target for compiling upstream `untrusted`.
 - `STATUS.md`: status tracker for the new active/future plan set.

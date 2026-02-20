@@ -32,11 +32,25 @@ export function runParserTypeTests() {
         assertEqual(result.value.kind, NodeKind.RefType);
     });
 
+    test("reference type with named lifetime", () => {
+        const result = parseType("&'a i32");
+        assertTrue(result.ok);
+        assertEqual(result.value.kind, NodeKind.RefType);
+        assertEqual(result.value.ignoredLifetimeName, "'a");
+    });
+
+    test("reference type with elided lifetime", () => {
+        const result = parseType("&'_ i32");
+        assertTrue(result.ok);
+        assertEqual(result.value.kind, NodeKind.RefType);
+        assertEqual(result.value.ignoredLifetimeName, "'_");
+    });
+
     test("function type", () => {
         const result = parseType("fn(i32) -> i32");
         assertTrue(result.ok);
         assertEqual(result.value.kind, NodeKind.FnType);
     });
 
-    return 5;
+    return 7;
 }

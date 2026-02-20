@@ -784,6 +784,73 @@ function isEnumType(type) {
 }
 
 /**
+ * Check if a type is copyable in the relaxed ownership model.
+ * Named type copyability is delegated to `options.hasNamedTypeCopy`.
+ * @param {Type} type
+ * @param {{
+ *   resolveType?: (type: Type) => Type,
+ *   hasNamedTypeCopy?: (name: string) => boolean
+ * }} [options]
+ * @returns {boolean}
+ */
+function isCopyableType(type, options = {}) {
+    const resolveType = options.resolveType || ((/** @type {Type} */ t) => t);
+    const hasNamedTypeCopy = options.hasNamedTypeCopy || (() => false);
+    /** @type {Set<string>} */
+    const seen = new Set();
+
+    /**
+     * @param {Type} ty
+     * @returns {boolean}
+     */
+    function visit(ty) {
+        const resolved = resolveType(ty);
+        switch (resolved.kind) {
+            case TypeKind.Int:
+            case TypeKind.Float:
+            case TypeKind.Bool:
+            case TypeKind.Char:
+            case TypeKind.Unit:
+            case TypeKind.Never:
+            case TypeKind.Ref:
+            case TypeKind.Ptr:
+            case TypeKind.Fn:
+                return true;
+            case TypeKind.String:
+                return false;
+            case TypeKind.Tuple:
+                return resolved.elements.every(visit);
+            case TypeKind.Array:
+                return visit(resolved.element);
+            case TypeKind.Slice:
+                return visit(resolved.element);
+            case TypeKind.TypeVar:
+                return resolved.bound ? visit(resolved.bound) : false;
+            case TypeKind.Struct:
+            case TypeKind.Enum:
+            case TypeKind.Named: {
+                const key = `${resolved.kind}:${resolved.name}`;
+                if (seen.has(key)) {
+                    return true;
+                }
+                seen.add(key);
+                let argsCopy = true;
+                if (resolved.kind === TypeKind.Named && resolved.args) {
+                    argsCopy = resolved.args.every(visit);
+                }
+                const namedCopy = hasNamedTypeCopy(resolved.name);
+                seen.delete(key);
+                return argsCopy && namedCopy;
+            }
+            default:
+                return false;
+        }
+    }
+
+    return visit(type);
+}
+
+/**
  * Get the size of an integer type in bytes
  * @param {IntWidthValue} width
  * @returns {number}
@@ -877,6 +944,7 @@ export {
     isNamedType,
     isStructType,
     isEnumType,
+    isCopyableType,
     getIntWidthSize,
     isSignedInt,
 };

@@ -13,9 +13,9 @@ export function runErrorsTests() {
     });
 
     test("unterminated single quote produces Invalid", () => {
-        const tokens = tokenize("'a");
+        const tokens = tokenize("'");
         assertEqual(tokens[0].type, T.Invalid);
-        assertEqual(tokens[0].value, "'a");
+        assertEqual(tokens[0].value, "'");
     });
 
     test("newline in string produces Invalid", () => {
