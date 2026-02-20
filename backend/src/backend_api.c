@@ -8,9 +8,7 @@
 #include "ir_binary.h"
 #include "ir_validate_min.h"
 #include "runtime.h"
-#ifndef JSRUST_BACKEND_WASM
 #include "wasm_emit.h"
-#endif
 
 #ifndef JSRUST_BACKEND_WASM
 #include <stdio.h>
@@ -23,9 +21,7 @@ typedef struct {
     IRModule* module;
 } BackendContext;
 
-#ifndef JSRUST_BACKEND_WASM
 static ByteBuffer g_codegenOutput;
-#endif
 
 static const char* Backend_messageFromCode(jsrust_backend_error_code code)
 {
@@ -96,7 +92,6 @@ static jsrust_backend_exec_result Backend_internalError(const char* message)
     return result;
 }
 
-#ifndef JSRUST_BACKEND_WASM
 static jsrust_backend_codegen_result Backend_codegenResultFromStatus(BackendStatus status)
 {
     jsrust_backend_codegen_result result;
@@ -121,7 +116,6 @@ static jsrust_backend_codegen_result Backend_codegenInternalError(const char* me
     result.wasm_len = 0;
     return result;
 }
-#endif
 
 static jsrust_backend_exec_result Backend_runModuleBytes(
     BackendContext* context,
@@ -214,7 +208,6 @@ jsrust_backend_exec_result jsrust_backend_run_bytes(
     return result;
 }
 
-#ifndef JSRUST_BACKEND_WASM
 jsrust_backend_codegen_result jsrust_backend_codegen_wasm_bytes(
     const uint8_t* input_data,
     size_t input_len,
@@ -279,7 +272,6 @@ jsrust_backend_codegen_result jsrust_backend_codegen_wasm_bytes(
     Arena_destroy(&arena);
     return result;
 }
-#endif
 
 #ifndef JSRUST_BACKEND_WASM
 static bool Backend_outputWriteStdout(void* context, uint8_t value)

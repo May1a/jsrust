@@ -27,6 +27,12 @@ const REQUIRED_WASM_EXPORTS = [
     "jsrust_wasm_trace_len",
 ];
 
+const CODEGEN_WASM_EXPORTS = [
+    "jsrust_wasm_codegen",
+    "jsrust_wasm_codegen_wasm_ptr",
+    "jsrust_wasm_codegen_wasm_len",
+];
+
 const BACKEND_ERROR_LABELS = new Map([
     [0, "ok"],
     [10, "io-error"],
@@ -47,6 +53,7 @@ const textDecoder = new TextDecoder();
  * @property {(size: number) => number} jsrust_wasm_alloc
  * @property {() => void} jsrust_wasm_reset
  * @property {(inputPtr: number, inputLen: number, entryPtr: number, entryLen: number, traceEnabled: number) => number} jsrust_wasm_run
+ * @property {(inputPtr: number, inputLen: number, entryPtr: number, entryLen: number) => number} [jsrust_wasm_codegen]
  * @property {() => number} jsrust_wasm_result_code
  * @property {() => number} jsrust_wasm_result_has_exit_value
  * @property {() => number} jsrust_wasm_result_exit_value
@@ -56,6 +63,8 @@ const textDecoder = new TextDecoder();
  * @property {() => number} jsrust_wasm_stdout_len
  * @property {() => number} jsrust_wasm_trace_ptr
  * @property {() => number} jsrust_wasm_trace_len
+ * @property {() => number} [jsrust_wasm_codegen_wasm_ptr]
+ * @property {() => number} [jsrust_wasm_codegen_wasm_len]
  */
 
 /** @type {{ path: string, exports: BackendWasmExports, memory: WebAssembly.Memory } | null} */
@@ -407,6 +416,141 @@ function allocAndWrite(wasmExports, memory, bytes) {
 }
 
 /**
+ * @param {BackendWasmExports} wasmExports
+ * @returns {{ ok: true } | { ok: false, code: string, message: string }}
+ */
+function ensureCodegenWasmExports(wasmExports) {
+    for (const exportName of CODEGEN_WASM_EXPORTS) {
+        if (!(exportName in wasmExports)) {
+            return {
+                ok: false,
+                code: "backend_wasm_load_failed",
+                message: `backend wasm missing codegen export: ${exportName}`,
+            };
+        }
+    }
+    return { ok: true };
+}
+
+/**
+ * @returns {{ ok: true } | { ok: false, code: string, message: string, stdout: string, stderr: string }}
+ */
+function rebuildBackendWasm() {
+    const buildCheck = canBuildBackend();
+    if (!buildCheck.ok) {
+        return {
+            ok: false,
+            code: "backend_build_unavailable",
+            message: buildCheck.reason,
+            stdout: "",
+            stderr: "",
+        };
+    }
+
+    const clangCheck = canCompileBackendWasm();
+    if (!clangCheck.ok) {
+        return {
+            ok: false,
+            code: "backend_build_unavailable",
+            message: clangCheck.reason,
+            stdout: "",
+            stderr: "",
+        };
+    }
+
+    const build = spawnSync("make", ["-C", BACKEND_DIR, "wasm"], {
+        encoding: "utf-8",
+    });
+    if (build.error) {
+        return {
+            ok: false,
+            code: "backend_build_failed",
+            message: `failed to invoke backend wasm build: ${build.error.message}`,
+            stdout: build.stdout || "",
+            stderr: build.stderr || "",
+        };
+    }
+    if ((build.status ?? 1) !== 0) {
+        return {
+            ok: false,
+            code: "backend_build_failed",
+            message: `backend wasm build failed with exit code ${build.status ?? 1}`,
+            stdout: build.stdout || "",
+            stderr: build.stderr || "",
+        };
+    }
+
+    wasmRuntime = null;
+    return { ok: true };
+}
+
+/**
+ * @param {Uint8Array} generatedWasmBytes
+ * @returns {{ ok: true, stdoutBytes: Uint8Array, hasExitValue: boolean, exitValue: number } | { ok: false, code: string, message: string }}
+ */
+function runGeneratedWasmBytes(generatedWasmBytes) {
+    /** @type {number[]} */
+    const stdout = [];
+    const imports = {
+        env: {
+            /** @param {number} value */
+            jsrust_write_byte(value) {
+                stdout.push(value & 0xff);
+                return 1;
+            },
+            jsrust_flush() {
+                return 1;
+            },
+        },
+    };
+
+    let instance;
+    try {
+        const moduleInput = new Uint8Array(generatedWasmBytes.length);
+        moduleInput.set(generatedWasmBytes);
+        const module = new WebAssembly.Module(moduleInput);
+        instance = new WebAssembly.Instance(module, imports);
+    } catch (e) {
+        return {
+            ok: false,
+            code: "generated_wasm_load_failed",
+            message: `failed to instantiate generated wasm: ${errorMessage(e)}`,
+        };
+    }
+
+    const mainExport = /** @type {unknown} */ (instance.exports.main);
+    if (typeof mainExport !== "function") {
+        return {
+            ok: false,
+            code: "generated_wasm_run_failed",
+            message: "generated wasm missing exported function: main",
+        };
+    }
+
+    let exitValueRaw;
+    try {
+        exitValueRaw = mainExport();
+    } catch (e) {
+        return {
+            ok: false,
+            code: "generated_wasm_run_failed",
+            message: `generated wasm trapped while running main: ${errorMessage(e)}`,
+        };
+    }
+
+    const hasExitValue = exitValueRaw !== undefined;
+    const exitValue = hasExitValue
+        ? Number(exitValueRaw)
+        : 0;
+    return {
+        ok: true,
+        stdoutBytes: Uint8Array.from(stdout),
+        hasExitValue,
+        exitValue,
+    };
+}
+
+/**
  * @typedef {object} RunBackendWasmOptions
  * @property {string} [entry]
  * @property {boolean} [trace]
@@ -461,8 +605,8 @@ function runBackendWasm(moduleBytes, options = {}) {
         };
     }
 
-    const wasmExports = loaded.exports;
-    const memory = loaded.memory;
+    let wasmExports = loaded.exports;
+    let memory = loaded.memory;
     const entry = options.entry || "main";
     const traceEnabled = options.trace ? 1 : 0;
     const entryBytes = textEncoder.encode(entry);
@@ -607,6 +751,271 @@ function runBackendWasm(moduleBytes, options = {}) {
 }
 
 /**
+ * Compile binary IR to generated wasm bytes using backend codegen, then execute
+ * the generated wasm in-memory through host imports.
+ * @param {Uint8Array} moduleBytes
+ * @param {RunBackendWasmOptions} [options={}]
+ * @returns {RunBackendWasmResult}
+ */
+function runBackendCodegenWasm(moduleBytes, options = {}) {
+    const ensured = ensureBackendWasm({
+        backendWasm: options.backendWasm,
+        buildIfMissing: options.buildIfMissing,
+    });
+    if (!ensured.ok) {
+        return {
+            ok: false,
+            code: ensured.code,
+            message: ensured.message,
+            label: "internal-error",
+            backendCode: 100,
+            stdout: "",
+            stdoutBytes: new Uint8Array(),
+            traceBytes: new Uint8Array(),
+            stderr: `error[internal-error]: ${ensured.message}`,
+            exitCode: null,
+        };
+    }
+
+    const loaded = loadBackendWasm({ path: ensured.path });
+    if (!loaded.ok) {
+        return {
+            ok: false,
+            code: loaded.code,
+            message: loaded.message,
+            label: "internal-error",
+            backendCode: 100,
+            stdout: "",
+            stdoutBytes: new Uint8Array(),
+            traceBytes: new Uint8Array(),
+            stderr: `error[internal-error]: ${loaded.message}`,
+            exitCode: null,
+            wasmPath: ensured.path,
+            built: ensured.built,
+        };
+    }
+
+    let wasmExports = loaded.exports;
+    let memory = loaded.memory;
+    const entry = options.entry || "main";
+    const entryBytes = textEncoder.encode(entry);
+
+    let codegenExportCheck = ensureCodegenWasmExports(wasmExports);
+    if (!codegenExportCheck.ok && ensured.source === "default") {
+        const rebuild = rebuildBackendWasm();
+        if (rebuild.ok) {
+            const reloaded = loadBackendWasm({ path: ensured.path });
+            if (reloaded.ok) {
+                codegenExportCheck = ensureCodegenWasmExports(reloaded.exports);
+                if (codegenExportCheck.ok) {
+                    wasmExports = reloaded.exports;
+                    memory = reloaded.memory;
+                }
+            }
+        }
+    }
+    if (!codegenExportCheck.ok) {
+        return {
+            ok: false,
+            code: codegenExportCheck.code,
+            message: codegenExportCheck.message,
+            label: "internal-error",
+            backendCode: 100,
+            stdout: "",
+            stdoutBytes: new Uint8Array(),
+            traceBytes: new Uint8Array(),
+            stderr: `error[internal-error]: ${codegenExportCheck.message}`,
+            exitCode: null,
+            wasmPath: ensured.path,
+            built: ensured.built,
+        };
+    }
+
+    try {
+        wasmExports.jsrust_wasm_reset();
+    } catch (e) {
+        const message = `backend wasm reset trap: ${errorMessage(e)}`;
+        return {
+            ok: false,
+            code: "backend_wasm_run_failed",
+            message,
+            label: "internal-error",
+            backendCode: 100,
+            stdout: "",
+            stdoutBytes: new Uint8Array(),
+            traceBytes: new Uint8Array(),
+            stderr: `error[internal-error]: ${message}`,
+            exitCode: null,
+            wasmPath: ensured.path,
+            built: ensured.built,
+        };
+    }
+
+    const inputAlloc = allocAndWrite(wasmExports, memory, moduleBytes);
+    if (!inputAlloc.ok) {
+        return {
+            ok: false,
+            code: inputAlloc.code,
+            message: inputAlloc.message,
+            label: "internal-error",
+            backendCode: 100,
+            stdout: "",
+            stdoutBytes: new Uint8Array(),
+            traceBytes: new Uint8Array(),
+            stderr: `error[internal-error]: ${inputAlloc.message}`,
+            exitCode: null,
+            wasmPath: ensured.path,
+            built: ensured.built,
+        };
+    }
+
+    const entryAlloc = allocAndWrite(wasmExports, memory, entryBytes);
+    if (!entryAlloc.ok) {
+        return {
+            ok: false,
+            code: entryAlloc.code,
+            message: entryAlloc.message,
+            label: "internal-error",
+            backendCode: 100,
+            stdout: "",
+            stdoutBytes: new Uint8Array(),
+            traceBytes: new Uint8Array(),
+            stderr: `error[internal-error]: ${entryAlloc.message}`,
+            exitCode: null,
+            wasmPath: ensured.path,
+            built: ensured.built,
+        };
+    }
+
+    const wasmCodegen = wasmExports.jsrust_wasm_codegen;
+    const wasmCodegenWasmPtr = wasmExports.jsrust_wasm_codegen_wasm_ptr;
+    const wasmCodegenWasmLen = wasmExports.jsrust_wasm_codegen_wasm_len;
+    if (typeof wasmCodegen !== "function"
+        || typeof wasmCodegenWasmPtr !== "function"
+        || typeof wasmCodegenWasmLen !== "function") {
+        return {
+            ok: false,
+            code: "backend_wasm_load_failed",
+            message: "backend wasm codegen exports are unavailable",
+            label: "internal-error",
+            backendCode: 100,
+            stdout: "",
+            stdoutBytes: new Uint8Array(),
+            traceBytes: new Uint8Array(),
+            stderr: "error[internal-error]: backend wasm codegen exports are unavailable",
+            exitCode: null,
+            wasmPath: ensured.path,
+            built: ensured.built,
+        };
+    }
+
+    try {
+        wasmCodegen(
+            inputAlloc.ptr,
+            moduleBytes.length,
+            entryAlloc.ptr,
+            entryBytes.length,
+        );
+    } catch (e) {
+        const message = `backend wasm codegen trap: ${errorMessage(e)}`;
+        return {
+            ok: false,
+            code: "backend_wasm_run_failed",
+            message,
+            label: "internal-error",
+            backendCode: 100,
+            stdout: "",
+            stdoutBytes: new Uint8Array(),
+            traceBytes: new Uint8Array(),
+            stderr: `error[internal-error]: ${message}`,
+            exitCode: null,
+            wasmPath: ensured.path,
+            built: ensured.built,
+        };
+    }
+
+    const backendCode = Number(wasmExports.jsrust_wasm_result_code());
+    const label = BACKEND_ERROR_LABELS.get(backendCode) || "unknown-error";
+    const messagePtr = Number(wasmExports.jsrust_wasm_result_message_ptr());
+    const messageLen = Number(wasmExports.jsrust_wasm_result_message_len());
+    const messageBytes = readWasmBytes(memory, messagePtr, messageLen);
+    const message = messageBytes.length > 0 ? textDecoder.decode(messageBytes) : label;
+
+    if (backendCode !== 0) {
+        return {
+            ok: false,
+            code: "backend_codegen_failed",
+            message,
+            label,
+            backendCode,
+            stdout: "",
+            stdoutBytes: new Uint8Array(),
+            traceBytes: new Uint8Array(),
+            stderr: `error[${label}]: ${message}`,
+            exitCode: backendCode,
+            wasmPath: ensured.path,
+            built: ensured.built,
+        };
+    }
+
+    const generatedWasmPtr = Number(wasmCodegenWasmPtr());
+    const generatedWasmLen = Number(wasmCodegenWasmLen());
+    const generatedWasmBytes = readWasmBytes(memory, generatedWasmPtr, generatedWasmLen);
+    if (generatedWasmBytes.length === 0) {
+        return {
+            ok: false,
+            code: "backend_codegen_failed",
+            message: "backend wasm codegen returned empty wasm output",
+            label: "internal-error",
+            backendCode: 100,
+            stdout: "",
+            stdoutBytes: new Uint8Array(),
+            traceBytes: new Uint8Array(),
+            stderr: "error[internal-error]: backend wasm codegen returned empty wasm output",
+            exitCode: null,
+            wasmPath: ensured.path,
+            built: ensured.built,
+        };
+    }
+
+    const generatedRun = runGeneratedWasmBytes(generatedWasmBytes);
+    if (!generatedRun.ok) {
+        return {
+            ok: false,
+            code: generatedRun.code,
+            message: generatedRun.message,
+            label: "execute-error",
+            backendCode: 40,
+            stdout: "",
+            stdoutBytes: new Uint8Array(),
+            traceBytes: new Uint8Array(),
+            stderr: `error[execute-error]: ${generatedRun.message}`,
+            exitCode: 40,
+            wasmPath: ensured.path,
+            built: ensured.built,
+        };
+    }
+
+    const stdoutBytes = generatedRun.stdoutBytes;
+    const stdout = stdoutBytes.length > 0 ? textDecoder.decode(stdoutBytes) : "";
+    return {
+        ok: true,
+        code: "ok",
+        stdout,
+        stdoutBytes,
+        traceBytes: new Uint8Array(),
+        message: "ok",
+        label: "ok",
+        backendCode: 0,
+        hasExitValue: generatedRun.hasExitValue,
+        exitValue: generatedRun.exitValue,
+        exitCode: 0,
+        wasmPath: ensured.path,
+        built: ensured.built,
+    };
+}
+
+/**
  * @returns {{ ok: true } | { ok: false, reason: string }}
  */
 function canRunBackendIntegrationTests() {
@@ -644,5 +1053,6 @@ export {
     resolveBackendWasm,
     ensureBackendWasm,
     runBackendWasm,
+    runBackendCodegenWasm,
     canRunBackendIntegrationTests,
 };

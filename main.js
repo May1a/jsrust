@@ -13,7 +13,7 @@ import { makeIRModule, addIRFunction, resetIRIds } from "./ir.js";
 import { HItemKind } from "./hir.js";
 import { validateFunction as validateIRFunction } from "./ir_validate.js";
 import { serializeModule } from "./ir_serialize.js";
-import { runBackendWasm } from "./backend_runner.js";
+import { runBackendCodegenWasm, runBackendWasm } from "./backend_runner.js";
 
 /**
  * @typedef {object} CompileOptions
@@ -50,6 +50,7 @@ import { runBackendWasm } from "./backend_runner.js";
  * @property {string | null} traceOutPath
  * @property {string | null} outBin
  * @property {boolean} validate
+ * @property {boolean} codegenWasm
  */
 
 /**
@@ -384,11 +385,12 @@ function printCompileHelp(exitCode = 0) {
     console.log("  -h, --help    Show this help");
     console.log("");
     console.log("Run options:");
-    console.log("  run <file.rs> Compile to binary IR and execute with wasm backend");
+    console.log("  run <file.rs> Compile to binary IR and execute with backend runtime");
     console.log("  --entry <fn>         Entry function (default: main)");
     console.log("  --trace              Enable backend trace output");
     console.log("  --trace-out <path>   Write backend trace to file");
     console.log("  --out-bin <path>     Write binary IR artifact to path");
+    console.log("  --codegen-wasm       Compile binary IR to wasm and run generated wasm");
     console.log("  --no-validate        Skip IR validation");
     process.exit(exitCode);
 }
@@ -397,7 +399,7 @@ function printCompileHelp(exitCode = 0) {
  * @param {number} [exitCode=0]
  */
 function printRunHelp(exitCode = 0) {
-    console.log("JSRust Run - Compile to binary IR and execute wasm backend");
+    console.log("JSRust Run - Compile to binary IR and execute via backend");
     console.log("");
     console.log("Usage: node main.js run <file.rs> [options]");
     console.log("");
@@ -406,6 +408,7 @@ function printRunHelp(exitCode = 0) {
     console.log("  --trace              Enable backend trace output");
     console.log("  --trace-out <path>   Write backend trace to file");
     console.log("  --out-bin <path>     Write binary IR artifact to path");
+    console.log("  --codegen-wasm       Compile binary IR to wasm and run generated wasm");
     console.log("  --no-validate        Skip IR validation");
     console.log("  -h, --help           Show this help");
     process.exit(exitCode);
@@ -547,6 +550,7 @@ function runBackendCli(args) {
         traceOutPath: null,
         outBin: null,
         validate: true,
+        codegenWasm: false,
     };
 
     let inputFile = null;
@@ -579,6 +583,8 @@ function runBackendCli(args) {
             options.outBin = args[i];
         } else if (arg === "--no-validate") {
             options.validate = false;
+        } else if (arg === "--codegen-wasm") {
+            options.codegenWasm = true;
         } else if (arg === "-h" || arg === "--help") {
             printRunHelp(0);
         } else if (arg.startsWith("-")) {
@@ -599,6 +605,10 @@ function runBackendCli(args) {
 
     if (options.traceOutPath && !options.trace) {
         printOneLineError("--trace-out requires --trace");
+        return 1;
+    }
+    if (options.codegenWasm && options.trace) {
+        printOneLineError("--trace is not supported with --codegen-wasm");
         return 1;
     }
 
@@ -626,10 +636,15 @@ function runBackendCli(args) {
         }
     }
 
-    const runResult = runBackendWasm(binaryResult.bytes, {
-        entry: options.entry,
-        trace: options.trace,
-    });
+    const runResult = options.codegenWasm
+        ? runBackendCodegenWasm(binaryResult.bytes, {
+            entry: options.entry,
+            trace: options.trace,
+        })
+        : runBackendWasm(binaryResult.bytes, {
+            entry: options.entry,
+            trace: options.trace,
+        });
 
     if (!runResult.ok) {
         printBackendStatusLine(runResult.label, runResult.message);

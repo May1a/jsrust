@@ -70,6 +70,32 @@ export function runBackendIntegrationTests() {
         assertEqual(lines[lines.length - 1], "ok");
     });
 
+    test("Backend integration: run arithmetic via codegen wasm mode", () => {
+        const result = runMain([
+            "run",
+            "examples/03_arithmetic.rs",
+            "--codegen-wasm",
+        ]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertEqual(result.status, 0, `stderr: ${result.stderr}`);
+        assertEqual(result.stdout.trim(), "ok");
+    });
+
+    test("Backend integration: --trace rejected in codegen wasm mode", () => {
+        const result = runMain([
+            "run",
+            "examples/01_empty_main.rs",
+            "--codegen-wasm",
+            "--trace",
+        ]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
+        assertTrue(
+            result.stderr.includes("--trace is not supported with --codegen-wasm"),
+            `unexpected stderr: ${result.stderr}`,
+        );
+    });
+
     test("Backend integration: missing entry returns execute error", () => {
         const result = runMain([
             "run",
