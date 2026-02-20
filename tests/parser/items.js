@@ -101,5 +101,38 @@ export function runParserItemTests() {
         assertEqual(result.value.items[0].fields[0].isPub, true);
     });
 
-    return 10;
+    test("generic function item", () => {
+        const result = parseModule("fn id<T>(x: T) -> T { x }");
+        assertTrue(result.ok);
+        const item = result.value.items[0];
+        assertEqual(item.kind, NodeKind.FnItem);
+        assertEqual(item.generics.length, 1);
+        assertEqual(item.generics[0], "T");
+        assertEqual(item.genericParams.length, 1);
+        assertEqual(item.genericParams[0].name, "T");
+    });
+
+    test("generic function bounds + where clause", () => {
+        const result = parseModule(
+            "fn id<T: Clone>(x: T) -> T where T: Clone + Copy { x }",
+        );
+        assertTrue(result.ok);
+        const item = result.value.items[0];
+        assertEqual(item.genericParams.length, 1);
+        assertEqual(item.genericParams[0].bounds.length, 1);
+        assertEqual(item.whereClause.length, 1);
+        assertEqual(item.whereClause[0].bounds.length, 2);
+    });
+
+    test("generic turbofish call expression", () => {
+        const result = parseModule("fn main() { id::<i32>(1); }");
+        assertTrue(result.ok);
+        const fn = result.value.items[0];
+        const exprStmt = fn.body.stmts[0];
+        const call = exprStmt.expr;
+        assertEqual(call.kind, NodeKind.CallExpr);
+        assertEqual(call.typeArgs.length, 1);
+    });
+
+    return 13;
 }

@@ -987,6 +987,118 @@ function lowerUnary(ctx, unary, typeCtx) {
 }
 
 /**
+ * @param {TypeContext} typeCtx
+ * @param {Type} type
+ * @param {Set<string>} genericNames
+ * @param {Map<string, Type>} bindings
+ * @returns {Type}
+ */
+function substituteLoweringGenericType(typeCtx, type, genericNames, bindings) {
+    const resolved = typeCtx.resolveType(type);
+    if (resolved.kind === TypeKind.Named) {
+        if (genericNames.has(resolved.name) && !resolved.args) {
+            const bound = bindings.get(resolved.name);
+            return bound ? typeCtx.resolveType(bound) : resolved;
+        }
+        if (!resolved.args) return resolved;
+        return {
+            ...resolved,
+            args: resolved.args.map((/** @type {Type} */ t) =>
+                substituteLoweringGenericType(typeCtx, t, genericNames, bindings),
+            ),
+        };
+    }
+    if (resolved.kind === TypeKind.Ref) {
+        return {
+            ...resolved,
+            inner: substituteLoweringGenericType(
+                typeCtx,
+                resolved.inner,
+                genericNames,
+                bindings,
+            ),
+        };
+    }
+    if (resolved.kind === TypeKind.Ptr) {
+        return {
+            ...resolved,
+            inner: substituteLoweringGenericType(
+                typeCtx,
+                resolved.inner,
+                genericNames,
+                bindings,
+            ),
+        };
+    }
+    if (resolved.kind === TypeKind.Tuple) {
+        return {
+            ...resolved,
+            elements: resolved.elements.map((/** @type {Type} */ t) =>
+                substituteLoweringGenericType(typeCtx, t, genericNames, bindings),
+            ),
+        };
+    }
+    if (resolved.kind === TypeKind.Array) {
+        return {
+            ...resolved,
+            element: substituteLoweringGenericType(
+                typeCtx,
+                resolved.element,
+                genericNames,
+                bindings,
+            ),
+        };
+    }
+    if (resolved.kind === TypeKind.Slice) {
+        return {
+            ...resolved,
+            element: substituteLoweringGenericType(
+                typeCtx,
+                resolved.element,
+                genericNames,
+                bindings,
+            ),
+        };
+    }
+    if (resolved.kind === TypeKind.Fn) {
+        return {
+            ...resolved,
+            params: resolved.params.map((/** @type {Type} */ t) =>
+                substituteLoweringGenericType(typeCtx, t, genericNames, bindings),
+            ),
+            returnType: substituteLoweringGenericType(
+                typeCtx,
+                resolved.returnType,
+                genericNames,
+                bindings,
+            ),
+        };
+    }
+    return resolved;
+}
+
+/**
+ * @param {TypeContext} typeCtx
+ * @param {Node} callee
+ * @returns {any | null}
+ */
+function lookupLoweringCallItem(typeCtx, callee) {
+    if (callee.kind === NodeKind.IdentifierExpr) {
+        const lookupName = callee.resolvedItemName || callee.name;
+        return typeCtx.lookupItem(lookupName);
+    }
+    if (callee.kind === NodeKind.PathExpr) {
+        const lookupName =
+            callee.resolvedItemName ||
+            (callee.segments && callee.segments.length > 0
+                ? callee.segments[0]
+                : null);
+        return lookupName ? typeCtx.lookupItem(lookupName) : null;
+    }
+    return null;
+}
+
+/**
  * Lower a call expression
  * @param {LoweringCtx} ctx
  * @param {Node} call
@@ -1101,6 +1213,19 @@ function lowerCall(ctx, call, typeCtx) {
     let ty = makeUnitType();
     if (callee.ty && callee.ty.kind === TypeKind.Fn) {
         ty = callee.ty.returnType;
+    }
+    const itemDecl = lookupLoweringCallItem(typeCtx, call.callee);
+    if (itemDecl && itemDecl.kind === "fn" && itemDecl.type?.kind === TypeKind.Fn) {
+        const genericNames = itemDecl.node?.generics || [];
+        if (genericNames.length > 0) {
+            const bindings = itemDecl.genericBindings || new Map();
+            ty = substituteLoweringGenericType(
+                typeCtx,
+                itemDecl.type.returnType,
+                new Set(genericNames),
+                bindings,
+            );
+        }
     }
 
     return makeHCallExpr(call.span, callee, args, ty);

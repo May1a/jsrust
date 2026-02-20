@@ -214,10 +214,11 @@ function makeUnaryExpr(span, op, operand) {
  * @param {Span} span
  * @param {Node} callee
  * @param {Node[]} args
+ * @param {Node[] | null} [typeArgs=null]
  * @returns {Node}
  */
-function makeCallExpr(span, callee, args) {
-    return makeNode(NodeKind.CallExpr, span, { callee, args });
+function makeCallExpr(span, callee, args, typeArgs = null) {
+    return makeNode(NodeKind.CallExpr, span, { callee, args, typeArgs });
 }
 
 /**
@@ -470,6 +471,8 @@ function makeParam(
  * @param {boolean} isAsync
  * @param {boolean} isUnsafe
  * @param {boolean} [isPub=false]
+ * @param {{ name: string, bounds: Node[] }[] | null} [genericParams=null]
+ * @param {{ name: string, bounds: Node[] }[] | null} [whereClause=null]
  * @returns {Node}
  */
 function makeFnItem(
@@ -482,10 +485,14 @@ function makeFnItem(
     isAsync,
     isUnsafe,
     isPub = false,
+    genericParams = null,
+    whereClause = null,
 ) {
     return makeNode(NodeKind.FnItem, span, {
         name,
         generics,
+        genericParams,
+        whereClause,
         params,
         returnType,
         body,

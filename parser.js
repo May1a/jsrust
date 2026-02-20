@@ -512,6 +512,9 @@ function parsePathSegments(state) {
         check(state, TokenType.Colon) &&
         peek(state, 1).type === TokenType.Colon
     ) {
+        if (!isIdentifierToken(peek(state, 2))) {
+            break;
+        }
         advance(state);
         advance(state);
         const next = peek(state);
@@ -524,6 +527,120 @@ function parsePathSegments(state) {
         segments.push(advance(state).value);
     }
     return segments;
+}
+
+/**
+ * @param {ParserState} state
+ * @returns {Node | null}
+ */
+function parsePathTypeNode(state) {
+    const start = peek(state);
+    if (!isIdentifierToken(start)) {
+        return null;
+    }
+    const segments = parsePathSegments(state);
+    if (segments.length === 0) {
+        return null;
+    }
+    const endToken = previous(state);
+    let args = null;
+    if (matchToken(state, TokenType.Lt)) {
+        /** @type {Node[]} */
+        const typeArgs = [];
+        while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
+            const arg = parseType(state);
+            if (arg) typeArgs.push(arg);
+            if (!matchToken(state, TokenType.Comma)) break;
+        }
+        const gtToken =
+            expectToken(state, TokenType.Gt, "Expected > in generic args") ??
+            endToken;
+        args = makeGenericArgs(
+            mergeSpans(spanFromToken(start), spanFromToken(gtToken)),
+            typeArgs,
+        );
+    }
+    return makeNamedType(
+        mergeSpans(spanFromToken(start), spanFromToken(endToken)),
+        segments.join("::"),
+        args,
+    );
+}
+
+/**
+ * @param {ParserState} state
+ * @returns {{ name: string, bounds: Node[] }[] | null}
+ */
+function parseGenericParamList(state) {
+    if (!matchToken(state, TokenType.Lt)) {
+        return null;
+    }
+    /** @type {{ name: string, bounds: Node[] }[]} */
+    const genericParams = [];
+    while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
+        const paramToken =
+            expectToken(state, TokenType.Identifier, "Expected generic parameter name") ??
+            peek(state);
+        const name = paramToken.value ?? "";
+        /** @type {Node[]} */
+        const bounds = [];
+        if (matchToken(state, TokenType.Colon)) {
+            while (!isAtEnd(state)) {
+                const bound = parsePathTypeNode(state) || parseType(state);
+                if (bound) bounds.push(bound);
+                if (!matchToken(state, TokenType.Plus)) break;
+            }
+        }
+        genericParams.push({ name, bounds });
+        if (!matchToken(state, TokenType.Comma)) break;
+    }
+    expectToken(state, TokenType.Gt, "Expected > after generic parameters");
+    return genericParams;
+}
+
+/**
+ * @param {ParserState} state
+ * @returns {{ name: string, bounds: Node[] }[] | null}
+ */
+function parseOptionalWhereClause(state) {
+    if (!matchToken(state, TokenType.Where)) {
+        return null;
+    }
+    /** @type {{ name: string, bounds: Node[] }[]} */
+    const whereClause = [];
+    while (
+        !check(state, TokenType.OpenCurly) &&
+        !check(state, TokenType.Semicolon) &&
+        !isAtEnd(state)
+    ) {
+        const paramToken =
+            expectToken(
+                state,
+                TokenType.Identifier,
+                "Expected type parameter name in where clause",
+            ) ?? peek(state);
+        const name = paramToken.value ?? "";
+        /** @type {Node[]} */
+        const bounds = [];
+        if (matchToken(state, TokenType.Colon)) {
+            while (!isAtEnd(state)) {
+                const bound = parsePathTypeNode(state) || parseType(state);
+                if (bound) bounds.push(bound);
+                if (!matchToken(state, TokenType.Plus)) break;
+            }
+        } else {
+            addError(
+                state,
+                "Expected : in where clause predicate",
+                peek(state),
+                [":"],
+            );
+            break;
+        }
+        whereClause.push({ name, bounds });
+        if (!matchToken(state, TokenType.Comma)) break;
+    }
+    return whereClause;
 }
 
 /**
@@ -776,6 +893,8 @@ function parseMacroArgs(state) {
  */
 function parsePostfix(state, expr) {
     let result = expr;
+    /** @type {Node[] | null} */
+    let pendingTypeArgs = null;
     while (result) {
         if (
             check(state, TokenType.Dot) &&
@@ -848,7 +967,43 @@ function parsePostfix(state, expr) {
                 expectToken(state, TokenType.CloseParen, "Expected )") ??
                 peek(state);
             const span = mergeSpans(result.span, spanFromToken(endToken));
-            result = makeCallExpr(span, result, args);
+            result = makeCallExpr(span, result, args, pendingTypeArgs);
+            pendingTypeArgs = null;
+            continue;
+        }
+        if (
+            check(state, TokenType.Colon) &&
+            peek(state, 1).type === TokenType.Colon
+        ) {
+            advance(state);
+            advance(state);
+            if (!matchToken(state, TokenType.Lt)) {
+                addError(
+                    state,
+                    "Expected <...> after :: for generic call arguments",
+                    peek(state),
+                    ["<"],
+                );
+                continue;
+            }
+            /** @type {Node[]} */
+            const typeArgs = [];
+            while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
+                const typeArg = parseType(state);
+                if (typeArg) typeArgs.push(typeArg);
+                if (!matchToken(state, TokenType.Comma)) break;
+            }
+            expectToken(state, TokenType.Gt, "Expected > after generic call arguments");
+            pendingTypeArgs = typeArgs;
+            if (!check(state, TokenType.OpenParen)) {
+                addError(
+                    state,
+                    "Generic call arguments must be followed by function call parentheses",
+                    peek(state),
+                    ["("],
+                );
+                pendingTypeArgs = null;
+            }
             continue;
         }
         break;
@@ -1180,11 +1335,16 @@ function parseFnItem(state, isUnsafe, isPub, allowReceiver = false) {
     const nameToken =
         expectToken(state, TokenType.Identifier, "Expected function name") ??
         peek(state);
+    const genericParams = parseGenericParamList(state);
+    const generics = genericParams
+        ? genericParams.map((/** @type {{ name: string }} */ p) => p.name)
+        : null;
     const params = parseParamList(state, { allowReceiver });
     let returnType = null;
     if (matchArrow(state)) {
         returnType = parseType(state);
     }
+    const whereClause = parseOptionalWhereClause(state);
     let body = null;
     if (check(state, TokenType.OpenCurly)) {
         body = parseBlockExpr(state);
@@ -1198,13 +1358,15 @@ function parseFnItem(state, isUnsafe, isPub, allowReceiver = false) {
     return makeFnItem(
         span,
         nameToken.value ?? "",
-        null,
+        generics,
         params,
         returnType,
         body,
         false,
         isUnsafe,
         isPub,
+        genericParams,
+        whereClause,
     );
 }
 

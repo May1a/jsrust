@@ -1,5 +1,6 @@
 import { TypeContext } from "../../type_context.js";
 import { inferModule, inferFnSignature } from "../../inference.js";
+import { parseModule } from "../../parser.js";
 import { NodeKind, LiteralKind, Mutability } from "../../ast.js";
 import {
     TypeKind,
@@ -75,6 +76,10 @@ function makeFnItem(
         span: makeSpan(),
         name,
         generics,
+        genericParams: generics
+            ? generics.map((/** @type {string} */ g) => ({ name: g, bounds: [] }))
+            : null,
+        whereClause: null,
         params,
         returnType,
         body,
@@ -99,6 +104,17 @@ function makeModule(name, items) {
         name,
         items,
     };
+}
+
+/**
+ * @param {string} source
+ * @returns {import("../../inference.js").InferenceResult}
+ */
+function inferSource(source) {
+    const parseResult = parseModule(source);
+    assert(parseResult.ok, `parse failed: ${parseResult.errors?.map((e) => e.message).join(", ")}`);
+    const ctx = new TypeContext();
+    return inferModule(ctx, parseResult.value);
 }
 
 // Test function signature inference
@@ -189,10 +205,40 @@ testGroup("Module Inference", () => {
         const result = inferModule(ctx, module);
         assert(result.ok);
     });
+
+    assert("generic identity function compiles", () => {
+        const result = inferSource("fn id<T>(x: T) -> T { x } fn main() { let _x = id(1); }");
+        assert(result.ok, `inference failed: ${result.errors?.map((e) => e.message).join(", ")}`);
+    });
+
+    assert("generic turbofish call compiles", () => {
+        const result = inferSource("fn id<T>(x: T) -> T { x } fn main() { let _x = id::<i32>(1); }");
+        assert(result.ok, `inference failed: ${result.errors?.map((e) => e.message).join(", ")}`);
+    });
+
+    assert("generic turbofish mismatch errors", () => {
+        const result = inferSource("fn id<T>(x: T) -> T { x } fn main() { let _x = id::<i32>(true); }");
+        assertEq(result.ok, false);
+    });
+
+    assert("single-instance generic lock errors on conflicting calls", () => {
+        const result = inferSource("fn id<T>(x: T) -> T { x } fn main() { let _x = id(1); let _y = id(true); }");
+        assertEq(result.ok, false);
+    });
+
+    assert("generic trait bounds are semantic hard-errors", () => {
+        const result = inferSource("fn f<T: Copy>(x: T) -> T { x }");
+        assertEq(result.ok, false);
+    });
+
+    assert("where clauses are semantic hard-errors", () => {
+        const result = inferSource("fn f<T>(x: T) -> T where T: Copy { x }");
+        assertEq(result.ok, false);
+    });
 });
 
 console.log("Function inference tests complete");
 
 export function runInferenceFunctionsTests() {
-    return 4; // Number of tests
+    return 10; // Number of tests
 }

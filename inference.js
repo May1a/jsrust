@@ -119,6 +119,229 @@ function combineResults(results) {
     return { ok: true, types };
 }
 
+/**
+ * @param {Node} fnItem
+ * @returns {TypeError[]}
+ */
+function collectUnsupportedGenericConstraintErrors(fnItem) {
+    const errors = [];
+    const genericParams = fnItem.genericParams || [];
+    const hasTraitBounds = genericParams.some(
+        (/** @type {{ bounds?: Node[] }} */ p) => (p.bounds || []).length > 0,
+    );
+    if (hasTraitBounds) {
+        errors.push(
+            makeTypeError(
+                "Trait bounds are parsed but not implemented yet",
+                fnItem.span,
+            ),
+        );
+    }
+    if ((fnItem.whereClause || []).length > 0) {
+        errors.push(
+            makeTypeError(
+                "where clauses are parsed but not implemented yet",
+                fnItem.span,
+            ),
+        );
+    }
+    return errors;
+}
+
+/**
+ * @param {TypeContext} ctx
+ * @param {Node} callee
+ * @returns {import('./type_context.js').ItemDecl | null}
+ */
+function lookupDirectFunctionItemForCall(ctx, callee) {
+    if (callee.kind === NodeKind.IdentifierExpr) {
+        const lookupName = callee.resolvedItemName || callee.name;
+        const item = ctx.lookupItem(lookupName);
+        return item && item.kind === "fn" ? item : null;
+    }
+    if (callee.kind === NodeKind.PathExpr) {
+        const lookupName =
+            callee.resolvedItemName ||
+            (callee.segments && callee.segments.length > 0
+                ? callee.segments[0]
+                : null);
+        if (!lookupName) return null;
+        const item = ctx.lookupItem(lookupName);
+        return item && item.kind === "fn" ? item : null;
+    }
+    return null;
+}
+
+/**
+ * @param {TypeContext} ctx
+ * @param {Type} type
+ * @param {Set<string>} genericNames
+ * @param {Map<string, Type>} bindings
+ * @returns {Type}
+ */
+function substituteGenericTypeBindings(ctx, type, genericNames, bindings) {
+    const resolved = ctx.resolveType(type);
+    switch (resolved.kind) {
+        case TypeKind.Named: {
+            if (genericNames.has(resolved.name) && !resolved.args) {
+                const existing = bindings.get(resolved.name);
+                if (existing) {
+                    return ctx.resolveType(existing);
+                }
+                const fresh = ctx.freshTypeVar();
+                bindings.set(resolved.name, fresh);
+                return fresh;
+            }
+            if (!resolved.args) return resolved;
+            return makeNamedType(
+                resolved.name,
+                resolved.args.map((/** @type {Type} */ t) =>
+                    substituteGenericTypeBindings(ctx, t, genericNames, bindings),
+                ),
+                resolved.span,
+            );
+        }
+        case TypeKind.Tuple:
+            return makeTupleType(
+                resolved.elements.map((/** @type {Type} */ t) =>
+                    substituteGenericTypeBindings(ctx, t, genericNames, bindings),
+                ),
+                resolved.span,
+            );
+        case TypeKind.Array:
+            return makeArrayType(
+                substituteGenericTypeBindings(
+                    ctx,
+                    resolved.element,
+                    genericNames,
+                    bindings,
+                ),
+                resolved.length,
+                resolved.span,
+            );
+        case TypeKind.Slice:
+            return makeSliceType(
+                substituteGenericTypeBindings(
+                    ctx,
+                    resolved.element,
+                    genericNames,
+                    bindings,
+                ),
+                resolved.span,
+            );
+        case TypeKind.Ref:
+            return makeRefType(
+                substituteGenericTypeBindings(
+                    ctx,
+                    resolved.inner,
+                    genericNames,
+                    bindings,
+                ),
+                resolved.mutable,
+                resolved.span,
+            );
+        case TypeKind.Ptr:
+            return makePtrType(
+                substituteGenericTypeBindings(
+                    ctx,
+                    resolved.inner,
+                    genericNames,
+                    bindings,
+                ),
+                resolved.mutable,
+                resolved.span,
+            );
+        case TypeKind.Fn:
+            return makeFnType(
+                resolved.params.map((/** @type {Type} */ t) =>
+                    substituteGenericTypeBindings(ctx, t, genericNames, bindings),
+                ),
+                substituteGenericTypeBindings(
+                    ctx,
+                    resolved.returnType,
+                    genericNames,
+                    bindings,
+                ),
+                resolved.isUnsafe,
+                resolved.span,
+            );
+        default:
+            return resolved;
+    }
+}
+
+/**
+ * @param {TypeContext} ctx
+ * @param {Node} call
+ * @param {import('./type_context.js').ItemDecl} itemDecl
+ * @returns {InferenceResult}
+ */
+function inferGenericFunctionCall(ctx, call, itemDecl) {
+    const fnType = itemDecl.type;
+    if (!fnType || fnType.kind !== TypeKind.Fn) {
+        return err("Generic function type is not available", call.span);
+    }
+    const genericNames = itemDecl.node.generics || [];
+    const genericSet = new Set(genericNames);
+    const bindings = itemDecl.genericBindings || new Map();
+    itemDecl.genericBindings = bindings;
+
+    if (call.typeArgs !== null) {
+        if (call.typeArgs.length !== genericNames.length) {
+            return err(
+                `Generic function expects ${genericNames.length} type arguments, got ${call.typeArgs.length}`,
+                call.span,
+            );
+        }
+        for (let i = 0; i < genericNames.length; i++) {
+            const name = genericNames[i];
+            const typeArgResult = resolveTypeNode(ctx, call.typeArgs[i]);
+            if (!typeArgResult.ok) {
+                return typeArgResult;
+            }
+            const existing = bindings.get(name);
+            if (existing) {
+                const unifyExisting = unify(ctx, existing, typeArgResult.type);
+                if (!unifyExisting.ok) {
+                    return { ok: false, errors: [unifyExisting.error] };
+                }
+            } else {
+                bindings.set(name, typeArgResult.type);
+            }
+        }
+    }
+
+    if (call.args.length !== fnType.params.length) {
+        return err(
+            `Function expects ${fnType.params.length} arguments, got ${call.args.length}`,
+            call.span,
+        );
+    }
+
+    for (let i = 0; i < call.args.length; i++) {
+        const argResult = inferExpr(ctx, call.args[i]);
+        if (!argResult.ok) return argResult;
+        const expectedParamType = substituteGenericTypeBindings(
+            ctx,
+            fnType.params[i],
+            genericSet,
+            bindings,
+        );
+        const unifyResult = unify(ctx, argResult.type, expectedParamType);
+        if (!unifyResult.ok) {
+            return { ok: false, errors: [unifyResult.error] };
+        }
+    }
+
+    const returnType = substituteGenericTypeBindings(
+        ctx,
+        fnType.returnType,
+        genericSet,
+        bindings,
+    );
+    return ok(returnType);
+}
+
 // ============================================================================
 // Task 4.8: Unification
 // ============================================================================
@@ -613,6 +836,10 @@ function gatherDeclarations(ctx, module) {
 function gatherDeclaration(ctx, item) {
     switch (item.kind) {
         case NodeKind.FnItem: {
+            const genericConstraintErrors = collectUnsupportedGenericConstraintErrors(item);
+            if (genericConstraintErrors.length > 0) {
+                return { ok: false, errors: genericConstraintErrors };
+            }
             let pushedSelf = false;
             if (item.implTargetName && !ctx.currentImplSelfType()) {
                 const builtinSelf = resolveBuiltinType(item.implTargetName);
@@ -700,6 +927,13 @@ function gatherDeclaration(ctx, item) {
         }
 
         case NodeKind.TraitItem: {
+            const traitErrors = [];
+            for (const method of item.methods || []) {
+                traitErrors.push(...collectUnsupportedGenericConstraintErrors(method));
+            }
+            if (traitErrors.length > 0) {
+                return { ok: false, errors: traitErrors };
+            }
             const registerResult = ctx.registerTrait(item.name, item);
             if (!registerResult.ok) {
                 return {
@@ -762,6 +996,7 @@ function gatherDeclaration(ctx, item) {
             /** @type {Map<string, Node>} */
             const implMethodsByName = new Map();
             for (const method of item.methods || []) {
+                errors.push(...collectUnsupportedGenericConstraintErrors(method));
                 if (implMethodsByName.has(method.name)) {
                     errors.push(
                         makeTypeError(
@@ -1691,6 +1926,17 @@ function inferCall(ctx, call) {
     if (!calleeResult.ok) return calleeResult;
 
     const calleeType = ctx.resolveType(calleeResult.type);
+    const genericCalleeItem = lookupDirectFunctionItemForCall(ctx, call.callee);
+    const genericNames = genericCalleeItem?.node?.generics || [];
+    if (genericCalleeItem && genericNames.length > 0) {
+        return inferGenericFunctionCall(ctx, call, genericCalleeItem);
+    }
+    if (call.typeArgs !== null) {
+        return err(
+            "Explicit generic call arguments are only supported on generic function items",
+            call.span,
+        );
+    }
 
     // Check if callee is a function type
     if (

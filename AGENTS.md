@@ -29,7 +29,7 @@ See `plans/README.md` for the current planning structure.
 
 ## Plan Status
 
-- active/01-compiler-progress.md updated (IR v2 string-literal pool + backend format-print milestone captured; module support milestone captured: inline/file modules + simple `use ... as ...` path resolution; inherent impl milestone captured: `impl Struct` parsing + receiver/static method dispatch + `Self` in methods; simplified trait milestone captured: `trait` parsing + `impl Trait for Type` + inherent-first trait method dispatch + strict `(Trait, Type)` uniqueness; compiler-builtin derive milestone captured: `#[derive(Clone, Copy, Debug)]` struct expansion)
+- active/01-compiler-progress.md updated (IR v2 string-literal pool + backend format-print milestone captured; module support milestone captured: inline/file modules + simple `use ... as ...` path resolution; inherent impl milestone captured: `impl Struct` parsing + receiver/static method dispatch + `Self` in methods; simplified trait milestone captured: `trait` parsing + `impl Trait for Type` + inherent-first trait method dispatch + strict `(Trait, Type)` uniqueness; compiler-builtin derive milestone captured: `#[derive(Clone, Copy, Debug)]` struct expansion; generic function milestone captured: generic fn signatures + turbofish call syntax + single-instance generic call binding + bounds/`where` semantic hard-errors)
 - active/02-new-backend.md in progress (JS wasm run-path integration wired; binary IR v2 + formatter builtins integrated; `run --codegen-wasm` generated-wasm in-memory execution integrated; parity milestone expanded: pointer/memory/aggregate lowering + data/memory sections + dynamic format host writers + non-hanging example parity matrix)
 - plans/future/01-node-addon-availability.md deferred (non-priority)
 - plans/future/02-untrusted-compatibility.md deferred (`third_party/untrusted` submodule added; compatibility milestone tracked)
@@ -125,7 +125,7 @@ The tokenizer emits tokens with the following structure:
 
 ### Current Token Types
 
-- Keywords: `fn`, `let`, `const`, `static`, `true`, `false`, `type`, `use`, `pub`, `enum`, `struct`, `trait`, `unsafe`, `if`, `match`, `impl`, `mod`, `return`, `else`, `for`, `while`, `loop`, `self`
+- Keywords: `fn`, `let`, `const`, `static`, `true`, `false`, `type`, `use`, `pub`, `enum`, `struct`, `trait`, `unsafe`, `if`, `match`, `impl`, `mod`, `return`, `else`, `for`, `while`, `loop`, `where`, `self`
 - Delimiters: `(`, `)`, `[`, `]`, `{`, `}`, `,`, `;`, `:`, `.`
 - Operators: `+`, `-`, `*`, `/`, `%`, `=`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `&&`, `||`, `!`, `&`, `|`, `^`
 - Literals: integers, floats, strings
