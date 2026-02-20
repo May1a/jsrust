@@ -17,7 +17,7 @@ import { TypeKind, makeTypeVar } from "./types.js";
 /**
  * @typedef {object} ItemDecl
  * @property {string} name
- * @property {'fn' | 'struct' | 'enum' | 'mod' | 'type'} kind
+ * @property {'fn' | 'struct' | 'enum' | 'mod' | 'type' | 'trait'} kind
  * @property {Node} node
  * @property {Type} [type]
  */
@@ -74,6 +74,14 @@ class TypeContext {
 
         /** @type {Map<string, { structName: string, methodName: string, symbolName: string, decl: Node, type: Type, meta: any }>} */
         this.methods = new Map();
+        /** @type {Map<string, { typeName: string, traitName: string, methodName: string, symbolName: string, decl: Node, type: Type, meta: any }[]>} */
+        this.traitMethods = new Map();
+        /** @type {Map<string, { name: string, node: Node }>} */
+        this.traits = new Map();
+        /** @type {Set<string>} */
+        this.traitImpls = new Set();
+        /** @type {Map<string, { symbolName: string, type: Type, decl: Node, meta: any }>} */
+        this.methodsBySymbol = new Map();
 
         /** @type {Type[]} */
         this.implSelfTypeStack = [];
@@ -286,12 +294,19 @@ class TypeContext {
         if (this.methods.has(key)) {
             return { ok: false, error: `Method '${key}' already defined` };
         }
-        this.methods.set(key, {
+        const entry = {
             structName,
             methodName,
             symbolName: key,
             decl,
             type: fnType,
+            meta,
+        };
+        this.methods.set(key, entry);
+        this.methodsBySymbol.set(key, {
+            symbolName: key,
+            type: fnType,
+            decl,
             meta,
         });
         return { ok: true };
@@ -305,6 +320,109 @@ class TypeContext {
      */
     lookupMethod(structName, methodName) {
         return this.methods.get(`${structName}::${methodName}`) || null;
+    }
+
+    /**
+     * Register a trait declaration.
+     * @param {string} traitName
+     * @param {Node} decl
+     * @returns {{ ok: boolean, error?: string }}
+     */
+    registerTrait(traitName, decl) {
+        if (this.traits.has(traitName)) {
+            return { ok: false, error: `Trait '${traitName}' already defined` };
+        }
+        this.traits.set(traitName, { name: traitName, node: decl });
+        return { ok: true };
+    }
+
+    /**
+     * Look up a trait declaration.
+     * @param {string} traitName
+     * @returns {{ name: string, node: Node } | null}
+     */
+    lookupTrait(traitName) {
+        return this.traits.get(traitName) || null;
+    }
+
+    /**
+     * Register a (Trait, Type) impl pair and reject duplicates.
+     * @param {string} traitName
+     * @param {string} typeName
+     * @returns {{ ok: boolean, error?: string }}
+     */
+    registerTraitImpl(traitName, typeName) {
+        const key = `${traitName}::${typeName}`;
+        if (this.traitImpls.has(key)) {
+            return {
+                ok: false,
+                error: `Trait impl already defined for (${traitName}, ${typeName})`,
+            };
+        }
+        this.traitImpls.add(key);
+        return { ok: true };
+    }
+
+    /**
+     * Register a trait-provided method for receiver lookup.
+     * @param {string} typeName
+     * @param {string} traitName
+     * @param {string} methodName
+     * @param {Node} decl
+     * @param {Type} fnType
+     * @param {any} [meta]
+     * @returns {{ ok: boolean, error?: string, symbolName?: string }}
+     */
+    registerTraitMethod(typeName, traitName, methodName, decl, fnType, meta = null) {
+        const symbolName = `${typeName}::<${traitName}>::${methodName}`;
+        const key = `${typeName}::${methodName}`;
+        const list = this.traitMethods.get(key) || [];
+        if (list.some((entry) => entry.traitName === traitName)) {
+            return {
+                ok: false,
+                error: `Trait method already defined for (${typeName}, ${traitName}, ${methodName})`,
+            };
+        }
+        list.push({
+            typeName,
+            traitName,
+            methodName,
+            symbolName,
+            decl,
+            type: fnType,
+            meta,
+        });
+        this.traitMethods.set(key, list);
+        this.methodsBySymbol.set(symbolName, {
+            symbolName,
+            type: fnType,
+            decl,
+            meta,
+        });
+        return { ok: true, symbolName };
+    }
+
+    /**
+     * Look up inherent+trait method candidates for a receiver type key.
+     * Inherent methods always win over trait methods.
+     * @param {string} typeName
+     * @param {string} methodName
+     * @returns {{ inherent: { structName: string, methodName: string, symbolName: string, decl: Node, type: Type, meta: any } | null, traits: { typeName: string, traitName: string, methodName: string, symbolName: string, decl: Node, type: Type, meta: any }[] }}
+     */
+    lookupMethodCandidates(typeName, methodName) {
+        return {
+            inherent: this.lookupMethod(typeName, methodName),
+            traits: this.traitMethods.get(`${typeName}::${methodName}`) || [],
+        };
+    }
+
+    /**
+     * Look up method metadata by resolved symbol.
+     * @param {string} symbolName
+     * @returns {{ symbolName: string, type: Type, decl: Node, meta: any } | null}
+     */
+    lookupMethodBySymbol(symbolName) {
+        return this.methodsBySymbol.get(symbolName) || null;
     }
 
     /**

@@ -160,7 +160,8 @@ function isDeclItem(item) {
     return (
         item.kind === NodeKind.FnItem ||
         item.kind === NodeKind.StructItem ||
-        item.kind === NodeKind.EnumItem
+        item.kind === NodeKind.EnumItem ||
+        item.kind === NodeKind.TraitItem
     );
 }
 
@@ -287,7 +288,9 @@ function registerModuleItems(state, items, modulePath) {
                         ? "fn"
                         : item.kind === NodeKind.StructItem
                             ? "struct"
-                            : "enum",
+                            : item.kind === NodeKind.EnumItem
+                                ? "enum"
+                                : "trait",
             });
             scope.items.set(item.name, qname);
             continue;
@@ -877,17 +880,7 @@ function flattenItems(items, out) {
             continue;
         }
         if (item.kind === NodeKind.ImplItem) {
-            const targetName = implTargetName(item);
-            if (!targetName) {
-                continue;
-            }
-            for (const method of item.methods || []) {
-                method.unqualifiedName = method.name;
-                method.name = `${targetName}::${method.name}`;
-                method.implTargetName = targetName;
-                method.isImplMethod = true;
-                out.push(method);
-            }
+            out.push(item);
             continue;
         }
         if (!isDeclItem(item)) {

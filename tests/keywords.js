@@ -81,6 +81,11 @@ export function runKeywordsTests() {
         assertTokensMatch(tokens, [{ type: T.Match, value: "match" }]);
     });
 
+    test("trait keyword", () => {
+        const tokens = tokenize("trait");
+        assertTokensMatch(tokens, [{ type: T.Trait, value: "trait" }]);
+    });
+
     test("impl keyword", () => {
         const tokens = tokenize("impl");
         assertTokensMatch(tokens, [{ type: T.Impl, value: "impl" }]);
@@ -131,5 +136,5 @@ export function runKeywordsTests() {
         ]);
     });
 
-    return 25;
+    return 26;
 }

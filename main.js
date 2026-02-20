@@ -7,6 +7,7 @@ import { TypeContext } from "./type_context.js";
 import { inferModule } from "./inference.js";
 import { lowerModule } from "./lowering.js";
 import { resolveModuleTree } from "./module_resolver.js";
+import { expandDerives } from "./derive_expand.js";
 import { lowerHirToSsa } from "./hir_to_ssa.js";
 import { printModule as printIRModule } from "./ir_printer.js";
 import { makeIRModule, addIRFunction, resetIRIds } from "./ir.js";
@@ -97,9 +98,21 @@ function compileToIRModule(source, options = {}) {
         return { ok: false, errors };
     }
     const resolvedAst = resolveResult.module;
+    const deriveResult = expandDerives(resolvedAst);
+    if (!deriveResult.ok || !deriveResult.module) {
+        for (const err of deriveResult.errors || []) {
+            errors.push({
+                message: err.message,
+                span: err.span,
+                kind: "derive",
+            });
+        }
+        return { ok: false, errors };
+    }
+    const expandedAst = deriveResult.module;
 
     const typeCtx = new TypeContext();
-    const inferResult = inferModule(typeCtx, resolvedAst);
+    const inferResult = inferModule(typeCtx, expandedAst);
     if (!inferResult.ok) {
         for (const err of inferResult.errors || []) {
             errors.push({
@@ -111,7 +124,7 @@ function compileToIRModule(source, options = {}) {
         return { ok: false, errors };
     }
 
-    const hirResult = lowerModule(resolvedAst, typeCtx);
+    const hirResult = lowerModule(expandedAst, typeCtx);
     if (!hirResult.module) {
         for (const err of hirResult.errors) {
             errors.push({
@@ -162,7 +175,7 @@ function compileToIRModule(source, options = {}) {
     const result = { ok: true, errors: [], module: irModule };
 
     if (emitAst) {
-        result.ast = resolvedAst;
+        result.ast = expandedAst;
     }
 
     if (emitHir) {

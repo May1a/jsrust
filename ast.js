@@ -64,6 +64,7 @@ const NodeKind = {
     UseTree: 51,
     MatchArm: 52,
     ImplItem: 53,
+    TraitItem: 54,
 };
 
 const LiteralKind = {
@@ -588,14 +589,33 @@ function makeUseItem(span, tree, isPub) {
 
 /**
  * @param {Span} span
+ * @param {string} name
+ * @param {Node[]} methods
+ * @param {boolean} [isUnsafe=false]
+ * @param {boolean} [isPub=false]
+ * @returns {Node}
+ */
+function makeTraitItem(span, name, methods, isUnsafe = false, isPub = false) {
+    return makeNode(NodeKind.TraitItem, span, {
+        name,
+        methods,
+        isUnsafe,
+        isPub,
+    });
+}
+
+/**
+ * @param {Span} span
  * @param {Node} targetType
+ * @param {Node | null} traitType
  * @param {Node[]} methods
  * @param {boolean} [isUnsafe=false]
  * @returns {Node}
  */
-function makeImplItem(span, targetType, methods, isUnsafe = false) {
+function makeImplItem(span, targetType, traitType, methods, isUnsafe = false) {
     return makeNode(NodeKind.ImplItem, span, {
         targetType,
+        traitType,
         methods,
         isUnsafe,
     });
@@ -804,7 +824,8 @@ function isStmt(node) {
 function isItem(node) {
     return (
         (node.kind >= NodeKind.FnItem && node.kind <= NodeKind.UseItem) ||
-        node.kind === NodeKind.ImplItem
+        node.kind === NodeKind.ImplItem ||
+        node.kind === NodeKind.TraitItem
     );
 }
 
@@ -869,6 +890,7 @@ export {
     makeModItem,
     makeUseTree,
     makeUseItem,
+    makeTraitItem,
     makeImplItem,
     makeIdentPat,
     makeWildcardPat,
