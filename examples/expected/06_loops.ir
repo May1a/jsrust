@@ -4,19 +4,25 @@ fn main() -> () {
 
     block0:
         v0 = iconst i32 0
+        v1 = alloca i32 ; loc0
+        store i32, v1, v0
         br block1
 
     block1:
-        v1 = iconst i32 3
-        v2 = icmp slt v0, v1
-        br_if v2, then: block2(), else: block3()
+        v2 = load i32, v1
+        v3 = iconst i32 3
+        v4 = icmp slt v2, v3
+        br_if v4, then: block2(), else: block3()
 
     block2:
-        v3 = iconst i8 0
+        v5 = load i32, v1
+        v6 = iconst i32 1
+        v7 = iadd v5, v6
+        store i32, v1, v7
         br block1
 
     block3:
-        v4 = iconst i8 0
+        v8 = iconst i8 0
         ret
 
 }

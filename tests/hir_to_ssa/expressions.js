@@ -5,6 +5,7 @@ import {
     makeHParam,
     makeHBlock,
     makeHLetStmt,
+    makeHAssignStmt,
     makeHExprStmt,
     makeHReturnStmt,
     makeHBreakStmt,
@@ -26,6 +27,7 @@ import {
     makeHLoopExpr,
     makeHWhileExpr,
     makeHIdentPat,
+    makeHVarPlace,
     makeHWildcardPat,
     makeHLiteralPat,
     makeHMatchArm,
@@ -255,6 +257,74 @@ export function testLowerWhile() {
         irFn.blocks.length >= 3,
         "Should have at least 3 blocks (header, body, exit)",
     );
+}
+
+export function testLowerWhileMutableCarriesThroughBackedge() {
+    const iPat = makeHIdentPat(span(), "i", 0, intType(), true, false);
+    const iInit = makeHLetStmt(
+        span(),
+        iPat,
+        intType(),
+        makeHLiteralExpr(span(), HLiteralKind.Int, 0, intType()),
+    );
+
+    const cond = makeHBinaryExpr(
+        span(),
+        BinaryOp.Lt,
+        makeHVarExpr(span(), "i", 0, intType()),
+        makeHLiteralExpr(span(), HLiteralKind.Int, 3, intType()),
+        boolType(),
+    );
+
+    const next = makeHBinaryExpr(
+        span(),
+        BinaryOp.Add,
+        makeHVarExpr(span(), "i", 0, intType()),
+        makeHLiteralExpr(span(), HLiteralKind.Int, 1, intType()),
+        intType(),
+    );
+    const assign = makeHAssignStmt(
+        span(),
+        makeHVarPlace(span(), "i", 0, intType()),
+        next,
+    );
+    const body = makeHBlock(span(), [assign], null, unitType());
+    const whileExpr = makeHWhileExpr(span(), null, cond, body, unitType());
+
+    const block = makeHBlock(
+        span(),
+        [iInit, makeHExprStmt(span(), whileExpr)],
+        makeHUnitExpr(span(), unitType()),
+        unitType(),
+    );
+    const fn = makeHFnDecl(
+        span(),
+        "test_while_mut_backedge",
+        null,
+        [],
+        unitType(),
+        block,
+        false,
+        false,
+    );
+
+    const irFn = lowerHirToSsa(fn);
+    assertTrue(irFn !== null);
+
+    let hasAlloca = false;
+    let hasLoad = false;
+    let hasStore = false;
+    for (const irBlock of irFn.blocks) {
+        for (const inst of irBlock.instructions) {
+            if (inst.kind === IRInstKind.Alloca) hasAlloca = true;
+            if (inst.kind === IRInstKind.Load) hasLoad = true;
+            if (inst.kind === IRInstKind.Store) hasStore = true;
+        }
+    }
+
+    assertTrue(hasAlloca, "Mutable loop var should get a stable alloca");
+    assertTrue(hasLoad, "Mutable loop var should be loaded in loop condition/body");
+    assertTrue(hasStore, "Mutable loop var assignment should lower to store");
 }
 
 export function testLowerLoop() {
@@ -611,6 +681,7 @@ export function runTests() {
         ["Lower if", testLowerIf],
         ["Lower if without else", testLowerIfWithoutElse],
         ["Lower while", testLowerWhile],
+        ["Lower while mutable backedge", testLowerWhileMutableCarriesThroughBackedge],
         ["Lower loop", testLowerLoop],
         ["Lower call", testLowerCall],
         ["Lower call with args", testLowerCallWithArgs],

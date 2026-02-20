@@ -716,9 +716,22 @@ function lowerLetStmt(ctx, letStmt, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} exprStmt
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HExprStmt}
+ * @returns {import('./hir.js').HStmt}
  */
 function lowerExprStmt(ctx, exprStmt, typeCtx) {
+    if (exprStmt.expr.kind === NodeKind.AssignExpr) {
+        const value = lowerExpr(ctx, exprStmt.expr.value, typeCtx);
+        const place = extractPlace(ctx, exprStmt.expr.target, typeCtx);
+        if (!place) {
+            ctx.addError("Invalid assignment target", exprStmt.expr.target.span);
+            return makeHExprStmt(
+                exprStmt.span,
+                makeHUnitExpr(exprStmt.span, makeUnitType()),
+            );
+        }
+        return makeHAssignStmt(exprStmt.span, place, value);
+    }
+
     const expr = lowerExpr(ctx, exprStmt.expr, typeCtx);
     return makeHExprStmt(exprStmt.span, expr);
 }
