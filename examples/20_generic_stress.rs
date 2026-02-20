@@ -10,7 +10,8 @@ fn pick_right<T, U>(_left: T, right: U) -> U {
     right
 }
 
-fn main() {
+#[test]
+fn test_example() {
     let a = id::<i32>(40);
     let b = id(a + 2);
     let c = pick_left::<i32, i32>(b, 999);

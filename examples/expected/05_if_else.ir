@@ -1,6 +1,6 @@
 ; Module: root
 
-fn main() -> () {
+fn test_example() -> () {
 
     block0:
         v0 = bconst true

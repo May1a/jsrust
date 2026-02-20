@@ -12,7 +12,7 @@ fn test(arg0: ptr) -> () {
 
 }
 
-fn main() -> () {
+fn test_example() -> () {
 
     block0:
         v3 = sconst lit0

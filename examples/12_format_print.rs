@@ -1,4 +1,6 @@
-fn main() {
+
+#[test]
+fn test_example() {
     // Test basic format string with one placeholder
     println!("Hello, {}!", "World");
     

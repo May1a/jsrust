@@ -9,7 +9,8 @@ mod math {
 
 use math::sub as sub_math;
 
-fn main() {
+#[test]
+fn test_example() {
     let result = math::add(1, 2);
     println!("{}", result);
     let result2 = sub_math(1, 2);

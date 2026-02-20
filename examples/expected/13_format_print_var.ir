@@ -4,7 +4,7 @@
 ;   lit0 = "Hello, world!"
 ;   lit1 = "{}"
 
-fn main() -> () {
+fn test_example() -> () {
 
     block0:
         v0 = sconst lit0

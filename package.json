@@ -2,6 +2,7 @@
     "type": "module",
     "scripts": {
         "test": "node tests/run.js",
+        "test:update-examples": "node tests/run.js --update-examples",
         "compile": "node main.js",
         "typecheck": "npx tsc",
         "fixtures:backend": "node scripts/generate_backend_fixtures.js",

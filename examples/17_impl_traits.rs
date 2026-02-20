@@ -8,7 +8,8 @@ impl Add for i32 {
     }
 }
 
-fn main() {
+#[test]
+fn test_example() {
     let a = 1;
     let b = 2;
     println!("{}", a.add(&b));

@@ -1,6 +1,4 @@
-
-#[test]
-fn test_example() {
+fn main() {
     let a = 10 + 5;
     let b = a * 2;
     let c = b - 3;

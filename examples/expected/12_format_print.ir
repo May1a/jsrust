@@ -10,7 +10,7 @@
 ;   lit6 = "example"
 ;   lit7 = "No placeholders here"
 
-fn main() -> () {
+fn test_example() -> () {
 
     block0:
         v0 = sconst lit0

@@ -69,9 +69,15 @@ import {
 } from "./backend/integration.js";
 
 const { printSummary, clearErrors, beginRun, endRun } = lib;
+const argv = process.argv.slice(2);
+const updateExamples = argv.includes("--update-examples");
 
 clearErrors();
 beginRun();
+
+if (updateExamples) {
+    console.log("Examples snapshot update mode enabled (--update-examples).");
+}
 
 runKeywordsTests();
 runLiteralsTests();
@@ -136,7 +142,7 @@ runDiagnosticsCollectionTests();
 runDiagnosticsRenderingTests();
 runE2ETests();
 runModuleTests();
-runExamplesTests();
+runExamplesTests({ updateExamples });
 
 const backendIntegrationGate = canRunBackendIntegrationGate();
 if (backendIntegrationGate.ok) {

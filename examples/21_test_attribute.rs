@@ -9,7 +9,3 @@ fn test_multiplication() {
     let x = 4 * 5;
     println!("x = {}", x);
 }
-
-fn main() {
-    println!("Running main function");
-}

@@ -1,4 +1,3 @@
-
 pub struct Point {
    pub x: i32,
    pub y: i32,
@@ -13,7 +12,8 @@ impl Point {
     }
 }
 
-fn main() {
+#[test]
+fn test_example() {
     let p1 = Point::new(1, 2);
     let p2 = Point::new(3, 4);
     let p3 = p1.add(&p2);

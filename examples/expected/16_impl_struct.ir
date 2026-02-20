@@ -29,7 +29,7 @@ fn Point::add(arg0: *Point, arg1: *Point) -> Point {
 
 }
 
-fn main() -> () {
+fn test_example() -> () {
 
     block0:
         v16 = iconst i32 1

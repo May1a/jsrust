@@ -52,6 +52,26 @@ export function runParserItemTests() {
         assertEqual(item.derives[0], "Clone");
     });
 
+    test("test attribute with expected output on function", () => {
+        const result = parseModule(
+            "#[expect_output(\"hello\\n\")]\n#[test]\nfn sample() { println!(\"hello\"); }",
+        );
+        assertTrue(result.ok);
+        const item = result.value.items[0];
+        assertEqual(item.kind, NodeKind.FnItem);
+        assertEqual(item.isTest, true);
+        assertEqual(item.expectedOutput, "hello\n");
+    });
+
+    test("malformed expect_output attribute is rejected", () => {
+        const result = parseModule("#[expect_output] fn sample() {}");
+        assertEqual(result.ok, false);
+        assertTrue(
+            result.errors.some((e) => e.message.includes("Expected ( after expect_output")),
+            `expected expect_output parse error, got: ${result.errors.map((e) => e.message).join(", ")}`,
+        );
+    });
+
     test("mod item", () => {
         const result = parseModule("mod inner { fn f() {} }");
         assertTrue(result.ok);
