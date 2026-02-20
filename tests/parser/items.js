@@ -124,6 +124,52 @@ export function runParserItemTests() {
         assertEqual(item.whereClause[0].bounds.length, 2);
     });
 
+    test("function item with ignored lifetime params", () => {
+        const result = parseModule("fn id<'a, T>(x: &'a T) -> &'a T { x }");
+        assertTrue(result.ok);
+        const item = result.value.items[0];
+        assertEqual(item.kind, NodeKind.FnItem);
+        assertEqual(item.ignoredLifetimeParams.length, 1);
+        assertEqual(item.ignoredLifetimeParams[0], "'a");
+        assertEqual(item.generics.length, 1);
+        assertEqual(item.generics[0], "T");
+    });
+
+    test("struct item with ignored lifetime params", () => {
+        const result = parseModule("struct S<'a> { x: &'a i32 }");
+        assertTrue(result.ok);
+        const item = result.value.items[0];
+        assertEqual(item.kind, NodeKind.StructItem);
+        assertEqual(item.ignoredLifetimeParams.length, 1);
+        assertEqual(item.ignoredLifetimeParams[0], "'a");
+    });
+
+    test("enum item with ignored lifetime params", () => {
+        const result = parseModule("enum E<'a> { A(&'a i32) }");
+        assertTrue(result.ok);
+        const item = result.value.items[0];
+        assertEqual(item.kind, NodeKind.EnumItem);
+        assertEqual(item.ignoredLifetimeParams.length, 1);
+        assertEqual(item.ignoredLifetimeParams[0], "'a");
+    });
+
+    test("inner crate attributes are accepted and ignored", () => {
+        const result = parseModule("#![no_std] #![doc(hidden)] fn main() {}");
+        assertTrue(result.ok);
+        assertEqual(result.value.items.length, 1);
+        assertEqual(result.value.items[0].kind, NodeKind.FnItem);
+    });
+
+    test("inert method attribute is accepted in impl", () => {
+        const result = parseModule(
+            "struct S {} impl S { #[inline] fn f(&self) {} }",
+        );
+        assertTrue(result.ok);
+        const implItem = result.value.items[1];
+        assertEqual(implItem.kind, NodeKind.ImplItem);
+        assertEqual(implItem.methods.length, 1);
+    });
+
     test("generic turbofish call expression", () => {
         const result = parseModule("fn main() { id::<i32>(1); }");
         assertTrue(result.ok);
@@ -134,5 +180,5 @@ export function runParserItemTests() {
         assertEqual(call.typeArgs.length, 1);
     });
 
-    return 13;
+    return 18;
 }

@@ -5,6 +5,7 @@ import * as path from "path";
 import { parseModule } from "./parser.js";
 import { TypeContext } from "./type_context.js";
 import { inferModule } from "./inference.js";
+import { checkBorrowLite } from "./borrow_lite.js";
 import { lowerModule } from "./lowering.js";
 import { resolveModuleTree } from "./module_resolver.js";
 import { expandDerives } from "./derive_expand.js";
@@ -119,6 +120,18 @@ function compileToIRModule(source, options = {}) {
                 message: err.message,
                 span: err.span,
                 kind: "type",
+            });
+        }
+        return { ok: false, errors };
+    }
+
+    const borrowResult = checkBorrowLite(expandedAst, typeCtx);
+    if (!borrowResult.ok) {
+        for (const err of borrowResult.errors || []) {
+            errors.push({
+                message: err.message,
+                span: err.span,
+                kind: "borrow",
             });
         }
         return { ok: false, errors };
@@ -324,6 +337,7 @@ function errorKindLabel(kind) {
         case "parse": return "E0001";
         case "resolve": return "E0433";
         case "type": return "E0308";
+        case "borrow": return "E0502";
         case "lower": return "E0000";
         case "validation": return "E0000";
         default: return "E0000";
@@ -641,6 +655,14 @@ function runTestCli(args) {
     const inferResult = inferModule(typeCtx, expandedAst);
     if (!inferResult.ok) {
         for (const err of inferResult.errors || []) {
+            console.error(`error: ${err.message}`);
+        }
+        return 1;
+    }
+
+    const borrowResult = checkBorrowLite(expandedAst, typeCtx);
+    if (!borrowResult.ok) {
+        for (const err of borrowResult.errors || []) {
             console.error(`error: ${err.message}`);
         }
         return 1;

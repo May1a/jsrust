@@ -547,6 +547,58 @@ export function testLowerMatchLiteral() {
     assertTrue(irFn.blocks.length >= 2, "Match should create multiple blocks");
 }
 
+export function testStableRefAllocaReuse() {
+    const refTy = { kind: TypeKind.Ref, inner: intType(), mutable: false };
+    const xPat = makeHIdentPat(span(), "x", 0, intType(), true, false);
+    const xInit = makeHLiteralExpr(span(), HLiteralKind.Int, 1, intType());
+    const xLet = makeHLetStmt(span(), xPat, intType(), xInit);
+
+    const xVar1 = makeHVarExpr(span(), "x", 0, intType());
+    const r1Expr = makeHRefExpr(span(), false, xVar1, refTy);
+    const r1Pat = makeHIdentPat(span(), "r1", 1, refTy, false, false);
+    const r1Let = makeHLetStmt(span(), r1Pat, refTy, r1Expr);
+
+    const xVar2 = makeHVarExpr(span(), "x", 0, intType());
+    const r2Expr = makeHRefExpr(span(), false, xVar2, refTy);
+    const r2Pat = makeHIdentPat(span(), "r2", 2, refTy, false, false);
+    const r2Let = makeHLetStmt(span(), r2Pat, refTy, r2Expr);
+
+    const r2Var = makeHVarExpr(span(), "r2", 2, refTy);
+    const finalExpr = makeHDerefExpr(span(), r2Var, intType());
+    const block = makeHBlock(
+        span(),
+        [xLet, r1Let, r2Let],
+        finalExpr,
+        intType(),
+    );
+    const fn = makeHFnDecl(
+        span(),
+        "test_ref_reuse",
+        null,
+        [],
+        intType(),
+        block,
+        false,
+        false,
+    );
+
+    const irFn = lowerHirToSsa(fn);
+    assertTrue(irFn !== null);
+    let allocaCount = 0;
+    for (const block of irFn.blocks) {
+        for (const inst of block.instructions) {
+            if (inst.kind === IRInstKind.Alloca) {
+                allocaCount++;
+            }
+        }
+    }
+    assertEqual(
+        allocaCount,
+        1,
+        "should allocate one stable slot for address-taken local x",
+    );
+}
+
 export function runTests() {
     const tests = [
         ["Lower literal", testLowerLiteral],
@@ -572,6 +624,7 @@ export function runTests() {
         ["Lower return stmt", testLowerReturnStmt],
         ["Lower bitwise ops", testLowerBitwiseOps],
         ["Lower match literal", testLowerMatchLiteral],
+        ["Stable ref alloca reuse", testStableRefAllocaReuse],
     ];
 
     let passed = 0;

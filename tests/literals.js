@@ -102,6 +102,11 @@ export function runLiteralsTests() {
         assertTokensMatch(tokens, [{ type: T.String, value: "'a'" }]);
     });
 
+    test("lifetime token", () => {
+        const tokens = tokenize("'a");
+        assertTokensMatch(tokens, [{ type: T.Lifetime, value: "'a" }]);
+    });
+
     test("empty string", () => {
         const tokens = tokenize('""');
         assertTokensMatch(tokens, [{ type: T.String, value: '""' }]);
@@ -116,5 +121,5 @@ export function runLiteralsTests() {
         ]);
     });
 
-    return 21;
+    return 22;
 }

@@ -13,5 +13,6 @@ For historical completion and archived phase detail, see:
 
 ## Active Track
 
-- `active/01-compiler-progress.md`: Updated (IR v2 string-literal pool + backend-side format-print pipeline captured; simplified trait impl + builtin derive milestone captured)
+- `active/01-compiler-progress.md`: Updated (borrow-lite + lifetime-erasure milestone captured alongside prior frontend/backend milestones)
 - `active/02-new-backend.md`: In progress (wasm run-path integration wired; binary IR v2 + formatter builtins integrated; `run --codegen-wasm` in-memory generated-wasm execution wired)
+- `active/03-relaxed-borrow-model.md`: Implemented (lifetime syntax erasure, borrow-lite dangling-escape checks, and stable address-taken local lowering)

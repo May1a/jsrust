@@ -87,6 +87,27 @@ export class HirToSsaCtx {
         this.varNames = new Map();
     }
 
+    /**
+     * Ensure a variable has a stable storage slot.
+     * @param {number} varId
+     * @param {IRType} ty
+     * @returns {ValueId}
+     */
+    ensureVarAlloca(varId, ty) {
+        const existing = this.varAllocas.get(varId);
+        if (existing !== undefined) {
+            return existing;
+        }
+        const alloca = this.builder.alloca(ty);
+        const allocaId = /** @type {ValueId} */ (alloca.id);
+        this.varAllocas.set(varId, allocaId);
+        const current = this.varValues.get(varId);
+        if (current !== undefined) {
+            this.builder.store(allocaId, current, ty);
+        }
+        return allocaId;
+    }
+
     // ============================================================================
     // Task 9.2: Function Lowering
     // ============================================================================
@@ -323,9 +344,19 @@ export class HirToSsaCtx {
      */
     lowerAssignStmt(stmt) {
         const value = this.lowerExpr(stmt.value);
+        if (
+            stmt.place.kind === HPlaceKind.Var &&
+            !this.varAllocas.has(/** @type {ValueId} */ (stmt.place.id))
+        ) {
+            this.varValues.set(/** @type {ValueId} */ (stmt.place.id), value);
+            return;
+        }
         const ptr = this.lowerPlaceToRef(stmt.place);
         const ty = this.translateType(stmt.value.ty);
         this.builder.store(ptr, value, ty);
+        if (stmt.place.kind === HPlaceKind.Var) {
+            this.varValues.set(/** @type {ValueId} */ (stmt.place.id), value);
+        }
     }
 
     /**
@@ -486,18 +517,32 @@ export class HirToSsaCtx {
      * @returns {ValueId}
      */
     lowerVar(expr) {
-        // Look up variable by ID
-        const value = this.varValues.get(/** @type {ValueId} */(expr.id));
-        if (value !== undefined) {
-            return value;
+        const byIdAlloca = this.varAllocas.get(/** @type {ValueId} */ (expr.id));
+        if (byIdAlloca !== undefined) {
+            const ty = this.translateType(expr.ty);
+            const loadInst = this.builder.load(byIdAlloca, ty);
+            return /** @type {ValueId} */ (/** @type {ValueId} */ (loadInst.id));
+        }
+
+        const byIdValue = this.varValues.get(/** @type {ValueId} */ (expr.id));
+        if (byIdValue !== undefined) {
+            return byIdValue;
         }
 
         // Look up by name
         const varInfo = this.varNames.get(expr.name);
         if (varInfo) {
-            const val = this.varValues.get(/** @type {ValueId} */(varInfo.id));
-            if (val !== undefined) {
-                return val;
+            const byNameAlloca = this.varAllocas.get(
+                /** @type {ValueId} */ (varInfo.id),
+            );
+            if (byNameAlloca !== undefined) {
+                const ty = this.translateType(expr.ty);
+                const loadInst = this.builder.load(byNameAlloca, ty);
+                return /** @type {ValueId} */ (/** @type {ValueId} */ (loadInst.id));
+            }
+            const byNameValue = this.varValues.get(/** @type {ValueId} */(varInfo.id));
+            if (byNameValue !== undefined) {
+                return byNameValue;
             }
         }
 
@@ -900,17 +945,12 @@ export class HirToSsaCtx {
     lowerPlaceToRef(place) {
         // Handle expressions that are places
         if (place.kind === HExprKind.Var) {
-            // Variable - need to allocate if not already
             const varInfo = this.varNames.get(place.name);
             if (varInfo) {
-                // For now, variables are SSA values, so we need to allocate
-                const ty = this.translateType(place.ty);
-                const alloca = this.builder.alloca(ty);
-                const value = this.varValues.get(/** @type {ValueId} */(varInfo.id));
-                if (value !== undefined) {
-                    this.builder.store(/** @type {ValueId} */(alloca.id), value, ty);
-                }
-                return /** @type {ValueId} */ (alloca.id);
+                return this.ensureVarAlloca(
+                    /** @type {ValueId} */ (varInfo.id),
+                    varInfo.ty,
+                );
             }
             throw new Error(`Unknown variable: ${place.name}`);
         }
@@ -948,13 +988,10 @@ export class HirToSsaCtx {
         // Handle HPlace types
         switch (place.kind) {
             case HPlaceKind.Var: {
-                const ty = this.translateType(place.ty);
-                const alloca = this.builder.alloca(ty);
-                const value = this.varValues.get(/** @type {ValueId} */(place.id));
-                if (value !== undefined) {
-                    this.builder.store(/** @type {ValueId} */(alloca.id), value, ty);
-                }
-                return /** @type {ValueId} */ (alloca.id);
+                return this.ensureVarAlloca(
+                    /** @type {ValueId} */ (place.id),
+                    this.translateType(place.ty),
+                );
             }
             case HPlaceKind.Field: {
                 const basePtr = this.lowerPlaceToRef(place.base);

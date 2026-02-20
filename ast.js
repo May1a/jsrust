@@ -473,6 +473,7 @@ function makeParam(
  * @param {boolean} [isPub=false]
  * @param {{ name: string, bounds: Node[] }[] | null} [genericParams=null]
  * @param {{ name: string, bounds: Node[] }[] | null} [whereClause=null]
+ * @param {string[]} [ignoredLifetimeParams=[]]
  * @returns {Node}
  */
 function makeFnItem(
@@ -487,12 +488,14 @@ function makeFnItem(
     isPub = false,
     genericParams = null,
     whereClause = null,
+    ignoredLifetimeParams = [],
 ) {
     return makeNode(NodeKind.FnItem, span, {
         name,
         generics,
         genericParams,
         whereClause,
+        ignoredLifetimeParams,
         params,
         returnType,
         body,
@@ -526,12 +529,22 @@ function makeStructField(span, name, ty, defaultValue, isPub = false) {
  * @param {Node[]} fields
  * @param {boolean} isTuple
  * @param {boolean} [isPub=false]
+ * @param {string[]} [ignoredLifetimeParams=[]]
  * @returns {Node}
  */
-function makeStructItem(span, name, generics, fields, isTuple, isPub = false) {
+function makeStructItem(
+    span,
+    name,
+    generics,
+    fields,
+    isTuple,
+    isPub = false,
+    ignoredLifetimeParams = [],
+) {
     return makeNode(NodeKind.StructItem, span, {
         name,
         generics,
+        ignoredLifetimeParams,
         fields,
         isTuple,
         isPub,
@@ -555,10 +568,24 @@ function makeEnumVariant(span, name, fields, discriminant) {
  * @param {string[] | null} generics
  * @param {Node[]} variants
  * @param {boolean} [isPub=false]
+ * @param {string[]} [ignoredLifetimeParams=[]]
  * @returns {Node}
  */
-function makeEnumItem(span, name, generics, variants, isPub = false) {
-    return makeNode(NodeKind.EnumItem, span, { name, generics, variants, isPub });
+function makeEnumItem(
+    span,
+    name,
+    generics,
+    variants,
+    isPub = false,
+    ignoredLifetimeParams = [],
+) {
+    return makeNode(NodeKind.EnumItem, span, {
+        name,
+        generics,
+        ignoredLifetimeParams,
+        variants,
+        isPub,
+    });
 }
 
 /**
@@ -617,14 +644,23 @@ function makeTraitItem(span, name, methods, isUnsafe = false, isPub = false) {
  * @param {Node | null} traitType
  * @param {Node[]} methods
  * @param {boolean} [isUnsafe=false]
+ * @param {string[]} [ignoredLifetimeParams=[]]
  * @returns {Node}
  */
-function makeImplItem(span, targetType, traitType, methods, isUnsafe = false) {
+function makeImplItem(
+    span,
+    targetType,
+    traitType,
+    methods,
+    isUnsafe = false,
+    ignoredLifetimeParams = [],
+) {
     return makeNode(NodeKind.ImplItem, span, {
         targetType,
         traitType,
         methods,
         isUnsafe,
+        ignoredLifetimeParams,
     });
 }
 
@@ -762,10 +798,20 @@ function makeArrayType(span, element, length) {
  * @param {Span} span
  * @param {MutabilityValue} mutability
  * @param {Node} inner
+ * @param {string | null} [ignoredLifetimeName=null]
  * @returns {Node}
  */
-function makeRefType(span, mutability, inner) {
-    return makeNode(NodeKind.RefType, span, { mutability, inner });
+function makeRefType(
+    span,
+    mutability,
+    inner,
+    ignoredLifetimeName = null,
+) {
+    return makeNode(NodeKind.RefType, span, {
+        mutability,
+        inner,
+        ignoredLifetimeName,
+    });
 }
 
 /**

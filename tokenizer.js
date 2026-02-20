@@ -69,6 +69,7 @@ const TokenType = {
     Integer: iota(),
     Float: iota(),
     String: iota(),
+    Lifetime: iota(),
     Eof: iota(),
 };
 
@@ -380,6 +381,39 @@ function readString(state) {
 
 /**
  * @param {LexerState} state
+ * @returns {boolean}
+ */
+function isLifetimeStart(state) {
+    if (peek(state) !== "'") return false;
+    const next = peekAt(state, 1);
+    if (!next || !(next === "_" || /[a-zA-Z]/.test(next))) {
+        return false;
+    }
+    let i = 2;
+    while (isIdentifierChar(peekAt(state, i))) {
+        i++;
+    }
+    // `'a'` and `'_` (with trailing `'`) are char literals, not lifetimes.
+    return peekAt(state, i) !== "'";
+}
+
+/**
+ * @param {LexerState} state
+ * @returns {Token}
+ */
+function readLifetime(state) {
+    const startLine = state.line;
+    const startColumn = state.column;
+    let value = "";
+    value += advance(state) ?? "";
+    while (isIdentifierChar(peek(state))) {
+        value += advance(state) ?? "";
+    }
+    return makeToken(TokenType.Lifetime, value, startLine, startColumn);
+}
+
+/**
+ * @param {LexerState} state
  * @returns {Token | null}
  */
 function readOperatorOrDelimiter(state) {
@@ -499,7 +533,16 @@ function tokenize(source) {
             continue;
         }
 
-        if (ch === '"' || ch === "'") {
+        if (ch === "'") {
+            if (isLifetimeStart(state)) {
+                tokens.push(readLifetime(state));
+            } else {
+                tokens.push(readString(state));
+            }
+            continue;
+        }
+
+        if (ch === '"') {
             tokens.push(readString(state));
             continue;
         }

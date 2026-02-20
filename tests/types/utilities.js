@@ -21,6 +21,7 @@ import {
     makeRefType,
     makePtrType,
     makeFnType,
+    makeNamedType,
     intWidthToString,
     floatWidthToString,
     getIntWidthSize,
@@ -41,6 +42,7 @@ import {
     isStringType,
     isStructType,
     isEnumType,
+    isCopyableType,
     typeToString,
 } from "../../types.js";
 
@@ -219,6 +221,38 @@ test("isEnumType returns true only for enum types", () => {
     const enumType = { kind: 11, name: "Option", variants: [] };
     assertTrue(isEnumType(enumType));
     assertTrue(!isEnumType(makeTupleType([])));
+});
+
+test("isCopyableType handles primitives and aggregates", () => {
+    assertTrue(isCopyableType(makeIntType(IntWidth.I32)));
+    assertTrue(isCopyableType(makeRefType(makeIntType(IntWidth.I32), false)));
+    assertTrue(
+        isCopyableType(
+            makeTupleType([
+                makeIntType(IntWidth.I32),
+                makeRefType(makeIntType(IntWidth.I32), false),
+            ]),
+        ),
+    );
+    assertTrue(
+        !isCopyableType(
+            makeTupleType([makeIntType(IntWidth.I32), makeStringType()]),
+        ),
+    );
+});
+
+test("isCopyableType delegates named type copyability", () => {
+    const named = makeNamedType("S", null);
+    assertTrue(
+        isCopyableType(named, {
+            hasNamedTypeCopy: (name) => name === "S",
+        }),
+    );
+    assertTrue(
+        !isCopyableType(named, {
+            hasNamedTypeCopy: () => false,
+        }),
+    );
 });
 
 // ============================================================================

@@ -35,6 +35,7 @@ import {
     isUnitType,
     isNeverType,
     isTypeVar,
+    isCopyableType,
 } from "./types.js";
 
 import { TypeContext } from "./type_context.js";
@@ -1418,6 +1419,59 @@ function resolveBuiltinType(name) {
     }
 }
 
+/**
+ * Check whether a type is copyable in the current type context.
+ * @param {TypeContext} ctx
+ * @param {Type} ty
+ * @param {Set<string>} [visiting]
+ * @returns {boolean}
+ */
+function isCopyableInContext(ctx, ty, visiting = new Set()) {
+    return isCopyableType(ty, {
+        resolveType: (/** @type {Type} */ t) => ctx.resolveType(t),
+        hasNamedTypeCopy: (name) => {
+            if (ctx.traitImpls && ctx.traitImpls.has(`Copy::${name}`)) {
+                return true;
+            }
+            const item = ctx.lookupItem(name);
+            if (!item) return false;
+            const key = `${item.kind}:${name}`;
+            if (visiting.has(key)) {
+                return true;
+            }
+            visiting.add(key);
+            let result = false;
+            if (item.kind === "struct") {
+                result = (item.node.fields || []).every((/** @type {any} */ field) => {
+                    if (!field.ty) return false;
+                    const fieldTyResult = resolveTypeNode(ctx, field.ty);
+                    return (
+                        fieldTyResult.ok &&
+                        isCopyableInContext(ctx, fieldTyResult.type, visiting)
+                    );
+                });
+            } else if (item.kind === "enum") {
+                result = (item.node.variants || []).every((/** @type {any} */ variant) =>
+                    (variant.fields || []).every((/** @type {any} */ field) => {
+                        if (!field.ty) return true;
+                        const fieldTyResult = resolveTypeNode(ctx, field.ty);
+                        return (
+                            fieldTyResult.ok &&
+                            isCopyableInContext(
+                                ctx,
+                                fieldTyResult.type,
+                                visiting,
+                            )
+                        );
+                    }),
+                );
+            }
+            visiting.delete(key);
+            return result;
+        },
+    });
+}
+
 // ============================================================================
 // Module Item Checking
 // ============================================================================
@@ -1733,6 +1787,7 @@ function inferIdentifier(ctx, ident) {
     // Look up variable binding
     const binding = ctx.lookupVar(ident.name);
     if (binding) {
+        ident.isImplicitCopyCandidate = isCopyableInContext(ctx, binding.type);
         return ok(binding.type);
     }
 
@@ -1741,13 +1796,18 @@ function inferIdentifier(ctx, ident) {
     const item = ctx.lookupItem(lookupName);
     if (item) {
         if (item.kind === "fn" && item.type) {
+            ident.isImplicitCopyCandidate = true;
             return ok(item.type);
         }
         if (item.kind === "struct") {
-            return ok(makeStructType(item.name, [], ident.span));
+            const ty = makeStructType(item.name, [], ident.span);
+            ident.isImplicitCopyCandidate = isCopyableInContext(ctx, ty);
+            return ok(ty);
         }
         if (item.kind === "enum") {
-            return ok(makeEnumType(item.name, [], ident.span));
+            const ty = makeEnumType(item.name, [], ident.span);
+            ident.isImplicitCopyCandidate = isCopyableInContext(ctx, ty);
+            return ok(ty);
         }
     }
 
@@ -3899,6 +3959,7 @@ export {
     // Type resolution
     resolveTypeNode,
     resolveBuiltinType,
+    isCopyableInContext,
     // Error handling
     makeTypeError,
     ok,

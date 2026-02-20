@@ -297,19 +297,25 @@ function matchInvalidSymbol(state, symbol) {
 
 /**
  * @param {ParserState} state
- * @returns {{ derives: string[], isTest: boolean }}
+ * @returns {{ derives: string[], isTest: boolean, consumedOnlyInert: boolean }}
  */
 function parseOuterAttributes(state) {
     /** @type {string[]} */
     const derives = [];
     let isTest = false;
+    let consumedAny = false;
+    let consumedMeaningful = false;
     while (
         peek(state).type === TokenType.Invalid &&
         peek(state).value === "#" &&
-        peek(state, 1).type === TokenType.OpenSquare
+        (peek(state, 1).type === TokenType.OpenSquare ||
+            (peek(state, 1).type === TokenType.Bang &&
+                peek(state, 2).type === TokenType.OpenSquare))
     ) {
+        consumedAny = true;
         advance(state);
-        advance(state);
+        const isInner = matchToken(state, TokenType.Bang) !== null;
+        expectToken(state, TokenType.OpenSquare, "Expected [ after #");
         const attrName = peek(state);
         if (!isIdentifierToken(attrName)) {
             addError(state, "Expected attribute name", attrName, ["Identifier"]);
@@ -317,39 +323,54 @@ function parseOuterAttributes(state) {
             continue;
         }
         const attrIdent = advance(state).value;
+        if (isInner) {
+            if (matchToken(state, TokenType.OpenParen)) {
+                skipBalancedParens(state);
+            }
+            expectToken(
+                state,
+                TokenType.CloseSquare,
+                "Expected ] after attribute",
+            );
+            continue;
+        }
         if (attrIdent === "test") {
             isTest = true;
+            consumedMeaningful = true;
             expectToken(state, TokenType.CloseSquare, "Expected ] after test attribute");
             continue;
         }
-        if (attrIdent !== "derive") {
-            addError(
-                state,
-                `Unsupported attribute in this compiler model: ${attrIdent}`,
-                attrName,
-                null,
-            );
-            skipAttribute(state);
-            continue;
-        }
-        if (!matchToken(state, TokenType.OpenParen)) {
-            addError(state, "Expected ( after derive", peek(state), ["("]);
-            skipAttribute(state);
-            continue;
-        }
-        while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
-            const nameToken = peek(state);
-            if (!isIdentifierToken(nameToken)) {
-                addError(state, "Expected derive trait name", nameToken, ["Identifier"]);
-                break;
+        if (attrIdent === "derive") {
+            consumedMeaningful = true;
+            if (!matchToken(state, TokenType.OpenParen)) {
+                addError(state, "Expected ( after derive", peek(state), ["("]);
+                skipAttribute(state);
+                continue;
             }
-            derives.push(advance(state).value);
-            if (!matchToken(state, TokenType.Comma)) break;
+            while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
+                const nameToken = peek(state);
+                if (!isIdentifierToken(nameToken)) {
+                    addError(state, "Expected derive trait name", nameToken, ["Identifier"]);
+                    break;
+                }
+                derives.push(advance(state).value);
+                if (!matchToken(state, TokenType.Comma)) break;
+            }
+            expectToken(state, TokenType.CloseParen, "Expected ) after derive list");
+            expectToken(state, TokenType.CloseSquare, "Expected ] after attribute");
+            continue;
         }
-        expectToken(state, TokenType.CloseParen, "Expected ) after derive list");
+        // Inert unknown attributes are accepted and ignored.
+        if (matchToken(state, TokenType.OpenParen)) {
+            skipBalancedParens(state);
+        }
         expectToken(state, TokenType.CloseSquare, "Expected ] after attribute");
     }
-    return { derives, isTest };
+    return {
+        derives,
+        isTest,
+        consumedOnlyInert: consumedAny && !consumedMeaningful,
+    };
 }
 
 /**
@@ -364,6 +385,24 @@ function skipAttribute(state) {
         }
         if (matchToken(state, TokenType.CloseSquare)) {
             if (depth === 0) break;
+            depth -= 1;
+            continue;
+        }
+        advance(state);
+    }
+}
+
+/**
+ * @param {ParserState} state
+ */
+function skipBalancedParens(state) {
+    let depth = 1;
+    while (!isAtEnd(state) && depth > 0) {
+        if (matchToken(state, TokenType.OpenParen)) {
+            depth += 1;
+            continue;
+        }
+        if (matchToken(state, TokenType.CloseParen)) {
             depth -= 1;
             continue;
         }
@@ -555,8 +594,12 @@ function parsePathTypeNode(state) {
         /** @type {Node[]} */
         const typeArgs = [];
         while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
-            const arg = parseType(state);
-            if (arg) typeArgs.push(arg);
+            if (check(state, TokenType.Lifetime)) {
+                advance(state);
+            } else {
+                const arg = parseType(state);
+                if (arg) typeArgs.push(arg);
+            }
             if (!matchToken(state, TokenType.Comma)) break;
         }
         const gtToken =
@@ -576,7 +619,7 @@ function parsePathTypeNode(state) {
 
 /**
  * @param {ParserState} state
- * @returns {{ name: string, bounds: Node[] }[] | null}
+ * @returns {{ genericParams: { name: string, bounds: Node[] }[], ignoredLifetimeParams: string[] } | null}
  */
 function parseGenericParamList(state) {
     if (!matchToken(state, TokenType.Lt)) {
@@ -584,7 +627,28 @@ function parseGenericParamList(state) {
     }
     /** @type {{ name: string, bounds: Node[] }[]} */
     const genericParams = [];
+    /** @type {string[]} */
+    const ignoredLifetimeParams = [];
     while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
+        if (check(state, TokenType.Lifetime)) {
+            const lifetimeToken = advance(state);
+            ignoredLifetimeParams.push(lifetimeToken.value ?? "");
+            if (matchToken(state, TokenType.Colon)) {
+                while (!isAtEnd(state)) {
+                    if (
+                        check(state, TokenType.Lifetime) ||
+                        isIdentifierToken(peek(state))
+                    ) {
+                        advance(state);
+                    } else {
+                        break;
+                    }
+                    if (!matchToken(state, TokenType.Plus)) break;
+                }
+            }
+            if (!matchToken(state, TokenType.Comma)) break;
+            continue;
+        }
         const paramToken =
             expectToken(state, TokenType.Identifier, "Expected generic parameter name") ??
             peek(state);
@@ -602,7 +666,7 @@ function parseGenericParamList(state) {
         if (!matchToken(state, TokenType.Comma)) break;
     }
     expectToken(state, TokenType.Gt, "Expected > after generic parameters");
-    return genericParams;
+    return { genericParams, ignoredLifetimeParams };
 }
 
 /**
@@ -1208,6 +1272,8 @@ function parseStmt(state) {
         return parseLetStmt(state);
     }
     if (
+        (peek(state).type === TokenType.Invalid &&
+            peek(state).value === "#") ||
         check(state, TokenType.Pub) ||
         check(state, TokenType.Fn) ||
         check(state, TokenType.Struct) ||
@@ -1218,9 +1284,18 @@ function parseStmt(state) {
         check(state, TokenType.Impl) ||
         check(state, TokenType.Unsafe)
     ) {
+        const beforePos = state.pos;
+        const beforeErrors = state.errors.length;
         const item = parseItem(state);
-        const span = item ? item.span : currentSpan(state);
-        return makeItemStmt(span, item ?? makeModule(span, "error", []));
+        if (item) {
+            return makeItemStmt(item.span, item);
+        }
+        if (state.pos === beforePos || state.errors.length > beforeErrors) {
+            const span = currentSpan(state);
+            return makeItemStmt(span, makeModule(span, "error", []));
+        }
+        // Inert attributes consumed with no item; parse the next statement.
+        return parseStmt(state);
     }
     return parseExprStmt(state);
 }
@@ -1342,7 +1417,11 @@ function parseFnItem(state, isUnsafe, isPub, allowReceiver = false) {
     const nameToken =
         expectToken(state, TokenType.Identifier, "Expected function name") ??
         peek(state);
-    const genericParams = parseGenericParamList(state);
+    const genericList = parseGenericParamList(state);
+    const genericParams = genericList ? genericList.genericParams : null;
+    const ignoredLifetimeParams = genericList
+        ? genericList.ignoredLifetimeParams
+        : [];
     const generics = genericParams
         ? genericParams.map((/** @type {{ name: string }} */ p) => p.name)
         : null;
@@ -1374,6 +1453,7 @@ function parseFnItem(state, isUnsafe, isPub, allowReceiver = false) {
         isPub,
         genericParams,
         whereClause,
+        ignoredLifetimeParams,
     );
 }
 
@@ -1388,6 +1468,14 @@ function parseStructItem(state, isPub) {
     const nameToken =
         expectToken(state, TokenType.Identifier, "Expected struct name") ??
         peek(state);
+    const genericList = parseGenericParamList(state);
+    const genericParams = genericList ? genericList.genericParams : null;
+    const ignoredLifetimeParams = genericList
+        ? genericList.ignoredLifetimeParams
+        : [];
+    const generics = genericParams
+        ? genericParams.map((/** @type {{ name: string }} */ p) => p.name)
+        : null;
     const fields = [];
     let isTuple = false;
     if (matchToken(state, TokenType.OpenCurly)) {
@@ -1450,10 +1538,11 @@ function parseStructItem(state, isPub) {
     return makeStructItem(
         span,
         nameToken.value ?? "",
-        null,
+        generics,
         fields,
         isTuple,
         isPub,
+        ignoredLifetimeParams,
     );
 }
 
@@ -1472,6 +1561,7 @@ function parseTraitItem(state, isUnsafe, isPub) {
     const methods = [];
     expectToken(state, TokenType.OpenCurly, "Expected { after trait name");
     while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
+        parseOuterAttributes(state);
         if (check(state, TokenType.Fn)) {
             const method = parseFnItem(state, false, false, true);
             if (method.body) {
@@ -1511,6 +1601,10 @@ function parseTraitItem(state, isUnsafe, isPub) {
 function parseImplItem(state, isUnsafe) {
     const start =
         expectToken(state, TokenType.Impl, "Expected impl") ?? peek(state);
+    const genericList = parseGenericParamList(state);
+    const ignoredLifetimeParams = genericList
+        ? genericList.ignoredLifetimeParams
+        : [];
     const firstType = parseType(state);
     /** @type {Node | null} */
     let traitType = null;
@@ -1523,6 +1617,7 @@ function parseImplItem(state, isUnsafe) {
     const methods = [];
     expectToken(state, TokenType.OpenCurly, "Expected { after impl target");
     while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
+        parseOuterAttributes(state);
         let methodIsPub = false;
         let methodIsUnsafe = false;
         if (matchToken(state, TokenType.Pub)) methodIsPub = true;
@@ -1555,6 +1650,7 @@ function parseImplItem(state, isUnsafe) {
         traitType,
         methods,
         isUnsafe,
+        ignoredLifetimeParams,
     );
 }
 
@@ -1569,6 +1665,14 @@ function parseEnumItem(state, isPub) {
     const nameToken =
         expectToken(state, TokenType.Identifier, "Expected enum name") ??
         peek(state);
+    const genericList = parseGenericParamList(state);
+    const genericParams = genericList ? genericList.genericParams : null;
+    const ignoredLifetimeParams = genericList
+        ? genericList.ignoredLifetimeParams
+        : [];
+    const generics = genericParams
+        ? genericParams.map((/** @type {{ name: string }} */ p) => p.name)
+        : null;
     const variants = [];
     expectToken(state, TokenType.OpenCurly, "Expected { after enum name");
     while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
@@ -1640,7 +1744,14 @@ function parseEnumItem(state, isPub) {
         expectToken(state, TokenType.CloseCurly, "Expected } after enum") ??
         peek(state);
     const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
-    return makeEnumItem(span, nameToken.value ?? "", null, variants, isPub);
+    return makeEnumItem(
+        span,
+        nameToken.value ?? "",
+        generics,
+        variants,
+        isPub,
+        ignoredLifetimeParams,
+    );
 }
 
 /**
@@ -1798,7 +1909,7 @@ function parseUseItem(state, isPub) {
  * @returns {Node | null}
  */
 function parseItem(state) {
-    const { derives, isTest } = parseOuterAttributes(state);
+    const { derives, isTest, consumedOnlyInert } = parseOuterAttributes(state);
     let isPub = false;
     let isUnsafe = false;
     if (matchToken(state, TokenType.Pub)) {
@@ -1822,6 +1933,9 @@ function parseItem(state) {
             item.isTest = true;
         }
         return item;
+    }
+    if (consumedOnlyInert) {
+        return null;
     }
     addError(state, "Expected item", peek(state), null);
     return null;
@@ -2136,6 +2250,10 @@ function parseType(state) {
     const token = peek(state);
     if (token.type === TokenType.And) {
         const start = advance(state);
+        let ignoredLifetimeName = null;
+        if (check(state, TokenType.Lifetime)) {
+            ignoredLifetimeName = advance(state).value ?? null;
+        }
         let mutability = Mutability.Immutable;
         if (check(state, TokenType.Mut) || isIdentifierValue(peek(state), "mut")) {
             advance(state);
@@ -2149,6 +2267,7 @@ function parseType(state) {
             span,
             mutability,
             inner ?? makeNamedType(span, "unknown", null),
+            ignoredLifetimeName,
         );
     }
     if (token.type === TokenType.Star) {
@@ -2254,8 +2373,12 @@ function parseType(state) {
         if (matchToken(state, TokenType.Lt)) {
             const typeArgs = [];
             while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
-                const arg = parseType(state);
-                if (arg) typeArgs.push(arg);
+                if (check(state, TokenType.Lifetime)) {
+                    advance(state);
+                } else {
+                    const arg = parseType(state);
+                    if (arg) typeArgs.push(arg);
+                }
                 if (!matchToken(state, TokenType.Comma)) break;
             }
             const endToken =
@@ -2372,6 +2495,8 @@ function parseBlockExpr(state) {
             continue;
         }
         if (
+            (peek(state).type === TokenType.Invalid &&
+                peek(state).value === "#") ||
             check(state, TokenType.Pub) ||
             check(state, TokenType.Fn) ||
             check(state, TokenType.Struct) ||
@@ -2382,11 +2507,26 @@ function parseBlockExpr(state) {
             check(state, TokenType.Impl) ||
             check(state, TokenType.Unsafe)
         ) {
+            const beforePos = state.pos;
+            const beforeErrors = state.errors.length;
             const item = parseItem(state);
-            const span = item ? item.span : currentSpan(state);
-            stmts.push(
-                makeItemStmt(span, item ?? makeModule(span, "error", [])),
-            );
+            if (item) {
+                stmts.push(makeItemStmt(item.span, item));
+            } else if (
+                state.pos === beforePos ||
+                state.errors.length > beforeErrors
+            ) {
+                skipToRecovery(state, [
+                    TokenType.CloseCurly,
+                    TokenType.Fn,
+                    TokenType.Struct,
+                    TokenType.Enum,
+                    TokenType.Trait,
+                    TokenType.Mod,
+                    TokenType.Use,
+                    TokenType.Impl,
+                ]);
+            }
             continue;
         }
         const expression = parseExpr(state, 0);
@@ -2484,6 +2624,7 @@ function parseModuleFromState(state) {
                 TokenType.Mod,
                 TokenType.Use,
                 TokenType.Impl,
+                TokenType.Invalid,
                 TokenType.Eof,
             ]);
             if (check(state, TokenType.Eof)) break;
