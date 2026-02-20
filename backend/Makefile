@@ -36,7 +36,9 @@ SRC_COMMON = \
 	src/ir_validate_min.c \
 	src/log.c \
 	src/runtime.c \
-	src/trace.c
+	src/trace.c \
+	src/wasm_emit.c \
+	src/wasm_encode.c
 
 SRC_MAIN = src/main.c
 SRC_WASM = \

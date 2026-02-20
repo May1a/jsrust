@@ -281,6 +281,166 @@ static void Test_traceDeterminism(void)
     free(second);
 }
 
+static void Test_codegenMagicVersion(void)
+{
+    uint8_t* data;
+    size_t len;
+    jsrust_backend_codegen_result codegen;
+
+    if (!Test_readFile("../tests/fixtures/backend_ir_v2/01_empty_main.bin", &data, &len)) {
+        Test_fail("failed to read fixture for codegen magic/version");
+        return;
+    }
+
+    codegen = jsrust_backend_codegen_wasm_bytes(data, len, "main");
+    free(data);
+
+    if (codegen.code != JSRUST_BACKEND_OK) {
+        fprintf(stderr, "FAIL: codegen expected success, got code=%d message=%s\n", (int)codegen.code, codegen.message);
+        g_failures += 1;
+        return;
+    }
+
+    if (codegen.wasm_len < 8) {
+        Test_fail("codegen wasm output shorter than wasm header");
+        return;
+    }
+
+    if (!(codegen.wasm_data[0] == 0x00 && codegen.wasm_data[1] == 0x61 && codegen.wasm_data[2] == 0x73 && codegen.wasm_data[3] == 0x6D)) {
+        Test_fail("codegen wasm output has invalid magic");
+        return;
+    }
+
+    if (!(codegen.wasm_data[4] == 0x01 && codegen.wasm_data[5] == 0x00 && codegen.wasm_data[6] == 0x00 && codegen.wasm_data[7] == 0x00))
+        Test_fail("codegen wasm output has invalid version");
+}
+
+static void Test_codegenPositiveFixtures(void)
+{
+    const char* fixtures[] = {
+        "../tests/fixtures/backend_ir_v2/01_empty_main.bin",
+        "../tests/fixtures/backend_ir_v2/02_literals.bin",
+        "../tests/fixtures/backend_ir_v2/03_arithmetic.bin",
+        "../tests/fixtures/backend_ir_v2/04_functions.bin"
+    };
+    size_t count;
+    size_t index;
+
+    count = sizeof(fixtures) / sizeof(fixtures[0]);
+    for (index = 0; index < count; ++index) {
+        uint8_t* data;
+        size_t len;
+        jsrust_backend_codegen_result result;
+
+        if (!Test_readFile(fixtures[index], &data, &len)) {
+            fprintf(stderr, "FAIL: unable to read codegen fixture %s\n", fixtures[index]);
+            g_failures += 1;
+            continue;
+        }
+
+        result = jsrust_backend_codegen_wasm_bytes(data, len, "main");
+        free(data);
+
+        if (result.code != JSRUST_BACKEND_OK) {
+            fprintf(stderr, "FAIL: codegen fixture %s expected success, got code=%d message=%s\n", fixtures[index], (int)result.code, result.message);
+            g_failures += 1;
+            continue;
+        }
+
+        if (result.wasm_len == 0) {
+            fprintf(stderr, "FAIL: codegen fixture %s produced empty wasm\n", fixtures[index]);
+            g_failures += 1;
+        }
+    }
+}
+
+static void Test_codegenDeterminism(void)
+{
+    uint8_t* data;
+    size_t len;
+    jsrust_backend_codegen_result first;
+    jsrust_backend_codegen_result second;
+    uint8_t* snapshot;
+    size_t index;
+
+    if (!Test_readFile("../tests/fixtures/backend_ir_v2/03_arithmetic.bin", &data, &len)) {
+        Test_fail("failed to read fixture for codegen determinism");
+        return;
+    }
+
+    first = jsrust_backend_codegen_wasm_bytes(data, len, "main");
+    if (first.code != JSRUST_BACKEND_OK) {
+        fprintf(stderr, "FAIL: first codegen run failed code=%d message=%s\n", (int)first.code, first.message);
+        free(data);
+        g_failures += 1;
+        return;
+    }
+
+    snapshot = (uint8_t*)malloc(first.wasm_len);
+    if (!snapshot) {
+        Test_fail("failed to allocate determinism snapshot buffer");
+        free(data);
+        return;
+    }
+    ByteOps_copy(snapshot, first.wasm_data, first.wasm_len);
+
+    second = jsrust_backend_codegen_wasm_bytes(data, len, "main");
+    free(data);
+
+    if (second.code != JSRUST_BACKEND_OK) {
+        fprintf(stderr, "FAIL: second codegen run failed code=%d message=%s\n", (int)second.code, second.message);
+        free(snapshot);
+        g_failures += 1;
+        return;
+    }
+
+    if (first.wasm_len != second.wasm_len) {
+        Test_fail("codegen determinism length mismatch");
+        free(snapshot);
+        return;
+    }
+
+    for (index = 0; index < second.wasm_len; ++index) {
+        if (snapshot[index] != second.wasm_data[index]) {
+            Test_fail("codegen determinism byte mismatch");
+            break;
+        }
+    }
+
+    free(snapshot);
+}
+
+static void Test_codegenUnsupportedFixtures(void)
+{
+    const char* fixtures[] = {
+        "../tests/fixtures/backend_ir_v2/07_structs.bin",
+        "../tests/fixtures/backend_ir_v2/09_references.bin"
+    };
+    size_t count;
+    size_t index;
+
+    count = sizeof(fixtures) / sizeof(fixtures[0]);
+    for (index = 0; index < count; ++index) {
+        uint8_t* data;
+        size_t len;
+        jsrust_backend_codegen_result result;
+
+        if (!Test_readFile(fixtures[index], &data, &len)) {
+            fprintf(stderr, "FAIL: unable to read unsupported codegen fixture %s\n", fixtures[index]);
+            g_failures += 1;
+            continue;
+        }
+
+        result = jsrust_backend_codegen_wasm_bytes(data, len, "main");
+        free(data);
+
+        if (result.code != JSRUST_BACKEND_ERR_VALIDATE) {
+            fprintf(stderr, "FAIL: expected validate error for unsupported fixture %s, got code=%d message=%s\n", fixtures[index], (int)result.code, result.message);
+            g_failures += 1;
+        }
+    }
+}
+
 int main(void)
 {
     Test_positiveFixtures();
@@ -294,6 +454,10 @@ int main(void)
     Test_truncated();
     Test_runtimeMissingFunction();
     Test_traceDeterminism();
+    Test_codegenMagicVersion();
+    Test_codegenPositiveFixtures();
+    Test_codegenDeterminism();
+    Test_codegenUnsupportedFixtures();
 
     if (g_failures > 0) {
         fprintf(stderr, "Backend tests failed: %d\n", g_failures);

@@ -39,7 +39,7 @@ See `plans/README.md` for the current planning structure.
 - backend/plans/06-driver-cli-artifacts.md implemented (initial + JS wasm adapter integration; formatter run-path active)
 - backend/plans/07-testing-conformance-ci.md implemented (initial local suite + conditional JS integration tests + v2 fixture corpus)
 - backend/plans/08-libc-overhaul-plan.md started (minimal bootstrap cleanup)
-- backend/plans/future/01-wasm-codegen-core.md deferred
+- backend/plans/future/01-wasm-codegen-core.md in progress (initial library-only wasm codegen API + scalar/control-flow MVP emitter + deterministic unsupported-op validation)
 - backend/plans/future/02-wasm-data-memory-abi.md deferred
 
 ## Important

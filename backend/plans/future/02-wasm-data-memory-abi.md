@@ -1,6 +1,6 @@
 # Future 02 - WASM Data, Memory, and ABI (Deferred)
 
-Status: deferred until Future 01 starts and interpreter runtime semantics are locked.
+Status: deferred (Future 01 MVP started; memory/data ABI track not started).
 
 ## Purpose
 
