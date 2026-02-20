@@ -713,6 +713,9 @@ function resolveTypeNode(ctx, typeNode) {
             const innerResult = resolveTypeNode(ctx, typeNode.inner);
             if (!innerResult.ok) return innerResult;
             const mutable = typeNode.mutability === Mutability.Mutable;
+            if (!mutable && innerResult.type.kind === TypeKind.String) {
+                return ok(innerResult.type);
+            }
             return ok(makeRefType(innerResult.type, mutable, typeNode.span));
         }
 
