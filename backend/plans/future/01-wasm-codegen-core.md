@@ -1,6 +1,6 @@
 # Future 01 - WASM Codegen Core
 
-Status: in progress (initial MVP implementation landed).
+Status: in progress (MVP expanded to cover parity-oriented pointer/memory/aggregate execution paths).
 
 ## Purpose
 
@@ -37,11 +37,21 @@ After interpreter milestones are complete, add a wasm binary generation backend 
 - Imports locked for output sink:
   - `env.jsrust_write_byte(i32) -> i32`
   - `env.jsrust_flush() -> i32`
+- Additive formatter/runtime writer imports for generated wasm:
+  - `env.jsrust_write_cstr(i32) -> i32`
+  - `env.jsrust_write_i64(i64) -> i32`
+  - `env.jsrust_write_f64(f64) -> i32`
+  - `env.jsrust_write_bool(i32) -> i32`
+  - `env.jsrust_write_char(i64) -> i32`
 - MVP supported subset:
   - scalar constants/arithmetic/comparisons/casts
   - calls and control-flow (`ret`, `br`, `br_if`, `switch`, `unreachable`)
   - builtin print and formatter lowering with deterministic validation limits
-- Explicit emit-time validation failure for unsupported memory/aggregate ops
+- pointer-like type lowering (`ptr`, `struct`, `enum`) as wasm `i32` values
+- memory/global/data sections with string literal data-segment materialization
+- lowered memory ops and aggregate ops used by current fixtures/examples:
+  - `alloca`, `load`, `store`, `memcpy`, `gep`, `ptradd`
+  - `struct_create`, `struct_get`, `enum_create`, `enum_get_tag`, `enum_get_data`
 
 ## Task Breakdown
 
@@ -72,7 +82,7 @@ Status: implemented (dispatcher-loop lowering strategy).
 - constants, arithmetic, comparisons, casts (supported subset)
 - explicit stable failure for unsupported opcodes
 
-Status: implemented (scalar MVP subset).
+Status: implemented (expanded beyond scalar MVP for active parity set).
 
 ### Task F1.5 - Control Flow Lowering
 
@@ -85,10 +95,10 @@ Status: implemented (initial).
 - default export behavior (`main` if present)
 - optional explicit export list extension point
 
-Status: implemented (entry export as `main` in MVP).
+Status: implemented (entry export plus memory export).
 
 ## Acceptance Criteria
 
-- backend emits valid `.wasm` for supported fixture subset
+- backend emits valid `.wasm` for active fixture/example parity subset
 - wasm binaries are deterministic for identical input
 - unsupported paths fail with stable diagnostics

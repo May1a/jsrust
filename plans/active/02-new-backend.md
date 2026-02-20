@@ -39,9 +39,19 @@
 - Backend interpreter now formats `{}` placeholders for string/int/float/bool/char at runtime.
 - Fixture corpus and conformance tests moved to `/Users/may/jsrust/tests/fixtures/backend_ir_v2/`.
 - Frontend `run` command now supports `--codegen-wasm` to compile binary IR to wasm bytes and execute generated wasm in-memory (no filesystem dependency for generated wasm run-path).
+- WASM codegen parity milestone expanded:
+  - function signature/return lowering now accepts pointer + aggregate kinds used by active examples.
+  - generated wasm now emits memory/global/data sections and exports memory.
+  - string literals now lower to deterministic data-segment addresses (`sconst` as pointer address).
+  - memory/aggregate instructions used by active parity set now lower (`alloca/load/store/memcpy/gep/ptradd`, `struct_*`, `enum_*`).
+  - formatter builtins now support dynamic (non-const) runtime values through additive host writer imports.
+  - `--codegen-wasm` now passes all current `examples/*.rs` except known loop hang parity exclusion (`examples/06_loops.rs` also hangs in interpreter mode).
+  - backend codegen fixtures `07_structs` and `09_references` promoted to positive coverage in backend C tests.
+  - root backend integration tests now include a codegen parity matrix across non-hanging examples.
 
 ## Next Integration Steps
 
 - Move backend workspace into dedicated git submodule when repository split is finalized.
 - Expand integration tests for entrypoint variants and trace determinism assertions.
+- Address the shared interpreter/generated-wasm non-termination issue for `examples/06_loops.rs` and then fold it into parity gating.
 - Keep root/backend status files synchronized at each milestone boundary.

@@ -30,7 +30,7 @@ See `plans/README.md` for the current planning structure.
 ## Plan Status
 
 - active/01-compiler-progress.md updated (IR v2 string-literal pool + backend format-print milestone captured; module support milestone captured: inline/file modules + simple `use ... as ...` path resolution; inherent impl milestone captured: `impl Struct` parsing + receiver/static method dispatch + `Self` in methods; simplified trait milestone captured: `trait` parsing + `impl Trait for Type` + inherent-first trait method dispatch + strict `(Trait, Type)` uniqueness; compiler-builtin derive milestone captured: `#[derive(Clone, Copy, Debug)]` struct expansion)
-- active/02-new-backend.md in progress (JS wasm run-path integration wired; binary IR v2 + formatter builtins integrated; `run --codegen-wasm` generated-wasm in-memory execution integrated)
+- active/02-new-backend.md in progress (JS wasm run-path integration wired; binary IR v2 + formatter builtins integrated; `run --codegen-wasm` generated-wasm in-memory execution integrated; parity milestone expanded: pointer/memory/aggregate lowering + data/memory sections + dynamic format host writers + non-hanging example parity matrix)
 - plans/future/01-node-addon-availability.md deferred (non-priority)
 - plans/future/02-untrusted-compatibility.md deferred (`third_party/untrusted` submodule added; compatibility milestone tracked)
 - backend/plans/00-master-implementation-plan.md overhauled (interpreter-first)
@@ -41,8 +41,8 @@ See `plans/README.md` for the current planning structure.
 - backend/plans/06-driver-cli-artifacts.md implemented (initial + JS wasm adapter integration; formatter run-path active)
 - backend/plans/07-testing-conformance-ci.md implemented (initial local suite + conditional JS integration tests + v2 fixture corpus)
 - backend/plans/08-libc-overhaul-plan.md started (minimal bootstrap cleanup)
-- backend/plans/future/01-wasm-codegen-core.md in progress (initial library-only wasm codegen API + scalar/control-flow MVP emitter + deterministic unsupported-op validation)
-- backend/plans/future/02-wasm-data-memory-abi.md deferred
+- backend/plans/future/01-wasm-codegen-core.md in progress (expanded parity-oriented wasm emission: pointer/memory/aggregate lowering + data/memory sections + additive dynamic format writer imports)
+- backend/plans/future/02-wasm-data-memory-abi.md in progress (initial linear-memory/global/data ABI + string data segments + aggregate layout bridge)
 
 ## Important
 
