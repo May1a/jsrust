@@ -1,0 +1,54 @@
+; Module: root
+
+; String literals:
+;   lit0 = "({}, {})"
+
+fn Point::new(arg0: i32, arg1: i32) -> Point {
+
+    block0:
+        v2 = struct_create Point { v0, v1 }
+        ret v2
+
+}
+
+fn Point::add(arg0: *Point, arg1: *Point) -> Point {
+
+    block0:
+        v5 = load Point, v3
+        v6 = struct_get v5, 0
+        v7 = load Point, v4
+        v8 = struct_get v7, 0
+        v9 = iadd v6, v8
+        v10 = load Point, v3
+        v11 = struct_get v10, 1
+        v12 = load Point, v4
+        v13 = struct_get v12, 1
+        v14 = iadd v11, v13
+        v15 = struct_create Point { v9, v14 }
+        ret v15
+
+}
+
+fn main() -> () {
+
+    block0:
+        v16 = iconst i32 1
+        v17 = iconst i32 2
+        v18 = call 129872(v16, v17)
+        v19 = iconst i32 3
+        v20 = iconst i32 4
+        v21 = call 129872(v19, v20)
+        v22 = alloca Point ; loc0
+        store Point, v22, v18
+        v23 = alloca Point ; loc0
+        store Point, v23, v21
+        v24 = call 142415(v22, v23)
+        v25 = sconst lit0
+        v26 = iconst i32 1
+        v27 = struct_get v24, 0
+        v28 = iconst i32 1
+        v29 = struct_get v24, 1
+        v30 = call 862609(v25, v26, v27, v28, v29)
+        ret
+
+}

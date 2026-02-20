@@ -519,7 +519,15 @@ function gatherDeclarations(ctx, module) {
 function gatherDeclaration(ctx, item) {
     switch (item.kind) {
         case NodeKind.FnItem: {
+            if (item.implTargetName) {
+                ctx.pushImplSelfType(
+                    makeStructType(item.implTargetName, [], item.span),
+                );
+            }
             const typeResult = inferFnSignature(ctx, item);
+            if (item.implTargetName) {
+                ctx.popImplSelfType();
+            }
             if (!typeResult.ok) return typeResult;
             const registerResult = ctx.registerFn(
                 item.name,
@@ -537,6 +545,27 @@ function gatherDeclaration(ctx, item) {
                         ),
                     ],
                 };
+            }
+            if (item.implTargetName && item.unqualifiedName) {
+                const registerMethodResult = ctx.registerMethod(
+                    item.implTargetName,
+                    item.unqualifiedName,
+                    item,
+                    typeResult.type,
+                    { receiver: item.params?.[0]?.receiverKind || null },
+                );
+                if (!registerMethodResult.ok) {
+                    return {
+                        ok: false,
+                        errors: [
+                            makeTypeError(
+                                registerMethodResult.error ||
+                                "Failed to register method",
+                                item.span,
+                            ),
+                        ],
+                    };
+                }
             }
             return { ok: true };
         }
@@ -599,6 +628,78 @@ function gatherDeclaration(ctx, item) {
         case NodeKind.UseItem:
             return { ok: true };
 
+        case NodeKind.ImplItem: {
+            const targetName = item.targetType?.name || null;
+            if (!targetName) {
+                return {
+                    ok: false,
+                    errors: [
+                        makeTypeError("impl target must be a named struct type", item.span),
+                    ],
+                };
+            }
+            const targetDecl = ctx.lookupItem(targetName);
+            if (!targetDecl || targetDecl.kind !== "struct") {
+                return {
+                    ok: false,
+                    errors: [
+                        makeTypeError(
+                            `impl target must resolve to a struct: ${targetName}`,
+                            item.span,
+                        ),
+                    ],
+                };
+            }
+
+            const selfType = makeStructType(targetName, [], item.span);
+            ctx.pushImplSelfType(selfType);
+            const errors = [];
+            for (const method of item.methods || []) {
+                const typeResult = inferFnSignature(ctx, method);
+                if (!typeResult.ok) {
+                    errors.push(...(typeResult.errors || []));
+                    continue;
+                }
+                const symbolName = `${targetName}::${method.name}`;
+                const registerFnResult = ctx.registerFn(
+                    symbolName,
+                    method,
+                    typeResult.type,
+                );
+                if (!registerFnResult.ok) {
+                    errors.push(
+                        makeTypeError(
+                            registerFnResult.error ||
+                            "Failed to register impl method",
+                            method.span,
+                        ),
+                    );
+                    continue;
+                }
+                const registerMethodResult = ctx.registerMethod(
+                    targetName,
+                    method.name,
+                    method,
+                    typeResult.type,
+                    { receiver: method.params?.[0]?.receiverKind || null },
+                );
+                if (!registerMethodResult.ok) {
+                    errors.push(
+                        makeTypeError(
+                            registerMethodResult.error ||
+                            "Failed to register impl method",
+                            method.span,
+                        ),
+                    );
+                }
+            }
+            ctx.popImplSelfType();
+            if (errors.length > 0) {
+                return { ok: false, errors };
+            }
+            return { ok: true };
+        }
+
         default:
             return { ok: true };
     }
@@ -657,6 +758,12 @@ function inferFnSignature(ctx, fnItem) {
 function resolveTypeNode(ctx, typeNode) {
     switch (typeNode.kind) {
         case NodeKind.NamedType: {
+            if (typeNode.name === "Self") {
+                const selfType = ctx.currentImplSelfType();
+                if (selfType) {
+                    return ok(selfType);
+                }
+            }
             // Check for builtin types
             const builtin = resolveBuiltinType(typeNode.name);
             if (builtin) {
@@ -847,6 +954,21 @@ function checkItem(ctx, item) {
         case NodeKind.FnItem:
             return checkFnItem(ctx, item);
 
+        case NodeKind.ImplItem: {
+            const targetName = item.targetType?.name || "";
+            const targetType = makeStructType(targetName, [], item.span);
+            ctx.pushImplSelfType(targetType);
+            const result = checkModuleItems(ctx, {
+                items: (item.methods || []).map((method) => ({
+                    ...method,
+                    name: `${targetName}::${method.name}`,
+                    implTargetName: targetName,
+                })),
+            });
+            ctx.popImplSelfType();
+            return result;
+        }
+
         case NodeKind.ModItem:
             if (item.isInline && item.items) {
                 ctx.pushScope();
@@ -886,6 +1008,9 @@ function checkFnItem(ctx, fnItem) {
     }
 
     const fnType = itemDecl.type;
+    if (fnItem.implTargetName) {
+        ctx.pushImplSelfType(makeStructType(fnItem.implTargetName, [], fnItem.span));
+    }
     ctx.pushScope();
 
     // Set current function context
@@ -935,6 +1060,9 @@ function checkFnItem(ctx, fnItem) {
 
     ctx.popScope();
     ctx.clearCurrentFn();
+    if (fnItem.implTargetName) {
+        ctx.popImplSelfType();
+    }
 
     if (errors.length > 0) {
         return { ok: false, errors };
@@ -1073,6 +1201,13 @@ function inferLiteral(ctx, literal, expectedType = null) {
  * @returns {InferenceResult}
  */
 function inferIdentifier(ctx, ident) {
+    if (ident.name === "Self") {
+        const selfType = ctx.currentImplSelfType();
+        if (selfType) {
+            return ok(selfType);
+        }
+    }
+
     // Look up variable binding
     const binding = ctx.lookupVar(ident.name);
     if (binding) {
@@ -1371,19 +1506,26 @@ function inferField(ctx, field) {
     if (!receiverResult.ok) return receiverResult;
 
     const receiverType = ctx.resolveType(receiverResult.type);
+    let accessType = receiverType;
+    while (
+        accessType &&
+        (accessType.kind === TypeKind.Ref || accessType.kind === TypeKind.Ptr)
+    ) {
+        accessType = ctx.resolveType(accessType.inner);
+    }
     const fieldName =
         typeof field.field === "string" ? field.field : field.field.name;
 
     // Handle struct field access
-    if (receiverType.kind === TypeKind.Struct) {
-        const fieldDef = receiverType.fields.find((f) => f.name === fieldName);
+    if (accessType.kind === TypeKind.Struct) {
+        const fieldDef = accessType.fields.find((f) => f.name === fieldName);
         if (fieldDef) {
             return ok(fieldDef.type);
         }
 
         // Some lowering paths keep struct names but omit field metadata.
         // Fall back to the declared item definition in type context.
-        const item = ctx.lookupItem(receiverType.name);
+        const item = ctx.lookupItem(accessType.name);
         if (item && item.kind === "struct") {
             const structField = item.node.fields?.find(
                 (f) => f.name === fieldName,
@@ -1394,24 +1536,46 @@ function inferField(ctx, field) {
                 }
                 return ok(ctx.freshTypeVar());
             }
+            const method = ctx.lookupMethod(accessType.name, fieldName);
+            if (method && method.type?.kind === TypeKind.Fn) {
+                const boundType = makeFnType(
+                    method.type.params.slice(1),
+                    method.type.returnType,
+                    method.type.isUnsafe || false,
+                    field.span,
+                );
+                field.resolvedMethodSymbolName = method.symbolName;
+                return ok(boundType);
+            }
         }
 
         return err(
-            `Field '${fieldName}' not found in struct ${receiverType.name}`,
+            `Field '${fieldName}' not found in struct ${accessType.name}`,
             field.span,
         );
     }
 
     // Handle named type (unresolved struct)
-    if (receiverType.kind === TypeKind.Named) {
-        const item = ctx.lookupItem(receiverType.name);
+    if (accessType.kind === TypeKind.Named) {
+        const item = ctx.lookupItem(accessType.name);
         if (item && item.kind === "struct") {
             const structField = item.node.fields?.find(
                 (f) => f.name === fieldName,
             );
             if (!structField) {
+                const method = ctx.lookupMethod(accessType.name, fieldName);
+                if (method && method.type?.kind === TypeKind.Fn) {
+                    const boundType = makeFnType(
+                        method.type.params.slice(1),
+                        method.type.returnType,
+                        method.type.isUnsafe || false,
+                        field.span,
+                    );
+                    field.resolvedMethodSymbolName = method.symbolName;
+                    return ok(boundType);
+                }
                 return err(
-                    `Field '${fieldName}' not found in struct ${receiverType.name}`,
+                    `Field '${fieldName}' not found in struct ${accessType.name}`,
                     field.span,
                 );
             }
@@ -1423,7 +1587,7 @@ function inferField(ctx, field) {
     }
 
     // Handle tuple field access (numeric index)
-    if (receiverType.kind === TypeKind.Tuple) {
+    if (accessType.kind === TypeKind.Tuple) {
         const index =
             typeof field.field === "number"
                 ? field.field
@@ -1431,15 +1595,15 @@ function inferField(ctx, field) {
         if (
             isNaN(index) ||
             index < 0 ||
-            index >= receiverType.elements.length
+            index >= accessType.elements.length
         ) {
             return err(`Tuple index out of bounds: ${field.field}`, field.span);
         }
-        return ok(receiverType.elements[index]);
+        return ok(accessType.elements[index]);
     }
 
     // Type variable - might be a struct
-    if (receiverType.kind === TypeKind.TypeVar) {
+    if (accessType.kind === TypeKind.TypeVar) {
         const fieldType = ctx.freshTypeVar();
         // We'll need to constrain this later when we know more about the receiver
         return ok(fieldType);
@@ -1905,6 +2069,15 @@ function inferPath(ctx, pathExpr) {
     const item = ctx.lookupItem(itemName);
     if (!item) {
         return err(`Unbound item: ${itemName}`, pathExpr.span);
+    }
+
+    if (item.kind === "struct" && pathExpr.segments.length === 2) {
+        const methodName = pathExpr.segments[1];
+        const method = ctx.lookupMethod(itemName, methodName);
+        if (method) {
+            pathExpr.resolvedMethodSymbolName = method.symbolName;
+            return ok(method.type);
+        }
     }
 
     // Handle enum variants: EnumName::VariantName

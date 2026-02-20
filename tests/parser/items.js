@@ -65,5 +65,19 @@ export function runParserItemTests() {
         assertEqual(result.value.items[3].isPub, true);
     });
 
-    return 7;
+    test("impl item with receiver methods", () => {
+        const result = parseModule(
+            "struct Point { pub x: i32 } impl Point { pub fn new(x: i32) -> Self { Self { x } } fn get(&self) -> i32 { self.x } }",
+        );
+        assertTrue(result.ok);
+        const implItem = result.value.items[1];
+        assertEqual(implItem.kind, NodeKind.ImplItem);
+        assertEqual(implItem.methods.length, 2);
+        assertEqual(implItem.methods[0].isPub, true);
+        assertEqual(implItem.methods[1].params[0].isReceiver, true);
+        assertEqual(implItem.methods[1].params[0].receiverKind, "ref");
+        assertEqual(result.value.items[0].fields[0].isPub, true);
+    });
+
+    return 8;
 }

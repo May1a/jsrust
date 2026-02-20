@@ -193,6 +193,9 @@ class LoweringCtx {
         /** @type {string | null} */
         this.currentFn = null;
 
+        /** @type {string | null} */
+        this.currentImplTargetName = null;
+
         /** @type {Map<string, number>} */
         this.structFieldIndices = new Map();
     }
@@ -349,6 +352,23 @@ function lowerItemIntoList(ctx, item, typeCtx, output) {
         }
         return;
     }
+    if (item.kind === NodeKind.ImplItem) {
+        for (const method of item.methods || []) {
+            lowerItemIntoList(
+                ctx,
+                {
+                    ...method,
+                    name: `${item.targetType?.name || "unknown"}::${method.name}`,
+                    implTargetName: item.targetType?.name || null,
+                    isImplMethod: true,
+                    unqualifiedName: method.name,
+                },
+                typeCtx,
+                output,
+            );
+        }
+        return;
+    }
     if (item.kind === NodeKind.UseItem) {
         return;
     }
@@ -389,6 +409,19 @@ function registerItem(ctx, item, typeCtx) {
             }
             break;
         }
+        case NodeKind.ImplItem: {
+            for (const method of item.methods || []) {
+                registerItem(
+                    ctx,
+                    {
+                        ...method,
+                        name: `${item.targetType?.name || "unknown"}::${method.name}`,
+                    },
+                    typeCtx,
+                );
+            }
+            break;
+        }
         case NodeKind.UseItem:
             break;
     }
@@ -415,6 +448,7 @@ function lowerItem(ctx, item, typeCtx) {
             return lowerEnumItem(ctx, item, typeCtx);
         case NodeKind.ModItem:
         case NodeKind.UseItem:
+        case NodeKind.ImplItem:
             return null;
         default:
             ctx.addError(`Unknown item kind: ${item.kind}`, item.span);
@@ -432,6 +466,7 @@ function lowerItem(ctx, item, typeCtx) {
 function lowerFnItem(ctx, fn, typeCtx) {
     ctx.pushScope();
     ctx.currentFn = fn.name;
+    ctx.currentImplTargetName = fn.implTargetName || null;
 
     // Get function type from type context
     const itemDecl = typeCtx.lookupItem(fn.name);
@@ -457,6 +492,7 @@ function lowerFnItem(ctx, fn, typeCtx) {
 
     ctx.popScope();
     ctx.currentFn = null;
+    ctx.currentImplTargetName = null;
 
     return makeHFnDecl(
         fn.span,
@@ -809,6 +845,15 @@ function inferLiteralType(literalKind) {
  * @returns {import('./hir.js').HExpr}
  */
 function lowerIdentifier(ctx, ident, typeCtx) {
+    if (ident.name === "Self" && ctx.currentImplTargetName) {
+        const selfType = {
+            kind: TypeKind.Struct,
+            name: ctx.currentImplTargetName,
+            fields: [],
+        };
+        return makeHVarExpr(ident.span, ctx.currentImplTargetName, -1, selfType);
+    }
+
     // Look up variable binding
     const varInfo = ctx.lookupVar(ident.name);
     if (varInfo) {
@@ -903,6 +948,67 @@ function lowerUnary(ctx, unary, typeCtx) {
  * @returns {import('./hir.js').HCallExpr}
  */
 function lowerCall(ctx, call, typeCtx) {
+    if (call.callee?.kind === NodeKind.FieldExpr) {
+        const methodField = call.callee;
+        const methodName =
+            typeof methodField.field === "string"
+                ? methodField.field
+                : methodField.field?.name;
+        const receiver = lowerExpr(ctx, methodField.receiver, typeCtx);
+        if (methodName && receiver.ty) {
+            let receiverStructName = null;
+            if (receiver.ty.kind === TypeKind.Struct) {
+                receiverStructName = receiver.ty.name;
+            } else if (receiver.ty.kind === TypeKind.Named) {
+                receiverStructName = receiver.ty.name;
+            }
+            if (receiverStructName) {
+                const methodDecl = typeCtx.lookupMethod(
+                    receiverStructName,
+                    methodName,
+                );
+                if (methodDecl && methodDecl.type?.kind === TypeKind.Fn) {
+                    const methodType = methodDecl.type;
+                    let receiverArg = receiver;
+                    const receiverType = methodType.params[0];
+                    if (receiverType?.kind === TypeKind.Ref) {
+                        const refTy = {
+                            kind: TypeKind.Ref,
+                            inner: receiver.ty,
+                            mutable: receiverType.mutable === true,
+                        };
+                        receiverArg = makeHRefExpr(
+                            methodField.receiver.span,
+                            receiverType.mutable === true,
+                            receiver,
+                            refTy,
+                        );
+                    }
+                    const args = [
+                        receiverArg,
+                        ...(call.args || []).map((arg) => lowerExpr(ctx, arg, typeCtx)),
+                    ];
+                    const callee = makeHVarExpr(
+                        call.callee.span,
+                        methodDecl.symbolName,
+                        -1,
+                        methodType,
+                    );
+                    return makeHCallExpr(
+                        call.span,
+                        callee,
+                        args,
+                        methodType.returnType,
+                    );
+                }
+                ctx.addError(
+                    `Unknown method on struct '${receiverStructName}': ${methodName}`,
+                    call.callee.span,
+                );
+            }
+        }
+    }
+
     const callee = lowerExpr(ctx, call.callee, typeCtx);
     const args = (call.args || []).map((arg) => lowerExpr(ctx, arg, typeCtx));
 
@@ -1027,30 +1133,49 @@ function lowerField(ctx, field, typeCtx) {
     const base = lowerExpr(ctx, field.receiver, typeCtx);
     const fieldName =
         typeof field.field === "string" ? field.field : field.field.name;
+    let fieldBase = base;
+    let baseType = base.ty;
+    if (baseType && (baseType.kind === TypeKind.Ref || baseType.kind === TypeKind.Ptr)) {
+        baseType = baseType.inner;
+        fieldBase = makeHDerefExpr(field.span, base, baseType || makeUnitType());
+    }
 
     // Get field index and type
     let index = 0;
     let ty = makeUnitType();
 
-    if (base.ty && base.ty.kind === TypeKind.Struct) {
-        index = ctx.getFieldIndex(base.ty.name, fieldName);
-        const fieldDef = base.ty.fields?.find((f) => f.name === fieldName);
+    if (baseType && baseType.kind === TypeKind.Struct) {
+        index = ctx.getFieldIndex(baseType.name, fieldName);
+        const fieldDef = baseType.fields?.find((f) => f.name === fieldName);
         if (fieldDef) {
             ty = fieldDef.type;
+        } else {
+            const item = typeCtx.lookupItem(baseType.name);
+            if (item && item.kind === "struct") {
+                const structField = item.node.fields?.find(
+                    (f) => f.name === fieldName,
+                );
+                if (structField?.ty) {
+                    const resolvedType = resolveTypeFromAst(structField.ty, typeCtx);
+                    if (resolvedType.ok) {
+                        ty = resolvedType.type;
+                    }
+                }
+            }
         }
-    } else if (base.ty && base.ty.kind === TypeKind.Tuple) {
+    } else if (baseType && baseType.kind === TypeKind.Tuple) {
         // Tuple field access by index
         index = parseInt(fieldName, 10);
         if (
             !isNaN(index) &&
-            base.ty.elements &&
-            index < base.ty.elements.length
+            baseType.elements &&
+            index < baseType.elements.length
         ) {
-            ty = base.ty.elements[index];
+            ty = baseType.elements[index];
         }
     }
 
-    return makeHFieldExpr(field.span, base, fieldName, index, ty);
+    return makeHFieldExpr(field.span, fieldBase, fieldName, index, ty);
 }
 
 /**
@@ -1441,6 +1566,15 @@ function lowerPath(ctx, pathExpr, typeCtx) {
         const variantName = pathExpr.segments[1];
 
         const item = ctx.lookupItem(itemName);
+        const methodDecl = typeCtx.lookupMethod(itemName, variantName);
+        if (methodDecl && methodDecl.type?.kind === TypeKind.Fn) {
+            return makeHVarExpr(
+                pathExpr.span,
+                methodDecl.symbolName,
+                -1,
+                methodDecl.type,
+            );
+        }
         if (item && item.kind === "enum") {
             // Enum variant
             const enumTy = {

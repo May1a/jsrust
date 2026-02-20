@@ -46,6 +46,7 @@ import {
     makeModItem,
     makeUseTree,
     makeUseItem,
+    makeImplItem,
     makeIdentPat,
     makeWildcardPat,
     makeLiteralPat,
@@ -980,6 +981,7 @@ function parseStmt(state) {
         check(state, TokenType.Enum) ||
         check(state, TokenType.Mod) ||
         check(state, TokenType.Use) ||
+        check(state, TokenType.Impl) ||
         check(state, TokenType.Unsafe)
     ) {
         const item = parseItem(state);
@@ -991,24 +993,101 @@ function parseStmt(state) {
 
 /**
  * @param {ParserState} state
+ * @param {{ allowReceiver?: boolean }} [options]
  * @returns {Node[]}
  */
-function parseParamList(state) {
+function parseParamList(state, options = {}) {
+    const { allowReceiver = false } = options;
     const params = [];
     expectToken(state, TokenType.OpenParen, "Expected ( in parameter list");
     if (!check(state, TokenType.CloseParen)) {
+        let paramIndex = 0;
         while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
-            const token = peek(state);
+            const startToken = peek(state);
             let name = null;
-            if (isIdentifierToken(token)) {
-                name = advance(state).value;
-            }
             let ty = null;
-            if (matchToken(state, TokenType.Colon)) {
-                ty = parseType(state);
+            let isReceiver = false;
+            /** @type {"value" | "ref" | "ref_mut" | null} */
+            let receiverKind = null;
+
+            const canBeReceiver =
+                allowReceiver &&
+                paramIndex === 0 &&
+                ((startToken.type === TokenType.Self) ||
+                    (startToken.type === TokenType.And &&
+                        (peek(state, 1).type === TokenType.Self ||
+                            (peek(state, 1).type === TokenType.Mut &&
+                                peek(state, 2).type === TokenType.Self))));
+            if (canBeReceiver) {
+                if (matchToken(state, TokenType.And)) {
+                    if (matchToken(state, TokenType.Mut)) {
+                        expectToken(
+                            state,
+                            TokenType.Self,
+                            "Expected self in receiver parameter",
+                        );
+                        receiverKind = "ref_mut";
+                        ty = makeRefType(
+                            spanFromToken(startToken),
+                            Mutability.Mutable,
+                            makeNamedType(spanFromToken(startToken), "Self", null),
+                        );
+                    } else {
+                        expectToken(
+                            state,
+                            TokenType.Self,
+                            "Expected self in receiver parameter",
+                        );
+                        receiverKind = "ref";
+                        ty = makeRefType(
+                            spanFromToken(startToken),
+                            Mutability.Immutable,
+                            makeNamedType(spanFromToken(startToken), "Self", null),
+                        );
+                    }
+                } else {
+                    expectToken(
+                        state,
+                        TokenType.Self,
+                        "Expected self receiver parameter",
+                    );
+                    receiverKind = "value";
+                    ty = makeNamedType(spanFromToken(startToken), "Self", null);
+                }
+                isReceiver = true;
+                name = "self";
+            } else {
+                if (startToken.type === TokenType.Self || startToken.type === TokenType.And) {
+                    addError(
+                        state,
+                        "Receiver parameter is only allowed as the first method parameter",
+                        startToken,
+                        null,
+                    );
+                    if (startToken.type === TokenType.Self) {
+                        name = advance(state).value;
+                    } else {
+                        advance(state);
+                        if (check(state, TokenType.Mut)) {
+                            advance(state);
+                        }
+                        if (check(state, TokenType.Self)) {
+                            advance(state);
+                            name = "self";
+                        }
+                    }
+                }
+                if (!name && isIdentifierToken(startToken)) {
+                    name = advance(state).value;
+                }
+                if (matchToken(state, TokenType.Colon)) {
+                    ty = parseType(state);
+                }
             }
-            const span = token ? spanFromToken(token) : currentSpan(state);
-            params.push(makeParam(span, name, ty, null));
+
+            const span = startToken ? spanFromToken(startToken) : currentSpan(state);
+            params.push(makeParam(span, name, ty, null, isReceiver, receiverKind));
+            paramIndex += 1;
             if (!matchToken(state, TokenType.Comma)) break;
         }
     }
@@ -1020,15 +1099,16 @@ function parseParamList(state) {
  * @param {ParserState} state
  * @param {boolean} isUnsafe
  * @param {boolean} isPub
+ * @param {boolean} [allowReceiver=false]
  * @returns {Node}
  */
-function parseFnItem(state, isUnsafe, isPub) {
+function parseFnItem(state, isUnsafe, isPub, allowReceiver = false) {
     const start =
         expectToken(state, TokenType.Fn, "Expected fn") ?? peek(state);
     const nameToken =
         expectToken(state, TokenType.Identifier, "Expected function name") ??
         peek(state);
-    const params = parseParamList(state);
+    const params = parseParamList(state, { allowReceiver });
     let returnType = null;
     if (matchArrow(state)) {
         returnType = parseType(state);
@@ -1071,6 +1151,7 @@ function parseStructItem(state, isPub) {
     let isTuple = false;
     if (matchToken(state, TokenType.OpenCurly)) {
         while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
+            const fieldIsPub = matchToken(state, TokenType.Pub) !== null;
             const fieldNameToken =
                 expectToken(
                     state,
@@ -1091,6 +1172,7 @@ function parseStructItem(state, isPub) {
                     fieldNameToken.value ?? "",
                     ty,
                     defaultValue,
+                    fieldIsPub,
                 ),
             );
             if (!matchToken(state, TokenType.Comma)) break;
@@ -1131,6 +1213,62 @@ function parseStructItem(state, isPub) {
         fields,
         isTuple,
         isPub,
+    );
+}
+
+/**
+ * @param {ParserState} state
+ * @param {boolean} isUnsafe
+ * @returns {Node}
+ */
+function parseImplItem(state, isUnsafe) {
+    const start =
+        expectToken(state, TokenType.Impl, "Expected impl") ?? peek(state);
+    const targetType = parseType(state);
+    if (check(state, TokenType.For)) {
+        addError(
+            state,
+            "Trait impl syntax is not supported yet",
+            peek(state),
+            null,
+        );
+        advance(state);
+        parseType(state);
+    }
+    const methods = [];
+    expectToken(state, TokenType.OpenCurly, "Expected { after impl target");
+    while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
+        let methodIsPub = false;
+        let methodIsUnsafe = false;
+        if (matchToken(state, TokenType.Pub)) methodIsPub = true;
+        if (matchToken(state, TokenType.Unsafe)) methodIsUnsafe = true;
+        if (check(state, TokenType.Fn)) {
+            const method = parseFnItem(
+                state,
+                methodIsUnsafe,
+                methodIsPub,
+                true,
+            );
+            methods.push(method);
+            continue;
+        }
+        addError(state, "Expected method item in impl block", peek(state), null);
+        skipToRecovery(state, [
+            TokenType.CloseCurly,
+            TokenType.Fn,
+            TokenType.Pub,
+            TokenType.Unsafe,
+        ]);
+    }
+    const endToken =
+        expectToken(state, TokenType.CloseCurly, "Expected } after impl block") ??
+        peek(state);
+    const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
+    return makeImplItem(
+        span,
+        targetType ?? makeNamedType(spanFromToken(start), "unknown", null),
+        methods,
+        isUnsafe,
     );
 }
 
@@ -1246,6 +1384,7 @@ function parseModItem(state, isPub) {
                     TokenType.Enum,
                     TokenType.Mod,
                     TokenType.Use,
+                    TokenType.Impl,
                 ]);
         }
         expectToken(state, TokenType.CloseCurly, "Expected } after module");
@@ -1385,6 +1524,7 @@ function parseItem(state) {
     if (check(state, TokenType.Enum)) return parseEnumItem(state, isPub);
     if (check(state, TokenType.Mod)) return parseModItem(state, isPub);
     if (check(state, TokenType.Use)) return parseUseItem(state, isPub);
+    if (check(state, TokenType.Impl)) return parseImplItem(state, isUnsafe);
     addError(state, "Expected item", peek(state), null);
     return null;
 }
@@ -1940,6 +2080,7 @@ function parseBlockExpr(state) {
             check(state, TokenType.Enum) ||
             check(state, TokenType.Mod) ||
             check(state, TokenType.Use) ||
+            check(state, TokenType.Impl) ||
             check(state, TokenType.Unsafe)
         ) {
             const item = parseItem(state);
@@ -2042,6 +2183,7 @@ function parseModuleFromState(state) {
                 TokenType.Enum,
                 TokenType.Mod,
                 TokenType.Use,
+                TokenType.Impl,
                 TokenType.Eof,
             ]);
             if (check(state, TokenType.Eof)) break;

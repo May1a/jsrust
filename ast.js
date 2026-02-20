@@ -63,6 +63,7 @@ const NodeKind = {
     EnumVariant: 50,
     UseTree: 51,
     MatchArm: 52,
+    ImplItem: 53,
 };
 
 const LiteralKind = {
@@ -437,10 +438,25 @@ function makeItemStmt(span, item) {
  * @param {string | null} name
  * @param {Node | null} ty
  * @param {Node | null} pat
+ * @param {boolean} [isReceiver=false]
+ * @param {"value" | "ref" | "ref_mut" | null} [receiverKind=null]
  * @returns {Node}
  */
-function makeParam(span, name, ty, pat) {
-    return makeNode(NodeKind.Param, span, { name, ty, pat });
+function makeParam(
+    span,
+    name,
+    ty,
+    pat,
+    isReceiver = false,
+    receiverKind = null,
+) {
+    return makeNode(NodeKind.Param, span, {
+        name,
+        ty,
+        pat,
+        isReceiver,
+        receiverKind,
+    });
 }
 
 /**
@@ -483,10 +499,16 @@ function makeFnItem(
  * @param {string} name
  * @param {Node | null} ty
  * @param {Node | null} defaultValue
+ * @param {boolean} [isPub=false]
  * @returns {Node}
  */
-function makeStructField(span, name, ty, defaultValue) {
-    return makeNode(NodeKind.StructField, span, { name, ty, defaultValue });
+function makeStructField(span, name, ty, defaultValue, isPub = false) {
+    return makeNode(NodeKind.StructField, span, {
+        name,
+        ty,
+        defaultValue,
+        isPub,
+    });
 }
 
 /**
@@ -562,6 +584,21 @@ function makeUseTree(span, path, alias, children) {
  */
 function makeUseItem(span, tree, isPub) {
     return makeNode(NodeKind.UseItem, span, { tree, isPub });
+}
+
+/**
+ * @param {Span} span
+ * @param {Node} targetType
+ * @param {Node[]} methods
+ * @param {boolean} [isUnsafe=false]
+ * @returns {Node}
+ */
+function makeImplItem(span, targetType, methods, isUnsafe = false) {
+    return makeNode(NodeKind.ImplItem, span, {
+        targetType,
+        methods,
+        isUnsafe,
+    });
 }
 
 /**
@@ -765,7 +802,10 @@ function isStmt(node) {
  * @returns {boolean}
  */
 function isItem(node) {
-    return node.kind >= NodeKind.FnItem && node.kind <= NodeKind.UseItem;
+    return (
+        (node.kind >= NodeKind.FnItem && node.kind <= NodeKind.UseItem) ||
+        node.kind === NodeKind.ImplItem
+    );
 }
 
 /**
@@ -829,6 +869,7 @@ export {
     makeModItem,
     makeUseTree,
     makeUseItem,
+    makeImplItem,
     makeIdentPat,
     makeWildcardPat,
     makeLiteralPat,

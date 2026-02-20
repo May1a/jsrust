@@ -29,8 +29,8 @@
         {
             "source": "07_structs.rs",
             "artifact": "07_structs.bin",
-            "bytes": 178,
-            "sha256": "980e0cb6e95a50217b7d4141b4d9dd8c2c4697a771f96771113f2eb689605c8d"
+            "bytes": 179,
+            "sha256": "3fb02ad53f70f7191377c1269c128aaa2f5a330495feb67a0ed8604d610f31ec"
         },
         {
             "source": "09_references.rs",
