@@ -85,6 +85,9 @@ export class HirToSsaCtx {
 
         /** @type {Map<string, { id: number, ty: IRType }>} Variable name -> info */
         this.varNames = new Map();
+
+        /** @type {Set<number>} Variable IDs that are mutable bindings */
+        this.mutableVarIds = new Set();
     }
 
     /**
@@ -122,6 +125,7 @@ export class HirToSsaCtx {
         this.varAllocas.clear();
         this.varValues.clear();
         this.varNames.clear();
+        this.mutableVarIds.clear();
         this.breakStack = [];
         this.continueStack = [];
 
@@ -274,11 +278,22 @@ export class HirToSsaCtx {
         switch (pat.kind) {
             case HPatKind.Ident: {
                 // Identifier pattern - bind variable
+                const varId = /** @type {ValueId} */ (pat.id);
+                if (pat.mutable) {
+                    this.mutableVarIds.add(varId);
+                }
+                if (pat.mutable) {
+                    const irTy = this.translateType(ty);
+                    const ptr = this.ensureVarAlloca(varId, irTy);
+                    if (value !== null) {
+                        this.builder.store(ptr, value, irTy);
+                    }
+                }
                 if (value !== null) {
-                    this.varValues.set(/** @type {ValueId} */(pat.id), value);
+                    this.varValues.set(varId, value);
                 }
                 this.varNames.set(pat.name, {
-                    id: /** @type {ValueId} */ (pat.id),
+                    id: varId,
                     ty: this.translateType(ty),
                 });
                 break;
@@ -344,12 +359,19 @@ export class HirToSsaCtx {
      */
     lowerAssignStmt(stmt) {
         const value = this.lowerExpr(stmt.value);
-        if (
-            stmt.place.kind === HPlaceKind.Var &&
-            !this.varAllocas.has(/** @type {ValueId} */ (stmt.place.id))
-        ) {
-            this.varValues.set(/** @type {ValueId} */ (stmt.place.id), value);
-            return;
+        if (stmt.place.kind === HPlaceKind.Var) {
+            const varId = /** @type {ValueId} */ (stmt.place.id);
+            if (this.mutableVarIds.has(varId)) {
+                const ty = this.translateType(stmt.value.ty);
+                const ptr = this.ensureVarAlloca(varId, ty);
+                this.builder.store(ptr, value, ty);
+                this.varValues.set(varId, value);
+                return;
+            }
+            if (!this.varAllocas.has(varId)) {
+                this.varValues.set(varId, value);
+                return;
+            }
         }
         const ptr = this.lowerPlaceToRef(stmt.place);
         const ty = this.translateType(stmt.value.ty);
