@@ -292,6 +292,11 @@ function printInstruction(inst, ctx) {
             return `${resultPrefix}call ${inst.fn}(${args})`;
         }
 
+        case IRInstKind.CallDyn: {
+            const args = inst.args.map((/**@type{any}*/ a) => ctx.getValueName(a)).join(", ");
+            return `${resultPrefix}call_dyn ${ctx.getValueName(inst.fn)}(${args})`;
+        }
+
         case IRInstKind.StructCreate: {
             const fields = inst.fields
                 .map((/** @type {any} */ f) => ctx.getValueName(f))

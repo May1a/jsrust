@@ -851,17 +851,21 @@ export class HirToSsaCtx {
     lowerCall(expr) {
         // Get callee - could be a function name or a function pointer
         let fnId;
-        if (expr.callee.kind === HExprKind.Var) {
+        let isDynamic = true;
+        if (expr.callee.kind === HExprKind.Var && expr.callee.id === -1) {
             fnId = this.resolveFunctionId(expr.callee.name);
+            isDynamic = false;
         } else {
-            // Complex callee - evaluate it
+            // Dynamic callee - evaluate to a runtime function id/hash value.
             fnId = this.lowerExpr(expr.callee);
         }
 
         const args = expr.args.map((arg) => this.lowerExpr(arg));
         const returnType = this.translateType(expr.ty);
 
-        const inst = this.builder.call(fnId, args, returnType);
+        const inst = isDynamic
+            ? this.builder.callDyn(fnId, args, returnType)
+            : this.builder.call(fnId, args, returnType);
         return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
     }
 

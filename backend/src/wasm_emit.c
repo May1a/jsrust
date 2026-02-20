@@ -172,6 +172,7 @@ static const char* g_builtinPrintlnName = "__jsrust_builtin_println_bytes";
 static const char* g_builtinPrintName = "__jsrust_builtin_print_bytes";
 static const char* g_builtinPrintlnFmtName = "__jsrust_builtin_println_fmt";
 static const char* g_builtinPrintFmtName = "__jsrust_builtin_print_fmt";
+static const char* g_builtinAssertFailName = "__jsrust_builtin_assert_fail";
 
 static BackendStatus WasmEmit_validateError(const char* message)
 {
@@ -1343,11 +1344,13 @@ static BackendStatus WasmFunctionLowering_emitInstruction(
         uint32_t builtinPrintId;
         uint32_t builtinPrintlnFmtId;
         uint32_t builtinPrintFmtId;
+        uint32_t builtinAssertFailId;
 
         builtinPrintlnId = ByteSpan_hashFunctionId(ByteSpan_fromCString(g_builtinPrintlnName));
         builtinPrintId = ByteSpan_hashFunctionId(ByteSpan_fromCString(g_builtinPrintName));
         builtinPrintlnFmtId = ByteSpan_hashFunctionId(ByteSpan_fromCString(g_builtinPrintlnFmtName));
         builtinPrintFmtId = ByteSpan_hashFunctionId(ByteSpan_fromCString(g_builtinPrintFmtName));
+        builtinAssertFailId = ByteSpan_hashFunctionId(ByteSpan_fromCString(g_builtinAssertFailName));
 
         if (inst->fn == builtinPrintlnId)
             return WasmFunctionLowering_emitPrintBuiltin(lowering, code, inst, true);
@@ -1357,6 +1360,8 @@ static BackendStatus WasmFunctionLowering_emitInstruction(
             return WasmFunctionLowering_emitFormatBuiltin(lowering, code, inst, true);
         if (inst->fn == builtinPrintFmtId)
             return WasmFunctionLowering_emitFormatBuiltin(lowering, code, inst, false);
+        if (inst->fn == builtinAssertFailId)
+            return WasmEmit_validateError("wasm codegen: assert_eq! failure builtin is not supported yet");
 
         callee = WasmEmit_findFunctionByHash(lowering->context->module, inst->fn, &calleeOrdinal);
         if (!callee)
@@ -1375,6 +1380,8 @@ static BackendStatus WasmFunctionLowering_emitInstruction(
             return WasmEmit_internalError("wasm codegen: failed to store call result");
         return BackendStatus_ok();
     }
+    case IRInstKind_CallDyn:
+        return WasmEmit_validateError("wasm codegen: dynamic calls are not supported yet");
     case IRInstKind_Null:
         if (!WasmFunctionLowering_emitI32Const(code, 0))
             return WasmEmit_internalError("wasm codegen: failed to emit null pointer");

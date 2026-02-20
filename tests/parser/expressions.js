@@ -60,5 +60,31 @@ export function runParserExpressionTests() {
         assertEqual(result.value.value.op, BinaryOp.BitXor);
     });
 
-    return 7;
+    test("closure expression with no params", () => {
+        const result = parseExpression("|| 1");
+        assertTrue(result.ok);
+        assertEqual(result.value.kind, NodeKind.ClosureExpr);
+        assertEqual(result.value.params.length, 0);
+        assertEqual(result.value.body.kind, NodeKind.LiteralExpr);
+    });
+
+    test("closure expression with typed and untyped params", () => {
+        const result = parseExpression("|x: i32, y| { x + y }");
+        assertTrue(result.ok);
+        assertEqual(result.value.kind, NodeKind.ClosureExpr);
+        assertEqual(result.value.params.length, 2);
+        assertEqual(result.value.params[0].name, "x");
+        assertTrue(!!result.value.params[0].ty);
+        assertEqual(result.value.params[1].name, "y");
+        assertEqual(result.value.body.kind, NodeKind.BlockExpr);
+    });
+
+    test("closure expression with explicit return type", () => {
+        const result = parseExpression("|x| -> i32 { x }");
+        assertTrue(result.ok);
+        assertEqual(result.value.kind, NodeKind.ClosureExpr);
+        assertTrue(!!result.value.returnType);
+    });
+
+    return 10;
 }

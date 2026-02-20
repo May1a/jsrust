@@ -143,6 +143,7 @@ const IRInstKind = {
     EnumGetTag: 40,
     EnumGetData: 41,
     Sconst: 42,
+    CallDyn: 43,
 };
 
 const IRTermKind = {

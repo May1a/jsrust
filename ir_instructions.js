@@ -622,6 +622,23 @@ function makeCall(fn, args, returnType) {
 }
 
 /**
+ * @param {ValueId} fn
+ * @param {ValueId[]} args
+ * @param {IRType | null} returnType
+ * @returns {IRInst}
+ */
+function makeCallDyn(fn, args, returnType) {
+    const id = returnType ? freshValueId() : null;
+    return {
+        kind: IRInstKind.CallDyn,
+        id,
+        ty: returnType ?? { kind: 4 },
+        fn,
+        args,
+    };
+}
+
+/**
  * @param {ValueId[]} fields
  * @param {IRType} ty
  * @returns {IRInst}
@@ -769,6 +786,7 @@ export {
     makeSitofp,
     makeBitcast,
     makeCall,
+    makeCallDyn,
     makeStructCreate,
     makeStructGet,
     makeEnumCreate,

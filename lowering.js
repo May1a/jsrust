@@ -3,7 +3,14 @@
 /** @typedef {import('./ast.js').Node} Node */
 /** @typedef {import('./type_context.js').TypeContext} TypeContext */
 
-import { NodeKind, LiteralKind, UnaryOp, BinaryOp, Mutability } from "./ast.js";
+import {
+    NodeKind,
+    LiteralKind,
+    UnaryOp,
+    BinaryOp,
+    Mutability,
+    makeBlockExpr,
+} from "./ast.js";
 
 import {
     HItemKind,
@@ -60,6 +67,8 @@ import {
     IntWidth,
     FloatWidth,
     makeIntType,
+    makeBoolType,
+    makeRefType,
     makeFnType,
     makeUnitType,
     typeToString,
@@ -74,6 +83,7 @@ import {
 
 const BUILTIN_PRINTLN_FMT_FN = "__jsrust_builtin_println_fmt";
 const BUILTIN_PRINT_FMT_FN = "__jsrust_builtin_print_fmt";
+const BUILTIN_ASSERT_FAIL_FN = "__jsrust_builtin_assert_fail";
 
 /**
  * Parse a format string into segments.
@@ -183,6 +193,9 @@ class LoweringCtx {
         /** @type {Map<string, VarInfo>} */
         this.varBindings = new Map();
 
+        /** @type {Map<number, VarInfo>} */
+        this.varById = new Map();
+
         /** @type {number} */
         this.nextVarId = 0;
 
@@ -197,6 +210,18 @@ class LoweringCtx {
 
         /** @type {Map<string, number>} */
         this.structFieldIndices = new Map();
+
+        /** @type {import('./hir.js').HItem[]} */
+        this.generatedItems = [];
+
+        /** @type {import('./hir.js').HStmt[]} */
+        this.pendingPreludeStmts = [];
+
+        /** @type {Map<number, { helperName: string, helperType: Type, captures: { mode: "value" | "ref", name: string, varId: number, type: Type, mutable: boolean }[] }>} */
+        this.closureBindings = new Map();
+
+        /** @type {number} */
+        this.nextClosureId = 0;
     }
 
     /**
@@ -227,6 +252,7 @@ class LoweringCtx {
         const id = this.freshVarId();
         const info = { name, id, type, mutable };
         this.varBindings.set(name, info);
+        this.varById.set(id, info);
         return info;
     }
 
@@ -237,6 +263,15 @@ class LoweringCtx {
      */
     lookupVar(name) {
         return this.varBindings.get(name) || null;
+    }
+
+    /**
+     * Look up a variable by id.
+     * @param {number} id
+     * @returns {VarInfo | null}
+     */
+    lookupVarById(id) {
+        return this.varById.get(id) || null;
     }
 
     /**
@@ -277,6 +312,65 @@ class LoweringCtx {
         if (this._scopeStack && this._scopeStack.length > 0) {
             this.varBindings = this._scopeStack.pop();
         }
+    }
+
+    /**
+     * @returns {number}
+     */
+    nextClosureSymbolId() {
+        const id = this.nextClosureId;
+        this.nextClosureId += 1;
+        return id;
+    }
+
+    /**
+     * @param {import('./hir.js').HItem} item
+     */
+    queueGeneratedItem(item) {
+        this.generatedItems.push(item);
+    }
+
+    /**
+     * @returns {import('./hir.js').HItem[]}
+     */
+    consumeGeneratedItems() {
+        if (this.generatedItems.length === 0) return [];
+        const out = this.generatedItems;
+        this.generatedItems = [];
+        return out;
+    }
+
+    /**
+     * @param {import('./hir.js').HStmt} stmt
+     */
+    queuePreludeStmt(stmt) {
+        this.pendingPreludeStmts.push(stmt);
+    }
+
+    /**
+     * @returns {import('./hir.js').HStmt[]}
+     */
+    consumePreludeStmts() {
+        if (this.pendingPreludeStmts.length === 0) return [];
+        const out = this.pendingPreludeStmts;
+        this.pendingPreludeStmts = [];
+        return out;
+    }
+
+    /**
+     * @param {number} varId
+     * @param {{ helperName: string, helperType: Type, captures: { mode: "value" | "ref", name: string, varId: number, type: Type, mutable: boolean }[] }} binding
+     */
+    registerClosureBinding(varId, binding) {
+        this.closureBindings.set(varId, binding);
+    }
+
+    /**
+     * @param {number} varId
+     * @returns {{ helperName: string, helperType: Type, captures: { mode: "value" | "ref", name: string, varId: number, type: Type, mutable: boolean }[] } | null}
+     */
+    lookupClosureBinding(varId) {
+        return this.closureBindings.get(varId) || null;
     }
 
     /**
@@ -378,6 +472,10 @@ function lowerItemIntoList(ctx, item, typeCtx, output) {
     if (hirItem) {
         output.push(hirItem);
     }
+    const generated = ctx.consumeGeneratedItems();
+    if (generated.length > 0) {
+        output.push(...generated);
+    }
 }
 
 /**
@@ -472,13 +570,15 @@ function lowerItem(ctx, item, typeCtx) {
  * @returns {import('./hir.js').HFnDecl | null}
  */
 function lowerFnItem(ctx, fn, typeCtx) {
+    const previousFn = ctx.currentFn;
+    const previousImplTargetName = ctx.currentImplTargetName;
     ctx.pushScope();
     ctx.currentFn = fn.name;
     ctx.currentImplTargetName = fn.implTargetName || null;
 
     // Get function type from type context
     const itemDecl = typeCtx.lookupItem(fn.name);
-    let fnType = itemDecl?.type;
+    let fnType = itemDecl?.type || fn.syntheticFnType || null;
     if (
         fnType &&
         fnType.kind === TypeKind.Fn &&
@@ -521,8 +621,8 @@ function lowerFnItem(ctx, fn, typeCtx) {
     }
 
     ctx.popScope();
-    ctx.currentFn = null;
-    ctx.currentImplTargetName = null;
+    ctx.currentFn = previousFn;
+    ctx.currentImplTargetName = previousImplTargetName;
 
     return makeHFnDecl(
         fn.span,
@@ -709,6 +809,70 @@ function lowerLetStmt(ctx, letStmt, typeCtx) {
     // Lower pattern
     const pat = lowerPattern(ctx, letStmt.pat, ty, typeCtx);
 
+    if (init && init.closureMeta && pat.kind === HPatKind.Ident) {
+        const closureMeta = init.closureMeta;
+        /** @type {{ mode: "value" | "ref", name: string, varId: number, type: Type, mutable: boolean }[]} */
+        const captures = [];
+        for (const capture of closureMeta.captures || []) {
+            const sourceVar = ctx.lookupVar(capture.name);
+            if (!sourceVar) {
+                ctx.addError(
+                    `Captured variable '${capture.name}' is not available during closure lowering`,
+                    letStmt.span,
+                );
+                continue;
+            }
+
+            if (capture.mode === "ref") {
+                captures.push({
+                    mode: "ref",
+                    name: capture.name,
+                    varId: sourceVar.id,
+                    type: sourceVar.type,
+                    mutable: true,
+                });
+                continue;
+            }
+
+            const hiddenName = `__closure_cap_${pat.id}_${capture.name}`;
+            const hiddenVar = ctx.defineVar(hiddenName, sourceVar.type, false);
+            const hiddenPat = makeHIdentPat(
+                letStmt.span,
+                hiddenName,
+                hiddenVar.id,
+                sourceVar.type,
+                false,
+                false,
+            );
+            const hiddenInit = makeHVarExpr(
+                letStmt.span,
+                sourceVar.name,
+                sourceVar.id,
+                sourceVar.type,
+            );
+            ctx.queuePreludeStmt(
+                makeHLetStmt(letStmt.span, hiddenPat, sourceVar.type, hiddenInit),
+            );
+            captures.push({
+                mode: "value",
+                name: capture.name,
+                varId: hiddenVar.id,
+                type: sourceVar.type,
+                mutable: false,
+            });
+        }
+        ctx.registerClosureBinding(pat.id, {
+            helperName: closureMeta.helperName,
+            helperType: closureMeta.helperType,
+            captures,
+        });
+    } else if (init && init.closureMeta && init.closureMeta.captures?.length > 0) {
+        ctx.addError(
+            "Capturing closures currently require a simple identifier let-binding",
+            letStmt.span,
+        );
+    }
+
     return makeHLetStmt(letStmt.span, pat, ty, init);
 }
 
@@ -819,6 +983,9 @@ function lowerExpr(ctx, expr, typeCtx) {
         case NodeKind.MacroExpr:
             return lowerMacro(ctx, expr, typeCtx);
 
+        case NodeKind.ClosureExpr:
+            return lowerClosure(ctx, expr, typeCtx);
+
         default:
             ctx.addError(`Unknown expression kind: ${expr.kind}`, expr.span);
             return makeHUnitExpr(expr.span, makeUnitType());
@@ -902,6 +1069,14 @@ function lowerIdentifier(ctx, ident, typeCtx) {
     // Look up variable binding
     const varInfo = ctx.lookupVar(ident.name);
     if (varInfo) {
+        const closureBinding = ctx.lookupClosureBinding(varInfo.id);
+        if (closureBinding && closureBinding.captures.length > 0) {
+            ctx.addError(
+                "Capturing closures cannot escape; only direct calls are supported",
+                ident.span,
+            );
+            return makeHUnitExpr(ident.span, makeUnitType());
+        }
         return makeHVarExpr(ident.span, varInfo.name, varInfo.id, varInfo.type);
     }
 
@@ -1143,6 +1318,52 @@ function lookupLoweringCallItem(typeCtx, callee) {
  * @returns {import('./hir.js').HCallExpr}
  */
 function lowerCall(ctx, call, typeCtx) {
+    if (call.callee?.kind === NodeKind.IdentifierExpr) {
+        const closureVar = ctx.lookupVar(call.callee.name);
+        if (closureVar) {
+            const closureBinding = ctx.lookupClosureBinding(closureVar.id);
+            if (closureBinding) {
+                const captureArgs = closureBinding.captures.map((capture) => {
+                    const sourceVar = ctx.lookupVarById(capture.varId);
+                    const sourceExpr = makeHVarExpr(
+                        call.callee.span,
+                        sourceVar?.name || capture.name,
+                        capture.varId,
+                        capture.type,
+                    );
+                    if (capture.mode === "ref") {
+                        return makeHRefExpr(
+                            call.callee.span,
+                            true,
+                            sourceExpr,
+                            makeRefType(capture.type, true, call.callee.span),
+                        );
+                    }
+                    return sourceExpr;
+                });
+                const userArgs = (call.args || []).map((/** @type {any} */ arg) =>
+                    lowerExpr(ctx, arg, typeCtx),
+                );
+                const callee = makeHVarExpr(
+                    call.callee.span,
+                    closureBinding.helperName,
+                    -1,
+                    closureBinding.helperType,
+                );
+                const helperReturnType =
+                    closureBinding.helperType.kind === TypeKind.Fn
+                        ? closureBinding.helperType.returnType
+                        : makeUnitType(call.span);
+                return makeHCallExpr(
+                    call.span,
+                    callee,
+                    [...captureArgs, ...userArgs],
+                    helperReturnType,
+                );
+            }
+        }
+    }
+
     if (call.callee?.kind === NodeKind.FieldExpr) {
         const methodField = call.callee;
         const resolvedSymbol = methodField.resolvedMethodSymbolName || null;
@@ -1282,10 +1503,68 @@ function lowerMacro(ctx, macroExpr, typeCtx) {
             return lowerPrintMacro(ctx, macroExpr, typeCtx, BUILTIN_PRINTLN_FMT_FN);
         case "print":
             return lowerPrintMacro(ctx, macroExpr, typeCtx, BUILTIN_PRINT_FMT_FN);
+        case "assert_eq":
+            return lowerAssertEqMacro(ctx, macroExpr, typeCtx);
         default:
             ctx.addError(`Unsupported macro in lowering: ${macroExpr.name}!`, macroExpr.span);
             return makeHUnitExpr(macroExpr.span, makeUnitType());
     }
+}
+
+/**
+ * Lower `assert_eq!(a, b)` into `if a == b { () } else { __jsrust_builtin_assert_fail() }`.
+ * @param {LoweringCtx} ctx
+ * @param {Node} macroExpr
+ * @param {TypeContext} typeCtx
+ * @returns {import('./hir.js').HExpr}
+ */
+function lowerAssertEqMacro(ctx, macroExpr, typeCtx) {
+    const args = macroExpr.args || [];
+    if (args.length !== 2) {
+        ctx.addError("assert_eq! requires exactly 2 arguments", macroExpr.span);
+        return makeHUnitExpr(macroExpr.span, makeUnitType());
+    }
+
+    const left = lowerExpr(ctx, args[0], typeCtx);
+    const right = lowerExpr(ctx, args[1], typeCtx);
+    const condition = makeHBinaryExpr(
+        macroExpr.span,
+        BinaryOp.Eq,
+        left,
+        right,
+        makeBoolType(macroExpr.span),
+    );
+    const failCallee = makeHVarExpr(
+        macroExpr.span,
+        BUILTIN_ASSERT_FAIL_FN,
+        -1,
+        makeFnType([], makeUnitType(macroExpr.span), false, macroExpr.span),
+    );
+    const failCall = makeHCallExpr(
+        macroExpr.span,
+        failCallee,
+        [],
+        makeUnitType(macroExpr.span),
+    );
+    const thenBranch = makeHBlock(
+        macroExpr.span,
+        [],
+        makeHUnitExpr(macroExpr.span, makeUnitType(macroExpr.span)),
+        makeUnitType(macroExpr.span),
+    );
+    const elseBranch = makeHBlock(
+        macroExpr.span,
+        [],
+        failCall,
+        makeUnitType(macroExpr.span),
+    );
+    return makeHIfExpr(
+        macroExpr.span,
+        condition,
+        thenBranch,
+        elseBranch,
+        makeUnitType(macroExpr.span),
+    );
 }
 
 /**
@@ -1546,6 +1825,97 @@ function lowerDeref(ctx, deref, typeCtx) {
     return makeHDerefExpr(deref.span, operand, ty);
 }
 
+/**
+ * Lower a closure expression by synthesizing a helper function.
+ * @param {LoweringCtx} ctx
+ * @param {Node} closure
+ * @param {TypeContext} typeCtx
+ * @returns {import('./hir.js').HExpr}
+ */
+function lowerClosure(ctx, closure, typeCtx) {
+    const inferredType =
+        closure.inferredType && closure.inferredType.kind === TypeKind.Fn
+            ? closure.inferredType
+            : makeFnType([], makeUnitType(closure.span), false, closure.span);
+    const captures = closure.captureInfos || [];
+    const helperName = `${ctx.currentFn || "closure"}::__closure_${ctx.nextClosureSymbolId()}`;
+
+    const captureParamTypes = captures.map((/** @type {any} */ cap) =>
+        cap.byRef ? makeRefType(cap.type, true, closure.span) : cap.type,
+    );
+    const helperType = makeFnType(
+        [...captureParamTypes, ...inferredType.params],
+        inferredType.returnType,
+        false,
+        closure.span,
+    );
+
+    const syntheticParams = [];
+    for (const capture of captures) {
+        syntheticParams.push({
+            kind: NodeKind.Param,
+            span: closure.span,
+            name: capture.name,
+            ty: null,
+            pat: null,
+            isReceiver: false,
+            receiverKind: null,
+        });
+    }
+    for (let i = 0; i < (closure.params || []).length; i++) {
+        const param = closure.params[i];
+        syntheticParams.push({
+            kind: NodeKind.Param,
+            span: param.span || closure.span,
+            name: param.name === "_" ? null : param.name,
+            ty: null,
+            pat: null,
+            isReceiver: false,
+            receiverKind: null,
+        });
+    }
+
+    const bodyNode =
+        closure.body?.kind === NodeKind.BlockExpr
+            ? closure.body
+            : makeBlockExpr(
+                closure.body?.span || closure.span,
+                [],
+                closure.body || null,
+            );
+
+    const syntheticFn = {
+        kind: NodeKind.FnItem,
+        span: closure.span,
+        name: helperName,
+        generics: null,
+        params: syntheticParams,
+        returnType: null,
+        body: bodyNode,
+        isAsync: false,
+        isUnsafe: false,
+        isPub: false,
+        syntheticFnType: helperType,
+    };
+    const helperDecl = lowerFnItem(ctx, syntheticFn, typeCtx);
+    if (helperDecl) {
+        ctx.queueGeneratedItem(helperDecl);
+    }
+
+    const closureValue = makeHVarExpr(closure.span, helperName, -1, inferredType);
+    closureValue.closureMeta = {
+        helperName,
+        helperType,
+        captures: captures.map((/** @type {any} */ cap) => ({
+            name: cap.name,
+            type: cap.type,
+            mutable: cap.mutable === true,
+            mode: cap.byRef ? "ref" : "value",
+        })),
+    };
+    return closureValue;
+}
+
 // ============================================================================
 // Task 6.6: Control Flow Lowering
 // ============================================================================
@@ -1560,9 +1930,16 @@ function lowerDeref(ctx, deref, typeCtx) {
 function lowerBlock(ctx, block, typeCtx) {
     ctx.pushScope();
 
-    const stmts = (block.stmts || []).map((/**@type{any}*/ stmt) =>
-        lowerStmt(ctx, stmt, typeCtx),
-    );
+    /** @type {import('./hir.js').HStmt[]} */
+    const stmts = [];
+    for (const stmt of block.stmts || []) {
+        const lowered = lowerStmt(ctx, stmt, typeCtx);
+        const preludes = ctx.consumePreludeStmts();
+        if (preludes.length > 0) {
+            stmts.push(...preludes);
+        }
+        stmts.push(lowered);
+    }
 
     let expr = null;
     let ty = makeUnitType();
@@ -2076,6 +2453,23 @@ function extractPlace(ctx, expr, typeCtx) {
                 ctx.addError(`Unbound identifier: ${expr.name}`, expr.span);
                 return null;
             }
+            if (
+                varInfo.type &&
+                varInfo.type.kind === TypeKind.Ref &&
+                varInfo.type.mutable === true
+            ) {
+                const base = makeHVarPlace(
+                    expr.span,
+                    varInfo.name,
+                    varInfo.id,
+                    varInfo.type,
+                );
+                return makeHDerefPlace(
+                    expr.span,
+                    base,
+                    varInfo.type.inner || makeUnitType(),
+                );
+            }
             return makeHVarPlace(
                 expr.span,
                 varInfo.name,
@@ -2125,6 +2519,9 @@ function extractPlace(ctx, expr, typeCtx) {
         case NodeKind.DerefExpr: {
             const base = extractPlace(ctx, expr.operand, typeCtx);
             if (!base) return null;
+            if (base.kind === HPlaceKind.Deref) {
+                return base;
+            }
 
             let ty = makeUnitType();
             if (base.ty && base.ty.kind === TypeKind.Ref) {

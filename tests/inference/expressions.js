@@ -8,6 +8,7 @@ import {
     inferIdentifier,
     unify,
 } from "../../inference.js";
+import { parseExpression } from "../../parser.js";
 import {
     NodeKind,
     LiteralKind,
@@ -15,7 +16,14 @@ import {
     BinaryOp,
     Mutability,
 } from "../../ast.js";
-import { TypeKind, IntWidth, FloatWidth, typeToString } from "../../types.js";
+import {
+    TypeKind,
+    IntWidth,
+    FloatWidth,
+    makeFnType,
+    makeIntType,
+    typeToString,
+} from "../../types.js";
 import { test, assertEqual, assertTrue } from "../lib.js";
 
 function testGroup(name, fn) {
@@ -222,6 +230,27 @@ export function runInferenceExpressionsTests() {
             const result = inferUnary(ctx, unary);
             assertTrue(result.ok);
             assertEq(result.type.kind, TypeKind.Float);
+        });
+    });
+
+    // Test unification
+    testGroup("Closure Inference", () => {
+        test("closure unifies with expected fn type", () => {
+            const parsed = parseExpression("|x| x + 1");
+            assertTrue(parsed.ok);
+            const closure = parsed.value;
+            const ctx = new TypeContext();
+            const expected = makeFnType(
+                [makeIntType(IntWidth.I32)],
+                makeIntType(IntWidth.I32),
+                false,
+            );
+            const result = inferExpr(ctx, closure, expected);
+            assertTrue(result.ok);
+            assertEq(result.type.kind, TypeKind.Fn);
+            assertEq(result.type.params.length, 1);
+            assertEq(result.type.params[0].kind, TypeKind.Int);
+            assertEq(result.type.returnType.kind, TypeKind.Int);
         });
     });
 

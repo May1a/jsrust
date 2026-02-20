@@ -391,6 +391,39 @@ export function testLowerCallWithArgs() {
     assertTrue(hasCall, "Should have call instruction");
 }
 
+export function testLowerDynamicCallThroughParam() {
+    const fnTy = {
+        kind: TypeKind.Fn,
+        params: [intType()],
+        returnType: intType(),
+    };
+    const fPat = makeHIdentPat(span(), "f", 0, fnTy, false, false);
+    const xPat = makeHIdentPat(span(), "x", 1, intType(), false, false);
+    const fParam = makeHParam(span(), "f", fnTy, fPat);
+    const xParam = makeHParam(span(), "x", intType(), xPat);
+    const callee = makeHVarExpr(span(), "f", 0, fnTy);
+    const arg = makeHVarExpr(span(), "x", 1, intType());
+    const callExpr = makeHCallExpr(span(), callee, [arg], intType());
+    const body = makeHBlock(span(), [], callExpr, intType());
+    const fn = makeHFnDecl(
+        span(),
+        "invoke",
+        null,
+        [fParam, xParam],
+        intType(),
+        body,
+        false,
+        false,
+    );
+
+    const irFn = lowerHirToSsa(fn);
+    assertTrue(irFn !== null);
+    const hasCallDyn = irFn.blocks.some((block) =>
+        block.instructions.some((inst) => inst.kind === IRInstKind.CallDyn),
+    );
+    assertTrue(hasCallDyn, "Callable parameter invocation should lower to call_dyn");
+}
+
 export function testLowerStruct() {
     // Point { x: 1, y: 2 }
     const fields = [
@@ -685,6 +718,7 @@ export function runTests() {
         ["Lower loop", testLowerLoop],
         ["Lower call", testLowerCall],
         ["Lower call with args", testLowerCallWithArgs],
+        ["Lower dynamic call through param", testLowerDynamicCallThroughParam],
         ["Lower struct", testLowerStruct],
         ["Lower enum", testLowerEnum],
         ["Lower unary neg", testLowerUnaryNeg],

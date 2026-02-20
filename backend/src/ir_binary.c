@@ -532,6 +532,7 @@ static bool IRReader_readInstruction(IRReader* reader, IRInstruction* inst)
     case IRInstKind_Bitcast:
         return IRReader_readU32(reader, &inst->val);
     case IRInstKind_Call:
+    case IRInstKind_CallDyn:
         return IRReader_readU32(reader, &inst->fn) && IRReader_readU32List(reader, &inst->callArgs);
     case IRInstKind_StructCreate:
         return IRReader_readU32List(reader, &inst->fields);

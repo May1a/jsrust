@@ -474,7 +474,15 @@ function makeHLiteralExpr(span, literalKind, value, ty) {
 }
 
 /**
- * @typedef {HExprBase & { name: string, id: number }} HVarExpr
+ * @typedef {HExprBase & {
+ *   name: string,
+ *   id: number,
+ *   closureMeta?: {
+ *     helperName: string,
+ *     helperType: Type,
+ *     captures: Array<{ name: string, type: Type, mutable: boolean, mode: "value" | "ref" }>
+ *   }
+ * }} HVarExpr
  */
 
 /**

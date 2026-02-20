@@ -38,6 +38,7 @@ import {
     makeSitofp,
     makeBitcast,
     makeCall,
+    makeCallDyn,
     makeStructCreate,
     makeStructGet,
     makeEnumCreate,
@@ -369,6 +370,16 @@ test("makeCall creates void function call", () => {
     assertEqual(inst.kind, IRInstKind.Call);
     assertEqual(inst.id, null);
     assertEqual(inst.ty.kind, IRTypeKind.Unit);
+});
+
+test("makeCallDyn creates dynamic function call", () => {
+    resetIRIds();
+    const retTy = { kind: IRTypeKind.Int, width: IntWidth.I32 };
+    const inst = makeCallDyn(7, [1, 2], retTy);
+    assertEqual(inst.kind, IRInstKind.CallDyn);
+    assertEqual(inst.fn, 7);
+    assertEqual(inst.args.length, 2);
+    assertTrue(inst.id !== null);
 });
 
 test("makeStructCreate creates struct value", () => {

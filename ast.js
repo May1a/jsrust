@@ -32,7 +32,8 @@ const NodeKind = {
     RangeExpr: 19,
     RefExpr: 20,
     DerefExpr: 21,
-    MacroExpr: 22,  // New: macro invocation like println!
+    MacroExpr: 22,
+    ClosureExpr: 55,
     LetStmt: 23,
     ExprStmt: 24,
     ItemStmt: 25,
@@ -403,6 +404,23 @@ function makeDerefExpr(span, operand) {
  */
 function makeMacroExpr(span, name, args) {
     return makeNode(NodeKind.MacroExpr, span, { name, args });
+}
+
+/**
+ * @param {Span} span
+ * @param {Node[]} params
+ * @param {Node | null} returnType
+ * @param {Node} body
+ * @param {boolean} [isMove=false]
+ * @returns {Node}
+ */
+function makeClosureExpr(span, params, returnType, body, isMove = false) {
+    return makeNode(NodeKind.ClosureExpr, span, {
+        params,
+        returnType,
+        body,
+        isMove,
+    });
 }
 
 /**
@@ -865,7 +883,7 @@ function makeModule(span, name, items) {
  * @returns {boolean}
  */
 function isExpr(node) {
-    return node.kind <= NodeKind.MacroExpr;
+    return node.kind <= NodeKind.MacroExpr || node.kind === NodeKind.ClosureExpr;
 }
 
 /**
@@ -937,6 +955,7 @@ export {
     makeRefExpr,
     makeDerefExpr,
     makeMacroExpr,
+    makeClosureExpr,
     makeLetStmt,
     makeExprStmt,
     makeItemStmt,

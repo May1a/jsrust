@@ -1732,6 +1732,9 @@ function inferExpr(ctx, expr, expectedType = undefined) {
         case NodeKind.MacroExpr:
             return inferMacro(ctx, expr);
 
+        case NodeKind.ClosureExpr:
+            return inferClosure(ctx, expr, expectedType);
+
         default:
             return err(`Unknown expression kind: ${expr.kind}`, expr.span);
     }
@@ -1793,9 +1796,31 @@ function inferIdentifier(ctx, ident) {
     }
 
     // Look up variable binding
-    const binding = ctx.lookupVar(ident.name);
-    if (binding) {
+    const bindingLookup = ctx.lookupVarWithDepth(ident.name);
+    if (bindingLookup) {
+        const binding = bindingLookup.binding;
+        const bindingDepth = bindingLookup.depth;
+
+        for (const tracker of ctx.getClosureCaptureTrackers()) {
+            if (bindingDepth < tracker.closureDepth) {
+                tracker.captures.set(ident.name, binding);
+            }
+        }
+
+        if (
+            binding.closureInfo &&
+            binding.closureInfo.captures &&
+            binding.closureInfo.captures.length > 0 &&
+            !ctx.canUseCapturingClosureValue()
+        ) {
+            return err(
+                "Capturing closures cannot escape; only direct calls are supported",
+                ident.span,
+            );
+        }
+
         ident.isImplicitCopyCandidate = isCopyableInContext(ctx, binding.type);
+        ident.closureInfo = binding.closureInfo || null;
         return ok(binding.type);
     }
 
@@ -2039,7 +2064,9 @@ function inferUnary(ctx, unary) {
  * @returns {InferenceResult}
  */
 function inferCall(ctx, call) {
+    ctx.enterAllowCapturingClosureValue();
     const calleeResult = inferExpr(ctx, call.callee);
+    ctx.exitAllowCapturingClosureValue();
     if (!calleeResult.ok) return calleeResult;
 
     const calleeType = ctx.resolveType(calleeResult.type);
@@ -2078,7 +2105,7 @@ function inferCall(ctx, call) {
 
         // Infer arguments
         for (let i = 0; i < call.args.length; i++) {
-            const argResult = inferExpr(ctx, call.args[i]);
+            const argResult = inferExpr(ctx, call.args[i], paramTypes[i]);
             if (!argResult.ok) return argResult;
             const argUnify = unify(ctx, argResult.type, paramTypes[i]);
             if (!argUnify.ok) {
@@ -2099,7 +2126,7 @@ function inferCall(ctx, call) {
 
     // Infer and check arguments
     for (let i = 0; i < call.args.length; i++) {
-        const argResult = inferExpr(ctx, call.args[i]);
+        const argResult = inferExpr(ctx, call.args[i], calleeType.params[i]);
         if (!argResult.ok) return argResult;
         const unifyResult = unify(ctx, argResult.type, calleeType.params[i]);
         if (!unifyResult.ok) {
@@ -2116,6 +2143,156 @@ function inferCall(ctx, call) {
     }
 
     return ok(calleeType.returnType);
+}
+
+/**
+ * Infer closure expression type.
+ * @param {TypeContext} ctx
+ * @param {Node} closure
+ * @param {Type} [expectedType]
+ * @returns {InferenceResult}
+ */
+function inferClosure(ctx, closure, expectedType = undefined) {
+    if (closure.isMove) {
+        return err("move closures are not supported yet", closure.span);
+    }
+
+    const expectedResolved = expectedType ? ctx.resolveType(expectedType) : null;
+    const expectedFn =
+        expectedResolved && expectedResolved.kind === TypeKind.Fn
+            ? expectedResolved
+            : null;
+
+    const params = closure.params || [];
+    if (expectedFn && expectedFn.params.length !== params.length) {
+        return err(
+            `Closure expects ${expectedFn.params.length} parameters, got ${params.length}`,
+            closure.span,
+        );
+    }
+
+    /** @type {TypeError[]} */
+    const errors = [];
+    /** @type {Type[]} */
+    const paramTypes = [];
+    /** @type {Type} */
+    let returnType = makeUnitType(closure.span);
+
+    ctx.pushScope();
+    ctx.pushClosureCaptureTracker(ctx.currentScopeDepth());
+    try {
+        for (let i = 0; i < params.length; i++) {
+            const param = params[i];
+            /** @type {Type} */
+            let paramType;
+            if (param.ty) {
+                const paramTypeResult = resolveTypeNode(ctx, param.ty);
+                if (!paramTypeResult.ok) {
+                    errors.push(...paramTypeResult.errors);
+                    paramType = ctx.freshTypeVar();
+                } else {
+                    paramType = paramTypeResult.type;
+                }
+            } else if (expectedFn) {
+                paramType = expectedFn.params[i];
+            } else {
+                paramType = ctx.freshTypeVar();
+            }
+            paramTypes.push(paramType);
+
+            if (param.name && param.name !== "_") {
+                const defineResult = ctx.defineVar(
+                    param.name,
+                    paramType,
+                    false,
+                    param.span,
+                );
+                if (!defineResult.ok) {
+                    errors.push(
+                        makeTypeError(
+                            defineResult.error || "Failed to define closure parameter",
+                            param.span,
+                        ),
+                    );
+                }
+            }
+        }
+
+        /** @type {Type | undefined} */
+        let explicitReturnType = undefined;
+        if (closure.returnType) {
+            const returnTypeResult = resolveTypeNode(ctx, closure.returnType);
+            if (!returnTypeResult.ok) {
+                errors.push(...returnTypeResult.errors);
+            } else {
+                explicitReturnType = returnTypeResult.type;
+            }
+        }
+
+        const bodyExpectedType = explicitReturnType || (expectedFn ? expectedFn.returnType : undefined);
+        const bodyResult = inferExpr(ctx, closure.body, bodyExpectedType);
+        if (!bodyResult.ok) {
+            errors.push(...(bodyResult.errors || []));
+        } else {
+            returnType = bodyResult.type;
+        }
+
+        if (explicitReturnType) {
+            const returnUnify = unify(ctx, returnType, explicitReturnType);
+            if (!returnUnify.ok) {
+                errors.push(returnUnify.error);
+            } else {
+                returnType = explicitReturnType;
+            }
+        } else if (expectedFn) {
+            const returnUnify = unify(ctx, returnType, expectedFn.returnType);
+            if (!returnUnify.ok) {
+                errors.push(returnUnify.error);
+            } else {
+                returnType = expectedFn.returnType;
+            }
+        }
+    } finally {
+        const captureMap = ctx.popClosureCaptureTracker() || new Map();
+        ctx.popScope();
+
+        /** @type {{ name: string, type: Type, mutable: boolean, byRef: boolean }[]} */
+        const captures = [];
+        for (const capture of captureMap.values()) {
+            const captureType = ctx.resolveType(capture.type);
+            const byRef = capture.mutable === true;
+            if (!byRef && !isCopyableInContext(ctx, captureType)) {
+                errors.push(
+                    makeTypeError(
+                        `Immutable closure capture requires Copy type: ${capture.name}`,
+                        closure.span,
+                    ),
+                );
+                continue;
+            }
+            captures.push({
+                name: capture.name,
+                type: captureType,
+                mutable: capture.mutable === true,
+                byRef,
+            });
+        }
+        closure.captureInfos = captures;
+        closure.isCapturing = captures.length > 0;
+    }
+
+    const fnType = makeFnType(
+        paramTypes.map((/** @type {Type} */ t) => ctx.resolveType(t)),
+        ctx.resolveType(returnType),
+        false,
+        closure.span,
+    );
+    closure.inferredType = fnType;
+
+    if (errors.length > 0) {
+        return { ok: false, errors };
+    }
+    return ok(fnType);
 }
 
 /**
@@ -2362,7 +2539,12 @@ function inferAssign(ctx, assign) {
     const targetType = ctx.resolveType(targetResult.type);
     const valueType = ctx.resolveType(valueResult.type);
 
-    const unifyResult = unify(ctx, targetType, valueType);
+    let assignTargetType = targetType;
+    if (targetType.kind === TypeKind.Ref && targetType.mutable === true) {
+        assignTargetType = targetType.inner;
+    }
+
+    const unifyResult = unify(ctx, assignTargetType, valueType);
     if (!unifyResult.ok) {
         return { ok: false, errors: [unifyResult.error] };
     }
@@ -2635,7 +2817,7 @@ function inferReturn(ctx, returnExpr) {
     }
 
     if (returnExpr.value) {
-        const valueResult = inferExpr(ctx, returnExpr.value);
+        const valueResult = inferExpr(ctx, returnExpr.value, returnType);
         if (!valueResult.ok) return valueResult;
 
         const unifyResult = unify(ctx, valueResult.type, returnType);
@@ -3327,6 +3509,18 @@ function checkLetStmt(ctx, letStmt) {
     const patResult = checkPattern(ctx, letStmt.pat, varType);
     if (!patResult.ok) {
         errors.push(...(patResult.errors || []));
+    } else if (
+        letStmt.init &&
+        letStmt.init.kind === NodeKind.ClosureExpr &&
+        letStmt.pat.kind === NodeKind.IdentPat
+    ) {
+        const binding = ctx.lookupVar(letStmt.pat.name);
+        if (binding) {
+            binding.closureInfo = {
+                captures: letStmt.init.captureInfos || [],
+                inferredType: letStmt.init.inferredType || varType,
+            };
+        }
     }
 
     if (errors.length > 0) {
@@ -3950,6 +4144,7 @@ export {
     inferBinary,
     inferUnary,
     inferCall,
+    inferClosure,
     inferField,
     inferIndex,
     inferAssign,

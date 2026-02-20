@@ -34,6 +34,7 @@ import {
     makeRefExpr,
     makeDerefExpr,
     makeMacroExpr,
+    makeClosureExpr,
     makeLetStmt,
     makeExprStmt,
     makeItemStmt,
@@ -1133,11 +1134,97 @@ function parsePostfix(state, expr) {
 
 /**
  * @param {ParserState} state
+ * @returns {Node | null}
+ */
+function parseClosureExpr(state) {
+    let isMove = false;
+    let startToken = peek(state);
+    if (isIdentifierValue(peek(state), "move")) {
+        const next = peek(state, 1);
+        if (next.type !== TokenType.Pipe && next.type !== TokenType.PipePipe) {
+            return null;
+        }
+        startToken = advance(state);
+        isMove = true;
+    }
+
+    const params = [];
+    if (matchToken(state, TokenType.PipePipe)) {
+        // No parameters.
+    } else if (matchToken(state, TokenType.Pipe)) {
+        while (!check(state, TokenType.Pipe) && !isAtEnd(state)) {
+            const paramStart = peek(state);
+            if (!isIdentifierToken(paramStart) && !isIdentifierValue(paramStart, "_")) {
+                addError(
+                    state,
+                    "Expected closure parameter name",
+                    paramStart,
+                    ["Identifier"],
+                );
+                break;
+            }
+
+            const nameToken = advance(state);
+            let ty = null;
+            if (matchToken(state, TokenType.Colon)) {
+                ty = parseType(state);
+            }
+            params.push(
+                makeParam(
+                    spanFromToken(nameToken),
+                    nameToken.value ?? "_",
+                    ty,
+                    null,
+                    false,
+                    null,
+                ),
+            );
+
+            if (!matchToken(state, TokenType.Comma)) {
+                break;
+            }
+        }
+        expectToken(state, TokenType.Pipe, "Expected | after closure parameters");
+    } else {
+        return null;
+    }
+
+    let returnType = null;
+    if (matchArrow(state)) {
+        returnType = parseType(state);
+    }
+
+    let body = null;
+    if (check(state, TokenType.OpenCurly)) {
+        body = parseBlockExpr(state);
+    } else {
+        body = parseExpr(state, 0);
+    }
+    if (!body) {
+        body = makeLiteralExpr(currentSpan(state), LiteralKind.Int, 0, "0");
+    }
+
+    const span = mergeSpans(spanFromToken(startToken), body.span);
+    return makeClosureExpr(span, params, returnType, body, isMove);
+}
+
+/**
+ * @param {ParserState} state
  * @param {boolean} [allowStructLiteral=true]
  * @returns {Node | null}
  */
 function parsePrefix(state, allowStructLiteral = true) {
     const token = peek(state);
+    if (
+        token.type === TokenType.PipePipe ||
+        token.type === TokenType.Pipe ||
+        (isIdentifierValue(token, "move") &&
+            (peek(state, 1).type === TokenType.Pipe ||
+                peek(state, 1).type === TokenType.PipePipe))
+    ) {
+        const closure = parseClosureExpr(state);
+        if (closure) return closure;
+    }
     if (token.type === TokenType.Bang) {
         advance(state);
         const operand = parsePrefix(state, allowStructLiteral);
@@ -2381,6 +2468,14 @@ function parseType(state) {
         expectToken(state, TokenType.OpenParen, "Expected ( in fn type");
         if (!check(state, TokenType.CloseParen)) {
             while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
+                if (
+                    isIdentifierToken(peek(state)) &&
+                    peek(state, 1).type === TokenType.Colon &&
+                    peek(state, 2).type !== TokenType.Colon
+                ) {
+                    advance(state);
+                    advance(state);
+                }
                 const paramType = parseType(state);
                 if (paramType) params.push(paramType);
                 if (!matchToken(state, TokenType.Comma)) break;

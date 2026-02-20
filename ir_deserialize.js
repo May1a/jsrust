@@ -797,7 +797,8 @@ class IRDeserializer {
                 break;
             }
 
-            case IRInstKind.Call: {
+            case IRInstKind.Call:
+            case IRInstKind.CallDyn: {
                 const fn = this.readU32();
                 const argCount = this.readU32();
                 const args = [];

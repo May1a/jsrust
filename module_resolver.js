@@ -836,6 +836,21 @@ function resolveExpr(state, modulePath, expr, localScopes) {
                 resolveExpr(state, modulePath, arg, localScopes);
             }
             return;
+        case NodeKind.ClosureExpr: {
+            localScopes.push(new Set());
+            for (const param of expr.params || []) {
+                if (param.name && param.name !== "_") {
+                    localScopes[localScopes.length - 1].add(param.name);
+                }
+            }
+            if (expr.body?.kind === NodeKind.BlockExpr) {
+                resolveBlock(state, modulePath, expr.body, localScopes);
+            } else if (expr.body) {
+                resolveExpr(state, modulePath, expr.body, localScopes);
+            }
+            localScopes.pop();
+            return;
+        }
         default:
             return;
     }

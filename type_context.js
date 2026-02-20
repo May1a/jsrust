@@ -12,6 +12,7 @@ import { TypeKind, makeTypeVar } from "./types.js";
  * @property {Type} type
  * @property {boolean} mutable
  * @property {Span} [span]
+ * @property {{ captures: Array<{ name: string, type: Type, mutable: boolean, byRef?: boolean }>, inferredType?: Type } | null} [closureInfo]
  */
 
 /**
@@ -86,6 +87,12 @@ class TypeContext {
 
         /** @type {Type[]} */
         this.implSelfTypeStack = [];
+
+        /** @type {{ closureDepth: number, captures: Map<string, { name: string, type: Type, mutable: boolean, span?: Span, closureInfo?: any }> }[]} */
+        this.closureCaptureTrackers = [];
+
+        /** @type {number} */
+        this.allowCapturingClosureValueDepth = 0;
     }
 
     // ========================================================================
@@ -140,14 +147,26 @@ class TypeContext {
      * @returns {VarBinding | null}
      */
     lookupVar(name) {
+        const found = this.lookupVarWithDepth(name);
+        return found ? found.binding : null;
+    }
+
+    /**
+     * Look up a variable and include lexical depth.
+     * @param {string} name
+     * @returns {{ binding: VarBinding, depth: number } | null}
+     */
+    lookupVarWithDepth(name) {
         /** @type {Scope | null} */
         let scope = this.currentScope;
+        let depth = this.currentScopeDepth();
         while (scope) {
             const binding = scope.bindings.get(name);
             if (binding) {
-                return binding;
+                return { binding, depth };
             }
             scope = scope.parent;
+            depth -= 1;
         }
         return null;
     }
@@ -167,6 +186,20 @@ class TypeContext {
      */
     getCurrentScopeBindings() {
         return Array.from(this.currentScope.bindings.values());
+    }
+
+    /**
+     * Get lexical depth of the current scope (root is 0).
+     * @returns {number}
+     */
+    currentScopeDepth() {
+        let depth = 0;
+        let scope = this.currentScope;
+        while (scope.parent) {
+            depth += 1;
+            scope = scope.parent;
+        }
+        return depth;
     }
 
     // ========================================================================
@@ -456,6 +489,58 @@ class TypeContext {
     currentImplSelfType() {
         if (this.implSelfTypeStack.length === 0) return null;
         return this.implSelfTypeStack[this.implSelfTypeStack.length - 1];
+    }
+
+    /**
+     * Begin capture tracking for a closure body.
+     * @param {number} closureDepth
+     * @returns {void}
+     */
+    pushClosureCaptureTracker(closureDepth) {
+        this.closureCaptureTrackers.push({
+            closureDepth,
+            captures: new Map(),
+        });
+    }
+
+    /**
+     * End capture tracking for a closure body.
+     * @returns {Map<string, { name: string, type: Type, mutable: boolean, span?: Span, closureInfo?: any }> | null}
+     */
+    popClosureCaptureTracker() {
+        const tracker = this.closureCaptureTrackers.pop();
+        return tracker ? tracker.captures : null;
+    }
+
+    /**
+     * @returns {{ closureDepth: number, captures: Map<string, { name: string, type: Type, mutable: boolean, span?: Span, closureInfo?: any }> }[]}
+     */
+    getClosureCaptureTrackers() {
+        return this.closureCaptureTrackers;
+    }
+
+    /**
+     * Allow capturing closures to be used as call callees for the current expression.
+     * @returns {void}
+     */
+    enterAllowCapturingClosureValue() {
+        this.allowCapturingClosureValueDepth += 1;
+    }
+
+    /**
+     * @returns {void}
+     */
+    exitAllowCapturingClosureValue() {
+        if (this.allowCapturingClosureValueDepth > 0) {
+            this.allowCapturingClosureValueDepth -= 1;
+        }
+    }
+
+    /**
+     * @returns {boolean}
+     */
+    canUseCapturingClosureValue() {
+        return this.allowCapturingClosureValueDepth > 0;
     }
 
     // ========================================================================

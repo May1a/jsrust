@@ -495,6 +495,7 @@ class IRSerializer {
                 }
                 break;
             case IRInstKind.Call:
+            case IRInstKind.CallDyn:
                 size += 4; // fn
                 size += 4; // arg count
                 size += 4 * inst.args.length; // args
@@ -1012,6 +1013,7 @@ class IRSerializer {
                 break;
 
             case IRInstKind.Call:
+            case IRInstKind.CallDyn:
                 this.writeU32(inst.fn);
                 this.writeU32(inst.args.length);
                 for (const arg of inst.args) {

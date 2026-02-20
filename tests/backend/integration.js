@@ -12,6 +12,7 @@ const RUN_ARITHMETIC = `${RUN_FIXTURES_DIR}/03_arithmetic.rs`;
 const RUN_HELLO_WORLD = `${RUN_FIXTURES_DIR}/10_hello_world.rs`;
 const RUN_FUNCTIONS_PRINT = `${RUN_FIXTURES_DIR}/11_functions_print.rs`;
 const RUN_FORMAT_PRINT_VAR = `${RUN_FIXTURES_DIR}/13_format_print_var.rs`;
+const RUN_CLOSURE_PARAM = `${RUN_FIXTURES_DIR}/14_closure_param.rs`;
 
 /**
  * @returns {{ ok: true } | { ok: false, reason: string }}
@@ -83,6 +84,13 @@ export function runBackendIntegrationTests() {
         assertEqual(lines[lines.length - 1], "ok");
     });
 
+    test("Backend integration: run closure function-parameter example", () => {
+        const result = runMain(["run", RUN_CLOSURE_PARAM]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertEqual(result.status, 0, `stderr: ${result.stderr}`);
+        assertEqual(result.stdout.trim(), "ok");
+    });
+
     test("Backend integration: run arithmetic via codegen wasm mode", () => {
         const result = runMain([
             "run",
@@ -135,6 +143,20 @@ export function runBackendIntegrationTests() {
         assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
         assertTrue(
             result.stderr.includes("--trace is not supported with --codegen-wasm"),
+            `unexpected stderr: ${result.stderr}`,
+        );
+    });
+
+    test("Backend integration: codegen wasm rejects dynamic call", () => {
+        const result = runMain([
+            "run",
+            RUN_CLOSURE_PARAM,
+            "--codegen-wasm",
+        ]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
+        assertTrue(
+            result.stderr.includes("wasm codegen: dynamic calls are not supported yet"),
             `unexpected stderr: ${result.stderr}`,
         );
     });
@@ -261,6 +283,20 @@ export function runBackendIntegrationTests() {
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         assertTrue(
             result.stdout.includes("test test_legacy_behavior ... ok"),
+            `unexpected stdout: ${result.stdout}`,
+        );
+    });
+
+    test("Backend integration: test command runs closure tests", () => {
+        const result = runMain(["test", "examples/25_closures.rs"]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertEqual(result.status, 0, `stderr: ${result.stderr}`);
+        assertTrue(
+            result.stdout.includes("test test_closure_as_parameter ... ok"),
+            `unexpected stdout: ${result.stdout}`,
+        );
+        assertTrue(
+            result.stdout.includes("test test_closures ... ok"),
             `unexpected stdout: ${result.stdout}`,
         );
     });

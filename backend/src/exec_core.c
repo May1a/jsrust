@@ -6,6 +6,7 @@ static const char* g_builtinPrintlnName = "__jsrust_builtin_println_bytes";
 static const char* g_builtinPrintName = "__jsrust_builtin_print_bytes";
 static const char* g_builtinPrintlnFmtName = "__jsrust_builtin_println_fmt";
 static const char* g_builtinPrintFmtName = "__jsrust_builtin_print_fmt";
+static const char* g_builtinAssertFailName = "__jsrust_builtin_assert_fail";
 
 enum {
     FormatTag_String = 0,
@@ -119,6 +120,19 @@ static uint32_t Exec_builtinPrintFmtId(void)
 
     if (!initialized) {
         cached = Exec_hashNameToFunctionId(g_builtinPrintFmtName);
+        initialized = true;
+    }
+
+    return cached;
+}
+
+static uint32_t Exec_builtinAssertFailId(void)
+{
+    static uint32_t cached;
+    static bool initialized;
+
+    if (!initialized) {
+        cached = Exec_hashNameToFunctionId(g_builtinAssertFailName);
         initialized = true;
     }
 
@@ -1188,22 +1202,37 @@ static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* fram
             return status;
         *outValue = left;
         return BackendStatus_ok();
-    case IRInstKind_Call: {
+    case IRInstKind_Call:
+    case IRInstKind_CallDyn: {
         const IRFunction* callee;
         ExecValue* callArgs;
         uint8_t hasReturn;
         ExecValue callReturn;
+        uint32_t calleeHash;
 
-        callee = Runtime_findFunctionByHash(engine->runtime, inst->fn);
+        calleeHash = inst->fn;
+        if (inst->kind == IRInstKind_CallDyn) {
+            ExecValue calleeValue;
+            status = Exec_readOperand(frame, inst->fn, &calleeValue);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+            if (calleeValue.kind != ExecValueKind_Int)
+                return Exec_error("dynamic call callee is not integer function id");
+            calleeHash = (uint32_t)calleeValue.i64;
+        }
+
+        callee = Runtime_findFunctionByHash(engine->runtime, calleeHash);
         if (!callee) {
-            if (inst->fn == Exec_builtinPrintlnId())
+            if (calleeHash == Exec_builtinPrintlnId())
                 return Exec_executeBuiltinPrint(engine, frame, inst, true, outValue);
-            if (inst->fn == Exec_builtinPrintId())
+            if (calleeHash == Exec_builtinPrintId())
                 return Exec_executeBuiltinPrint(engine, frame, inst, false, outValue);
-            if (inst->fn == Exec_builtinPrintlnFmtId())
+            if (calleeHash == Exec_builtinPrintlnFmtId())
                 return Exec_executeBuiltinPrintFmt(engine, frame, inst, true, outValue);
-            if (inst->fn == Exec_builtinPrintFmtId())
+            if (calleeHash == Exec_builtinPrintFmtId())
                 return Exec_executeBuiltinPrintFmt(engine, frame, inst, false, outValue);
+            if (calleeHash == Exec_builtinAssertFailId())
+                return Exec_error("assertion failed: assert_eq!");
             return Exec_error("call target function id not found");
         }
 

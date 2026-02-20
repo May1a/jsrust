@@ -235,6 +235,27 @@ testGroup("Module Inference", () => {
         const result = inferSource("fn f<T>(x: T) -> T where T: Copy { x }");
         assertEq(result.ok, false);
     });
+
+    assert("non-capturing closure unifies with fn parameter type", () => {
+        const result = inferSource(
+            "fn takes(f: fn(i32) -> i32) { let _y: i32 = f(1); } fn main() { let add_one = |z| z + 1; takes(add_one); }",
+        );
+        assert(result.ok, `inference failed: ${result.errors?.map((e) => e.message).join(", ")}`);
+    });
+
+    assert("mutable captures are supported for direct closure calls", () => {
+        const result = inferSource(
+            "fn main() { let mut x: i32 = 1; let bump = |v: i32| { x += v; x }; let _y: i32 = bump(2); }",
+        );
+        assert(result.ok, `inference failed: ${result.errors?.map((e) => e.message).join(", ")}`);
+    });
+
+    assert("capturing closures cannot escape via fn parameter passing", () => {
+        const result = inferSource(
+            "fn takes(f: fn(i32) -> i32) { let _y: i32 = f(1); } fn main() { let x: i32 = 1; let add = |v: i32| v + x; takes(add); }",
+        );
+        assertEq(result.ok, false);
+    });
 });
 
 console.log("Function inference tests complete");
