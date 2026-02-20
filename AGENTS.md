@@ -29,7 +29,7 @@ See `plans/README.md` for the current planning structure.
 ## Plan Status
 
 - active/01-compiler-progress.md updated (IR v2 string-literal pool + backend format-print milestone captured; module support milestone captured: inline/file modules + simple `use ... as ...` path resolution; inherent impl milestone captured: `impl Struct` parsing + receiver/static method dispatch + `Self` in methods)
-- active/02-new-backend.md in progress (JS wasm run-path integration wired; binary IR v2 + formatter builtins integrated)
+- active/02-new-backend.md in progress (JS wasm run-path integration wired; binary IR v2 + formatter builtins integrated; `run --codegen-wasm` generated-wasm in-memory execution integrated)
 - plans/future/01-node-addon-availability.md deferred (non-priority)
 - backend/plans/00-master-implementation-plan.md overhauled (interpreter-first)
 - backend/plans/02-backend-scaffold-and-build.md implemented (initial)
@@ -88,6 +88,7 @@ Optional run flags:
 - `--entry <fn>`
 - `--trace --trace-out <path>`
 - `--out-bin <path>`
+- `--codegen-wasm`
 - `--no-validate`
 
 ## Testing

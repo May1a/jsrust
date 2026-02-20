@@ -38,6 +38,7 @@
 - Print macros now lower to backend formatter builtins (`__jsrust_builtin_print_fmt`, `__jsrust_builtin_println_fmt`) with tagged arguments.
 - Backend interpreter now formats `{}` placeholders for string/int/float/bool/char at runtime.
 - Fixture corpus and conformance tests moved to `/Users/may/jsrust/tests/fixtures/backend_ir_v2/`.
+- Frontend `run` command now supports `--codegen-wasm` to compile binary IR to wasm bytes and execute generated wasm in-memory (no filesystem dependency for generated wasm run-path).
 
 ## Next Integration Steps
 

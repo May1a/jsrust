@@ -4,7 +4,6 @@
 #include "vec.h"
 #include "wasm_encode.h"
 
-#include <stdio.h>
 #include <stdint.h>
 
 enum {
@@ -384,24 +383,65 @@ static size_t WasmEmit_signedDecimal(int64_t value, uint8_t* outDigits, size_t c
 
 static size_t WasmEmit_floatDecimal(double value, uint8_t* outDigits, size_t cap)
 {
-    int printCount;
     size_t index;
-    char scratch[64];
+    size_t len;
+    double absValue;
+    uint64_t whole;
+    double frac;
+    uint8_t fracDigits[6];
+    size_t fracLen;
+    int isNegative;
 
     if (cap == 0)
         return 0;
 
-    printCount = snprintf(scratch, sizeof(scratch), "%.6g", value);
-    if (printCount < 0)
-        return 0;
+    if (value != value) {
+        if (cap < 3)
+            return 0;
+        outDigits[0] = 'n';
+        outDigits[1] = 'a';
+        outDigits[2] = 'n';
+        return 3;
+    }
 
-    if ((size_t)printCount > cap)
-        printCount = (int)cap;
+    isNegative = value < 0.0;
+    absValue = isNegative ? -value : value;
 
-    for (index = 0; index < (size_t)printCount; ++index)
-        outDigits[index] = (uint8_t)scratch[index];
+    if (absValue <= 9223372036854775807.0 && absValue == (double)((int64_t)absValue))
+        return WasmEmit_signedDecimal((int64_t)value, outDigits, cap);
 
-    return (size_t)printCount;
+    len = 0;
+    if (isNegative) {
+        if (len >= cap)
+            return 0;
+        outDigits[len++] = '-';
+    }
+
+    whole = (uint64_t)absValue;
+    len += WasmEmit_unsignedDecimal(whole, outDigits + len, cap - len);
+    if (len >= cap)
+        return len;
+
+    outDigits[len++] = '.';
+    frac = absValue - (double)whole;
+    for (index = 0; index < sizeof(fracDigits); ++index) {
+        uint8_t digit;
+        frac *= 10.0;
+        digit = (uint8_t)frac;
+        fracDigits[index] = (uint8_t)('0' + digit);
+        frac -= (double)digit;
+    }
+
+    fracLen = sizeof(fracDigits);
+    while (fracLen > 1 && fracDigits[fracLen - 1] == '0')
+        fracLen -= 1;
+
+    if (len + fracLen > cap)
+        fracLen = cap - len;
+    for (index = 0; index < fracLen; ++index)
+        outDigits[len + index] = fracDigits[index];
+
+    return len + fracLen;
 }
 
 static size_t WasmEmit_encodeUtf8(uint32_t codePoint, uint8_t out[4])

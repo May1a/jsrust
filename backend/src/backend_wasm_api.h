@@ -10,6 +10,11 @@ uint32_t jsrust_wasm_run(
     uint32_t entry_ptr,
     uint32_t entry_len,
     uint32_t trace_enabled);
+uint32_t jsrust_wasm_codegen(
+    uint32_t input_ptr,
+    uint32_t input_len,
+    uint32_t entry_ptr,
+    uint32_t entry_len);
 
 uint32_t jsrust_wasm_result_code(void);
 uint32_t jsrust_wasm_result_has_exit_value(void);
@@ -21,3 +26,5 @@ uint32_t jsrust_wasm_stdout_ptr(void);
 uint32_t jsrust_wasm_stdout_len(void);
 uint32_t jsrust_wasm_trace_ptr(void);
 uint32_t jsrust_wasm_trace_len(void);
+uint32_t jsrust_wasm_codegen_wasm_ptr(void);
+uint32_t jsrust_wasm_codegen_wasm_len(void);

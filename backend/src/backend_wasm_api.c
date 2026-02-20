@@ -10,9 +10,11 @@
 #include "alloc.h"
 
 static jsrust_backend_exec_result g_wasmResult;
+static jsrust_backend_codegen_result g_wasmCodegenResult;
 static ByteBuffer g_wasmMessage;
 static ByteBuffer g_wasmStdout;
 static ByteBuffer g_wasmTrace;
+static ByteBuffer g_wasmCodegenWasm;
 static bool g_wasmInitialized;
 
 static bool BackendWasm_ensureBuffer(ByteBuffer* buffer, size_t initialCap)
@@ -51,10 +53,13 @@ static bool BackendWasm_prepareState(void)
         return false;
     if (!BackendWasm_ensureBuffer(&g_wasmTrace, 128))
         return false;
+    if (!BackendWasm_ensureBuffer(&g_wasmCodegenWasm, 256))
+        return false;
 
     g_wasmMessage.len = 0;
     g_wasmStdout.len = 0;
     g_wasmTrace.len = 0;
+    g_wasmCodegenWasm.len = 0;
     return true;
 }
 
@@ -108,6 +113,10 @@ void jsrust_wasm_reset(void)
     g_wasmResult.message = "ok";
     g_wasmResult.exit_value = 0;
     g_wasmResult.has_exit_value = 0;
+    g_wasmCodegenResult.code = JSRUST_BACKEND_OK;
+    g_wasmCodegenResult.message = "ok";
+    g_wasmCodegenResult.wasm_data = NULL;
+    g_wasmCodegenResult.wasm_len = 0;
 
     g_wasmMessage.data = NULL;
     g_wasmMessage.len = 0;
@@ -120,6 +129,10 @@ void jsrust_wasm_reset(void)
     g_wasmTrace.data = NULL;
     g_wasmTrace.len = 0;
     g_wasmTrace.cap = 0;
+
+    g_wasmCodegenWasm.data = NULL;
+    g_wasmCodegenWasm.len = 0;
+    g_wasmCodegenWasm.cap = 0;
 }
 
 uint32_t jsrust_wasm_run(
@@ -190,6 +203,73 @@ uint32_t jsrust_wasm_run(
     return (uint32_t)g_wasmResult.code;
 }
 
+uint32_t jsrust_wasm_codegen(
+    uint32_t input_ptr,
+    uint32_t input_len,
+    uint32_t entry_ptr,
+    uint32_t entry_len)
+{
+    const uint8_t* inputData;
+    const uint8_t* entryData;
+    char* entryCString;
+    size_t index;
+
+    if (!g_wasmInitialized) {
+        if (!BackendWasm_prepareState())
+            return BackendWasm_fail("failed to initialize wasm buffers");
+        g_wasmInitialized = true;
+    }
+
+    if (input_len > 0 && input_ptr == 0)
+        return BackendWasm_fail("invalid input pointer");
+
+    inputData = (const uint8_t*)(uintptr_t)input_ptr;
+    entryData = (const uint8_t*)(uintptr_t)entry_ptr;
+    entryCString = NULL;
+
+    if (entry_len > 0) {
+        entryCString = (char*)malloc((size_t)entry_len + 1);
+        if (!entryCString)
+            return BackendWasm_fail("failed to allocate entry buffer");
+
+        for (index = 0; index < entry_len; ++index)
+            entryCString[index] = (char)entryData[index];
+        entryCString[entry_len] = '\0';
+    }
+
+    g_wasmCodegenResult = jsrust_backend_codegen_wasm_bytes(
+        inputData,
+        input_len,
+        entryCString);
+
+    if (!BackendWasm_setBufferFromCString(&g_wasmMessage, g_wasmCodegenResult.message)) {
+        if (entryCString)
+            free(entryCString);
+        return BackendWasm_fail("failed to store wasm message output");
+    }
+
+    g_wasmCodegenWasm.len = 0;
+    if (g_wasmCodegenResult.code == JSRUST_BACKEND_OK && g_wasmCodegenResult.wasm_len > 0) {
+        if (!ByteBuffer_appendSpan(
+                &g_wasmCodegenWasm,
+                ByteSpan_fromParts(g_wasmCodegenResult.wasm_data, g_wasmCodegenResult.wasm_len))) {
+            if (entryCString)
+                free(entryCString);
+            return BackendWasm_fail("failed to store wasm codegen output");
+        }
+    }
+
+    if (entryCString)
+        free(entryCString);
+
+    g_wasmResult.code = g_wasmCodegenResult.code;
+    g_wasmResult.message = g_wasmCodegenResult.message;
+    g_wasmResult.exit_value = 0;
+    g_wasmResult.has_exit_value = 0;
+
+    return (uint32_t)g_wasmCodegenResult.code;
+}
+
 uint32_t jsrust_wasm_result_code(void)
 {
     return (uint32_t)g_wasmResult.code;
@@ -233,4 +313,14 @@ uint32_t jsrust_wasm_trace_ptr(void)
 uint32_t jsrust_wasm_trace_len(void)
 {
     return (uint32_t)g_wasmTrace.len;
+}
+
+uint32_t jsrust_wasm_codegen_wasm_ptr(void)
+{
+    return g_wasmCodegenWasm.data ? (uint32_t)(uintptr_t)g_wasmCodegenWasm.data : 0;
+}
+
+uint32_t jsrust_wasm_codegen_wasm_len(void)
+{
+    return (uint32_t)g_wasmCodegenWasm.len;
 }

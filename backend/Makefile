@@ -13,6 +13,7 @@ WASM_LDFLAGS ?= \
 	-Wl,--export=jsrust_wasm_alloc \
 	-Wl,--export=jsrust_wasm_reset \
 	-Wl,--export=jsrust_wasm_run \
+	-Wl,--export=jsrust_wasm_codegen \
 	-Wl,--export=jsrust_wasm_result_code \
 	-Wl,--export=jsrust_wasm_result_has_exit_value \
 	-Wl,--export=jsrust_wasm_result_exit_value \
@@ -21,7 +22,9 @@ WASM_LDFLAGS ?= \
 	-Wl,--export=jsrust_wasm_stdout_ptr \
 	-Wl,--export=jsrust_wasm_stdout_len \
 	-Wl,--export=jsrust_wasm_trace_ptr \
-	-Wl,--export=jsrust_wasm_trace_len
+	-Wl,--export=jsrust_wasm_trace_len \
+	-Wl,--export=jsrust_wasm_codegen_wasm_ptr \
+	-Wl,--export=jsrust_wasm_codegen_wasm_len
 
 SRC_COMMON = \
 	src/arena.c \
@@ -53,6 +56,8 @@ SRC_WASM = \
 	src/ir_validate_min.c \
 	src/runtime.c \
 	src/trace.c \
+	src/wasm_emit.c \
+	src/wasm_encode.c \
 	src/wasm_alloc.c
 OBJ_COMMON = $(SRC_COMMON:.c=.o)
 OBJ_MAIN = $(SRC_MAIN:.c=.o)
