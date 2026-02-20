@@ -69,6 +69,12 @@ class TypeContext {
 
         /** @type {LoopContext[]} */
         this.loopStack = [];
+
+        /** @type {Map<string, { structName: string, methodName: string, symbolName: string, decl: Node, type: Type, meta: any }>} */
+        this.methods = new Map();
+
+        /** @type {Type[]} */
+        this.implSelfTypeStack = [];
     }
 
     // ========================================================================
@@ -261,6 +267,67 @@ class TypeContext {
      */
     getAllItems() {
         return Array.from(this.items.values());
+    }
+
+    /**
+     * Register an inherent impl method
+     * @param {string} structName
+     * @param {string} methodName
+     * @param {Node} decl
+     * @param {Type} fnType
+     * @param {any} [meta]
+     * @returns {{ ok: boolean, error?: string }}
+     */
+    registerMethod(structName, methodName, decl, fnType, meta = null) {
+        const key = `${structName}::${methodName}`;
+        if (this.methods.has(key)) {
+            return { ok: false, error: `Method '${key}' already defined` };
+        }
+        this.methods.set(key, {
+            structName,
+            methodName,
+            symbolName: key,
+            decl,
+            type: fnType,
+            meta,
+        });
+        return { ok: true };
+    }
+
+    /**
+     * Look up an inherent impl method by struct and method name.
+     * @param {string} structName
+     * @param {string} methodName
+     * @returns {{ structName: string, methodName: string, symbolName: string, decl: Node, type: Type, meta: any } | null}
+     */
+    lookupMethod(structName, methodName) {
+        return this.methods.get(`${structName}::${methodName}`) || null;
+    }
+
+    /**
+     * Push impl Self context.
+     * @param {Type} selfType
+     * @returns {void}
+     */
+    pushImplSelfType(selfType) {
+        this.implSelfTypeStack.push(selfType);
+    }
+
+    /**
+     * Pop impl Self context.
+     * @returns {Type | null}
+     */
+    popImplSelfType() {
+        return this.implSelfTypeStack.pop() || null;
+    }
+
+    /**
+     * Get current impl Self type, if any.
+     * @returns {Type | null}
+     */
+    currentImplSelfType() {
+        if (this.implSelfTypeStack.length === 0) return null;
+        return this.implSelfTypeStack[this.implSelfTypeStack.length - 1];
     }
 
     // ========================================================================

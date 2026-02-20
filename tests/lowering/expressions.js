@@ -37,6 +37,9 @@ import {
     makeUnitType,
     makeIntType,
     makeBoolType,
+    makeStructType,
+    makeFnType,
+    makeRefType,
 } from "../../types.js";
 import { TypeContext } from "../../type_context.js";
 
@@ -428,6 +431,70 @@ function testLowerFieldExpression() {
     assertEqual(hir.index, 0, "Should have field index 0");
 }
 
+function testLowerMethodCallExpression() {
+    const ctx = createTestLoweringCtx();
+    const typeCtx = createTestTypeContext();
+
+    const pointType = makeStructType("Point", [], makeSpan(0, 0, 0, 0));
+    pointType.fields = [
+        { name: "x", type: makeIntType(IntWidth.I32) },
+        { name: "y", type: makeIntType(IntWidth.I32) },
+    ];
+
+    typeCtx.registerMethod(
+        "Point",
+        "sum_with",
+        { kind: NodeKind.FnItem, name: "Point::sum_with" },
+        makeFnType(
+            [makeRefType(pointType, false), makeRefType(pointType, false)],
+            makeIntType(IntWidth.I32),
+            false,
+        ),
+        {},
+    );
+
+    ctx.defineVar("p1", pointType, false);
+    ctx.defineVar("p2", pointType, false);
+
+    const ast = makeCallExpr(
+        makeSpan(0, 0, 0, 12),
+        makeFieldExpr(
+            makeSpan(0, 0, 0, 9),
+            makeIdentifierExpr(makeSpan(0, 0, 0, 2), "p1"),
+            "sum_with",
+        ),
+        [makeRefExpr(makeSpan(0, 0, 10, 2), Mutability.Immutable, makeIdentifierExpr(makeSpan(0, 0, 11, 2), "p2"))],
+    );
+
+    const hir = lowerExpr(ctx, ast, typeCtx);
+    assertEqual(hir.kind, HExprKind.Call, "Should lower to call expression");
+    assertEqual(hir.callee.kind, HExprKind.Var, "Callee should be method symbol");
+    assertEqual(hir.callee.name, "Point::sum_with", "Should use qualified method symbol");
+    assertEqual(hir.args.length, 2, "Should inject receiver as first argument");
+}
+
+function testLowerStaticMethodPath() {
+    const ctx = createTestLoweringCtx();
+    const typeCtx = createTestTypeContext();
+
+    typeCtx.registerMethod(
+        "Point",
+        "new",
+        { kind: NodeKind.FnItem, name: "Point::new" },
+        makeFnType(
+            [makeIntType(IntWidth.I32), makeIntType(IntWidth.I32)],
+            makeStructType("Point", [], makeSpan(0, 0, 0, 0)),
+            false,
+        ),
+        {},
+    );
+
+    const ast = makePathExpr(makeSpan(0, 0, 0, 8), ["Point", "new"]);
+    const hir = lowerExpr(ctx, ast, typeCtx);
+    assertEqual(hir.kind, HExprKind.Var, "Should lower to var expression");
+    assertEqual(hir.name, "Point::new", "Should resolve to method symbol");
+}
+
 // ============================================================================
 // Run Tests
 // ============================================================================
@@ -450,6 +517,8 @@ export function runTests() {
         ["Lower mut ref expression", testLowerMutRefExpression],
         ["Lower deref expression", testLowerDerefExpression],
         ["Lower field expression", testLowerFieldExpression],
+        ["Lower method call expression", testLowerMethodCallExpression],
+        ["Lower static method path", testLowerStaticMethodPath],
     ];
 
     for (const [name, fn] of tests) {

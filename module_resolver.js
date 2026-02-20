@@ -166,6 +166,18 @@ function isDeclItem(item) {
 }
 
 /**
+ * @param {any} implItem
+ * @returns {string | null}
+ */
+function implTargetName(implItem) {
+    const target = implItem?.targetType;
+    if (target && target.kind === NodeKind.NamedType && target.name) {
+        return target.name;
+    }
+    return null;
+}
+
+/**
  * @param {{ errors: ResolverError[], sourcePath: string | null, loadingStack: string[] }} state
  * @param {any[]} items
  * @param {string[]} modulePath
@@ -181,6 +193,12 @@ function expandModuleItems(state, items, modulePath, filePath) {
         }
 
         if (item.kind !== NodeKind.ModItem) {
+            if (item.kind === NodeKind.ImplItem) {
+                for (const method of item.methods || []) {
+                    method.modulePath = [...modulePath];
+                    method.sourcePath = filePath;
+                }
+            }
             continue;
         }
 
@@ -838,6 +856,17 @@ function resolveModuleExprs(state, items, modulePath) {
         }
         if (item.kind === NodeKind.ModItem) {
             resolveModuleExprs(state, item.items || [], [...modulePath, item.name]);
+            continue;
+        }
+        if (item.kind === NodeKind.ImplItem) {
+            for (const method of item.methods || []) {
+                if (!method.body) continue;
+                const localScopes = [new Set()];
+                for (const param of method.params || []) {
+                    if (param.name) localScopes[0].add(param.name);
+                }
+                resolveBlock(state, modulePath, method.body, localScopes);
+            }
         }
     }
 }
@@ -850,6 +879,20 @@ function flattenItems(items, out) {
     for (const item of items || []) {
         if (item.kind === NodeKind.ModItem) {
             flattenItems(item.items || [], out);
+            continue;
+        }
+        if (item.kind === NodeKind.ImplItem) {
+            const targetName = implTargetName(item);
+            if (!targetName) {
+                continue;
+            }
+            for (const method of item.methods || []) {
+                method.unqualifiedName = method.name;
+                method.name = `${targetName}::${method.name}`;
+                method.implTargetName = targetName;
+                method.isImplMethod = true;
+                out.push(method);
+            }
             continue;
         }
         if (!isDeclItem(item)) {
