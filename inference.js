@@ -363,7 +363,15 @@ function inferGenericFunctionCall(ctx, call, itemDecl) {
         );
         const unifyResult = unify(ctx, argResult.type, expectedParamType);
         if (!unifyResult.ok) {
-            return { ok: false, errors: [unifyResult.error] };
+            return {
+                ok: false,
+                errors: [
+                    makeTypeError(
+                        `Argument type mismatch: expected ${typeToString(expectedParamType)}, got ${typeToString(argResult.type)}`,
+                        call.args[i]?.span || call.span,
+                    ),
+                ],
+            };
         }
     }
 
@@ -2095,7 +2103,15 @@ function inferCall(ctx, call) {
         if (!argResult.ok) return argResult;
         const unifyResult = unify(ctx, argResult.type, calleeType.params[i]);
         if (!unifyResult.ok) {
-            return { ok: false, errors: [unifyResult.error] };
+            return {
+                ok: false,
+                errors: [
+                    makeTypeError(
+                        `Argument type mismatch: expected ${typeToString(calleeType.params[i])}, got ${typeToString(argResult.type)}`,
+                        call.args[i]?.span || call.span,
+                    ),
+                ],
+            };
         }
     }
 
@@ -3292,6 +3308,10 @@ function checkLetStmt(ctx, letStmt) {
         varType = declaredType;
     } else if (initType) {
         varType = initType;
+    } else if (letStmt.init) {
+        // Initializer exists but failed to infer; avoid emitting a noisy
+        // follow-up "cannot infer variable type" error.
+        varType = ctx.freshTypeVar();
     } else {
         // No type annotation and no initializer - error
         errors.push(

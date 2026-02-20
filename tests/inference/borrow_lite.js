@@ -54,5 +54,16 @@ export function runInferenceBorrowLiteTests() {
         assertTrue(result.ok);
     });
 
-    return 6;
+    assert("borrow-lite: nested reference call mismatch reports correct argument type", () => {
+        const result = compile(
+            "fn passthrough<'a>(x: &'a i32) -> &'a i32 { x } fn main() { let value = 1; let shared = &value; let _a = *passthrough(&shared); }",
+            { validate: false },
+        );
+        assertTrue(!result.ok);
+        assertTrue(result.errors.length === 1);
+        assertTrue(result.errors[0].message.includes("Argument type mismatch"));
+        assertTrue(result.errors[0].message.includes("expected &i32, got &&i32"));
+    });
+
+    return 7;
 }
