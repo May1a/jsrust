@@ -8,15 +8,13 @@ Uses a custom C backend with a clang-built wasm run-path for frontend execution.
 See `plans/README.md` for the current planning structure.
 
 - Current active/future planning tracks:
-  - `plans/active/01-prepare-backend.md`
-  - `plans/active/02-compiler-progress.md`
-  - `plans/active/03-new-backend.md`
+  - `plans/active/01-compiler-progress.md`
+  - `plans/active/02-new-backend.md`
   - `plans/future/01-node-addon-availability.md`
 - Historical plans are archived in `plans/old/`.
 - Backend workspace plans (submodule-prep):
   - `backend/plans/README.md`
   - `backend/plans/00-master-implementation-plan.md`
-  - `backend/plans/01-prepare-backend.md`
   - `backend/plans/02-backend-scaffold-and-build.md`
   - `backend/plans/03-binary-ir-reader.md`
   - `backend/plans/04-ir-interpreter-core.md`
@@ -30,12 +28,10 @@ See `plans/README.md` for the current planning structure.
 
 ## Plan Status
 
-- active/01-prepare-backend.md complete
-- active/02-compiler-progress.md initialized
-- active/03-new-backend.md in progress (JS wasm run-path integration wired)
+- active/01-compiler-progress.md initialized
+- active/02-new-backend.md in progress (JS wasm run-path integration wired)
 - plans/future/01-node-addon-availability.md deferred (non-priority)
 - backend/plans/00-master-implementation-plan.md overhauled (interpreter-first)
-- backend/plans/01-prepare-backend.md copied baseline
 - backend/plans/02-backend-scaffold-and-build.md implemented (initial)
 - backend/plans/03-binary-ir-reader.md implemented (initial)
 - backend/plans/04-ir-interpreter-core.md implemented (initial)
