@@ -2161,6 +2161,40 @@ function inferDeref(ctx, derefExpr) {
 }
 
 /**
+ * Count placeholders in a format string
+ * @param {string} str
+ * @returns {number}
+ */
+function countFormatPlaceholders(str) {
+    let count = 0;
+    let i = 0;
+    while (i < str.length) {
+        if (str[i] === "{") {
+            if (i + 1 < str.length && str[i + 1] === "{") {
+                // Escaped {{ -> skip
+                i += 2;
+            } else if (i + 1 < str.length && str[i + 1] === "}") {
+                // Found {} placeholder
+                count++;
+                i += 2;
+            } else {
+                i++;
+            }
+        } else if (str[i] === "}") {
+            if (i + 1 < str.length && str[i + 1] === "}") {
+                // Escaped }} -> skip
+                i += 2;
+            } else {
+                i++;
+            }
+        } else {
+            i++;
+        }
+    }
+    return count;
+}
+
+/**
  * Infer macro invocation type
  * Handles built-in macros like println! and print!
  * @param {TypeContext} ctx
@@ -2175,22 +2209,55 @@ function inferMacro(ctx, macroExpr) {
         case "println":
         case "print": {
             // println! and print! return unit type
-            // They accept a format string and arguments
+            // They accept a format string and string literal arguments
 
             if (!macroExpr.args || macroExpr.args.length === 0) {
                 return err(
-                    `${macroName}! requires at least a format string argument`,
+                    `${macroName}! requires a format string argument`,
                     macroExpr.span,
                 );
             }
 
             const errors = [];
+            const formatArg = macroExpr.args[0];
 
-            // Check all arguments
-            for (const arg of macroExpr.args) {
-                const argResult = inferExpr(ctx, arg);
-                if (!argResult.ok) {
-                    errors.push(...(argResult.errors || []));
+            // Check that format string is a string literal
+            if (
+                formatArg.kind !== NodeKind.LiteralExpr ||
+                formatArg.literalKind !== LiteralKind.String
+            ) {
+                return err(
+                    `${macroName}! format string must be a string literal`,
+                    formatArg.span || macroExpr.span,
+                );
+            }
+
+            // Count placeholders in format string
+            const formatStr = String(formatArg.value);
+            const placeholderCount = countFormatPlaceholders(formatStr);
+            const formatArgs = macroExpr.args.slice(1);
+
+            // Validate placeholder count matches argument count
+            if (placeholderCount !== formatArgs.length) {
+                return err(
+                    `${macroName}! expected ${placeholderCount} format argument(s), got ${formatArgs.length}`,
+                    macroExpr.span,
+                );
+            }
+
+            // Check all format arguments are string literals
+            for (let i = 0; i < formatArgs.length; i++) {
+                const arg = formatArgs[i];
+                if (
+                    arg.kind !== NodeKind.LiteralExpr ||
+                    arg.literalKind !== LiteralKind.String
+                ) {
+                    errors.push(
+                        makeTypeError(
+                            `${macroName}! format argument ${i} must be a string literal`,
+                            arg.span || macroExpr.span,
+                        ),
+                    );
                 }
             }
 
