@@ -2195,6 +2195,22 @@ function countFormatPlaceholders(str) {
 }
 
 /**
+ * @param {TypeContext} ctx
+ * @param {Type} ty
+ * @returns {boolean}
+ */
+function isSupportedFormatType(ctx, ty) {
+    const resolved = ctx.resolveType(ty);
+    return (
+        resolved.kind === TypeKind.Int ||
+        resolved.kind === TypeKind.Float ||
+        resolved.kind === TypeKind.Bool ||
+        resolved.kind === TypeKind.Char ||
+        resolved.kind === TypeKind.String
+    );
+}
+
+/**
  * Infer macro invocation type
  * Handles built-in macros like println! and print!
  * @param {TypeContext} ctx
@@ -2208,9 +2224,6 @@ function inferMacro(ctx, macroExpr) {
     switch (macroName) {
         case "println":
         case "print": {
-            // println! and print! return unit type
-            // They accept a format string and string literal arguments
-
             if (!macroExpr.args || macroExpr.args.length === 0) {
                 return err(
                     `${macroName}! requires a format string argument`,
@@ -2245,16 +2258,18 @@ function inferMacro(ctx, macroExpr) {
                 );
             }
 
-            // Check all format arguments are string literals
+            // Check format argument types are supported by {} rendering.
             for (let i = 0; i < formatArgs.length; i++) {
                 const arg = formatArgs[i];
-                if (
-                    arg.kind !== NodeKind.LiteralExpr ||
-                    arg.literalKind !== LiteralKind.String
-                ) {
+                const argResult = inferExpr(ctx, arg);
+                if (!argResult.ok) {
+                    errors.push(...(argResult.errors || []));
+                    continue;
+                }
+                if (!isSupportedFormatType(ctx, argResult.type)) {
                     errors.push(
                         makeTypeError(
-                            `${macroName}! format argument ${i} must be a string literal`,
+                            `${macroName}! format argument ${i} type ${typeToString(ctx.resolveType(argResult.type))} is not supported by {}`,
                             arg.span || macroExpr.span,
                         ),
                     );

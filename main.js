@@ -105,7 +105,7 @@ function compileToIRModule(source, options = {}) {
     for (const item of hirModule.items || []) {
         if (item.kind === HItemKind.Fn) {
             try {
-                const irFn = lowerHirToSsa(item);
+                const irFn = lowerHirToSsa(item, { irModule });
 
                 if (validate) {
                     const validationResult = validateIRFunction(irFn);

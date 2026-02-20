@@ -1,12 +1,15 @@
 ; Module: root
 
+; String literals:
+;   lit0 = "hello"
+
 fn main() -> () {
 
     block0:
         v0 = iconst i32 42
         v1 = fconst f64 3.14
         v2 = bconst true
-        v3 = null
+        v3 = sconst lit0
         ret
 
 }

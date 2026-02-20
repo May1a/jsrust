@@ -4,6 +4,16 @@
 
 static const char* g_builtinPrintlnName = "__jsrust_builtin_println_bytes";
 static const char* g_builtinPrintName = "__jsrust_builtin_print_bytes";
+static const char* g_builtinPrintlnFmtName = "__jsrust_builtin_println_fmt";
+static const char* g_builtinPrintFmtName = "__jsrust_builtin_print_fmt";
+
+enum {
+    FormatTag_String = 0,
+    FormatTag_Int = 1,
+    FormatTag_Float = 2,
+    FormatTag_Bool = 3,
+    FormatTag_Char = 4
+};
 
 typedef struct {
     uint32_t id;
@@ -83,6 +93,32 @@ static uint32_t Exec_builtinPrintId(void)
 
     if (!initialized) {
         cached = Exec_hashNameToFunctionId(g_builtinPrintName);
+        initialized = true;
+    }
+
+    return cached;
+}
+
+static uint32_t Exec_builtinPrintlnFmtId(void)
+{
+    static uint32_t cached;
+    static bool initialized;
+
+    if (!initialized) {
+        cached = Exec_hashNameToFunctionId(g_builtinPrintlnFmtName);
+        initialized = true;
+    }
+
+    return cached;
+}
+
+static uint32_t Exec_builtinPrintFmtId(void)
+{
+    static uint32_t cached;
+    static bool initialized;
+
+    if (!initialized) {
+        cached = Exec_hashNameToFunctionId(g_builtinPrintFmtName);
         initialized = true;
     }
 
@@ -617,6 +653,311 @@ static BackendStatus Exec_executeBuiltinPrint(
     return BackendStatus_ok();
 }
 
+static BackendStatus Exec_writeByte(RuntimeContext* runtime, uint8_t byte)
+{
+    if (!Runtime_writeOutputByte(runtime, byte))
+        return Exec_error("failed to write formatted output");
+    return BackendStatus_ok();
+}
+
+static BackendStatus Exec_writeSpan(RuntimeContext* runtime, ByteSpan span)
+{
+    size_t index;
+    BackendStatus status;
+
+    for (index = 0; index < span.len; ++index) {
+        status = Exec_writeByte(runtime, span.data[index]);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+    }
+
+    return BackendStatus_ok();
+}
+
+static BackendStatus Exec_writeUnsignedDecimal(RuntimeContext* runtime, uint64_t value)
+{
+    uint8_t digits[32];
+    size_t count;
+    BackendStatus status;
+
+    count = 0;
+    do {
+        digits[count] = (uint8_t)('0' + (value % 10u));
+        value /= 10u;
+        ++count;
+    } while (value > 0u);
+
+    while (count > 0) {
+        --count;
+        status = Exec_writeByte(runtime, digits[count]);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+    }
+
+    return BackendStatus_ok();
+}
+
+static BackendStatus Exec_writeSignedDecimal(RuntimeContext* runtime, int64_t value)
+{
+    BackendStatus status;
+    uint64_t magnitude;
+
+    if (value < 0) {
+        status = Exec_writeByte(runtime, (uint8_t)'-');
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        magnitude = (uint64_t)(-(value + 1)) + 1u;
+    } else {
+        magnitude = (uint64_t)value;
+    }
+
+    return Exec_writeUnsignedDecimal(runtime, magnitude);
+}
+
+static BackendStatus Exec_writeFloatDecimal(RuntimeContext* runtime, double value)
+{
+    BackendStatus status;
+    uint64_t intPart;
+    double fraction;
+    uint8_t fractionDigits[6];
+    size_t fractionCount;
+    size_t index;
+
+    if (value != value)
+        return Exec_writeSpan(runtime, ByteSpan_fromCString("NaN"));
+
+    if (value < 0.0) {
+        status = Exec_writeByte(runtime, (uint8_t)'-');
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        value = -value;
+    }
+
+    intPart = (uint64_t)value;
+    status = Exec_writeUnsignedDecimal(runtime, intPart);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    fraction = value - (double)intPart;
+    if (fraction <= 0.0)
+        return BackendStatus_ok();
+
+    for (index = 0; index < 6; ++index) {
+        uint32_t digit;
+
+        fraction *= 10.0;
+        digit = (uint32_t)fraction;
+        if (digit > 9u)
+            digit = 9u;
+        fractionDigits[index] = (uint8_t)('0' + digit);
+        fraction -= (double)digit;
+    }
+
+    fractionCount = 6;
+    while (fractionCount > 0 && fractionDigits[fractionCount - 1] == (uint8_t)'0')
+        --fractionCount;
+
+    if (fractionCount == 0)
+        return BackendStatus_ok();
+
+    status = Exec_writeByte(runtime, (uint8_t)'.');
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    for (index = 0; index < fractionCount; ++index) {
+        status = Exec_writeByte(runtime, fractionDigits[index]);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+    }
+
+    return BackendStatus_ok();
+}
+
+static BackendStatus Exec_writeCodePointUtf8(RuntimeContext* runtime, uint32_t codePoint)
+{
+    if (codePoint <= 0x7Fu)
+        return Exec_writeByte(runtime, (uint8_t)codePoint);
+
+    if (codePoint <= 0x7FFu) {
+        BackendStatus status;
+        status = Exec_writeByte(runtime, (uint8_t)(0xC0u | (codePoint >> 6)));
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        return Exec_writeByte(runtime, (uint8_t)(0x80u | (codePoint & 0x3Fu)));
+    }
+
+    if (codePoint >= 0xD800u && codePoint <= 0xDFFFu)
+        return Exec_error("invalid char code point (surrogate)");
+
+    if (codePoint <= 0xFFFFu) {
+        BackendStatus status;
+        status = Exec_writeByte(runtime, (uint8_t)(0xE0u | (codePoint >> 12)));
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        status = Exec_writeByte(runtime, (uint8_t)(0x80u | ((codePoint >> 6) & 0x3Fu)));
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        return Exec_writeByte(runtime, (uint8_t)(0x80u | (codePoint & 0x3Fu)));
+    }
+
+    if (codePoint <= 0x10FFFFu) {
+        BackendStatus status;
+        status = Exec_writeByte(runtime, (uint8_t)(0xF0u | (codePoint >> 18)));
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        status = Exec_writeByte(runtime, (uint8_t)(0x80u | ((codePoint >> 12) & 0x3Fu)));
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        status = Exec_writeByte(runtime, (uint8_t)(0x80u | ((codePoint >> 6) & 0x3Fu)));
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        return Exec_writeByte(runtime, (uint8_t)(0x80u | (codePoint & 0x3Fu)));
+    }
+
+    return Exec_error("invalid char code point");
+}
+
+static BackendStatus Exec_writeFormattedValue(RuntimeContext* runtime, int64_t tag, ExecValue value)
+{
+    BackendStatus status;
+
+    switch (tag) {
+    case FormatTag_String: {
+        ByteSpan literal;
+        if (value.kind != ExecValueKind_StringRef)
+            return Exec_error("format value for string tag is not string");
+        status = Runtime_getStringLiteral(runtime, value.index, &literal);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        return Exec_writeSpan(runtime, literal);
+    }
+    case FormatTag_Int: {
+        if (value.kind != ExecValueKind_Int)
+            return Exec_error("format value for int tag is not integer");
+        return Exec_writeSignedDecimal(runtime, value.i64);
+    }
+    case FormatTag_Float: {
+        if (value.kind != ExecValueKind_Float)
+            return Exec_error("format value for float tag is not float");
+        return Exec_writeFloatDecimal(runtime, value.f64);
+    }
+    case FormatTag_Bool:
+        if (value.kind != ExecValueKind_Bool)
+            return Exec_error("format value for bool tag is not bool");
+        if (value.b)
+            return Exec_writeSpan(runtime, ByteSpan_fromCString("true"));
+        return Exec_writeSpan(runtime, ByteSpan_fromCString("false"));
+    case FormatTag_Char:
+        if (value.kind != ExecValueKind_Int)
+            return Exec_error("format value for char tag is not integer");
+        if (value.i64 < 0 || value.i64 > 0x10FFFF)
+            return Exec_error("char value out of Unicode range");
+        return Exec_writeCodePointUtf8(runtime, (uint32_t)value.i64);
+    default:
+        return Exec_error("unknown format tag");
+    }
+}
+
+static BackendStatus Exec_executeBuiltinPrintFmt(
+    ExecEngine* engine,
+    ExecFrame* frame,
+    const IRInstruction* inst,
+    bool appendNewline,
+    ExecValue* outValue)
+{
+    BackendStatus status;
+    ExecValue formatValue;
+    ByteSpan format;
+    uint32_t argIndex;
+    size_t index;
+
+    if (inst->callArgs.count == 0)
+        return Exec_error("format print builtin requires at least format string");
+
+    status = Exec_readOperand(frame, inst->callArgs.items[0], &formatValue);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+    if (formatValue.kind != ExecValueKind_StringRef)
+        return Exec_error("format print first argument must be string literal");
+
+    status = Runtime_getStringLiteral(engine->runtime, formatValue.index, &format);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    argIndex = 1;
+    index = 0;
+    while (index < format.len) {
+        uint8_t byte;
+
+        byte = format.data[index];
+        if (byte == (uint8_t)'{') {
+            if (index + 1 < format.len && format.data[index + 1] == (uint8_t)'{') {
+                status = Exec_writeByte(engine->runtime, (uint8_t)'{');
+                if (status.code != JSRUST_BACKEND_OK)
+                    return status;
+                index += 2;
+                continue;
+            }
+            if (index + 1 < format.len && format.data[index + 1] == (uint8_t)'}') {
+                ExecValue tagValue;
+                ExecValue value;
+
+                if (argIndex + 1 >= inst->callArgs.count)
+                    return Exec_error("missing format argument for placeholder");
+
+                status = Exec_readOperand(frame, inst->callArgs.items[argIndex], &tagValue);
+                if (status.code != JSRUST_BACKEND_OK)
+                    return status;
+                status = Exec_readOperand(frame, inst->callArgs.items[argIndex + 1], &value);
+                if (status.code != JSRUST_BACKEND_OK)
+                    return status;
+                if (tagValue.kind != ExecValueKind_Int)
+                    return Exec_error("format tag argument must be integer");
+
+                status = Exec_writeFormattedValue(engine->runtime, tagValue.i64, value);
+                if (status.code != JSRUST_BACKEND_OK)
+                    return status;
+
+                argIndex += 2;
+                index += 2;
+                continue;
+            }
+            return Exec_error("unsupported format token after '{'");
+        }
+
+        if (byte == (uint8_t)'}') {
+            if (index + 1 < format.len && format.data[index + 1] == (uint8_t)'}') {
+                status = Exec_writeByte(engine->runtime, (uint8_t)'}');
+                if (status.code != JSRUST_BACKEND_OK)
+                    return status;
+                index += 2;
+                continue;
+            }
+            return Exec_error("unescaped } in format string");
+        }
+
+        status = Exec_writeByte(engine->runtime, byte);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        ++index;
+    }
+
+    if (argIndex != inst->callArgs.count)
+        return Exec_error("unused format arguments provided");
+
+    if (appendNewline) {
+        status = Exec_writeByte(engine->runtime, (uint8_t)'\n');
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+    }
+
+    if (!Runtime_flushOutput(engine->runtime))
+        return Exec_error("failed to flush format output");
+
+    *outValue = ExecValue_makeUnit();
+    return BackendStatus_ok();
+}
+
 static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* frame, const IRInstruction* inst, ExecValue* outValue)
 {
     ExecValue left;
@@ -637,6 +978,9 @@ static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* fram
         return BackendStatus_ok();
     case IRInstKind_Null:
         *outValue = ExecValue_makePtr(UINT32_MAX);
+        return BackendStatus_ok();
+    case IRInstKind_Sconst:
+        *outValue = ExecValue_makeStringRef(inst->literalId);
         return BackendStatus_ok();
     case IRInstKind_Iadd:
     case IRInstKind_Isub:
@@ -856,6 +1200,10 @@ static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* fram
                 return Exec_executeBuiltinPrint(engine, frame, inst, true, outValue);
             if (inst->fn == Exec_builtinPrintId())
                 return Exec_executeBuiltinPrint(engine, frame, inst, false, outValue);
+            if (inst->fn == Exec_builtinPrintlnFmtId())
+                return Exec_executeBuiltinPrintFmt(engine, frame, inst, true, outValue);
+            if (inst->fn == Exec_builtinPrintFmtId())
+                return Exec_executeBuiltinPrintFmt(engine, frame, inst, false, outValue);
             return Exec_error("call target function id not found");
         }
 

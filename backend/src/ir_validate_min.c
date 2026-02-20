@@ -155,6 +155,7 @@ static BackendStatus IRValidate_instruction(const IRFunction* function, const IR
     case IRInstKind_Bconst:
     case IRInstKind_Null:
     case IRInstKind_Alloca:
+    case IRInstKind_Sconst:
         break;
     default:
         return IRValidate_error("unknown instruction opcode during validation");

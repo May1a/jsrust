@@ -31,6 +31,14 @@
   - `/Users/may/jsrust/tests/binary/conformance.js`
   - `/Users/may/jsrust/tests/backend/integration.js` (conditional in `npm run test`)
 
+## Recent Milestone Update
+
+- Binary IR contract migrated to v2 (32-byte header + dedicated string-literal section).
+- Frontend now interns all string literals into module-level IR literal storage and emits `sconst`.
+- Print macros now lower to backend formatter builtins (`__jsrust_builtin_print_fmt`, `__jsrust_builtin_println_fmt`) with tagged arguments.
+- Backend interpreter now formats `{}` placeholders for string/int/float/bool/char at runtime.
+- Fixture corpus and conformance tests moved to `/Users/may/jsrust/tests/fixtures/backend_ir_v2/`.
+
 ## Next Integration Steps
 
 - Move backend workspace into dedicated git submodule when repository split is finalized.

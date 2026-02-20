@@ -65,9 +65,16 @@ import {
     makeUnitType,
     typeToString,
 } from "./types.js";
+import {
+    FORMAT_TAG_STRING,
+    FORMAT_TAG_INT,
+    FORMAT_TAG_FLOAT,
+    FORMAT_TAG_BOOL,
+    FORMAT_TAG_CHAR,
+} from "./format_tags.js";
 
-const BUILTIN_PRINTLN_BYTES_FN = "__jsrust_builtin_println_bytes";
-const BUILTIN_PRINT_BYTES_FN = "__jsrust_builtin_print_bytes";
+const BUILTIN_PRINTLN_FMT_FN = "__jsrust_builtin_println_fmt";
+const BUILTIN_PRINT_FMT_FN = "__jsrust_builtin_print_fmt";
 
 /**
  * Parse a format string into segments.
@@ -124,6 +131,28 @@ function parseFormatString(str) {
     }
 
     return { segments, placeholderCount: placeholderIndex, errors };
+}
+
+/**
+ * @param {Type} ty
+ * @returns {number | null}
+ */
+function formatArgTagForType(ty) {
+    if (!ty) return null;
+    switch (ty.kind) {
+        case TypeKind.String:
+            return FORMAT_TAG_STRING;
+        case TypeKind.Int:
+            return FORMAT_TAG_INT;
+        case TypeKind.Float:
+            return FORMAT_TAG_FLOAT;
+        case TypeKind.Bool:
+            return FORMAT_TAG_BOOL;
+        case TypeKind.Char:
+            return FORMAT_TAG_CHAR;
+        default:
+            return null;
+    }
 }
 
 // ============================================================================
@@ -865,9 +894,9 @@ function lowerCall(ctx, call, typeCtx) {
 function lowerMacro(ctx, macroExpr, typeCtx) {
     switch (macroExpr.name) {
         case "println":
-            return lowerPrintMacro(ctx, macroExpr, BUILTIN_PRINTLN_BYTES_FN);
+            return lowerPrintMacro(ctx, macroExpr, typeCtx, BUILTIN_PRINTLN_FMT_FN);
         case "print":
-            return lowerPrintMacro(ctx, macroExpr, BUILTIN_PRINT_BYTES_FN);
+            return lowerPrintMacro(ctx, macroExpr, typeCtx, BUILTIN_PRINT_FMT_FN);
         default:
             ctx.addError(`Unsupported macro in lowering: ${macroExpr.name}!`, macroExpr.span);
             return makeHUnitExpr(macroExpr.span, makeUnitType());
@@ -875,14 +904,14 @@ function lowerMacro(ctx, macroExpr, typeCtx) {
 }
 
 /**
- * Lower print-like macros to builtin call form with UTF-8 byte args.
- * Supports format strings with {} placeholders and string literal arguments.
+ * Lower print-like macros to builtin call form with a format literal and tagged args.
  * @param {LoweringCtx} ctx
  * @param {Node} macroExpr
+ * @param {TypeContext} typeCtx
  * @param {string} builtinName
  * @returns {import('./hir.js').HExpr}
  */
-function lowerPrintMacro(ctx, macroExpr, builtinName) {
+function lowerPrintMacro(ctx, macroExpr, typeCtx, builtinName) {
     const args = macroExpr.args || [];
     if (args.length === 0) {
         ctx.addError(`${macroExpr.name}! requires a format string argument`, macroExpr.span);
@@ -914,54 +943,38 @@ function lowerPrintMacro(ctx, macroExpr, builtinName) {
         return makeHUnitExpr(macroExpr.span, makeUnitType());
     }
 
-    // Build output bytes by concatenating literal segments with formatted arguments
-    const outputBytes = [];
+    const byteType = makeIntType(IntWidth.I32, macroExpr.span);
+    const hirArgs = [lowerExpr(ctx, formatArg, typeCtx)];
 
-    for (const segment of parsed.segments) {
-        if (segment.type === "literal") {
-            // Encode literal string bytes
-            const bytes = new TextEncoder().encode(segment.value);
-            outputBytes.push(...bytes);
-        } else if (segment.type === "placeholder") {
-            const arg = formatArgs[segment.index];
-            if (!arg) {
-                ctx.addError(
-                    `${macroExpr.name}! missing argument for placeholder ${segment.index}`,
-                    macroExpr.span,
-                );
-                continue;
-            }
-
-            // Only support string literal arguments for now
-            if (
-                arg.kind !== NodeKind.LiteralExpr ||
-                arg.literalKind !== LiteralKind.String
-            ) {
-                ctx.addError(
-                    `${macroExpr.name}! format argument ${segment.index} must be a string literal`,
-                    arg.span || macroExpr.span,
-                );
-                continue;
-            }
-
-            const bytes = new TextEncoder().encode(String(arg.value));
-            outputBytes.push(...bytes);
+    for (let i = 0; i < formatArgs.length; i++) {
+        const arg = formatArgs[i];
+        const hirArg = lowerExpr(ctx, arg, typeCtx);
+        const tag = formatArgTagForType(hirArg.ty);
+        if (tag === null) {
+            ctx.addError(
+                `${macroExpr.name}! format argument ${i} type ${typeToString(hirArg.ty)} is not supported by {}`,
+                arg.span || macroExpr.span,
+            );
+            continue;
         }
+        hirArgs.push(
+            makeHLiteralExpr(
+                arg.span || macroExpr.span,
+                HLiteralKind.Int,
+                tag,
+                byteType,
+            ),
+        );
+        hirArgs.push(hirArg);
     }
 
-    // If there were errors, return early
     if (ctx.errors.length > 0) {
         return makeHUnitExpr(macroExpr.span, makeUnitType());
     }
 
-    const byteType = makeIntType(IntWidth.I32, macroExpr.span);
-    const hirArgs = outputBytes.map((byte) =>
-        makeHLiteralExpr(macroExpr.span, HLiteralKind.Int, byte, byteType),
-    );
-
     const unitType = makeUnitType(macroExpr.span);
     const calleeType = makeFnType(
-        hirArgs.map(() => byteType),
+        hirArgs.map((arg) => arg.ty || byteType),
         unitType,
         false,
         macroExpr.span,

@@ -60,7 +60,8 @@ typedef enum {
     IRInstKind_StructGet = 38,
     IRInstKind_EnumCreate = 39,
     IRInstKind_EnumGetTag = 40,
-    IRInstKind_EnumGetData = 41
+    IRInstKind_EnumGetData = 41,
+    IRInstKind_Sconst = 42
 } IRInstKind;
 
 typedef enum {
@@ -139,6 +140,7 @@ typedef struct {
     uint32_t data;
     uint32_t enumValue;
     uint32_t index;
+    uint32_t literalId;
 } IRInstruction;
 
 typedef struct {
@@ -215,6 +217,8 @@ typedef struct {
     IRStructDef* structs;
     uint32_t enumCount;
     IREnumDef* enums;
+    uint32_t stringLiteralCount;
+    ByteSpan* stringLiterals;
     uint32_t globalCount;
     IRGlobal* globals;
     uint32_t functionCount;
@@ -222,4 +226,3 @@ typedef struct {
 } IRModule;
 
 bool IRInstruction_hasResult(uint8_t kind);
-

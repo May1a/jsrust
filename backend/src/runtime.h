@@ -15,7 +15,8 @@ typedef enum {
     ExecValueKind_Bool = 3,
     ExecValueKind_Ptr = 4,
     ExecValueKind_StructRef = 5,
-    ExecValueKind_EnumRef = 6
+    ExecValueKind_EnumRef = 6,
+    ExecValueKind_StringRef = 7
 } ExecValueKind;
 
 typedef struct {
@@ -82,6 +83,7 @@ ExecValue ExecValue_makeBool(uint8_t value);
 ExecValue ExecValue_makePtr(uint32_t cellIndex);
 ExecValue ExecValue_makeStructRef(uint32_t index);
 ExecValue ExecValue_makeEnumRef(uint32_t index);
+ExecValue ExecValue_makeStringRef(uint32_t literalId);
 
 BackendStatus Runtime_init(
     RuntimeContext* runtime,
@@ -103,6 +105,7 @@ BackendStatus Runtime_readStructField(RuntimeContext* runtime, uint32_t structIn
 BackendStatus Runtime_allocateEnum(RuntimeContext* runtime, uint32_t tag, uint8_t hasData, ExecValue data, uint32_t* outIndex);
 BackendStatus Runtime_readEnumTag(RuntimeContext* runtime, uint32_t enumIndex, uint32_t* outTag);
 BackendStatus Runtime_readEnumData(RuntimeContext* runtime, uint32_t enumIndex, uint32_t expectedTag, ExecValue* outData);
+BackendStatus Runtime_getStringLiteral(const RuntimeContext* runtime, uint32_t literalId, ByteSpan* out);
 
 bool Runtime_traceLiteral(RuntimeContext* runtime, const char* literal);
 bool Runtime_traceU32(RuntimeContext* runtime, uint32_t value);

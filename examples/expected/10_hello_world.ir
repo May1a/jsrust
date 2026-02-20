@@ -1,22 +1,13 @@
 ; Module: root
 
+; String literals:
+;   lit0 = "Hello, World!"
+
 fn main() -> () {
 
     block0:
-        v0 = iconst i32 72
-        v1 = iconst i32 101
-        v2 = iconst i32 108
-        v3 = iconst i32 108
-        v4 = iconst i32 111
-        v5 = iconst i32 44
-        v6 = iconst i32 32
-        v7 = iconst i32 87
-        v8 = iconst i32 111
-        v9 = iconst i32 114
-        v10 = iconst i32 108
-        v11 = iconst i32 100
-        v12 = iconst i32 33
-        v13 = call 531891(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12)
+        v0 = sconst lit0
+        v1 = call 862609(v0)
         ret
 
 }

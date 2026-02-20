@@ -315,6 +315,9 @@ function printInstruction(inst, ctx) {
         case IRInstKind.EnumGetData:
             return `${resultPrefix}enum_get_data ${ctx.getValueName(inst.enum)}, variant ${inst.variant}, index ${inst.index}`;
 
+        case IRInstKind.Sconst:
+            return `${resultPrefix}sconst lit${inst.literalId}`;
+
         default:
             return `<unknown instruction: ${inst.kind}>`;
     }
@@ -492,9 +495,18 @@ function printFunction(fn, ctx) {
 function printModule(module) {
     const ctx = new PrintContext();
     const lines = [];
+    const literals = module.stringLiterals || [];
 
     lines.push(`; Module: ${module.name}`);
     lines.push("");
+
+    if (literals.length > 0) {
+        lines.push("; String literals:");
+        for (let i = 0; i < literals.length; i++) {
+            lines.push(`;   lit${i} = ${JSON.stringify(literals[i])}`);
+        }
+        lines.push("");
+    }
 
     // Type declarations
     if (module.structs.size > 0) {
