@@ -7,7 +7,7 @@ fn test(arg0: ptr) -> () {
 
     block0:
         v1 = sconst lit0
-        v0 = call 862609(v1)
+        v2 = call 862609(v1)
         ret
 
 }
@@ -15,8 +15,8 @@ fn test(arg0: ptr) -> () {
 fn main() -> () {
 
     block0:
-        v2 = sconst lit0
-        v3 = call 556498(v2)
+        v3 = sconst lit0
+        v4 = call 556498(v3)
         ret
 
 }

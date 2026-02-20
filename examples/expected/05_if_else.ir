@@ -14,7 +14,7 @@ fn main() -> () {
         v2 = iconst i32 2
         br block3(v2)
 
-    block3(v1: i32):
+    block3(v3: i32):
         ret
 
 }

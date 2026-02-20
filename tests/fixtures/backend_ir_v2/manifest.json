@@ -12,31 +12,31 @@
             "source": "02_literals.rs",
             "artifact": "02_literals.bin",
             "bytes": 159,
-            "sha256": "7b6fbab6aa06f1c2be4bd08fa69bbe08fa724b64f5a72d4568b39018ded4a306"
+            "sha256": "aa2aae9d7081e09c69ebd65dc37a15ebefb99daf08c25bd0cd0dc23c55c3df1d"
         },
         {
             "source": "03_arithmetic.rs",
             "artifact": "03_arithmetic.bin",
             "bytes": 268,
-            "sha256": "cefa5b497ef0553c06ec67c40abfcab393f92f2e9a26ca1699d5a4d23724105e"
+            "sha256": "f782db9f582bde75d0d27264eb6f57653cc0a86b2d3bd42a47d8e141d98b1356"
         },
         {
             "source": "04_functions.rs",
             "artifact": "04_functions.bin",
             "bytes": 242,
-            "sha256": "a92753e928bd2a9ea32b0410cbfcb76486dc689ee86ba696a987675cbec9d12a"
+            "sha256": "daa75f8927182ef639f08412566771ac453655f038ecb4c9df1ad3e71181befc"
         },
         {
             "source": "07_structs.rs",
             "artifact": "07_structs.bin",
             "bytes": 178,
-            "sha256": "a47b3b6a90f58c062e64c6390308d65a23a772ef56be4ec31295b451bd626018"
+            "sha256": "980e0cb6e95a50217b7d4141b4d9dd8c2c4697a771f96771113f2eb689605c8d"
         },
         {
             "source": "09_references.rs",
             "artifact": "09_references.bin",
             "bytes": 173,
-            "sha256": "c920b092e0920bcc7300fbac360341baa5e757dcc6a887def091ccb193da185b"
+            "sha256": "5adfd65d5d76ea63e284f0102b1420e7f54d1a1a938cc4676286a7b7eaaee74a"
         }
     ]
 }

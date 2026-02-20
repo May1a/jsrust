@@ -100,8 +100,6 @@ export class IRBuilder {
         /** @type {Map<string, IRType>} */
         this.varTypes = new Map(); // varName -> IRType
         /** @type {number} */
-        this.nextValueId = 0;
-        /** @type {number} */
         this.nextBlockId = 0;
     }
 
@@ -116,10 +114,10 @@ export class IRBuilder {
      */
     createFunction(name, params, returnType) {
         this.currentFunction = {
-            id: this.nextValueId++, // placeholder
+            id: freshValueId(),
             name,
             params: params.map((ty, i) => ({
-                id: this.nextValueId++,
+                id: freshValueId(),
                 name: `arg${i}`,
                 ty,
             })),
@@ -143,7 +141,7 @@ export class IRBuilder {
             block.name = name;
         }
         for (const ty of paramTypes) {
-            addIRBlockParam(block, this.nextValueId++, ty);
+            addIRBlockParam(block, freshValueId(), ty);
         }
         if (this.currentFunction) {
             addIRBlock(this.currentFunction, block);
@@ -259,7 +257,7 @@ export class IRBuilder {
         // Need to create phi node (simplified)
         // In real SSA construction, we'd insert phi at dominance frontiers
         // For now, we'll create a placeholder
-        const phiValueId = this.nextValueId++;
+        const phiValueId = freshValueId();
         // Record that this phi needs an operand from this block
         let phis = this.incompletePhis.get(name);
         if (!phis) {
