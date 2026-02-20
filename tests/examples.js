@@ -87,7 +87,10 @@ export function runExamplesTests() {
         test(`Examples: compile+validate ${file}`, () => {
             const filePath = path.join(examplesDir, file);
             const source = fs.readFileSync(filePath, "utf-8");
-            const result = compile(source, { validate: true });
+            const result = compile(source, {
+                validate: true,
+                sourcePath: filePath,
+            });
 
             assertEqual(
                 result.ok,

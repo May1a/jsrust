@@ -36,6 +36,7 @@ export function runParserItemTests() {
         const item = result.value.items[0];
         assertEqual(item.kind, NodeKind.ModItem);
         assertEqual(item.items.length, 1);
+        assertEqual(item.isPub, false);
     });
 
     test("use item", () => {
@@ -46,5 +47,23 @@ export function runParserItemTests() {
         assertEqual(item.tree.path.length, 2);
     });
 
-    return 5;
+    test("use item with alias", () => {
+        const result = parseModule("use math::sub as sub_math;");
+        assertTrue(result.ok);
+        const item = result.value.items[0];
+        assertEqual(item.kind, NodeKind.UseItem);
+        assertEqual(item.tree.path.length, 2);
+        assertEqual(item.tree.alias, "sub_math");
+    });
+
+    test("pub item visibility flags", () => {
+        const result = parseModule("pub fn f() {} pub struct S {} pub enum E { A } pub mod m {}");
+        assertTrue(result.ok);
+        assertEqual(result.value.items[0].isPub, true);
+        assertEqual(result.value.items[1].isPub, true);
+        assertEqual(result.value.items[2].isPub, true);
+        assertEqual(result.value.items[3].isPub, true);
+    });
+
+    return 7;
 }

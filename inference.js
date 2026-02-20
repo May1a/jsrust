@@ -596,6 +596,9 @@ function gatherDeclaration(ctx, item) {
             return { ok: true };
         }
 
+        case NodeKind.UseItem:
+            return { ok: true };
+
         default:
             return { ok: true };
     }
@@ -1077,7 +1080,8 @@ function inferIdentifier(ctx, ident) {
     }
 
     // Look up item (function, struct, enum)
-    const item = ctx.lookupItem(ident.name);
+    const lookupName = ident.resolvedItemName || ident.name;
+    const item = ctx.lookupItem(lookupName);
     if (item) {
         if (item.kind === "fn" && item.type) {
             return ok(item.type);
@@ -1872,10 +1876,26 @@ function inferPath(ctx, pathExpr) {
         return ok(makeUnitType(pathExpr.span));
     }
 
+    if (pathExpr.resolvedItemName) {
+        const resolvedItem = ctx.lookupItem(pathExpr.resolvedItemName);
+        if (resolvedItem) {
+            if (resolvedItem.kind === "fn" && resolvedItem.type) {
+                return ok(resolvedItem.type);
+            }
+            if (resolvedItem.kind === "struct") {
+                return ok(makeStructType(resolvedItem.name, [], pathExpr.span));
+            }
+            if (resolvedItem.kind === "enum") {
+                return ok(makeEnumType(resolvedItem.name, [], pathExpr.span));
+            }
+        }
+    }
+
     // Simple identifier
     if (pathExpr.segments.length === 1) {
         return inferIdentifier(ctx, {
             name: pathExpr.segments[0],
+            resolvedItemName: pathExpr.resolvedItemName || null,
             span: pathExpr.span,
         });
     }

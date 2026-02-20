@@ -1019,9 +1019,10 @@ function parseParamList(state) {
 /**
  * @param {ParserState} state
  * @param {boolean} isUnsafe
+ * @param {boolean} isPub
  * @returns {Node}
  */
-function parseFnItem(state, isUnsafe) {
+function parseFnItem(state, isUnsafe, isPub) {
     const start =
         expectToken(state, TokenType.Fn, "Expected fn") ?? peek(state);
     const nameToken =
@@ -1051,14 +1052,16 @@ function parseFnItem(state, isUnsafe) {
         body,
         false,
         isUnsafe,
+        isPub,
     );
 }
 
 /**
  * @param {ParserState} state
+ * @param {boolean} isPub
  * @returns {Node}
  */
-function parseStructItem(state) {
+function parseStructItem(state, isPub) {
     const start =
         expectToken(state, TokenType.Struct, "Expected struct") ?? peek(state);
     const nameToken =
@@ -1121,14 +1124,22 @@ function parseStructItem(state) {
             ? fields[fields.length - 1].span
             : spanFromToken(nameToken);
     const span = mergeSpans(spanFromToken(start), endSpan);
-    return makeStructItem(span, nameToken.value ?? "", null, fields, isTuple);
+    return makeStructItem(
+        span,
+        nameToken.value ?? "",
+        null,
+        fields,
+        isTuple,
+        isPub,
+    );
 }
 
 /**
  * @param {ParserState} state
+ * @param {boolean} isPub
  * @returns {Node}
  */
-function parseEnumItem(state) {
+function parseEnumItem(state, isPub) {
     const start =
         expectToken(state, TokenType.Enum, "Expected enum") ?? peek(state);
     const nameToken =
@@ -1205,14 +1216,15 @@ function parseEnumItem(state) {
         expectToken(state, TokenType.CloseCurly, "Expected } after enum") ??
         peek(state);
     const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
-    return makeEnumItem(span, nameToken.value ?? "", null, variants);
+    return makeEnumItem(span, nameToken.value ?? "", null, variants, isPub);
 }
 
 /**
  * @param {ParserState} state
+ * @param {boolean} isPub
  * @returns {Node}
  */
-function parseModItem(state) {
+function parseModItem(state, isPub) {
     const start =
         expectToken(state, TokenType.Mod, "Expected mod") ?? peek(state);
     const nameToken =
@@ -1245,7 +1257,50 @@ function parseModItem(state) {
             ? items[items.length - 1].span
             : spanFromToken(nameToken);
     const span = mergeSpans(spanFromToken(start), endSpan);
-    return makeModItem(span, nameToken.value ?? "", items, isInline);
+    return makeModItem(span, nameToken.value ?? "", items, isInline, isPub);
+}
+
+/**
+ * @param {ParserState} state
+ * @returns {{ path: string[], hasWildcard: boolean }}
+ */
+function parseUsePath(state) {
+    /** @type {string[]} */
+    const path = [];
+    let hasWildcard = false;
+    const first = peek(state);
+    if (!isIdentifierToken(first)) {
+        addError(state, "Expected identifier", first, ["Identifier"]);
+        return { path, hasWildcard };
+    }
+    path.push(advance(state).value);
+    while (
+        check(state, TokenType.Colon) &&
+        peek(state, 1).type === TokenType.Colon
+    ) {
+        advance(state);
+        advance(state);
+        const next = peek(state);
+        if (next.type === TokenType.Star) {
+            hasWildcard = true;
+            addError(
+                state,
+                "Wildcard imports are not supported yet",
+                next,
+                null,
+            );
+            advance(state);
+            break;
+        }
+        if (!isIdentifierToken(next)) {
+            addError(state, "Expected identifier segment", next, [
+                "Identifier",
+            ]);
+            return { path, hasWildcard };
+        }
+        path.push(advance(state).value);
+    }
+    return { path, hasWildcard };
 }
 
 /**
@@ -1254,10 +1309,25 @@ function parseModItem(state) {
  */
 function parseUseTree(state) {
     const startToken = peek(state);
-    const path = parsePathSegments(state);
+    const { path, hasWildcard } = parseUsePath(state);
+    /** @type {string | null} */
+    let alias = null;
+    if (isIdentifierValue(peek(state), "as")) {
+        advance(state);
+        const aliasToken =
+            expectToken(state, TokenType.Identifier, "Expected alias name") ??
+            peek(state);
+        alias = aliasToken.value ?? null;
+    }
     /** @type {Node[] | null} */
     let children = null;
     if (matchToken(state, TokenType.OpenCurly)) {
+        addError(
+            state,
+            "Grouped imports are not supported yet",
+            previous(state),
+            null,
+        );
         children = [];
         if (!check(state, TokenType.CloseCurly)) {
             while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
@@ -1268,9 +1338,17 @@ function parseUseTree(state) {
         }
         expectToken(state, TokenType.CloseCurly, "Expected } in use tree");
     }
+    if (hasWildcard && children !== null) {
+        addError(
+            state,
+            "Cannot combine wildcard and grouped imports",
+            peek(state),
+            null,
+        );
+    }
     const endToken = previous(state);
     const span = mergeSpans(spanFromToken(startToken), spanFromToken(endToken));
-    return makeUseTree(span, path, null, children);
+    return makeUseTree(span, path, alias, children);
 }
 
 /**
@@ -1302,10 +1380,10 @@ function parseItem(state) {
     if (matchToken(state, TokenType.Unsafe)) {
         isUnsafe = true;
     }
-    if (check(state, TokenType.Fn)) return parseFnItem(state, isUnsafe);
-    if (check(state, TokenType.Struct)) return parseStructItem(state);
-    if (check(state, TokenType.Enum)) return parseEnumItem(state);
-    if (check(state, TokenType.Mod)) return parseModItem(state);
+    if (check(state, TokenType.Fn)) return parseFnItem(state, isUnsafe, isPub);
+    if (check(state, TokenType.Struct)) return parseStructItem(state, isPub);
+    if (check(state, TokenType.Enum)) return parseEnumItem(state, isPub);
+    if (check(state, TokenType.Mod)) return parseModItem(state, isPub);
     if (check(state, TokenType.Use)) return parseUseItem(state, isPub);
     addError(state, "Expected item", peek(state), null);
     return null;

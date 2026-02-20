@@ -26,7 +26,7 @@ Use this table for ongoing tracking:
 
 | Area | Done | In Progress | Blocked | Next |
 | ---- | ---- | ----------- | ------- | ---- |
-| Frontend Language Coverage | Baseline subset implemented; loop `break`/`continue` semantics in type inference improved (`break <expr>` for `loop`) |  |  | Add missing Rust subset priorities |
+| Frontend Language Coverage | Baseline subset implemented; loop `break`/`continue` semantics in type inference improved (`break <expr>` for `loop`); module support added (inline `mod`, file `mod name;`, simple `use path;` + `use path as alias;`, visibility-aware path resolution) |  |  | Expand module/use coverage (`self`/`super`/`crate`, grouped/wildcard imports, deeper type-path support) |
 | Type/Semantic Analysis | Core local inference implemented |  |  | Strengthen semantic checks and diagnostics |
 | IR and Binary Contract | Core SSA + binary pipeline implemented; binary IR v2 added with module string-literal pool and `sconst` instruction |  |  | Expand contract coverage for richer literals/constant data |
 | Backend Integration | C backend workspace and interpreter core implemented; backend-side `print!`/`println!` `{}` formatting path integrated | Frontend run path migrated to clang-built wasm backend bindings |  | Expand parity and integration coverage |

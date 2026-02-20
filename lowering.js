@@ -321,10 +321,7 @@ function lowerModule(ast, typeCtx) {
     // Second pass: lower all items
     const items = [];
     for (const item of ast.items || []) {
-        const hirItem = lowerItem(ctx, item, typeCtx);
-        if (hirItem) {
-            items.push(hirItem);
-        }
+        lowerItemIntoList(ctx, item, typeCtx, items);
     }
 
     if (ctx.errors.length > 0) {
@@ -336,6 +333,29 @@ function lowerModule(ast, typeCtx) {
         module: makeHModule(span, ast.name || "main", items),
         errors: [],
     };
+}
+
+/**
+ * Lower an item and append generated HIR items to output.
+ * @param {LoweringCtx} ctx
+ * @param {Node} item
+ * @param {TypeContext} typeCtx
+ * @param {import('./hir.js').HItem[]} output
+ */
+function lowerItemIntoList(ctx, item, typeCtx, output) {
+    if (item.kind === NodeKind.ModItem) {
+        for (const child of item.items || []) {
+            lowerItemIntoList(ctx, child, typeCtx, output);
+        }
+        return;
+    }
+    if (item.kind === NodeKind.UseItem) {
+        return;
+    }
+    const hirItem = lowerItem(ctx, item, typeCtx);
+    if (hirItem) {
+        output.push(hirItem);
+    }
 }
 
 /**
@@ -363,6 +383,14 @@ function registerItem(ctx, item, typeCtx) {
             ctx.registerItem(item.name, "enum", item);
             break;
         }
+        case NodeKind.ModItem: {
+            for (const child of item.items || []) {
+                registerItem(ctx, child, typeCtx);
+            }
+            break;
+        }
+        case NodeKind.UseItem:
+            break;
     }
 }
 
@@ -385,6 +413,9 @@ function lowerItem(ctx, item, typeCtx) {
             return lowerStructItem(ctx, item, typeCtx);
         case NodeKind.EnumItem:
             return lowerEnumItem(ctx, item, typeCtx);
+        case NodeKind.ModItem:
+        case NodeKind.UseItem:
+            return null;
         default:
             ctx.addError(`Unknown item kind: ${item.kind}`, item.span);
             return null;
@@ -785,29 +816,30 @@ function lowerIdentifier(ctx, ident, typeCtx) {
     }
 
     // Look up item (function, struct, enum)
-    const item = ctx.lookupItem(ident.name);
+    const lookupName = ident.resolvedItemName || ident.name;
+    const item = ctx.lookupItem(lookupName);
     if (item) {
         if (item.kind === "fn" && item.type) {
             // Function reference
-            return makeHVarExpr(ident.span, ident.name, -1, item.type);
+            return makeHVarExpr(ident.span, lookupName, -1, item.type);
         }
         if (item.kind === "struct") {
             // Struct constructor - return as a reference
             const structTy = {
                 kind: TypeKind.Struct,
-                name: ident.name,
+                name: item.node.name,
                 fields: [],
             };
-            return makeHVarExpr(ident.span, ident.name, -1, structTy);
+            return makeHVarExpr(ident.span, lookupName, -1, structTy);
         }
         if (item.kind === "enum") {
             // Enum reference
             const enumTy = {
                 kind: TypeKind.Enum,
-                name: ident.name,
+                name: item.node.name,
                 variants: [],
             };
-            return makeHVarExpr(ident.span, ident.name, -1, enumTy);
+            return makeHVarExpr(ident.span, lookupName, -1, enumTy);
         }
     }
 
@@ -1378,11 +1410,27 @@ function lowerPath(ctx, pathExpr, typeCtx) {
         return makeHUnitExpr(pathExpr.span, makeUnitType());
     }
 
+    if (pathExpr.resolvedItemName) {
+        return lowerIdentifier(
+            ctx,
+            {
+                name: pathExpr.segments[pathExpr.segments.length - 1] || "",
+                resolvedItemName: pathExpr.resolvedItemName,
+                span: pathExpr.span,
+            },
+            typeCtx,
+        );
+    }
+
     // Simple identifier
     if (pathExpr.segments.length === 1) {
         return lowerIdentifier(
             ctx,
-            { name: pathExpr.segments[0], span: pathExpr.span },
+            {
+                name: pathExpr.segments[0],
+                resolvedItemName: pathExpr.resolvedItemName || null,
+                span: pathExpr.span,
+            },
             typeCtx,
         );
     }

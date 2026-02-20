@@ -7,6 +7,7 @@ import { parseModule } from "./parser.js";
 import { TypeContext } from "./type_context.js";
 import { inferModule } from "./inference.js";
 import { lowerModule } from "./lowering.js";
+import { resolveModuleTree } from "./module_resolver.js";
 import { lowerHirToSsa } from "./hir_to_ssa.js";
 import { printModule as printIRModule } from "./ir_printer.js";
 import { makeIRModule, addIRFunction, resetIRIds } from "./ir.js";
@@ -22,6 +23,7 @@ import { runBackendWasm } from "./backend_runner.js";
  * @property {boolean} [emitIR=true]
  * @property {boolean} [validate=true]
  * @property {string} [outputFile]
+ * @property {string} [sourcePath]
  */
 
 /**
@@ -54,7 +56,7 @@ import { runBackendWasm } from "./backend_runner.js";
 /**
  * Compile a Rust source string to SSA IR module
  * @param {string} source
- * @param {{ emitAst?: boolean, emitHir?: boolean, validate?: boolean }} [options={}]
+ * @param {{ emitAst?: boolean, emitHir?: boolean, validate?: boolean, sourcePath?: string }} [options={}]
  * @returns {CompileResult}
  */
 function compileToIRModule(source, options = {}) {
@@ -62,6 +64,7 @@ function compileToIRModule(source, options = {}) {
         emitAst = false,
         emitHir = false,
         validate = true,
+        sourcePath,
     } = options;
 
     /** @type {CompileDiagnostic[]} */
@@ -82,9 +85,21 @@ function compileToIRModule(source, options = {}) {
     }
 
     const ast = parseResult.value;
+    const resolveResult = resolveModuleTree(ast, { sourcePath });
+    if (!resolveResult.ok || !resolveResult.module) {
+        for (const err of resolveResult.errors || []) {
+            errors.push({
+                message: err.message,
+                span: err.span,
+                kind: "resolve",
+            });
+        }
+        return { ok: false, errors };
+    }
+    const resolvedAst = resolveResult.module;
 
     const typeCtx = new TypeContext();
-    const inferResult = inferModule(typeCtx, ast);
+    const inferResult = inferModule(typeCtx, resolvedAst);
     if (!inferResult.ok) {
         for (const err of inferResult.errors || []) {
             errors.push({
@@ -96,7 +111,7 @@ function compileToIRModule(source, options = {}) {
         return { ok: false, errors };
     }
 
-    const hirResult = lowerModule(ast, typeCtx);
+    const hirResult = lowerModule(resolvedAst, typeCtx);
     if (!hirResult.module) {
         for (const err of hirResult.errors) {
             errors.push({
@@ -147,7 +162,7 @@ function compileToIRModule(source, options = {}) {
     const result = { ok: true, errors: [], module: irModule };
 
     if (emitAst) {
-        result.ast = ast;
+        result.ast = resolvedAst;
     }
 
     if (emitHir) {
@@ -225,7 +240,10 @@ function compileFileToIRModule(filePath, options = {}) {
             errors: [`Failed to read file: ${filePath}: ${e.message}`],
         };
     }
-    return compileToIRModule(source, options);
+    return compileToIRModule(source, {
+        ...options,
+        sourcePath: path.resolve(filePath),
+    });
 }
 
 /**
@@ -244,7 +262,10 @@ function compileFileToBinary(filePath, options = {}) {
             errors: [`Failed to read file: ${filePath}: ${e.message}`],
         };
     }
-    return compileToBinary(source, options);
+    return compileToBinary(source, {
+        ...options,
+        sourcePath: path.resolve(filePath),
+    });
 }
 
 /**
@@ -289,6 +310,7 @@ function printBackendStatusLine(label, message) {
 function errorKindLabel(kind) {
     switch (kind) {
         case "parse": return "E0001";
+        case "resolve": return "E0433";
         case "type": return "E0308";
         case "lower": return "E0000";
         case "validation": return "E0000";
