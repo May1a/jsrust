@@ -69,6 +69,63 @@ import {
 const BUILTIN_PRINTLN_BYTES_FN = "__jsrust_builtin_println_bytes";
 const BUILTIN_PRINT_BYTES_FN = "__jsrust_builtin_print_bytes";
 
+/**
+ * Parse a format string into segments.
+ * Handles {} placeholders and escape sequences {{ and }}.
+ * @param {string} str
+ * @returns {{ segments: Array<{ type: 'literal', value: string } | { type: 'placeholder', index: number }>, placeholderCount: number, errors: string[] } }
+ */
+function parseFormatString(str) {
+    const segments = [];
+    const errors = [];
+    let literal = "";
+    let i = 0;
+    let placeholderIndex = 0;
+
+    while (i < str.length) {
+        if (str[i] === "{") {
+            if (i + 1 < str.length && str[i + 1] === "{") {
+                // Escaped {{ -> {
+                literal += "{";
+                i += 2;
+            } else if (i + 1 < str.length && str[i + 1] === "}") {
+                // Found {} placeholder
+                if (literal.length > 0) {
+                    segments.push({ type: "literal", value: literal });
+                    literal = "";
+                }
+                segments.push({ type: "placeholder", index: placeholderIndex });
+                placeholderIndex++;
+                i += 2;
+            } else {
+                // Unescaped { without closing } - could be an error or just a literal
+                // For simplicity, treat as literal
+                literal += str[i];
+                i += 1;
+            }
+        } else if (str[i] === "}") {
+            if (i + 1 < str.length && str[i + 1] === "}") {
+                // Escaped }} -> }
+                literal += "}";
+                i += 2;
+            } else {
+                // Unescaped } - treat as literal
+                literal += str[i];
+                i += 1;
+            }
+        } else {
+            literal += str[i];
+            i += 1;
+        }
+    }
+
+    if (literal.length > 0) {
+        segments.push({ type: "literal", value: literal });
+    }
+
+    return { segments, placeholderCount: placeholderIndex, errors };
+}
+
 // ============================================================================
 // Task 6.1: Lowering Context
 // ============================================================================
@@ -819,6 +876,7 @@ function lowerMacro(ctx, macroExpr, typeCtx) {
 
 /**
  * Lower print-like macros to builtin call form with UTF-8 byte args.
+ * Supports format strings with {} placeholders and string literal arguments.
  * @param {LoweringCtx} ctx
  * @param {Node} macroExpr
  * @param {string} builtinName
@@ -827,33 +885,77 @@ function lowerMacro(ctx, macroExpr, typeCtx) {
 function lowerPrintMacro(ctx, macroExpr, builtinName) {
     const args = macroExpr.args || [];
     if (args.length === 0) {
-        ctx.addError(`${macroExpr.name}! requires a string literal argument`, macroExpr.span);
+        ctx.addError(`${macroExpr.name}! requires a format string argument`, macroExpr.span);
         return makeHUnitExpr(macroExpr.span, makeUnitType());
     }
 
-    if (args.length > 1) {
+    const formatArg = args[0];
+    if (
+        formatArg.kind !== NodeKind.LiteralExpr ||
+        formatArg.literalKind !== LiteralKind.String
+    ) {
         ctx.addError(
-            `${macroExpr.name}! formatting arguments are not supported yet`,
+            `${macroExpr.name}! format string must be a string literal`,
+            formatArg.span || macroExpr.span,
+        );
+        return makeHUnitExpr(macroExpr.span, makeUnitType());
+    }
+
+    const formatStr = String(formatArg.value);
+    const formatArgs = args.slice(1);
+    const parsed = parseFormatString(formatStr);
+
+    // Validate placeholder count matches argument count
+    if (parsed.placeholderCount !== formatArgs.length) {
+        ctx.addError(
+            `${macroExpr.name}! expected ${parsed.placeholderCount} format argument(s), got ${formatArgs.length}`,
             macroExpr.span,
         );
         return makeHUnitExpr(macroExpr.span, makeUnitType());
     }
 
-    const firstArg = args[0];
-    if (
-        firstArg.kind !== NodeKind.LiteralExpr ||
-        firstArg.literalKind !== LiteralKind.String
-    ) {
-        ctx.addError(
-            `${macroExpr.name}! currently requires a string literal as the first argument`,
-            firstArg.span || macroExpr.span,
-        );
+    // Build output bytes by concatenating literal segments with formatted arguments
+    const outputBytes = [];
+
+    for (const segment of parsed.segments) {
+        if (segment.type === "literal") {
+            // Encode literal string bytes
+            const bytes = new TextEncoder().encode(segment.value);
+            outputBytes.push(...bytes);
+        } else if (segment.type === "placeholder") {
+            const arg = formatArgs[segment.index];
+            if (!arg) {
+                ctx.addError(
+                    `${macroExpr.name}! missing argument for placeholder ${segment.index}`,
+                    macroExpr.span,
+                );
+                continue;
+            }
+
+            // Only support string literal arguments for now
+            if (
+                arg.kind !== NodeKind.LiteralExpr ||
+                arg.literalKind !== LiteralKind.String
+            ) {
+                ctx.addError(
+                    `${macroExpr.name}! format argument ${segment.index} must be a string literal`,
+                    arg.span || macroExpr.span,
+                );
+                continue;
+            }
+
+            const bytes = new TextEncoder().encode(String(arg.value));
+            outputBytes.push(...bytes);
+        }
+    }
+
+    // If there were errors, return early
+    if (ctx.errors.length > 0) {
         return makeHUnitExpr(macroExpr.span, makeUnitType());
     }
 
-    const bytes = new TextEncoder().encode(String(firstArg.value));
     const byteType = makeIntType(IntWidth.I32, macroExpr.span);
-    const hirArgs = Array.from(bytes, (byte) =>
+    const hirArgs = outputBytes.map((byte) =>
         makeHLiteralExpr(macroExpr.span, HLiteralKind.Int, byte, byteType),
     );
 

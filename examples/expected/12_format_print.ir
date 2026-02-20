@@ -1,0 +1,87 @@
+; Module: root
+
+fn main() -> () {
+
+    block0:
+        v0 = iconst i32 72
+        v1 = iconst i32 101
+        v2 = iconst i32 108
+        v3 = iconst i32 108
+        v4 = iconst i32 111
+        v5 = iconst i32 44
+        v6 = iconst i32 32
+        v7 = iconst i32 87
+        v8 = iconst i32 111
+        v9 = iconst i32 114
+        v10 = iconst i32 108
+        v11 = iconst i32 100
+        v12 = iconst i32 33
+        v13 = call 531891(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12)
+        v14 = iconst i32 72
+        v15 = iconst i32 101
+        v16 = iconst i32 108
+        v17 = iconst i32 108
+        v18 = iconst i32 111
+        v19 = iconst i32 32
+        v20 = iconst i32 82
+        v21 = iconst i32 117
+        v22 = iconst i32 115
+        v23 = iconst i32 116
+        v24 = call 531891(v14, v15, v16, v17, v18, v19, v20, v21, v22, v23)
+        v25 = iconst i32 85
+        v26 = iconst i32 115
+        v27 = iconst i32 101
+        v28 = iconst i32 32
+        v29 = iconst i32 123
+        v30 = iconst i32 125
+        v31 = iconst i32 32
+        v32 = iconst i32 102
+        v33 = iconst i32 111
+        v34 = iconst i32 114
+        v35 = iconst i32 32
+        v36 = iconst i32 112
+        v37 = iconst i32 108
+        v38 = iconst i32 97
+        v39 = iconst i32 99
+        v40 = iconst i32 101
+        v41 = iconst i32 104
+        v42 = iconst i32 111
+        v43 = iconst i32 108
+        v44 = iconst i32 100
+        v45 = iconst i32 101
+        v46 = iconst i32 114
+        v47 = iconst i32 115
+        v48 = iconst i32 58
+        v49 = iconst i32 32
+        v50 = iconst i32 101
+        v51 = iconst i32 120
+        v52 = iconst i32 97
+        v53 = iconst i32 109
+        v54 = iconst i32 112
+        v55 = iconst i32 108
+        v56 = iconst i32 101
+        v57 = call 531891(v25, v26, v27, v28, v29, v30, v31, v32, v33, v34, v35, v36, v37, v38, v39, v40, v41, v42, v43, v44, v45, v46, v47, v48, v49, v50, v51, v52, v53, v54, v55, v56)
+        v58 = iconst i32 78
+        v59 = iconst i32 111
+        v60 = iconst i32 32
+        v61 = iconst i32 112
+        v62 = iconst i32 108
+        v63 = iconst i32 97
+        v64 = iconst i32 99
+        v65 = iconst i32 101
+        v66 = iconst i32 104
+        v67 = iconst i32 111
+        v68 = iconst i32 108
+        v69 = iconst i32 100
+        v70 = iconst i32 101
+        v71 = iconst i32 114
+        v72 = iconst i32 115
+        v73 = iconst i32 32
+        v74 = iconst i32 104
+        v75 = iconst i32 101
+        v76 = iconst i32 114
+        v77 = iconst i32 101
+        v78 = call 531891(v58, v59, v60, v61, v62, v63, v64, v65, v66, v67, v68, v69, v70, v71, v72, v73, v74, v75, v76, v77)
+        ret
+
+}
