@@ -36,6 +36,46 @@ export function runOperatorsTests() {
         assertTokensMatch(tokens, [{ type: T.Eq, value: "=" }]);
     });
 
+    test("plus assign", () => {
+        const tokens = tokenize("+=");
+        assertTokensMatch(tokens, [{ type: T.PlusEq, value: "+=" }]);
+    });
+
+    test("minus assign", () => {
+        const tokens = tokenize("-=");
+        assertTokensMatch(tokens, [{ type: T.MinusEq, value: "-=" }]);
+    });
+
+    test("star assign", () => {
+        const tokens = tokenize("*=");
+        assertTokensMatch(tokens, [{ type: T.StarEq, value: "*=" }]);
+    });
+
+    test("slash assign", () => {
+        const tokens = tokenize("/=");
+        assertTokensMatch(tokens, [{ type: T.SlashEq, value: "/=" }]);
+    });
+
+    test("percent assign", () => {
+        const tokens = tokenize("%=");
+        assertTokensMatch(tokens, [{ type: T.PercentEq, value: "%=" }]);
+    });
+
+    test("and assign", () => {
+        const tokens = tokenize("&=");
+        assertTokensMatch(tokens, [{ type: T.AndEq, value: "&=" }]);
+    });
+
+    test("pipe assign", () => {
+        const tokens = tokenize("|=");
+        assertTokensMatch(tokens, [{ type: T.PipeEq, value: "|=" }]);
+    });
+
+    test("caret assign", () => {
+        const tokens = tokenize("^=");
+        assertTokensMatch(tokens, [{ type: T.CaretEq, value: "^=" }]);
+    });
+
     test("equals", () => {
         const tokens = tokenize("==");
         assertTokensMatch(tokens, [{ type: T.EqEq, value: "==" }]);
@@ -111,5 +151,5 @@ export function runOperatorsTests() {
         ]);
     });
 
-    return 20;
+    return 28;
 }
