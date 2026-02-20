@@ -1,0 +1,33 @@
+; Module: root
+
+fn add(arg0: i32, arg1: i32) -> i32 {
+
+    block0:
+        v2 = iadd v0, v1
+        ret v2
+
+}
+
+fn test_const_fn() -> () {
+
+    block0:
+        v3 = iconst i32 1
+        v4 = iconst i32 2
+        v5 = call 96417(v3, v4)
+        v6 = iconst i32 3
+        v7 = icmp eq v5, v6
+        br_if v7, then: block1(), else: block2()
+
+    block1:
+        v8 = iconst i8 0
+        br block3
+
+    block2:
+        v9 = call 632151()
+        br block3
+
+    block3:
+        v10 = iconst i8 0
+        ret
+
+}

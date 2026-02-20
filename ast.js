@@ -488,6 +488,7 @@ function makeParam(
  * @param {Node | null} body
  * @param {boolean} isAsync
  * @param {boolean} isUnsafe
+ * @param {boolean} [isConst=false]
  * @param {boolean} [isPub=false]
  * @param {{ name: string, bounds: Node[] }[] | null} [genericParams=null]
  * @param {{ name: string, bounds: Node[] }[] | null} [whereClause=null]
@@ -505,6 +506,7 @@ function makeFnItem(
     body,
     isAsync,
     isUnsafe,
+    isConst = false,
     isPub = false,
     genericParams = null,
     whereClause = null,
@@ -523,6 +525,7 @@ function makeFnItem(
         body,
         isAsync,
         isUnsafe,
+        isConst,
         isPub,
         isTest,
         expectedOutput,
@@ -853,10 +856,11 @@ function makePtrType(span, mutability, inner) {
  * @param {Node[]} params
  * @param {Node | null} returnType
  * @param {boolean} isUnsafe
+ * @param {boolean} [isConst=false]
  * @returns {Node}
  */
-function makeFnType(span, params, returnType, isUnsafe) {
-    return makeNode(NodeKind.FnType, span, { params, returnType, isUnsafe });
+function makeFnType(span, params, returnType, isUnsafe, isConst = false) {
+    return makeNode(NodeKind.FnType, span, { params, returnType, isUnsafe, isConst });
 }
 
 /**

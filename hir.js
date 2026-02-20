@@ -111,6 +111,7 @@ function makeHModule(span, name, items) {
  *   body: HBlock | null,
  *   isAsync: boolean,
  *   isUnsafe: boolean,
+ *   isConst: boolean,
  *   isTest: boolean,
  *   expectedOutput: string | null
  * }} HFnDecl
@@ -129,6 +130,7 @@ function makeHModule(span, name, items) {
  * @param {HBlock | null} body
  * @param {boolean} isAsync
  * @param {boolean} isUnsafe
+ * @param {boolean} isConst
  * @param {boolean} [isTest=false]
  * @param {string | null} [expectedOutput=null]
  * @returns {HFnDecl}
@@ -142,6 +144,7 @@ function makeHFnDecl(
     body,
     isAsync,
     isUnsafe,
+    isConst,
     isTest = false,
     expectedOutput = null,
 ) {
@@ -155,6 +158,7 @@ function makeHFnDecl(
         body,
         isAsync,
         isUnsafe,
+        isConst,
         isTest,
         expectedOutput,
     };

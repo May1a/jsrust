@@ -1,0 +1,75 @@
+; Module: root
+
+fn closure_as_parameter(arg0: fn(i32) -> i32) -> () {
+
+    block0:
+        v1 = iconst i32 5
+        v2 = call_dyn v0(v1)
+        v3 = iconst i32 6
+        v4 = icmp eq v2, v3
+        br_if v4, then: block1(), else: block2()
+
+    block1:
+        v5 = iconst i8 0
+        br block3
+
+    block2:
+        v6 = call 632151()
+        br block3
+
+    block3:
+        v7 = iconst i8 0
+        ret
+
+}
+
+fn test_closure_as_parameter() -> () {
+
+    block0:
+        v8 = iconst i64 414719
+        v9 = call 991776(v8)
+        ret
+
+}
+
+fn test_closure_as_parameter::__closure_0(arg0: i32) -> i32 {
+
+    block0:
+        v11 = iconst i32 1
+        v12 = iadd v10, v11
+        ret v12
+
+}
+
+fn test_closures() -> () {
+
+    block0:
+        v13 = iconst i32 5
+        v14 = iconst i64 783928
+        v15 = iconst i32 2
+        v16 = call 783928(v13, v15)
+        v17 = iconst i32 7
+        v18 = icmp eq v16, v17
+        br_if v18, then: block1(), else: block2()
+
+    block1:
+        v19 = iconst i8 0
+        br block3
+
+    block2:
+        v20 = call 632151()
+        br block3
+
+    block3:
+        v21 = iconst i8 0
+        ret
+
+}
+
+fn test_closures::__closure_1(arg0: i32, arg1: i32) -> i32 {
+
+    block0:
+        v24 = iadd v23, v22
+        ret v24
+
+}

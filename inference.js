@@ -297,6 +297,7 @@ function substituteGenericTypeBindings(
                     createMissingBindings,
                 ),
                 resolved.isUnsafe,
+                resolved.isConst,
                 resolved.span,
             );
         default:
@@ -395,6 +396,7 @@ function inferGenericFunctionCall(ctx, call, itemDecl) {
         concreteParams,
         concreteReturn,
         fnType.isUnsafe || false,
+        fnType.isConst || false,
         fnType.span,
     );
     return ok(returnType);
@@ -721,6 +723,7 @@ function substitute(ctx, type) {
                 type.params.map((t) => substitute(ctx, t)),
                 substitute(ctx, type.returnType),
                 type.isUnsafe,
+                type.isConst,
                 type.span,
             );
 
@@ -1250,6 +1253,7 @@ function inferFnSignature(ctx, fnItem) {
             paramTypes,
             returnType,
             fnItem.isUnsafe || false,
+            fnItem.isConst || false,
             fnItem.span,
         ),
     );
@@ -1364,6 +1368,7 @@ function resolveTypeNode(ctx, typeNode) {
                     paramsResult.types,
                     returnType,
                     typeNode.isUnsafe || false,
+                    typeNode.isConst || false,
                     typeNode.span,
                 ),
             );
@@ -2097,7 +2102,7 @@ function inferCall(ctx, call) {
     if (calleeType.kind === TypeKind.TypeVar) {
         const returnType = ctx.freshTypeVar();
         const paramTypes = call.args.map(() => ctx.freshTypeVar());
-        const expectedFnType = makeFnType(paramTypes, returnType, false);
+        const expectedFnType = makeFnType(paramTypes, returnType, false, false);
         const unifyResult = unify(ctx, calleeType, expectedFnType);
         if (!unifyResult.ok) {
             return { ok: false, errors: [unifyResult.error] };
@@ -2285,6 +2290,7 @@ function inferClosure(ctx, closure, expectedType = undefined) {
         paramTypes.map((/** @type {Type} */ t) => ctx.resolveType(t)),
         ctx.resolveType(returnType),
         false,
+        false, // closures aren't currently parsed with `const`
         closure.span,
     );
     closure.inferredType = fnType;
@@ -2326,6 +2332,7 @@ function inferField(ctx, field) {
             fnType.params.slice(1),
             fnType.returnType,
             fnType.isUnsafe || false,
+            fnType.isConst || false,
             field.span,
         );
         field.resolvedMethodSymbolName = symbolName;
@@ -2356,13 +2363,13 @@ function inferField(ctx, field) {
             const candidates = ctx.lookupMethodCandidates(structType.name, fieldName);
             if (candidates.inherent && candidates.inherent.type?.kind === TypeKind.Fn) {
                 return asBoundMethod(
-                    /** @type {FnType} */ (candidates.inherent.type),
+                    /** @type {FnType} */(candidates.inherent.type),
                     candidates.inherent.symbolName,
                 );
             }
             if (candidates.traits.length === 1 && candidates.traits[0].type?.kind === TypeKind.Fn) {
                 return asBoundMethod(
-                    /** @type {FnType} */ (candidates.traits[0].type),
+                    /** @type {FnType} */(candidates.traits[0].type),
                     candidates.traits[0].symbolName,
                 );
             }
@@ -2393,13 +2400,13 @@ function inferField(ctx, field) {
                 const candidates = ctx.lookupMethodCandidates(namedType.name, fieldName);
                 if (candidates.inherent && candidates.inherent.type?.kind === TypeKind.Fn) {
                     return asBoundMethod(
-                        /** @type {FnType} */ (candidates.inherent.type),
+                        /** @type {FnType} */(candidates.inherent.type),
                         candidates.inherent.symbolName,
                     );
                 }
                 if (candidates.traits.length === 1 && candidates.traits[0].type?.kind === TypeKind.Fn) {
                     return asBoundMethod(
-                        /** @type {FnType} */ (candidates.traits[0].type),
+                        /** @type {FnType} */(candidates.traits[0].type),
                         candidates.traits[0].symbolName,
                     );
                 }
@@ -2427,13 +2434,13 @@ function inferField(ctx, field) {
         const candidates = ctx.lookupMethodCandidates(typeKey, fieldName);
         if (candidates.inherent && candidates.inherent.type?.kind === TypeKind.Fn) {
             return asBoundMethod(
-                /** @type {FnType} */ (candidates.inherent.type),
+                /** @type {FnType} */(candidates.inherent.type),
                 candidates.inherent.symbolName,
             );
         }
         if (candidates.traits.length === 1 && candidates.traits[0].type?.kind === TypeKind.Fn) {
             return asBoundMethod(
-                /** @type {FnType} */ (candidates.traits[0].type),
+                /** @type {FnType} */(candidates.traits[0].type),
                 candidates.traits[0].symbolName,
             );
         }
@@ -2996,7 +3003,7 @@ function inferPath(ctx, pathExpr) {
             }
 
             // Return a function type: (field_types) -> EnumType
-            return ok(makeFnType(fieldTypes, enumType, false, pathExpr.span));
+            return ok(makeFnType(fieldTypes, enumType, false, false, pathExpr.span));
         }
 
         // No fields - return the enum type directly

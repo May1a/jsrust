@@ -598,6 +598,7 @@ function lowerFnItem(ctx, fn, typeCtx) {
                 bindings,
             ),
             fnType.isUnsafe || false,
+            fnType.isConst || false,
             fnType.span,
         );
     }
@@ -633,6 +634,7 @@ function lowerFnItem(ctx, fn, typeCtx) {
         body,
         fn.isAsync || false,
         fn.isUnsafe || false,
+        fn.isConst || false,
         fn.isTest || false,
         fn.expectedOutput ?? null,
     );
@@ -1538,7 +1540,7 @@ function lowerAssertEqMacro(ctx, macroExpr, typeCtx) {
         macroExpr.span,
         BUILTIN_ASSERT_FAIL_FN,
         -1,
-        makeFnType([], makeUnitType(macroExpr.span), false, macroExpr.span),
+        makeFnType([], makeUnitType(macroExpr.span), false, false, macroExpr.span),
     );
     const failCall = makeHCallExpr(
         macroExpr.span,
@@ -1640,6 +1642,7 @@ function lowerPrintMacro(ctx, macroExpr, typeCtx, builtinName) {
     const calleeType = makeFnType(
         hirArgs.map((/**@type{any}*/ arg) => arg.ty || byteType),
         unitType,
+        false,
         false,
         macroExpr.span,
     );
@@ -1836,7 +1839,7 @@ function lowerClosure(ctx, closure, typeCtx) {
     const inferredType =
         closure.inferredType && closure.inferredType.kind === TypeKind.Fn
             ? closure.inferredType
-            : makeFnType([], makeUnitType(closure.span), false, closure.span);
+            : makeFnType([], makeUnitType(closure.span), false, false, closure.span);
     const captures = closure.captureInfos || [];
     const helperName = `${ctx.currentFn || "closure"}::__closure_${ctx.nextClosureSymbolId()}`;
 
@@ -1846,6 +1849,7 @@ function lowerClosure(ctx, closure, typeCtx) {
     const helperType = makeFnType(
         [...captureParamTypes, ...inferredType.params],
         inferredType.returnType,
+        false,
         false,
         closure.span,
     );
@@ -2659,6 +2663,7 @@ function resolveTypeFromAst(typeNode, typeCtx) {
                     params,
                     returnType,
                     isUnsafe: typeNode.isUnsafe || false,
+                    isConst: typeNode.isConst || false,
                 },
             };
         }
