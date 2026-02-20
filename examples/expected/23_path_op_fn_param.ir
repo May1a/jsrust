@@ -1,0 +1,25 @@
+; Module: root
+
+; String literals:
+;   lit0 = "{}"
+
+fn bar(arg0: foo::Bar) -> i32 {
+
+    block0:
+        v1 = struct_get v0, 0
+        ret v1
+
+}
+
+fn main() -> () {
+
+    block0:
+        v2 = iconst i32 1
+        v3 = struct_create foo::Bar { v2 }
+        v4 = sconst lit0
+        v5 = iconst i32 1
+        v6 = call 97299(v3)
+        v7 = call 862609(v4, v5, v6)
+        ret
+
+}
