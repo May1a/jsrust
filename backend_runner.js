@@ -491,6 +491,55 @@ function rebuildBackendWasm() {
 function runGeneratedWasmBytes(generatedWasmBytes) {
     /** @type {number[]} */
     const stdout = [];
+    /** @type {WebAssembly.Memory | null} */
+    let generatedMemory = null;
+
+    /**
+     * @param {number} value
+     */
+    function pushAscii(value) {
+        stdout.push(value & 0xff);
+    }
+
+    /**
+     * @param {string} text
+     */
+    function pushText(text) {
+        const encoded = textEncoder.encode(text);
+        for (const value of encoded) {
+            pushAscii(value);
+        }
+    }
+
+    /**
+     * @param {bigint | number} value
+     * @returns {bigint}
+     */
+    function toBigInt(value) {
+        return typeof value === "bigint" ? value : BigInt(value);
+    }
+
+    /**
+     * @param {number} value
+     * @returns {boolean}
+     */
+    function readCString(value) {
+        if (!(generatedMemory instanceof WebAssembly.Memory)) {
+            return false;
+        }
+        const bytes = new Uint8Array(generatedMemory.buffer);
+        let ptr = value >>> 0;
+        while (ptr < bytes.length) {
+            const b = bytes[ptr];
+            if (b === 0) {
+                return true;
+            }
+            stdout.push(b);
+            ptr += 1;
+        }
+        return false;
+    }
+
     const imports = {
         env: {
             /** @param {number} value */
@@ -499,6 +548,40 @@ function runGeneratedWasmBytes(generatedWasmBytes) {
                 return 1;
             },
             jsrust_flush() {
+                return 1;
+            },
+            /** @param {number} ptr */
+            jsrust_write_cstr(ptr) {
+                return readCString(ptr) ? 1 : 0;
+            },
+            /** @param {bigint | number} value */
+            jsrust_write_i64(value) {
+                pushText(toBigInt(value).toString());
+                return 1;
+            },
+            /** @param {number} value */
+            jsrust_write_f64(value) {
+                const text = Number.isInteger(value)
+                    ? value.toFixed(1)
+                    : String(value);
+                pushText(text);
+                return 1;
+            },
+            /** @param {number} value */
+            jsrust_write_bool(value) {
+                pushText(value ? "true" : "false");
+                return 1;
+            },
+            /** @param {bigint | number} value */
+            jsrust_write_char(value) {
+                const codePoint = Number(toBigInt(value));
+                if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) {
+                    return 0;
+                }
+                if (codePoint >= 0xd800 && codePoint <= 0xdfff) {
+                    return 0;
+                }
+                pushText(String.fromCodePoint(codePoint));
                 return 1;
             },
         },
@@ -510,6 +593,9 @@ function runGeneratedWasmBytes(generatedWasmBytes) {
         moduleInput.set(generatedWasmBytes);
         const module = new WebAssembly.Module(moduleInput);
         instance = new WebAssembly.Instance(module, imports);
+        if (instance.exports.memory instanceof WebAssembly.Memory) {
+            generatedMemory = instance.exports.memory;
+        }
     } catch (e) {
         return {
             ok: false,

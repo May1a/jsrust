@@ -321,7 +321,9 @@ static void Test_codegenPositiveFixtures(void)
         "../tests/fixtures/backend_ir_v2/01_empty_main.bin",
         "../tests/fixtures/backend_ir_v2/02_literals.bin",
         "../tests/fixtures/backend_ir_v2/03_arithmetic.bin",
-        "../tests/fixtures/backend_ir_v2/04_functions.bin"
+        "../tests/fixtures/backend_ir_v2/04_functions.bin",
+        "../tests/fixtures/backend_ir_v2/07_structs.bin",
+        "../tests/fixtures/backend_ir_v2/09_references.bin"
     };
     size_t count;
     size_t index;
@@ -410,37 +412,6 @@ static void Test_codegenDeterminism(void)
     free(snapshot);
 }
 
-static void Test_codegenUnsupportedFixtures(void)
-{
-    const char* fixtures[] = {
-        "../tests/fixtures/backend_ir_v2/07_structs.bin",
-        "../tests/fixtures/backend_ir_v2/09_references.bin"
-    };
-    size_t count;
-    size_t index;
-
-    count = sizeof(fixtures) / sizeof(fixtures[0]);
-    for (index = 0; index < count; ++index) {
-        uint8_t* data;
-        size_t len;
-        jsrust_backend_codegen_result result;
-
-        if (!Test_readFile(fixtures[index], &data, &len)) {
-            fprintf(stderr, "FAIL: unable to read unsupported codegen fixture %s\n", fixtures[index]);
-            g_failures += 1;
-            continue;
-        }
-
-        result = jsrust_backend_codegen_wasm_bytes(data, len, "main");
-        free(data);
-
-        if (result.code != JSRUST_BACKEND_ERR_VALIDATE) {
-            fprintf(stderr, "FAIL: expected validate error for unsupported fixture %s, got code=%d message=%s\n", fixtures[index], (int)result.code, result.message);
-            g_failures += 1;
-        }
-    }
-}
-
 int main(void)
 {
     Test_positiveFixtures();
@@ -457,7 +428,6 @@ int main(void)
     Test_codegenMagicVersion();
     Test_codegenPositiveFixtures();
     Test_codegenDeterminism();
-    Test_codegenUnsupportedFixtures();
 
     if (g_failures > 0) {
         fprintf(stderr, "Backend tests failed: %d\n", g_failures);

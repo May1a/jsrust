@@ -17,8 +17,11 @@ enum {
     WasmSection_Type = 1,
     WasmSection_Import = 2,
     WasmSection_Function = 3,
+    WasmSection_Memory = 5,
+    WasmSection_Global = 6,
     WasmSection_Export = 7,
-    WasmSection_Code = 10
+    WasmSection_Code = 10,
+    WasmSection_Data = 11
 };
 
 enum {
@@ -29,16 +32,29 @@ enum {
     WasmOp_Else = 0x05,
     WasmOp_End = 0x0B,
     WasmOp_Br = 0x0C,
+    WasmOp_BrIf = 0x0D,
     WasmOp_Return = 0x0F,
     WasmOp_Call = 0x10,
     WasmOp_Drop = 0x1A,
     WasmOp_LocalGet = 0x20,
     WasmOp_LocalSet = 0x21,
+    WasmOp_GlobalGet = 0x23,
+    WasmOp_GlobalSet = 0x24,
+    WasmOp_I32Load = 0x28,
+    WasmOp_I64Load = 0x29,
+    WasmOp_F64Load = 0x2B,
+    WasmOp_I32Load8U = 0x2D,
+    WasmOp_I32Store = 0x36,
+    WasmOp_I64Store = 0x37,
+    WasmOp_F64Store = 0x39,
+    WasmOp_I32Store8 = 0x3A,
     WasmOp_I32Const = 0x41,
     WasmOp_I64Const = 0x42,
     WasmOp_F64Const = 0x44,
+    WasmOp_I32LtU = 0x49,
     WasmOp_I32Eqz = 0x45,
     WasmOp_I32Eq = 0x46,
+    WasmOp_I64Eqz = 0x50,
     WasmOp_I64Eq = 0x51,
     WasmOp_I64Ne = 0x52,
     WasmOp_I64LtS = 0x53,
@@ -52,6 +68,7 @@ enum {
     WasmOp_F64Gt = 0x65,
     WasmOp_F64Ge = 0x66,
     WasmOp_I32And = 0x71,
+    WasmOp_I32Add = 0x6A,
     WasmOp_I64Add = 0x7C,
     WasmOp_I64Sub = 0x7D,
     WasmOp_I64Mul = 0x7E,
@@ -67,8 +84,12 @@ enum {
     WasmOp_F64Mul = 0xA2,
     WasmOp_F64Div = 0xA3,
     WasmOp_I32WrapI64 = 0xA7,
+    WasmOp_I64ExtendI32S = 0xAC,
+    WasmOp_I64ExtendI32U = 0xAD,
     WasmOp_I64TruncF64S = 0xB0,
-    WasmOp_F64ConvertI64S = 0xB9
+    WasmOp_F64ConvertI64S = 0xB9,
+    WasmOp_I64ReinterpretF64 = 0xBD,
+    WasmOp_F64ReinterpretI64 = 0xBF
 };
 
 enum {
@@ -103,8 +124,14 @@ typedef struct {
     const IRBlock* block;
 } WasmBlockMap;
 
+typedef struct {
+    uint32_t localId;
+    uint32_t localIndex;
+} WasmLocalSlotMap;
+
 ARENA_VEC_DECLARE(WasmValueMapVec, WasmValueMap)
 ARENA_VEC_DECLARE(WasmBlockMapVec, WasmBlockMap)
+ARENA_VEC_DECLARE(WasmLocalSlotMapVec, WasmLocalSlotMap)
 
 typedef struct {
     Arena* arena;
@@ -113,6 +140,15 @@ typedef struct {
     const IRFunction* entryFunction;
     uint32_t importWriteByteIndex;
     uint32_t importFlushIndex;
+    uint32_t importWriteCStringIndex;
+    uint32_t importWriteI64Index;
+    uint32_t importWriteF64Index;
+    uint32_t importWriteBoolIndex;
+    uint32_t importWriteCharIndex;
+    uint32_t importCount;
+    uint32_t heapPtrGlobalIndex;
+    uint32_t heapBase;
+    uint32_t* literalOffsets;
 } WasmEmitContext;
 
 typedef struct {
@@ -124,8 +160,12 @@ typedef struct {
     uint32_t currentBlockLocal;
     uint32_t localCount;
     uint8_t* localTypes;
+    uint32_t tempLocal0;
+    uint32_t tempLocal1;
+    uint32_t tempLocal2;
     WasmValueMapVec values;
     WasmBlockMapVec blocks;
+    WasmLocalSlotMapVec localSlots;
 } WasmFunctionLowering;
 
 static const char* g_builtinPrintlnName = "__jsrust_builtin_println_bytes";
@@ -161,6 +201,11 @@ static uint8_t WasmEmit_typeFromIR(const IRType* type, bool* isVoid)
         return WasmValType_I32;
     case IRTypeKind_Float:
         return WasmValType_F64;
+    case IRTypeKind_Ptr:
+    case IRTypeKind_Struct:
+    case IRTypeKind_Enum:
+    case IRTypeKind_Fn:
+        return WasmValType_I32;
     case IRTypeKind_Unit:
         if (isVoid)
             *isVoid = true;
@@ -233,6 +278,18 @@ static const WasmBlockMap* WasmFunctionLowering_findBlock(const WasmFunctionLowe
     return NULL;
 }
 
+static const WasmLocalSlotMap* WasmFunctionLowering_findLocalSlot(const WasmFunctionLowering* lowering, uint32_t localId)
+{
+    size_t index;
+
+    for (index = 0; index < lowering->localSlots.len; ++index) {
+        if (lowering->localSlots.items[index].localId == localId)
+            return &lowering->localSlots.items[index];
+    }
+
+    return NULL;
+}
+
 static bool WasmFunctionLowering_emitOp(WasmEncodeBuffer* code, uint8_t op)
 {
     return WasmEncodeBuffer_appendByte(code, op);
@@ -250,6 +307,20 @@ static bool WasmFunctionLowering_emitLocalSet(WasmEncodeBuffer* code, uint32_t l
     if (!WasmFunctionLowering_emitOp(code, WasmOp_LocalSet))
         return false;
     return WasmEncode_writeU32Leb(code, localIndex);
+}
+
+static bool WasmFunctionLowering_emitGlobalGet(WasmEncodeBuffer* code, uint32_t globalIndex)
+{
+    if (!WasmFunctionLowering_emitOp(code, WasmOp_GlobalGet))
+        return false;
+    return WasmEncode_writeU32Leb(code, globalIndex);
+}
+
+static bool WasmFunctionLowering_emitGlobalSet(WasmEncodeBuffer* code, uint32_t globalIndex)
+{
+    if (!WasmFunctionLowering_emitOp(code, WasmOp_GlobalSet))
+        return false;
+    return WasmEncode_writeU32Leb(code, globalIndex);
 }
 
 static bool WasmFunctionLowering_emitI32Const(WasmEncodeBuffer* code, int32_t value)
@@ -278,6 +349,54 @@ static bool WasmFunctionLowering_emitCall(WasmEncodeBuffer* code, uint32_t funct
     if (!WasmFunctionLowering_emitOp(code, WasmOp_Call))
         return false;
     return WasmEncode_writeU32Leb(code, functionIndex);
+}
+
+static bool WasmFunctionLowering_emitMemArg(WasmEncodeBuffer* code, uint32_t align, uint32_t offset)
+{
+    return WasmEncode_writeU32Leb(code, align) && WasmEncode_writeU32Leb(code, offset);
+}
+
+static bool WasmFunctionLowering_emitLoad(WasmEncodeBuffer* code, uint8_t op, uint32_t align, uint32_t offset)
+{
+    if (!WasmFunctionLowering_emitOp(code, op))
+        return false;
+    return WasmFunctionLowering_emitMemArg(code, align, offset);
+}
+
+static bool WasmFunctionLowering_emitStore(WasmEncodeBuffer* code, uint8_t op, uint32_t align, uint32_t offset)
+{
+    if (!WasmFunctionLowering_emitOp(code, op))
+        return false;
+    return WasmFunctionLowering_emitMemArg(code, align, offset);
+}
+
+static bool WasmFunctionLowering_emitHostWriteChecked(WasmFunctionLowering* lowering, WasmEncodeBuffer* code, uint32_t importIndex)
+{
+    (void)lowering;
+    if (!WasmFunctionLowering_emitCall(code, importIndex))
+        return false;
+    if (!WasmFunctionLowering_emitOp(code, WasmOp_I32Eqz))
+        return false;
+    if (!WasmFunctionLowering_emitOp(code, WasmOp_If))
+        return false;
+    if (!WasmEncodeBuffer_appendByte(code, WasmBlockType_Void))
+        return false;
+    if (!WasmFunctionLowering_emitOp(code, WasmOp_Unreachable))
+        return false;
+    return WasmFunctionLowering_emitOp(code, WasmOp_End);
+}
+
+static uint32_t WasmEmit_stackSlotSize(const IRType* type)
+{
+    if (!type)
+        return 8;
+
+    switch (type->kind) {
+    case IRTypeKind_Unit:
+        return 0;
+    default:
+        return 8;
+    }
 }
 
 static BackendStatus WasmFunctionLowering_emitGetValue(WasmFunctionLowering* lowering, WasmEncodeBuffer* code, uint32_t valueId, uint8_t* outType)
@@ -582,7 +701,25 @@ static BackendStatus WasmFunctionLowering_emitPrintBuiltin(
     return BackendStatus_ok();
 }
 
-static BackendStatus WasmFunctionLowering_emitFormatValueConst(
+static BackendStatus WasmFunctionLowering_emitWriteCStringValue(
+    WasmFunctionLowering* lowering,
+    WasmEncodeBuffer* code,
+    uint32_t valueId)
+{
+    uint8_t valueType;
+    BackendStatus status;
+
+    status = WasmFunctionLowering_emitGetValue(lowering, code, valueId, &valueType);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+    if (valueType != WasmValType_I32)
+        return WasmEmit_validateError("wasm codegen: string format value must be ptr/i32");
+    if (!WasmFunctionLowering_emitHostWriteChecked(lowering, code, lowering->context->importWriteCStringIndex))
+        return WasmEmit_internalError("wasm codegen: failed to emit cstr write");
+    return BackendStatus_ok();
+}
+
+static BackendStatus WasmFunctionLowering_emitFormatValue(
     WasmFunctionLowering* lowering,
     WasmEncodeBuffer* code,
     int64_t tag,
@@ -590,63 +727,97 @@ static BackendStatus WasmFunctionLowering_emitFormatValueConst(
 {
     uint8_t bytes[64];
     size_t count;
+    const WasmValueMap* map;
 
     switch (tag) {
     case WasmFormatTag_String: {
         uint32_t literalId;
         ByteSpan literal;
 
-        if (WasmFunctionLowering_getConstString(lowering, valueId, &literalId).code != JSRUST_BACKEND_OK)
-            return WasmEmit_validateError("wasm codegen: format string value must be const sconst");
-        if (literalId >= lowering->context->module->stringLiteralCount)
-            return WasmEmit_validateError("wasm codegen: format string literal id out of bounds");
-        literal = lowering->context->module->stringLiterals[literalId];
-        if (!WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, literal))
-            return WasmEmit_internalError("wasm codegen: failed to emit literal bytes");
-        return BackendStatus_ok();
+        if (WasmFunctionLowering_getConstString(lowering, valueId, &literalId).code == JSRUST_BACKEND_OK) {
+            if (literalId >= lowering->context->module->stringLiteralCount)
+                return WasmEmit_validateError("wasm codegen: format string literal id out of bounds");
+            literal = lowering->context->module->stringLiterals[literalId];
+            if (!WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, literal))
+                return WasmEmit_internalError("wasm codegen: failed to emit literal bytes");
+            return BackendStatus_ok();
+        }
+        return WasmFunctionLowering_emitWriteCStringValue(lowering, code, valueId);
     }
     case WasmFormatTag_Int: {
         int64_t value;
-        if (WasmFunctionLowering_getConstInt(lowering, valueId, &value).code != JSRUST_BACKEND_OK)
-            return WasmEmit_validateError("wasm codegen: format int value must be const");
-        count = WasmEmit_signedDecimal(value, bytes, sizeof(bytes));
-        if (!WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, ByteSpan_fromParts(bytes, count)))
-            return WasmEmit_internalError("wasm codegen: failed to emit int literal bytes");
+        if (WasmFunctionLowering_getConstInt(lowering, valueId, &value).code == JSRUST_BACKEND_OK) {
+            count = WasmEmit_signedDecimal(value, bytes, sizeof(bytes));
+            if (!WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, ByteSpan_fromParts(bytes, count)))
+                return WasmEmit_internalError("wasm codegen: failed to emit int literal bytes");
+            return BackendStatus_ok();
+        }
+        map = WasmFunctionLowering_findValueConst(lowering, valueId);
+        if (!map || map->wasmType != WasmValType_I64)
+            return WasmEmit_validateError("wasm codegen: format int value must be integer");
+        if (WasmFunctionLowering_emitGetValue(lowering, code, valueId, NULL).code != JSRUST_BACKEND_OK)
+            return WasmEmit_validateError("wasm codegen: failed to emit dynamic int format value");
+        if (!WasmFunctionLowering_emitHostWriteChecked(lowering, code, lowering->context->importWriteI64Index))
+            return WasmEmit_internalError("wasm codegen: failed to emit int host writer");
         return BackendStatus_ok();
     }
     case WasmFormatTag_Float: {
         double value;
-        if (WasmFunctionLowering_getConstFloat(lowering, valueId, &value).code != JSRUST_BACKEND_OK)
-            return WasmEmit_validateError("wasm codegen: format float value must be const");
-        count = WasmEmit_floatDecimal(value, bytes, sizeof(bytes));
-        if (!WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, ByteSpan_fromParts(bytes, count)))
-            return WasmEmit_internalError("wasm codegen: failed to emit float literal bytes");
+        if (WasmFunctionLowering_getConstFloat(lowering, valueId, &value).code == JSRUST_BACKEND_OK) {
+            count = WasmEmit_floatDecimal(value, bytes, sizeof(bytes));
+            if (!WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, ByteSpan_fromParts(bytes, count)))
+                return WasmEmit_internalError("wasm codegen: failed to emit float literal bytes");
+            return BackendStatus_ok();
+        }
+        map = WasmFunctionLowering_findValueConst(lowering, valueId);
+        if (!map || map->wasmType != WasmValType_F64)
+            return WasmEmit_validateError("wasm codegen: format float value must be float");
+        if (WasmFunctionLowering_emitGetValue(lowering, code, valueId, NULL).code != JSRUST_BACKEND_OK)
+            return WasmEmit_validateError("wasm codegen: failed to emit dynamic float format value");
+        if (!WasmFunctionLowering_emitHostWriteChecked(lowering, code, lowering->context->importWriteF64Index))
+            return WasmEmit_internalError("wasm codegen: failed to emit float host writer");
         return BackendStatus_ok();
     }
     case WasmFormatTag_Bool: {
         int64_t value;
-        if (WasmFunctionLowering_getConstInt(lowering, valueId, &value).code != JSRUST_BACKEND_OK)
-            return WasmEmit_validateError("wasm codegen: format bool value must be const");
-        if (value)
-            return WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, ByteSpan_fromCString("true")) ? BackendStatus_ok()
-                                                                                                             : WasmEmit_internalError("wasm codegen: failed to emit bool true");
-        return WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, ByteSpan_fromCString("false")) ? BackendStatus_ok()
-                                                                                                           : WasmEmit_internalError("wasm codegen: failed to emit bool false");
+        if (WasmFunctionLowering_getConstInt(lowering, valueId, &value).code == JSRUST_BACKEND_OK) {
+            if (value)
+                return WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, ByteSpan_fromCString("true")) ? BackendStatus_ok()
+                                                                                                                 : WasmEmit_internalError("wasm codegen: failed to emit bool true");
+            return WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, ByteSpan_fromCString("false")) ? BackendStatus_ok()
+                                                                                                               : WasmEmit_internalError("wasm codegen: failed to emit bool false");
+        }
+        map = WasmFunctionLowering_findValueConst(lowering, valueId);
+        if (!map || map->wasmType != WasmValType_I32)
+            return WasmEmit_validateError("wasm codegen: format bool value must be bool");
+        if (WasmFunctionLowering_emitGetValue(lowering, code, valueId, NULL).code != JSRUST_BACKEND_OK)
+            return WasmEmit_validateError("wasm codegen: failed to emit dynamic bool format value");
+        if (!WasmFunctionLowering_emitHostWriteChecked(lowering, code, lowering->context->importWriteBoolIndex))
+            return WasmEmit_internalError("wasm codegen: failed to emit bool host writer");
+        return BackendStatus_ok();
     }
     case WasmFormatTag_Char: {
         int64_t value;
         uint8_t utf8[4];
         size_t utf8Len;
 
-        if (WasmFunctionLowering_getConstInt(lowering, valueId, &value).code != JSRUST_BACKEND_OK)
-            return WasmEmit_validateError("wasm codegen: format char value must be const");
-        if (value < 0 || value > 0x10FFFF)
-            return WasmEmit_validateError("wasm codegen: format char value out of Unicode range");
-        utf8Len = WasmEmit_encodeUtf8((uint32_t)value, utf8);
-        if (utf8Len == 0)
-            return WasmEmit_validateError("wasm codegen: invalid Unicode scalar for char");
-        if (!WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, ByteSpan_fromParts(utf8, utf8Len)))
-            return WasmEmit_internalError("wasm codegen: failed to emit char utf8 bytes");
+        if (WasmFunctionLowering_getConstInt(lowering, valueId, &value).code == JSRUST_BACKEND_OK) {
+            if (value < 0 || value > 0x10FFFF)
+                return WasmEmit_validateError("wasm codegen: format char value out of Unicode range");
+            utf8Len = WasmEmit_encodeUtf8((uint32_t)value, utf8);
+            if (utf8Len == 0)
+                return WasmEmit_validateError("wasm codegen: invalid Unicode scalar for char");
+            if (!WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, ByteSpan_fromParts(utf8, utf8Len)))
+                return WasmEmit_internalError("wasm codegen: failed to emit char utf8 bytes");
+            return BackendStatus_ok();
+        }
+        map = WasmFunctionLowering_findValueConst(lowering, valueId);
+        if (!map || map->wasmType != WasmValType_I64)
+            return WasmEmit_validateError("wasm codegen: format char value must be integer");
+        if (WasmFunctionLowering_emitGetValue(lowering, code, valueId, NULL).code != JSRUST_BACKEND_OK)
+            return WasmEmit_validateError("wasm codegen: failed to emit dynamic char format value");
+        if (!WasmFunctionLowering_emitHostWriteChecked(lowering, code, lowering->context->importWriteCharIndex))
+            return WasmEmit_internalError("wasm codegen: failed to emit char host writer");
         return BackendStatus_ok();
     }
     default:
@@ -697,7 +868,7 @@ static BackendStatus WasmFunctionLowering_emitFormatBuiltin(
                 status = WasmFunctionLowering_getConstInt(lowering, inst->callArgs.items[argIndex], &tag);
                 if (status.code != JSRUST_BACKEND_OK)
                     return WasmEmit_validateError("wasm codegen: format tag must be const int");
-                status = WasmFunctionLowering_emitFormatValueConst(lowering, code, tag, inst->callArgs.items[argIndex + 1]);
+                status = WasmFunctionLowering_emitFormatValue(lowering, code, tag, inst->callArgs.items[argIndex + 1]);
                 if (status.code != JSRUST_BACKEND_OK)
                     return status;
                 argIndex += 2;
@@ -772,6 +943,142 @@ static BackendStatus WasmFunctionLowering_emitAssignArgs(
     return BackendStatus_ok();
 }
 
+static BackendStatus WasmFunctionLowering_emitEncodeStore(
+    WasmFunctionLowering* lowering,
+    WasmEncodeBuffer* code,
+    uint32_t valueId,
+    const IRType* type)
+{
+    BackendStatus status;
+    uint8_t valueType;
+
+    status = WasmFunctionLowering_emitGetValue(lowering, code, valueId, &valueType);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    if (!type) {
+        if (valueType == WasmValType_I64) {
+            if (!WasmFunctionLowering_emitStore(code, WasmOp_I64Store, 3, 0))
+                return WasmEmit_internalError("wasm codegen: failed to emit inferred i64.store");
+            return BackendStatus_ok();
+        }
+        if (valueType == WasmValType_F64) {
+            if (!WasmFunctionLowering_emitStore(code, WasmOp_F64Store, 3, 0))
+                return WasmEmit_internalError("wasm codegen: failed to emit inferred f64.store");
+            return BackendStatus_ok();
+        }
+        if (valueType == WasmValType_I32) {
+            if (!WasmFunctionLowering_emitStore(code, WasmOp_I32Store, 2, 0))
+                return WasmEmit_internalError("wasm codegen: failed to emit inferred i32.store");
+            return BackendStatus_ok();
+        }
+        return WasmEmit_validateError("wasm codegen: unsupported inferred store type");
+    }
+
+    switch (type ? type->kind : IRTypeKind_Unit) {
+    case IRTypeKind_Int:
+        if (valueType != WasmValType_I64)
+            return WasmEmit_validateError("wasm codegen: expected i64 store value");
+        if (!WasmFunctionLowering_emitStore(code, WasmOp_I64Store, 3, 0))
+            return WasmEmit_internalError("wasm codegen: failed to emit i64.store");
+        return BackendStatus_ok();
+    case IRTypeKind_Float:
+        if (valueType != WasmValType_F64)
+            return WasmEmit_validateError("wasm codegen: expected f64 store value");
+        if (!WasmFunctionLowering_emitStore(code, WasmOp_F64Store, 3, 0))
+            return WasmEmit_internalError("wasm codegen: failed to emit f64.store");
+        return BackendStatus_ok();
+    case IRTypeKind_Bool:
+    case IRTypeKind_Ptr:
+    case IRTypeKind_Struct:
+    case IRTypeKind_Enum:
+    case IRTypeKind_Fn:
+        if (valueType == WasmValType_I64) {
+            if (!WasmFunctionLowering_emitOp(code, WasmOp_I32WrapI64))
+                return WasmEmit_internalError("wasm codegen: failed to emit i32.wrap_i64");
+        } else if (valueType != WasmValType_I32) {
+            return WasmEmit_validateError("wasm codegen: expected i32 store value");
+        }
+        if (!WasmFunctionLowering_emitStore(code, WasmOp_I32Store, 2, 0))
+            return WasmEmit_internalError("wasm codegen: failed to emit i32.store");
+        return BackendStatus_ok();
+    default:
+        return WasmEmit_validateError("wasm codegen: unsupported store type");
+    }
+}
+
+static BackendStatus WasmFunctionLowering_emitDecodeLoad(
+    WasmFunctionLowering* lowering,
+    WasmEncodeBuffer* code,
+    const IRType* type)
+{
+    (void)lowering;
+
+    if (!type)
+        return WasmEmit_validateError("wasm codegen: missing load type");
+
+    switch (type->kind) {
+    case IRTypeKind_Int:
+        if (!WasmFunctionLowering_emitLoad(code, WasmOp_I64Load, 3, 0))
+            return WasmEmit_internalError("wasm codegen: failed to emit i64.load");
+        return BackendStatus_ok();
+    case IRTypeKind_Float:
+        if (!WasmFunctionLowering_emitLoad(code, WasmOp_F64Load, 3, 0))
+            return WasmEmit_internalError("wasm codegen: failed to emit f64.load");
+        return BackendStatus_ok();
+    case IRTypeKind_Bool:
+    case IRTypeKind_Ptr:
+    case IRTypeKind_Struct:
+    case IRTypeKind_Enum:
+    case IRTypeKind_Fn:
+        if (!WasmFunctionLowering_emitLoad(code, WasmOp_I32Load, 2, 0))
+            return WasmEmit_internalError("wasm codegen: failed to emit i32.load");
+        return BackendStatus_ok();
+    default:
+        return WasmEmit_validateError("wasm codegen: unsupported load type");
+    }
+}
+
+static BackendStatus WasmFunctionLowering_emitAssertZero(
+    WasmFunctionLowering* lowering,
+    WasmEncodeBuffer* code,
+    uint32_t valueId)
+{
+    uint8_t valueType;
+    BackendStatus status;
+
+    status = WasmFunctionLowering_emitGetValue(lowering, code, valueId, &valueType);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    if (valueType == WasmValType_I64) {
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_I64Eqz))
+            return WasmEmit_internalError("wasm codegen: failed to emit i64.eqz");
+    } else if (valueType == WasmValType_I32) {
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_I32Eqz))
+            return WasmEmit_internalError("wasm codegen: failed to emit i32.eqz");
+    } else if (valueType == WasmValType_F64) {
+        if (!WasmFunctionLowering_emitF64Const(code, 0.0))
+            return WasmEmit_internalError("wasm codegen: failed to emit zero float const");
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_F64Eq))
+            return WasmEmit_internalError("wasm codegen: failed to emit f64.eq");
+    } else {
+        return WasmEmit_validateError("wasm codegen: unsupported zero-check type");
+    }
+
+    if (!WasmFunctionLowering_emitOp(code, WasmOp_I32Eqz))
+        return WasmEmit_internalError("wasm codegen: failed to invert zero check");
+    if (!WasmFunctionLowering_emitOp(code, WasmOp_If))
+        return WasmEmit_internalError("wasm codegen: failed to emit zero-check if");
+    if (!WasmEncodeBuffer_appendByte(code, WasmBlockType_Void))
+        return WasmEmit_internalError("wasm codegen: failed to emit zero-check block type");
+    if (!WasmFunctionLowering_emitOp(code, WasmOp_Unreachable))
+        return WasmEmit_internalError("wasm codegen: failed to emit zero-check trap");
+    if (!WasmFunctionLowering_emitOp(code, WasmOp_End))
+        return WasmEmit_internalError("wasm codegen: failed to close zero-check if");
+    return BackendStatus_ok();
+}
+
 static BackendStatus WasmFunctionLowering_emitInstruction(
     WasmFunctionLowering* lowering,
     WasmEncodeBuffer* code,
@@ -779,9 +1086,23 @@ static BackendStatus WasmFunctionLowering_emitInstruction(
 {
     WasmValueMap* outValue;
     BackendStatus status;
+    bool resultIsVoid;
+    uint8_t ignoredResultType;
 
+    ignoredResultType = 0;
+    resultIsVoid = true;
+    if (inst->hasResult) {
+        if (inst->kind == IRInstKind_Sconst) {
+            ignoredResultType = WasmValType_I32;
+            resultIsVoid = false;
+        } else {
+            ignoredResultType = WasmEmit_typeFromIR(inst->ty, &resultIsVoid);
+            if (ignoredResultType == 0)
+                return WasmEmit_validateError("wasm codegen: instruction result type unavailable");
+        }
+    }
     outValue = inst->hasResult ? WasmFunctionLowering_findValue(lowering, inst->id) : NULL;
-    if (inst->hasResult && !outValue)
+    if (inst->hasResult && !resultIsVoid && !outValue)
         return WasmEmit_validateError("wasm codegen: instruction result id missing");
 
     switch (inst->kind) {
@@ -804,7 +1125,9 @@ static BackendStatus WasmFunctionLowering_emitInstruction(
             return WasmEmit_internalError("wasm codegen: failed to store bconst");
         return BackendStatus_ok();
     case IRInstKind_Sconst:
-        if (!WasmFunctionLowering_emitI32Const(code, (int32_t)inst->literalId))
+        if (inst->literalId >= lowering->context->module->stringLiteralCount)
+            return WasmEmit_validateError("wasm codegen: sconst literal id out of bounds");
+        if (!WasmFunctionLowering_emitI32Const(code, (int32_t)lowering->context->literalOffsets[inst->literalId]))
             return WasmEmit_internalError("wasm codegen: failed to emit sconst");
         if (inst->hasResult && !WasmFunctionLowering_emitLocalSet(code, outValue->localIndex))
             return WasmEmit_internalError("wasm codegen: failed to store sconst");
@@ -1045,26 +1368,234 @@ static BackendStatus WasmFunctionLowering_emitInstruction(
                 return status;
         }
 
-        if (!WasmFunctionLowering_emitCall(code, 2 + calleeOrdinal))
+        if (!WasmFunctionLowering_emitCall(code, lowering->context->importCount + calleeOrdinal))
             return WasmEmit_internalError("wasm codegen: failed to emit call");
 
-        if (inst->hasResult && !WasmFunctionLowering_emitLocalSet(code, outValue->localIndex))
+        if (inst->hasResult && !resultIsVoid && !WasmFunctionLowering_emitLocalSet(code, outValue->localIndex))
             return WasmEmit_internalError("wasm codegen: failed to store call result");
         return BackendStatus_ok();
     }
-    case IRInstKind_Alloca:
-    case IRInstKind_Load:
-    case IRInstKind_Store:
-    case IRInstKind_Memcpy:
-    case IRInstKind_Gep:
-    case IRInstKind_Ptradd:
     case IRInstKind_Null:
-    case IRInstKind_StructCreate:
+        if (!WasmFunctionLowering_emitI32Const(code, 0))
+            return WasmEmit_internalError("wasm codegen: failed to emit null pointer");
+        if (inst->hasResult && !resultIsVoid && !WasmFunctionLowering_emitLocalSet(code, outValue->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to store null pointer");
+        return BackendStatus_ok();
+    case IRInstKind_Alloca: {
+        uint32_t allocSize;
+        const WasmLocalSlotMap* slot;
+        allocSize = WasmEmit_stackSlotSize(inst->ty ? inst->ty->elementType : NULL);
+        if (!inst->hasResult || resultIsVoid)
+            return WasmEmit_validateError("wasm codegen: alloca missing pointer result");
+        slot = WasmFunctionLowering_findLocalSlot(lowering, inst->localId);
+        if (!slot)
+            return WasmEmit_validateError("wasm codegen: alloca local slot not found");
+        if (!WasmFunctionLowering_emitLocalGet(code, slot->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to get alloca local slot");
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_I32Eqz))
+            return WasmEmit_internalError("wasm codegen: failed to compare alloca local slot");
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_If))
+            return WasmEmit_internalError("wasm codegen: failed to emit alloca init if");
+        if (!WasmEncodeBuffer_appendByte(code, WasmBlockType_Void))
+            return WasmEmit_internalError("wasm codegen: failed to emit alloca init block type");
+        if (!WasmFunctionLowering_emitGlobalGet(code, lowering->context->heapPtrGlobalIndex))
+            return WasmEmit_internalError("wasm codegen: failed to emit heap ptr get");
+        if (!WasmFunctionLowering_emitLocalSet(code, slot->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to initialize alloca local slot");
+        if (!WasmFunctionLowering_emitGlobalGet(code, lowering->context->heapPtrGlobalIndex))
+            return WasmEmit_internalError("wasm codegen: failed to emit heap ptr get for advance");
+        if (!WasmFunctionLowering_emitI32Const(code, (int32_t)allocSize))
+            return WasmEmit_internalError("wasm codegen: failed to emit alloca size");
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_I32Add))
+            return WasmEmit_internalError("wasm codegen: failed to emit heap pointer add");
+        if (!WasmFunctionLowering_emitGlobalSet(code, lowering->context->heapPtrGlobalIndex))
+            return WasmEmit_internalError("wasm codegen: failed to emit heap ptr set");
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_End))
+            return WasmEmit_internalError("wasm codegen: failed to close alloca init if");
+        if (!WasmFunctionLowering_emitLocalGet(code, slot->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to read alloca local slot");
+        if (!WasmFunctionLowering_emitLocalSet(code, outValue->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to store alloca pointer");
+        return BackendStatus_ok();
+    }
+    case IRInstKind_Load:
+        status = WasmFunctionLowering_emitGetValue(lowering, code, inst->ptr, NULL);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        status = WasmFunctionLowering_emitDecodeLoad(lowering, code, inst->ty);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        if (inst->hasResult && !resultIsVoid && !WasmFunctionLowering_emitLocalSet(code, outValue->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to store load result");
+        return BackendStatus_ok();
+    case IRInstKind_Store:
+        status = WasmFunctionLowering_emitGetValue(lowering, code, inst->ptr, NULL);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        status = WasmFunctionLowering_emitEncodeStore(lowering, code, inst->value, inst->valueType);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        return BackendStatus_ok();
+    case IRInstKind_Memcpy:
+        status = WasmFunctionLowering_emitGetValue(lowering, code, inst->dest, NULL);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        if (!WasmFunctionLowering_emitLocalSet(code, lowering->tempLocal0))
+            return WasmEmit_internalError("wasm codegen: failed to store memcpy dest temp");
+        status = WasmFunctionLowering_emitGetValue(lowering, code, inst->src, NULL);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        if (!WasmFunctionLowering_emitLocalSet(code, lowering->tempLocal1))
+            return WasmEmit_internalError("wasm codegen: failed to store memcpy src temp");
+        if (!WasmFunctionLowering_emitLocalGet(code, lowering->tempLocal0))
+            return WasmEmit_internalError("wasm codegen: failed to read memcpy dest temp");
+        if (!WasmFunctionLowering_emitLocalGet(code, lowering->tempLocal1))
+            return WasmEmit_internalError("wasm codegen: failed to read memcpy src temp");
+        if (!WasmFunctionLowering_emitLoad(code, WasmOp_I64Load, 3, 0))
+            return WasmEmit_internalError("wasm codegen: failed to emit memcpy load");
+        if (!WasmFunctionLowering_emitStore(code, WasmOp_I64Store, 3, 0))
+            return WasmEmit_internalError("wasm codegen: failed to emit memcpy store");
+        return BackendStatus_ok();
+    case IRInstKind_Gep: {
+        uint32_t index;
+        status = WasmFunctionLowering_emitGetValue(lowering, code, inst->ptr, NULL);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        if (inst->hasResult && !resultIsVoid && !WasmFunctionLowering_emitLocalSet(code, outValue->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to store gep result");
+        for (index = 0; index < inst->indices.count; ++index) {
+            status = WasmFunctionLowering_emitAssertZero(lowering, code, inst->indices.items[index]);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+        }
+        return BackendStatus_ok();
+    }
+    case IRInstKind_Ptradd:
+        status = WasmFunctionLowering_emitGetValue(lowering, code, inst->ptr, NULL);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        if (inst->hasResult && !resultIsVoid && !WasmFunctionLowering_emitLocalSet(code, outValue->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to store ptradd result");
+        status = WasmFunctionLowering_emitAssertZero(lowering, code, inst->offset);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        return BackendStatus_ok();
+    case IRInstKind_StructCreate: {
+        uint32_t index;
+        if (!inst->hasResult || resultIsVoid)
+            return WasmEmit_validateError("wasm codegen: struct_create missing result");
+        if (!WasmFunctionLowering_emitGlobalGet(code, lowering->context->heapPtrGlobalIndex))
+            return WasmEmit_internalError("wasm codegen: failed to emit heap ptr get for struct");
+        if (!WasmFunctionLowering_emitLocalSet(code, outValue->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to store struct pointer");
+        if (!WasmFunctionLowering_emitGlobalGet(code, lowering->context->heapPtrGlobalIndex))
+            return WasmEmit_internalError("wasm codegen: failed to emit heap ptr get for struct advance");
+        if (!WasmFunctionLowering_emitI32Const(code, (int32_t)(inst->fields.count * 8)))
+            return WasmEmit_internalError("wasm codegen: failed to emit struct byte size");
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_I32Add))
+            return WasmEmit_internalError("wasm codegen: failed to emit struct alloc add");
+        if (!WasmFunctionLowering_emitGlobalSet(code, lowering->context->heapPtrGlobalIndex))
+            return WasmEmit_internalError("wasm codegen: failed to advance struct heap pointer");
+        for (index = 0; index < inst->fields.count; ++index) {
+            if (!WasmFunctionLowering_emitLocalGet(code, outValue->localIndex))
+                return WasmEmit_internalError("wasm codegen: failed to get struct base pointer");
+            if (!WasmFunctionLowering_emitI32Const(code, (int32_t)(index * 8)))
+                return WasmEmit_internalError("wasm codegen: failed to emit struct field offset");
+            if (!WasmFunctionLowering_emitOp(code, WasmOp_I32Add))
+                return WasmEmit_internalError("wasm codegen: failed to emit struct field address");
+            status = WasmFunctionLowering_emitEncodeStore(lowering, code, inst->fields.items[index], NULL);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+        }
+        return BackendStatus_ok();
+    }
     case IRInstKind_StructGet:
+        status = WasmFunctionLowering_emitGetValue(lowering, code, inst->structValue, NULL);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        if (!WasmFunctionLowering_emitI32Const(code, (int32_t)(inst->fieldIndex * 8)))
+            return WasmEmit_internalError("wasm codegen: failed to emit struct_get field offset");
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_I32Add))
+            return WasmEmit_internalError("wasm codegen: failed to emit struct_get address add");
+        status = WasmFunctionLowering_emitDecodeLoad(lowering, code, inst->ty);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        if (inst->hasResult && !resultIsVoid && !WasmFunctionLowering_emitLocalSet(code, outValue->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to store struct_get result");
+        return BackendStatus_ok();
     case IRInstKind_EnumCreate:
+        if (!inst->hasResult || resultIsVoid)
+            return WasmEmit_validateError("wasm codegen: enum_create missing result");
+        if (!WasmFunctionLowering_emitGlobalGet(code, lowering->context->heapPtrGlobalIndex))
+            return WasmEmit_internalError("wasm codegen: failed to emit heap ptr get for enum");
+        if (!WasmFunctionLowering_emitLocalSet(code, outValue->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to store enum pointer");
+        if (!WasmFunctionLowering_emitGlobalGet(code, lowering->context->heapPtrGlobalIndex))
+            return WasmEmit_internalError("wasm codegen: failed to emit heap ptr get for enum advance");
+        if (!WasmFunctionLowering_emitI32Const(code, 16))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum byte size");
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_I32Add))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum alloc add");
+        if (!WasmFunctionLowering_emitGlobalSet(code, lowering->context->heapPtrGlobalIndex))
+            return WasmEmit_internalError("wasm codegen: failed to advance enum heap pointer");
+        if (!WasmFunctionLowering_emitLocalGet(code, outValue->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum base");
+        if (!WasmFunctionLowering_emitI32Const(code, (int32_t)inst->variant))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum variant");
+        if (!WasmFunctionLowering_emitStore(code, WasmOp_I32Store, 2, 0))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum tag store");
+        if (!WasmFunctionLowering_emitLocalGet(code, outValue->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum base for hasData");
+        if (!WasmFunctionLowering_emitI32Const(code, 4))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum hasData offset");
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_I32Add))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum hasData address");
+        if (!WasmFunctionLowering_emitI32Const(code, inst->hasData ? 1 : 0))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum hasData value");
+        if (!WasmFunctionLowering_emitStore(code, WasmOp_I32Store, 2, 0))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum hasData store");
+        if (!WasmFunctionLowering_emitLocalGet(code, outValue->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum base for payload");
+        if (!WasmFunctionLowering_emitI32Const(code, 8))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum payload offset");
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_I32Add))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum payload address");
+        if (inst->hasData) {
+            status = WasmFunctionLowering_emitEncodeStore(lowering, code, inst->data, NULL);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+        } else {
+            if (!WasmFunctionLowering_emitI64Const(code, 0))
+                return WasmEmit_internalError("wasm codegen: failed to emit enum payload zero");
+            if (!WasmFunctionLowering_emitStore(code, WasmOp_I64Store, 3, 0))
+                return WasmEmit_internalError("wasm codegen: failed to emit enum payload store");
+        }
+        return BackendStatus_ok();
     case IRInstKind_EnumGetTag:
+        status = WasmFunctionLowering_emitGetValue(lowering, code, inst->enumValue, NULL);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        if (!WasmFunctionLowering_emitLoad(code, WasmOp_I32Load, 2, 0))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum tag load");
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_I64ExtendI32U))
+            return WasmEmit_internalError("wasm codegen: failed to extend enum tag");
+        if (inst->hasResult && !resultIsVoid && !WasmFunctionLowering_emitLocalSet(code, outValue->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to store enum_get_tag result");
+        return BackendStatus_ok();
     case IRInstKind_EnumGetData:
-        return WasmEmit_validateError("wasm codegen: unsupported instruction in MVP");
+        status = WasmFunctionLowering_emitGetValue(lowering, code, inst->enumValue, NULL);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        if (!WasmFunctionLowering_emitI32Const(code, 8))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum payload offset");
+        if (!WasmFunctionLowering_emitOp(code, WasmOp_I32Add))
+            return WasmEmit_internalError("wasm codegen: failed to emit enum payload address add");
+        status = WasmFunctionLowering_emitDecodeLoad(lowering, code, inst->ty);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        if (inst->hasResult && !resultIsVoid && !WasmFunctionLowering_emitLocalSet(code, outValue->localIndex))
+            return WasmEmit_internalError("wasm codegen: failed to store enum_get_data result");
+        return BackendStatus_ok();
     default:
         return WasmEmit_validateError("wasm codegen: unsupported instruction opcode");
     }
@@ -1227,6 +1758,7 @@ static BackendStatus WasmFunctionLowering_buildMaps(WasmFunctionLowering* loweri
 
     WasmValueMapVec_init(&lowering->values);
     WasmBlockMapVec_init(&lowering->blocks);
+    WasmLocalSlotMapVec_init(&lowering->localSlots);
 
     nextLocalIndex = 0;
 
@@ -1250,6 +1782,18 @@ static BackendStatus WasmFunctionLowering_buildMaps(WasmFunctionLowering* loweri
         map.constStringId = 0;
         if (!WasmValueMapVec_append(&lowering->values, lowering->context->arena, map))
             return WasmEmit_internalError("wasm codegen: failed to reserve param map");
+        nextLocalIndex += 1;
+    }
+
+    for (blockIndex = 0; blockIndex < lowering->function->localCount; ++blockIndex) {
+        const IRValueParam* local;
+        WasmLocalSlotMap slot;
+
+        local = &lowering->function->locals[blockIndex];
+        slot.localId = local->id;
+        slot.localIndex = nextLocalIndex;
+        if (!WasmLocalSlotMapVec_append(&lowering->localSlots, lowering->context->arena, slot))
+            return WasmEmit_internalError("wasm codegen: failed to reserve local slot map");
         nextLocalIndex += 1;
     }
 
@@ -1295,6 +1839,18 @@ static BackendStatus WasmFunctionLowering_buildMaps(WasmFunctionLowering* loweri
             uint8_t wasmType;
 
             inst = &block->instructions[instructionIndex];
+            if (inst->kind == IRInstKind_Alloca) {
+                const WasmLocalSlotMap* existingSlot;
+                WasmLocalSlotMap slot;
+                existingSlot = WasmFunctionLowering_findLocalSlot(lowering, inst->localId);
+                if (!existingSlot) {
+                    slot.localId = inst->localId;
+                    slot.localIndex = nextLocalIndex;
+                    if (!WasmLocalSlotMapVec_append(&lowering->localSlots, lowering->context->arena, slot))
+                        return WasmEmit_internalError("wasm codegen: failed to reserve alloca local slot map");
+                    nextLocalIndex += 1;
+                }
+            }
             if (!inst->hasResult)
                 continue;
 
@@ -1304,8 +1860,10 @@ static BackendStatus WasmFunctionLowering_buildMaps(WasmFunctionLowering* loweri
             } else {
                 wasmType = WasmEmit_typeFromIR(inst->ty, &isVoid);
             }
-            if (wasmType == 0 || isVoid)
+            if (wasmType == 0)
                 return WasmEmit_validateError("wasm codegen: unsupported instruction result type");
+            if (isVoid)
+                continue;
 
             map.id = inst->id;
             map.localIndex = nextLocalIndex;
@@ -1335,7 +1893,10 @@ static BackendStatus WasmFunctionLowering_buildMaps(WasmFunctionLowering* loweri
     }
 
     lowering->currentBlockLocal = nextLocalIndex;
-    lowering->localCount = nextLocalIndex + 1;
+    lowering->tempLocal0 = nextLocalIndex + 1;
+    lowering->tempLocal1 = nextLocalIndex + 2;
+    lowering->tempLocal2 = nextLocalIndex + 3;
+    lowering->localCount = nextLocalIndex + 4;
     lowering->localTypes = (uint8_t*)Arena_alloc(lowering->context->arena, lowering->localCount, _Alignof(uint8_t));
     if (!lowering->localTypes)
         return WasmEmit_internalError("wasm codegen: failed to allocate local type table");
@@ -1346,7 +1907,12 @@ static BackendStatus WasmFunctionLowering_buildMaps(WasmFunctionLowering* loweri
         map = &lowering->values.items[blockIndex];
         lowering->localTypes[map->localIndex] = map->wasmType;
     }
+    for (blockIndex = 0; blockIndex < lowering->localSlots.len; ++blockIndex)
+        lowering->localTypes[lowering->localSlots.items[blockIndex].localIndex] = WasmValType_I32;
     lowering->localTypes[lowering->currentBlockLocal] = WasmValType_I32;
+    lowering->localTypes[lowering->tempLocal0] = WasmValType_I32;
+    lowering->localTypes[lowering->tempLocal1] = WasmValType_I32;
+    lowering->localTypes[lowering->tempLocal2] = WasmValType_I32;
 
     return BackendStatus_ok();
 }
@@ -1358,9 +1924,14 @@ static BackendStatus WasmFunctionLowering_emitBody(WasmFunctionLowering* lowerin
     uint32_t localIndex;
     BackendStatus status;
     uint32_t blockIndex;
+    bool returnIsVoid;
+    uint8_t returnType;
 
     if (!WasmEncodeBuffer_init(&code, lowering->context->arena, 256))
         return WasmEmit_internalError("wasm codegen: failed to init function code buffer");
+    returnType = WasmEmit_typeFromIR(lowering->function->returnType, &returnIsVoid);
+    if (returnType == 0)
+        return WasmEmit_validateError("wasm codegen: unsupported function return type");
 
     if (!WasmFunctionLowering_emitI32Const(&code, 0))
         return WasmEmit_internalError("wasm codegen: failed to init entry block ordinal");
@@ -1415,6 +1986,20 @@ static BackendStatus WasmFunctionLowering_emitBody(WasmFunctionLowering* lowerin
         return WasmEmit_internalError("wasm codegen: failed to emit dispatch fallback unreachable");
     if (!WasmFunctionLowering_emitOp(&code, WasmOp_End))
         return WasmEmit_internalError("wasm codegen: failed to close loop");
+    if (!returnIsVoid) {
+        if (returnType == WasmValType_I64) {
+            if (!WasmFunctionLowering_emitI64Const(&code, 0))
+                return WasmEmit_internalError("wasm codegen: failed to emit i64 fallback return");
+        } else if (returnType == WasmValType_I32) {
+            if (!WasmFunctionLowering_emitI32Const(&code, 0))
+                return WasmEmit_internalError("wasm codegen: failed to emit i32 fallback return");
+        } else if (returnType == WasmValType_F64) {
+            if (!WasmFunctionLowering_emitF64Const(&code, 0.0))
+                return WasmEmit_internalError("wasm codegen: failed to emit f64 fallback return");
+        } else {
+            return WasmEmit_validateError("wasm codegen: unsupported fallback return type");
+        }
+    }
     if (!WasmFunctionLowering_emitOp(&code, WasmOp_End))
         return WasmEmit_internalError("wasm codegen: failed to close function body");
 
@@ -1473,13 +2058,23 @@ static BackendStatus WasmEmit_writeTypeSection(WasmEmitContext* context, WasmEnc
     if (!WasmEncodeBuffer_init(&payload, context->arena, 128))
         return WasmEmit_internalError("wasm codegen: failed to init type section");
 
-    if (!WasmEncode_writeU32Leb(&payload, 2 + context->module->functionCount))
+    if (!WasmEncode_writeU32Leb(&payload, context->importCount + context->module->functionCount))
         return WasmEmit_internalError("wasm codegen: failed to write type count");
 
     if (!WasmEncodeBuffer_appendByte(&payload, 0x60) || !WasmEncode_writeU32Leb(&payload, 1) || !WasmEncodeBuffer_appendByte(&payload, WasmValType_I32) || !WasmEncode_writeU32Leb(&payload, 1) || !WasmEncodeBuffer_appendByte(&payload, WasmValType_I32))
         return WasmEmit_internalError("wasm codegen: failed to write write-byte import type");
     if (!WasmEncodeBuffer_appendByte(&payload, 0x60) || !WasmEncode_writeU32Leb(&payload, 0) || !WasmEncode_writeU32Leb(&payload, 1) || !WasmEncodeBuffer_appendByte(&payload, WasmValType_I32))
         return WasmEmit_internalError("wasm codegen: failed to write flush import type");
+    if (!WasmEncodeBuffer_appendByte(&payload, 0x60) || !WasmEncode_writeU32Leb(&payload, 1) || !WasmEncodeBuffer_appendByte(&payload, WasmValType_I32) || !WasmEncode_writeU32Leb(&payload, 1) || !WasmEncodeBuffer_appendByte(&payload, WasmValType_I32))
+        return WasmEmit_internalError("wasm codegen: failed to write cstr import type");
+    if (!WasmEncodeBuffer_appendByte(&payload, 0x60) || !WasmEncode_writeU32Leb(&payload, 1) || !WasmEncodeBuffer_appendByte(&payload, WasmValType_I64) || !WasmEncode_writeU32Leb(&payload, 1) || !WasmEncodeBuffer_appendByte(&payload, WasmValType_I32))
+        return WasmEmit_internalError("wasm codegen: failed to write i64 import type");
+    if (!WasmEncodeBuffer_appendByte(&payload, 0x60) || !WasmEncode_writeU32Leb(&payload, 1) || !WasmEncodeBuffer_appendByte(&payload, WasmValType_F64) || !WasmEncode_writeU32Leb(&payload, 1) || !WasmEncodeBuffer_appendByte(&payload, WasmValType_I32))
+        return WasmEmit_internalError("wasm codegen: failed to write f64 import type");
+    if (!WasmEncodeBuffer_appendByte(&payload, 0x60) || !WasmEncode_writeU32Leb(&payload, 1) || !WasmEncodeBuffer_appendByte(&payload, WasmValType_I32) || !WasmEncode_writeU32Leb(&payload, 1) || !WasmEncodeBuffer_appendByte(&payload, WasmValType_I32))
+        return WasmEmit_internalError("wasm codegen: failed to write bool import type");
+    if (!WasmEncodeBuffer_appendByte(&payload, 0x60) || !WasmEncode_writeU32Leb(&payload, 1) || !WasmEncodeBuffer_appendByte(&payload, WasmValType_I64) || !WasmEncode_writeU32Leb(&payload, 1) || !WasmEncodeBuffer_appendByte(&payload, WasmValType_I32))
+        return WasmEmit_internalError("wasm codegen: failed to write char import type");
 
     for (functionIndex = 0; functionIndex < context->module->functionCount; ++functionIndex) {
         const IRFunction* function;
@@ -1529,7 +2124,7 @@ static BackendStatus WasmEmit_writeImportSection(WasmEmitContext* context, WasmE
     if (!WasmEncodeBuffer_init(&payload, context->arena, 64))
         return WasmEmit_internalError("wasm codegen: failed to init import section");
 
-    if (!WasmEncode_writeU32Leb(&payload, 2))
+    if (!WasmEncode_writeU32Leb(&payload, 7))
         return WasmEmit_internalError("wasm codegen: failed to write import count");
 
     if (!WasmEncode_writeName(&payload, ByteSpan_fromCString("env")))
@@ -1550,6 +2145,51 @@ static BackendStatus WasmEmit_writeImportSection(WasmEmitContext* context, WasmE
     if (!WasmEncode_writeU32Leb(&payload, 1))
         return WasmEmit_internalError("wasm codegen: failed to write flush type index");
 
+    if (!WasmEncode_writeName(&payload, ByteSpan_fromCString("env")))
+        return WasmEmit_internalError("wasm codegen: failed to write import module");
+    if (!WasmEncode_writeName(&payload, ByteSpan_fromCString("jsrust_write_cstr")))
+        return WasmEmit_internalError("wasm codegen: failed to write cstr import name");
+    if (!WasmEncodeBuffer_appendByte(&payload, 0x00))
+        return WasmEmit_internalError("wasm codegen: failed to write import kind");
+    if (!WasmEncode_writeU32Leb(&payload, 2))
+        return WasmEmit_internalError("wasm codegen: failed to write cstr type index");
+
+    if (!WasmEncode_writeName(&payload, ByteSpan_fromCString("env")))
+        return WasmEmit_internalError("wasm codegen: failed to write import module");
+    if (!WasmEncode_writeName(&payload, ByteSpan_fromCString("jsrust_write_i64")))
+        return WasmEmit_internalError("wasm codegen: failed to write i64 import name");
+    if (!WasmEncodeBuffer_appendByte(&payload, 0x00))
+        return WasmEmit_internalError("wasm codegen: failed to write import kind");
+    if (!WasmEncode_writeU32Leb(&payload, 3))
+        return WasmEmit_internalError("wasm codegen: failed to write i64 type index");
+
+    if (!WasmEncode_writeName(&payload, ByteSpan_fromCString("env")))
+        return WasmEmit_internalError("wasm codegen: failed to write import module");
+    if (!WasmEncode_writeName(&payload, ByteSpan_fromCString("jsrust_write_f64")))
+        return WasmEmit_internalError("wasm codegen: failed to write f64 import name");
+    if (!WasmEncodeBuffer_appendByte(&payload, 0x00))
+        return WasmEmit_internalError("wasm codegen: failed to write import kind");
+    if (!WasmEncode_writeU32Leb(&payload, 4))
+        return WasmEmit_internalError("wasm codegen: failed to write f64 type index");
+
+    if (!WasmEncode_writeName(&payload, ByteSpan_fromCString("env")))
+        return WasmEmit_internalError("wasm codegen: failed to write import module");
+    if (!WasmEncode_writeName(&payload, ByteSpan_fromCString("jsrust_write_bool")))
+        return WasmEmit_internalError("wasm codegen: failed to write bool import name");
+    if (!WasmEncodeBuffer_appendByte(&payload, 0x00))
+        return WasmEmit_internalError("wasm codegen: failed to write import kind");
+    if (!WasmEncode_writeU32Leb(&payload, 5))
+        return WasmEmit_internalError("wasm codegen: failed to write bool type index");
+
+    if (!WasmEncode_writeName(&payload, ByteSpan_fromCString("env")))
+        return WasmEmit_internalError("wasm codegen: failed to write import module");
+    if (!WasmEncode_writeName(&payload, ByteSpan_fromCString("jsrust_write_char")))
+        return WasmEmit_internalError("wasm codegen: failed to write char import name");
+    if (!WasmEncodeBuffer_appendByte(&payload, 0x00))
+        return WasmEmit_internalError("wasm codegen: failed to write import kind");
+    if (!WasmEncode_writeU32Leb(&payload, 6))
+        return WasmEmit_internalError("wasm codegen: failed to write char type index");
+
     if (!WasmEncode_writeSection(module, WasmSection_Import, &payload))
         return WasmEmit_internalError("wasm codegen: failed to append import section");
     return BackendStatus_ok();
@@ -1566,12 +2206,83 @@ static BackendStatus WasmEmit_writeFunctionSection(WasmEmitContext* context, Was
     if (!WasmEncode_writeU32Leb(&payload, context->module->functionCount))
         return WasmEmit_internalError("wasm codegen: failed to write function count");
     for (index = 0; index < context->module->functionCount; ++index) {
-        if (!WasmEncode_writeU32Leb(&payload, 2 + index))
+        if (!WasmEncode_writeU32Leb(&payload, context->importCount + index))
             return WasmEmit_internalError("wasm codegen: failed to write function type index");
     }
 
     if (!WasmEncode_writeSection(module, WasmSection_Function, &payload))
         return WasmEmit_internalError("wasm codegen: failed to append function section");
+    return BackendStatus_ok();
+}
+
+static BackendStatus WasmEmit_writeMemorySection(WasmEmitContext* context, WasmEncodeBuffer* module)
+{
+    WasmEncodeBuffer payload;
+
+    if (!WasmEncodeBuffer_init(&payload, context->arena, 8))
+        return WasmEmit_internalError("wasm codegen: failed to init memory section");
+    if (!WasmEncode_writeU32Leb(&payload, 1))
+        return WasmEmit_internalError("wasm codegen: failed to write memory count");
+    if (!WasmEncodeBuffer_appendByte(&payload, 0x00))
+        return WasmEmit_internalError("wasm codegen: failed to write memory limits flags");
+    if (!WasmEncode_writeU32Leb(&payload, 1))
+        return WasmEmit_internalError("wasm codegen: failed to write memory min pages");
+    if (!WasmEncode_writeSection(module, WasmSection_Memory, &payload))
+        return WasmEmit_internalError("wasm codegen: failed to append memory section");
+    return BackendStatus_ok();
+}
+
+static BackendStatus WasmEmit_writeGlobalSection(WasmEmitContext* context, WasmEncodeBuffer* module)
+{
+    WasmEncodeBuffer payload;
+
+    if (!WasmEncodeBuffer_init(&payload, context->arena, 16))
+        return WasmEmit_internalError("wasm codegen: failed to init global section");
+    if (!WasmEncode_writeU32Leb(&payload, 1))
+        return WasmEmit_internalError("wasm codegen: failed to write global count");
+    if (!WasmEncodeBuffer_appendByte(&payload, WasmValType_I32))
+        return WasmEmit_internalError("wasm codegen: failed to write global type");
+    if (!WasmEncodeBuffer_appendByte(&payload, 0x01))
+        return WasmEmit_internalError("wasm codegen: failed to write global mutability");
+    if (!WasmFunctionLowering_emitI32Const(&payload, (int32_t)context->heapBase))
+        return WasmEmit_internalError("wasm codegen: failed to write heap base initializer");
+    if (!WasmFunctionLowering_emitOp(&payload, WasmOp_End))
+        return WasmEmit_internalError("wasm codegen: failed to terminate global initializer");
+    if (!WasmEncode_writeSection(module, WasmSection_Global, &payload))
+        return WasmEmit_internalError("wasm codegen: failed to append global section");
+    return BackendStatus_ok();
+}
+
+static BackendStatus WasmEmit_writeDataSection(WasmEmitContext* context, WasmEncodeBuffer* module)
+{
+    WasmEncodeBuffer payload;
+    uint32_t literalIndex;
+
+    if (!WasmEncodeBuffer_init(&payload, context->arena, 128))
+        return WasmEmit_internalError("wasm codegen: failed to init data section");
+    if (!WasmEncode_writeU32Leb(&payload, context->module->stringLiteralCount))
+        return WasmEmit_internalError("wasm codegen: failed to write data segment count");
+
+    for (literalIndex = 0; literalIndex < context->module->stringLiteralCount; ++literalIndex) {
+        ByteSpan literal;
+        if (!WasmEncode_writeU32Leb(&payload, 0))
+            return WasmEmit_internalError("wasm codegen: failed to write data segment memory index");
+        if (!WasmFunctionLowering_emitI32Const(&payload, (int32_t)context->literalOffsets[literalIndex]))
+            return WasmEmit_internalError("wasm codegen: failed to write data segment offset");
+        if (!WasmFunctionLowering_emitOp(&payload, WasmOp_End))
+            return WasmEmit_internalError("wasm codegen: failed to terminate data offset expression");
+
+        literal = context->module->stringLiterals[literalIndex];
+        if (!WasmEncode_writeU32Leb(&payload, (uint32_t)(literal.len + 1)))
+            return WasmEmit_internalError("wasm codegen: failed to write data segment size");
+        if (!WasmEncodeBuffer_appendSpan(&payload, literal))
+            return WasmEmit_internalError("wasm codegen: failed to append data segment bytes");
+        if (!WasmEncodeBuffer_appendByte(&payload, 0))
+            return WasmEmit_internalError("wasm codegen: failed to append data segment terminator");
+    }
+
+    if (!WasmEncode_writeSection(module, WasmSection_Data, &payload))
+        return WasmEmit_internalError("wasm codegen: failed to append data section");
     return BackendStatus_ok();
 }
 
@@ -1594,14 +2305,20 @@ static BackendStatus WasmEmit_writeExportSection(WasmEmitContext* context, WasmE
     if (!hasMain)
         return WasmEmit_validateError("wasm codegen: entry function for export not found");
 
-    if (!WasmEncode_writeU32Leb(&payload, 1))
+    if (!WasmEncode_writeU32Leb(&payload, 2))
         return WasmEmit_internalError("wasm codegen: failed to write export count");
     if (!WasmEncode_writeName(&payload, ByteSpan_fromCString("main")))
         return WasmEmit_internalError("wasm codegen: failed to write export name");
     if (!WasmEncodeBuffer_appendByte(&payload, 0x00))
         return WasmEmit_internalError("wasm codegen: failed to write export kind");
-    if (!WasmEncode_writeU32Leb(&payload, 2 + index))
+    if (!WasmEncode_writeU32Leb(&payload, context->importCount + index))
         return WasmEmit_internalError("wasm codegen: failed to write export function index");
+    if (!WasmEncode_writeName(&payload, ByteSpan_fromCString("memory")))
+        return WasmEmit_internalError("wasm codegen: failed to write memory export name");
+    if (!WasmEncodeBuffer_appendByte(&payload, 0x02))
+        return WasmEmit_internalError("wasm codegen: failed to write memory export kind");
+    if (!WasmEncode_writeU32Leb(&payload, 0))
+        return WasmEmit_internalError("wasm codegen: failed to write memory export index");
 
     if (!WasmEncode_writeSection(module, WasmSection_Export, &payload))
         return WasmEmit_internalError("wasm codegen: failed to append export section");
@@ -1627,7 +2344,7 @@ static BackendStatus WasmEmit_writeCodeSection(WasmEmitContext* context, WasmEnc
         lowering.context = context;
         lowering.function = &context->module->functions[functionIndex];
         lowering.functionOrdinal = functionIndex;
-        lowering.functionIndex = 2 + functionIndex;
+        lowering.functionIndex = context->importCount + functionIndex;
         lowering.returnType = WasmValType_I32;
         lowering.currentBlockLocal = 0;
         lowering.localCount = 0;
@@ -1654,6 +2371,34 @@ static BackendStatus WasmEmit_writeCodeSection(WasmEmitContext* context, WasmEnc
     return BackendStatus_ok();
 }
 
+static BackendStatus WasmEmit_prepareLiteralLayout(WasmEmitContext* context)
+{
+    uint32_t index;
+    uint32_t nextOffset;
+
+    context->literalOffsets = NULL;
+    context->heapBase = 1024;
+
+    if (context->module->stringLiteralCount == 0)
+        return BackendStatus_ok();
+
+    context->literalOffsets = (uint32_t*)Arena_alloc(context->arena, context->module->stringLiteralCount * sizeof(uint32_t), _Alignof(uint32_t));
+    if (!context->literalOffsets)
+        return WasmEmit_internalError("wasm codegen: failed to allocate literal layout table");
+
+    nextOffset = context->heapBase;
+    for (index = 0; index < context->module->stringLiteralCount; ++index) {
+        ByteSpan literal;
+        uint32_t nextSize;
+        literal = context->module->stringLiterals[index];
+        context->literalOffsets[index] = nextOffset;
+        nextSize = (uint32_t)(literal.len + 1);
+        nextOffset += nextSize;
+    }
+    context->heapBase = nextOffset + 8;
+    return BackendStatus_ok();
+}
+
 WasmEmitResult WasmEmit_emitModule(Arena* arena, const IRModule* module, ByteSpan entryName)
 {
     WasmEmitResult result;
@@ -1670,6 +2415,15 @@ WasmEmitResult WasmEmit_emitModule(Arena* arena, const IRModule* module, ByteSpa
     context.entryFunction = WasmEmit_findFunctionByName(module, entryName);
     context.importWriteByteIndex = 0;
     context.importFlushIndex = 1;
+    context.importWriteCStringIndex = 2;
+    context.importWriteI64Index = 3;
+    context.importWriteF64Index = 4;
+    context.importWriteBoolIndex = 5;
+    context.importWriteCharIndex = 6;
+    context.importCount = 7;
+    context.heapPtrGlobalIndex = 0;
+    context.heapBase = 1024;
+    context.literalOffsets = NULL;
 
     if (!context.entryFunction) {
         result.status = WasmEmit_validateError("wasm codegen: entry function not found");
@@ -1678,6 +2432,12 @@ WasmEmitResult WasmEmit_emitModule(Arena* arena, const IRModule* module, ByteSpa
 
     if (!WasmEncodeBuffer_init(&out, arena, 1024)) {
         result.status = WasmEmit_internalError("wasm codegen: failed to init module output buffer");
+        return result;
+    }
+
+    status = WasmEmit_prepareLiteralLayout(&context);
+    if (status.code != JSRUST_BACKEND_OK) {
+        result.status = status;
         return result;
     }
 
@@ -1704,6 +2464,18 @@ WasmEmitResult WasmEmit_emitModule(Arena* arena, const IRModule* module, ByteSpa
         return result;
     }
 
+    status = WasmEmit_writeMemorySection(&context, &out);
+    if (status.code != JSRUST_BACKEND_OK) {
+        result.status = status;
+        return result;
+    }
+
+    status = WasmEmit_writeGlobalSection(&context, &out);
+    if (status.code != JSRUST_BACKEND_OK) {
+        result.status = status;
+        return result;
+    }
+
     status = WasmEmit_writeExportSection(&context, &out);
     if (status.code != JSRUST_BACKEND_OK) {
         result.status = status;
@@ -1711,6 +2483,12 @@ WasmEmitResult WasmEmit_emitModule(Arena* arena, const IRModule* module, ByteSpa
     }
 
     status = WasmEmit_writeCodeSection(&context, &out);
+    if (status.code != JSRUST_BACKEND_OK) {
+        result.status = status;
+        return result;
+    }
+
+    status = WasmEmit_writeDataSection(&context, &out);
     if (status.code != JSRUST_BACKEND_OK) {
         result.status = status;
         return result;

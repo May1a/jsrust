@@ -49,6 +49,11 @@ jsrust_backend_codegen_result jsrust_backend_codegen_wasm_bytes(
 
 - `env.jsrust_write_byte(i32) -> i32`
 - `env.jsrust_flush() -> i32`
+- `env.jsrust_write_cstr(i32) -> i32`
+- `env.jsrust_write_i64(i64) -> i32`
+- `env.jsrust_write_f64(f64) -> i32`
+- `env.jsrust_write_bool(i32) -> i32`
+- `env.jsrust_write_char(i64) -> i32`
 
 Return contract for imports:
 

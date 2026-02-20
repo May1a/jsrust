@@ -24,6 +24,13 @@ function runMain(args) {
     });
 }
 
+/**
+ * @param {string} text
+ */
+function normalizedText(text) {
+    return text.replace(/\r\n/g, "\n");
+}
+
 export function runBackendIntegrationTests() {
     test("Backend integration: run empty main", () => {
         const result = runMain(["run", "examples/01_empty_main.rs"]);
@@ -79,6 +86,44 @@ export function runBackendIntegrationTests() {
         assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         assertEqual(result.stdout.trim(), "ok");
+    });
+
+    test("Backend integration: codegen wasm parity matrix", () => {
+        const fixtures = [
+            "examples/01_empty_main.rs",
+            "examples/02_literals.rs",
+            "examples/03_arithmetic.rs",
+            "examples/04_functions.rs",
+            "examples/05_if_else.rs",
+            "examples/07_structs.rs",
+            "examples/08_enums_match.rs",
+            "examples/09_references.rs",
+            "examples/10_hello_world.rs",
+            "examples/11_functions_print.rs",
+            "examples/12_format_print.rs",
+            "examples/13_format_print_var.rs",
+            "examples/14_pass_str_slice.rs",
+            "examples/15_simple_modules.rs",
+            "examples/16_impl_struct.rs",
+            "examples/17_impl_traits.rs",
+            "examples/18_derive_struct.rs",
+        ];
+
+        for (const fixture of fixtures) {
+            const interpreted = runMain(["run", fixture]);
+            assertTrue(!interpreted.error, `spawn failed for interpreted run (${fixture}): ${interpreted.error?.message || ""}`);
+            assertEqual(interpreted.status, 0, `interpreted stderr (${fixture}): ${interpreted.stderr}`);
+
+            const generated = runMain(["run", fixture, "--codegen-wasm"]);
+            assertTrue(!generated.error, `spawn failed for codegen run (${fixture}): ${generated.error?.message || ""}`);
+            assertEqual(generated.status, 0, `codegen stderr (${fixture}): ${generated.stderr}`);
+
+            assertEqual(
+                normalizedText(generated.stdout),
+                normalizedText(interpreted.stdout),
+                `stdout parity mismatch for ${fixture}`,
+            );
+        }
     });
 
     test("Backend integration: --trace rejected in codegen wasm mode", () => {
