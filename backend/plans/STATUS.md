@@ -3,7 +3,6 @@
 ## Active (Immediate)
 
 - `00-master-implementation-plan.md`: overhauled for interpreter-first execution
-- `01-prepare-backend.md`: copied baseline from root active plan
 - `02-backend-scaffold-and-build.md`: implemented (initial)
 - `03-binary-ir-reader.md`: implemented (initial)
 - `04-ir-interpreter-core.md`: implemented (initial)

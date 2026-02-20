@@ -68,6 +68,12 @@ Track completion of all tasks. Mark with:
 
 - [x] All tasks (depends on 07-ssa-ir)
 
+## Phase 4: New Backend Transition
+
+### 15-prepare-backend.md
+
+- [x] All tasks (contract/docs/fixtures/conformance checks)
+
 ## Legend
 
 When marking complete, ensure:

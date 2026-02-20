@@ -12,7 +12,6 @@ This plan set is execution-focused and decision-complete.
 ## Active (Immediate) Plans
 
 - `00-master-implementation-plan.md`: master sequencing, gates, and done criteria
-- `01-prepare-backend.md`: copied upstream prep baseline
 - `02-backend-scaffold-and-build.md`: project scaffold, build, errors, IO, determinism
 - `03-binary-ir-reader.md`: strict binary IR ingest and validation gate
 - `04-ir-interpreter-core.md`: instruction and control-flow interpreter core
@@ -38,5 +37,3 @@ This plan set is execution-focused and decision-complete.
 6. `06-driver-cli-artifacts.md`
 7. `07-testing-conformance-ci.md`
 8. `08-libc-overhaul-plan.md`
-
-`01-prepare-backend.md` remains the upstream prep baseline and reference.
