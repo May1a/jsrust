@@ -20,6 +20,8 @@ Track incremental frontend/runtime compatibility work needed to compile the upst
   - Consumes function-trait bound tails in bounds/`where` (`FnOnce(...) -> ...`).
   - Accepts restricted visibility syntax forms such as `pub(super)`.
   - Consumes postfix try-operator syntax (`expr?`) as parse-only compatibility.
+- `lib.rs` re-export syntax support added:
+  - `pub use { ... };` grouped import trees with empty prefix now parse and resolve.
 
 ## Planned Milestones (Future / Deferred)
 

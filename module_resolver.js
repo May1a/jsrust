@@ -12,7 +12,7 @@ import { NodeKind } from "./ast.js";
  *   path: string[],
  *   items: Map<string, string>,
  *   modules: Map<string, string>,
- *   aliases: Map<string, { kind: "item" | "module", qualifiedName: string }>,
+ *   aliases: Map<string, { kind: "item" | "module", qualifiedName: string, isPub: boolean }>,
  *   uses: any[]
  * }} ModuleScope
  */
@@ -330,6 +330,22 @@ function getScope(state, modulePath) {
 }
 
 /**
+ * @param {{ kind: "item" | "module", qualifiedName: string, isPub: boolean }} alias
+ * @param {string[]} aliasModulePath
+ * @returns {{ kind: "item" | "module", qualifiedName: string, viaAlias: { modulePath: string[], isPub: boolean } }}
+ */
+function targetFromAlias(alias, aliasModulePath) {
+    return {
+        kind: alias.kind,
+        qualifiedName: alias.qualifiedName,
+        viaAlias: {
+            modulePath: [...aliasModulePath],
+            isPub: alias.isPub === true,
+        },
+    };
+}
+
+/**
  * @param {{ moduleScopes: Map<string, ModuleScope>, itemDecls: Map<string, any>, moduleDecls: Map<string, any> }} state
  * @param {string[]} modulePath
  * @param {string} name
@@ -338,7 +354,7 @@ function getScope(state, modulePath) {
 function resolveNameInScope(state, modulePath, name) {
     const scope = getScope(state, modulePath);
     const alias = scope.aliases.get(name);
-    if (alias) return alias;
+    if (alias) return targetFromAlias(alias, scope.path);
 
     if (scope.items.has(name)) {
         return { kind: "item", qualifiedName: /** @type {string} */ (scope.items.get(name)) };
@@ -348,6 +364,8 @@ function resolveNameInScope(state, modulePath, name) {
     }
 
     const rootScope = getScope(state, []);
+    const rootAlias = rootScope.aliases.get(name);
+    if (rootAlias) return targetFromAlias(rootAlias, rootScope.path);
     if (rootScope.items.has(name)) {
         return { kind: "item", qualifiedName: /** @type {string} */ (rootScope.items.get(name)) };
     }
@@ -378,6 +396,10 @@ function resolveAbsolutePath(state, segments) {
     if (!segments || segments.length === 0) return null;
     const root = getScope(state, []);
     if (segments.length === 1) {
+        const rootAlias = root.aliases.get(segments[0]);
+        if (rootAlias) {
+            return targetFromAlias(rootAlias, root.path);
+        }
         if (root.items.has(segments[0])) {
             return { kind: "item", qualifiedName: /** @type {string} */ (root.items.get(segments[0])) };
         }
@@ -391,19 +413,31 @@ function resolveAbsolutePath(state, segments) {
     }
 
     let moduleQName = root.modules.get(segments[0]);
-    if (!moduleQName) return null;
+    if (!moduleQName) {
+        const alias = root.aliases.get(segments[0]);
+        if (!alias || alias.kind !== "module") return null;
+        moduleQName = alias.qualifiedName;
+    }
     let modulePath = moduleNameToPath(state, moduleQName);
 
     for (let i = 1; i < segments.length - 1; i++) {
         const scope = getScope(state, modulePath);
-        const nextModuleQName = scope.modules.get(segments[i]);
-        if (!nextModuleQName) return null;
+        let nextModuleQName = scope.modules.get(segments[i]);
+        if (!nextModuleQName) {
+            const alias = scope.aliases.get(segments[i]);
+            if (!alias || alias.kind !== "module") return null;
+            nextModuleQName = alias.qualifiedName;
+        }
         moduleQName = nextModuleQName;
         modulePath = moduleNameToPath(state, moduleQName);
     }
 
     const finalScope = getScope(state, modulePath);
     const last = segments[segments.length - 1];
+    const finalAlias = finalScope.aliases.get(last);
+    if (finalAlias) {
+        return targetFromAlias(finalAlias, finalScope.path);
+    }
     if (finalScope.items.has(last)) {
         return { kind: "item", qualifiedName: /** @type {string} */ (finalScope.items.get(last)) };
     }
@@ -434,13 +468,22 @@ function resolvePathFromModule(state, currentModulePath, segments) {
     let modulePath = moduleNameToPath(state, first.qualifiedName);
     for (let i = 1; i < segments.length - 1; i++) {
         const scope = getScope(state, modulePath);
-        const next = scope.modules.get(segments[i]);
+        let next = scope.modules.get(segments[i]);
+        if (!next) {
+            const alias = scope.aliases.get(segments[i]);
+            if (!alias || alias.kind !== "module") return null;
+            next = alias.qualifiedName;
+        }
         if (!next) return null;
         modulePath = moduleNameToPath(state, next);
     }
 
     const finalScope = getScope(state, modulePath);
     const last = segments[segments.length - 1];
+    const finalAlias = finalScope.aliases.get(last);
+    if (finalAlias) {
+        return targetFromAlias(finalAlias, finalScope.path);
+    }
     if (finalScope.items.has(last)) {
         return { kind: "item", qualifiedName: /** @type {string} */ (finalScope.items.get(last)) };
     }
@@ -480,6 +523,26 @@ function canTraverseModules(state, currentModulePath, targetModulePath) {
  * @returns {boolean}
  */
 function canAccessTarget(state, currentModulePath, target) {
+    const viaAlias = target?.viaAlias;
+    if (viaAlias) {
+        if (arraysEqual(currentModulePath, viaAlias.modulePath)) {
+            return canAccessTarget(state, viaAlias.modulePath, {
+                kind: target.kind,
+                qualifiedName: target.qualifiedName,
+            });
+        }
+        if (!canTraverseModules(state, currentModulePath, viaAlias.modulePath)) {
+            return false;
+        }
+        if (!viaAlias.isPub) {
+            return false;
+        }
+        return canAccessTarget(state, viaAlias.modulePath, {
+            kind: target.kind,
+            qualifiedName: target.qualifiedName,
+        });
+    }
+
     if (target.kind === "module") {
         const moduleDecl = state.moduleDecls.get(target.qualifiedName);
         if (!moduleDecl) return false;
@@ -531,13 +594,21 @@ function resolveUseTree(state, tree, parentPath, parentTarget, scope, useItem) {
     // Resolve the target for this path
     let target = null;
     if (fullPath.length > 0) {
-        target = resolveAbsolutePath(state, fullPath);
+        target =
+            resolvePathFromModule(state, scope.path, fullPath) ||
+            resolveAbsolutePath(state, fullPath);
     } else if (parentTarget) {
         target = parentTarget;
     }
 
     // If this tree has children, it's a grouped import - process each child
     if (tree.children && tree.children.length > 0) {
+        if (!target && fullPath.length === 0 && !parentTarget) {
+            for (const child of tree.children) {
+                resolveUseTree(state, child, [], null, scope, useItem);
+            }
+            return;
+        }
         if (!target) {
             pushError(
                 state.errors,
@@ -607,7 +678,11 @@ function resolveUseTree(state, tree, parentPath, parentTarget, scope, useItem) {
         return;
     }
 
-    scope.aliases.set(alias, target);
+    scope.aliases.set(alias, {
+        kind: target.kind,
+        qualifiedName: target.qualifiedName,
+        isPub: useItem?.isPub === true,
+    });
 }
 
 /**

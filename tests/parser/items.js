@@ -98,6 +98,18 @@ export function runParserItemTests() {
         assertEqual(item.tree.alias, "sub_math");
     });
 
+    test("pub use grouped tree with empty prefix", () => {
+        const result = parseModule(
+            "pub use { input::Input, reader::{EndOfInput, Reader} };",
+        );
+        assertTrue(result.ok);
+        const item = result.value.items[0];
+        assertEqual(item.kind, NodeKind.UseItem);
+        assertEqual(item.isPub, true);
+        assertEqual(item.tree.path.length, 0);
+        assertEqual(item.tree.children.length, 2);
+    });
+
     test("pub item visibility flags", () => {
         const result = parseModule("pub fn f() {} pub struct S {} pub enum E { A } pub mod m {}");
         assertTrue(result.ok);
@@ -230,5 +242,5 @@ export function runParserItemTests() {
         assertEqual(call.typeArgs.length, 1);
     });
 
-    return 21;
+    return 22;
 }
