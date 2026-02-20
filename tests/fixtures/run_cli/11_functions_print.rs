@@ -1,10 +1,8 @@
-
 pub fn test(_to_print: &str) {
     println!("Hello, world!");
 }
 
-#[test]
-fn test_example() {
+fn main() {
     let hello_world = "Hello, world!";
     test(hello_world);
 }

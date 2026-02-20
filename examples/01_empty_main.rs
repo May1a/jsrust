@@ -1,1 +1,3 @@
-fn main() {}
+
+#[test]
+fn test_example() {}

@@ -534,6 +534,7 @@ function lowerFnItem(ctx, fn, typeCtx) {
         fn.isAsync || false,
         fn.isUnsafe || false,
         fn.isTest || false,
+        fn.expectedOutput ?? null,
     );
 }
 

@@ -297,12 +297,14 @@ function matchInvalidSymbol(state, symbol) {
 
 /**
  * @param {ParserState} state
- * @returns {{ derives: string[], isTest: boolean, consumedOnlyInert: boolean }}
+ * @returns {{ derives: string[], isTest: boolean, expectedOutput: string | null, consumedOnlyInert: boolean }}
  */
 function parseOuterAttributes(state) {
     /** @type {string[]} */
     const derives = [];
     let isTest = false;
+    /** @type {string | null} */
+    let expectedOutput = null;
     let consumedAny = false;
     let consumedMeaningful = false;
     while (
@@ -340,6 +342,52 @@ function parseOuterAttributes(state) {
             expectToken(state, TokenType.CloseSquare, "Expected ] after test attribute");
             continue;
         }
+        if (attrIdent === "expect_output") {
+            consumedMeaningful = true;
+            if (!matchToken(state, TokenType.OpenParen)) {
+                addError(
+                    state,
+                    "Expected ( after expect_output",
+                    peek(state),
+                    ["("],
+                );
+                skipAttribute(state);
+                continue;
+            }
+            const valueToken = peek(state);
+            if (
+                valueToken.type === TokenType.String &&
+                !valueToken.value.startsWith("'")
+            ) {
+                advance(state);
+                expectedOutput = parseStringToken(valueToken);
+            } else {
+                addError(
+                    state,
+                    "Expected string literal in expect_output attribute",
+                    valueToken,
+                    ["String"],
+                );
+                if (
+                    !check(state, TokenType.CloseParen) &&
+                    !check(state, TokenType.CloseSquare) &&
+                    !isAtEnd(state)
+                ) {
+                    advance(state);
+                }
+            }
+            expectToken(
+                state,
+                TokenType.CloseParen,
+                "Expected ) after expect_output argument",
+            );
+            expectToken(
+                state,
+                TokenType.CloseSquare,
+                "Expected ] after expect_output attribute",
+            );
+            continue;
+        }
         if (attrIdent === "derive") {
             consumedMeaningful = true;
             if (!matchToken(state, TokenType.OpenParen)) {
@@ -369,6 +417,7 @@ function parseOuterAttributes(state) {
     return {
         derives,
         isTest,
+        expectedOutput,
         consumedOnlyInert: consumedAny && !consumedMeaningful,
     };
 }
@@ -1929,7 +1978,7 @@ function parseUseItem(state, isPub) {
  * @returns {Node | null}
  */
 function parseItem(state) {
-    const { derives, isTest, consumedOnlyInert } = parseOuterAttributes(state);
+    const { derives, isTest, expectedOutput, consumedOnlyInert } = parseOuterAttributes(state);
     let isPub = false;
     let isUnsafe = false;
     if (matchToken(state, TokenType.Pub)) {
@@ -1949,8 +1998,20 @@ function parseItem(state) {
     else if (check(state, TokenType.Impl)) item = parseImplItem(state, isUnsafe);
     if (item) {
         item.derives = derives;
-        if (isTest && item.kind === NodeKind.FnItem) {
-            item.isTest = true;
+        if (item.kind === NodeKind.FnItem) {
+            if (isTest) {
+                item.isTest = true;
+            }
+            if (expectedOutput !== null) {
+                item.expectedOutput = expectedOutput;
+            }
+        } else if (expectedOutput !== null) {
+            addError(
+                state,
+                "#[expect_output(...)] is only valid on function items",
+                peek(state),
+                null,
+            );
         }
         return item;
     }

@@ -101,6 +101,12 @@ Optional run flags:
 npm run test
 ```
 
+```bash
+npm run test:update-examples
+```
+
+- Use `npm run test:update-examples` to regenerate changed/missing IR snapshots in `examples/expected/`.
+
 ## Examples
 
 - Simple Rust examples live in `examples/`

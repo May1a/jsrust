@@ -576,9 +576,35 @@ function printTestHelp(exitCode = 0) {
     console.log("");
     console.log("Description:");
     console.log("  Discovers and runs all functions marked with #[test] attribute.");
+    console.log("  Tests may declare expected stdout using #[expect_output(\"...\")].");
     console.log("  Reports test results and exits with code 0 if all tests pass,");
     console.log("  or 1 if any test fails.");
     process.exit(exitCode);
+}
+
+/**
+ * @param {string} text
+ * @returns {string}
+ */
+function normalizeNewlines(text) {
+    return text.replace(/\r\n/g, "\n");
+}
+
+/**
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function firstDiffLine(a, b) {
+    const aLines = a.split("\n");
+    const bLines = b.split("\n");
+    const max = Math.max(aLines.length, bLines.length);
+    for (let i = 0; i < max; i++) {
+        if (aLines[i] !== bLines[i]) {
+            return i + 1;
+        }
+    }
+    return -1;
 }
 
 /**
@@ -679,10 +705,14 @@ function runTestCli(args) {
     const hirModule = hirResult.module;
 
     // Find all test functions
+    /** @type {{ name: string, expectedOutput: string | null }[]} */
     const testFns = [];
     for (const item of hirModule.items || []) {
         if (item.kind === HItemKind.Fn && item.isTest) {
-            testFns.push(item.name);
+            testFns.push({
+                name: item.name,
+                expectedOutput: item.expectedOutput ?? null,
+            });
         }
     }
 
@@ -724,18 +754,38 @@ function runTestCli(args) {
     let passed = 0;
     let failed = 0;
 
-    for (const testName of testFns) {
+    for (const testFn of testFns) {
         const runResult = codegenWasm
-            ? runBackendCodegenWasm(bytes, { entry: testName, trace: false })
-            : runBackendWasm(bytes, { entry: testName, trace: false });
+            ? runBackendCodegenWasm(bytes, { entry: testFn.name, trace: false })
+            : runBackendWasm(bytes, { entry: testFn.name, trace: false });
 
-        if (runResult.ok) {
-            console.log(`test ${testName} ... ok`);
-            passed++;
-        } else {
-            console.log(`test ${testName} ... FAILED`);
+        if (!runResult.ok) {
+            console.log(`test ${testFn.name} ... FAILED`);
+            if (runResult.message) {
+                console.log(`  execution error: ${runResult.message}`);
+            }
             failed++;
+            continue;
         }
+
+        if (testFn.expectedOutput !== null) {
+            const actual = normalizeNewlines(runResult.stdout);
+            const expected = normalizeNewlines(testFn.expectedOutput);
+            if (actual !== expected) {
+                const line = firstDiffLine(actual, expected);
+                const actualLine = line > 0 ? (actual.split("\n")[line - 1] ?? "") : "";
+                const expectedLine = line > 0 ? (expected.split("\n")[line - 1] ?? "") : "";
+                console.log(`test ${testFn.name} ... FAILED`);
+                console.log(`  stdout mismatch at line ${line}`);
+                console.log(`  expected: ${JSON.stringify(expectedLine)}`);
+                console.log(`  actual:   ${JSON.stringify(actualLine)}`);
+                failed++;
+                continue;
+            }
+        }
+
+        console.log(`test ${testFn.name} ... ok`);
+        passed++;
     }
 
     console.log("");

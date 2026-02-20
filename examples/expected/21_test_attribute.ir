@@ -3,7 +3,6 @@
 ; String literals:
 ;   lit0 = "a = {}"
 ;   lit1 = "x = {}"
-;   lit2 = "Running main function"
 
 fn test_basic() -> () {
 
@@ -27,15 +26,6 @@ fn test_multiplication() -> () {
         v9 = sconst lit1
         v10 = iconst i32 1
         v11 = call 862609(v9, v10, v8)
-        ret
-
-}
-
-fn main() -> () {
-
-    block0:
-        v12 = sconst lit2
-        v13 = call 862609(v12)
         ret
 
 }

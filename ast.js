@@ -474,6 +474,8 @@ function makeParam(
  * @param {{ name: string, bounds: Node[] }[] | null} [genericParams=null]
  * @param {{ name: string, bounds: Node[] }[] | null} [whereClause=null]
  * @param {string[]} [ignoredLifetimeParams=[]]
+ * @param {boolean} [isTest=false]
+ * @param {string | null} [expectedOutput=null]
  * @returns {Node}
  */
 function makeFnItem(
@@ -489,6 +491,8 @@ function makeFnItem(
     genericParams = null,
     whereClause = null,
     ignoredLifetimeParams = [],
+    isTest = false,
+    expectedOutput = null,
 ) {
     return makeNode(NodeKind.FnItem, span, {
         name,
@@ -502,6 +506,8 @@ function makeFnItem(
         isAsync,
         isUnsafe,
         isPub,
+        isTest,
+        expectedOutput,
     });
 }
 

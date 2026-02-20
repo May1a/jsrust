@@ -3,7 +3,7 @@
 ; String literals:
 ;   lit0 = "{} {}"
 
-fn main() -> () {
+fn test_example() -> () {
 
     block0:
         v0 = iconst i32 4

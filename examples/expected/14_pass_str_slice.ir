@@ -14,7 +14,7 @@ fn print_str_slice(arg0: ptr) -> () {
 
 }
 
-fn main() -> () {
+fn test_example() -> () {
 
     block0:
         v4 = sconst lit1

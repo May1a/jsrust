@@ -13,7 +13,7 @@ fn i32::<Add>::add(arg0: *i32, arg1: *i32) -> i32 {
 
 }
 
-fn main() -> () {
+fn test_example() -> () {
 
     block0:
         v5 = iconst i32 1

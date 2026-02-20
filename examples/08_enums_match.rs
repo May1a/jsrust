@@ -4,7 +4,8 @@ enum Color {
     Blue,
 }
 
-fn main() {
+#[test]
+fn test_example() {
     let c = Color::Red;
     let v = match 1 {
         1 => 10,

@@ -4,7 +4,8 @@ struct Pair {
     b: i32,
 }
 
-fn main() {
+#[test]
+fn test_example() {
     let p = Pair { a: 4, b: 5 };
     let q = p.clone();
     println!("{} {}", q.a, q.b);

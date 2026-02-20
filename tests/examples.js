@@ -22,9 +22,10 @@ function firstDiffLine(a, b) {
 /**
  * @param {string} examplesDir
  * @param {string[]} rsFiles
+ * @param {boolean} updateExamples
  * @returns {Map<string, string>}
  */
-function loadExpectedIrMap(examplesDir, rsFiles) {
+function loadExpectedIrMap(examplesDir, rsFiles, updateExamples) {
     const expectedDir = path.join(examplesDir, "expected");
     const entries = fs.existsSync(expectedDir)
         ? fs.readdirSync(expectedDir, { withFileTypes: true })
@@ -42,24 +43,26 @@ function loadExpectedIrMap(examplesDir, rsFiles) {
         expectedMap.set(rsFile, normalizeNewlines(fs.readFileSync(expectedPath, "utf-8")));
     }
 
-    test("Examples: every .rs has expected .ir file", () => {
-        const missing = rsFiles.filter((file) => !expectedMap.has(file));
-        assertEqual(
-            missing.length,
-            0,
-            `Missing expected IR files for: ${missing.join(", ")}`,
-        );
-    });
+    if (!updateExamples) {
+        test("Examples: every .rs has expected .ir file", () => {
+            const missing = rsFiles.filter((file) => !expectedMap.has(file));
+            assertEqual(
+                missing.length,
+                0,
+                `Missing expected IR files for: ${missing.join(", ")}`,
+            );
+        });
 
-    test("Examples: no orphan expected .ir files", () => {
-        const rsSet = new Set(rsFiles);
-        const orphans = [...expectedMap.keys()].filter((file) => !rsSet.has(file));
-        assertEqual(
-            orphans.length,
-            0,
-            `Orphan expected IR files: ${orphans.join(", ")}`,
-        );
-    });
+        test("Examples: no orphan expected .ir files", () => {
+            const rsSet = new Set(rsFiles);
+            const orphans = [...expectedMap.keys()].filter((file) => !rsSet.has(file));
+            assertEqual(
+                orphans.length,
+                0,
+                `Orphan expected IR files: ${orphans.join(", ")}`,
+            );
+        });
+    }
 
     return expectedMap;
 }
@@ -67,9 +70,12 @@ function loadExpectedIrMap(examplesDir, rsFiles) {
 /**
  * Compile every Rust example in the examples directory.
  * Validation is enabled, and produced IR must match canonical expected files.
+ * @param {{ updateExamples?: boolean }} [options={}]
  */
-export function runExamplesTests() {
+export function runExamplesTests(options = {}) {
+    const updateExamples = options.updateExamples === true;
     const examplesDir = path.resolve(process.cwd(), "examples");
+    const expectedDir = path.join(examplesDir, "expected");
     const entries = fs.readdirSync(examplesDir, { withFileTypes: true });
 
     const files = entries
@@ -81,7 +87,11 @@ export function runExamplesTests() {
         assertTrue(files.length > 0, "No .rs example files found in examples/");
     });
 
-    const expectedMap = loadExpectedIrMap(examplesDir, files);
+    const expectedMap = loadExpectedIrMap(examplesDir, files, updateExamples);
+    let updatedCount = 0;
+    if (updateExamples) {
+        fs.mkdirSync(expectedDir, { recursive: true });
+    }
 
     for (const file of files) {
         test(`Examples: compile+validate ${file}`, () => {
@@ -99,10 +109,26 @@ export function runExamplesTests() {
             );
             assertTrue(result.ir, `Example ${file} should produce IR output`);
 
+            const actual = normalizeNewlines(result.ir || "");
+            if (updateExamples) {
+                const expectedPath = path.join(
+                    expectedDir,
+                    file.replace(/\.rs$/, ".ir"),
+                );
+                const previous =
+                    fs.existsSync(expectedPath)
+                        ? normalizeNewlines(fs.readFileSync(expectedPath, "utf-8"))
+                        : null;
+                if (previous !== actual) {
+                    fs.writeFileSync(expectedPath, actual);
+                    expectedMap.set(file, actual);
+                    updatedCount += 1;
+                }
+                return;
+            }
+
             const expected = expectedMap.get(file);
             assertTrue(expected !== undefined, `Missing expected IR for ${file}`);
-
-            const actual = normalizeNewlines(result.ir || "");
             if (actual !== expected) {
                 const line = firstDiffLine(actual, expected);
                 const actualLines = actual.split("\n");
@@ -116,6 +142,13 @@ export function runExamplesTests() {
                     `Example ${file} IR mismatch at line ${line}. Expected: ${JSON.stringify(expectedLine)} Actual: ${JSON.stringify(actualLine)}`,
                 );
             }
+        });
+    }
+
+    if (updateExamples) {
+        test("Examples: snapshot update summary", () => {
+            console.log(`Examples: updated ${updatedCount} snapshot file(s).`);
+            assertTrue(true);
         });
     }
 }

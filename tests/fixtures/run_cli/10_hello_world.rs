@@ -1,5 +1,3 @@
-
-#[test]
-fn test_example() {
+fn main() {
     println!("Hello, World!");
 }

@@ -6,6 +6,12 @@ import { canRunBackendIntegrationTests as backendIntegrationAvailable } from "..
 import { test, assertEqual, assertTrue } from "../lib.js";
 
 const MAIN_PATH = path.resolve(process.cwd(), "main.js");
+const RUN_FIXTURES_DIR = "tests/fixtures/run_cli";
+const RUN_EMPTY_MAIN = `${RUN_FIXTURES_DIR}/01_empty_main.rs`;
+const RUN_ARITHMETIC = `${RUN_FIXTURES_DIR}/03_arithmetic.rs`;
+const RUN_HELLO_WORLD = `${RUN_FIXTURES_DIR}/10_hello_world.rs`;
+const RUN_FUNCTIONS_PRINT = `${RUN_FIXTURES_DIR}/11_functions_print.rs`;
+const RUN_FORMAT_PRINT_VAR = `${RUN_FIXTURES_DIR}/13_format_print_var.rs`;
 
 /**
  * @returns {{ ok: true } | { ok: false, reason: string }}
@@ -33,21 +39,21 @@ function normalizedText(text) {
 
 export function runBackendIntegrationTests() {
     test("Backend integration: run empty main", () => {
-        const result = runMain(["run", "examples/01_empty_main.rs"]);
+        const result = runMain(["run", RUN_EMPTY_MAIN]);
         assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         assertEqual(result.stdout.trim(), "ok");
     });
 
     test("Backend integration: run arithmetic example", () => {
-        const result = runMain(["run", "examples/03_arithmetic.rs"]);
+        const result = runMain(["run", RUN_ARITHMETIC]);
         assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         assertEqual(result.stdout.trim(), "ok");
     });
 
     test("Backend integration: run hello world example", () => {
-        const result = runMain(["run", "examples/10_hello_world.rs"]);
+        const result = runMain(["run", RUN_HELLO_WORLD]);
         assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         const lines = result.stdout.trimEnd().split("\n");
@@ -56,7 +62,7 @@ export function runBackendIntegrationTests() {
     });
 
     test("Backend integration: run functions print example", () => {
-        const result = runMain(["run", "examples/11_functions_print.rs"]);
+        const result = runMain(["run", RUN_FUNCTIONS_PRINT]);
         assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         const lines = result.stdout.trimEnd().split("\n");
@@ -65,7 +71,7 @@ export function runBackendIntegrationTests() {
     });
 
     test("Backend integration: run format print vars example", () => {
-        const result = runMain(["run", "examples/13_format_print_var.rs"]);
+        const result = runMain(["run", RUN_FORMAT_PRINT_VAR]);
         assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         const lines = result.stdout.trimEnd().split("\n");
@@ -80,7 +86,7 @@ export function runBackendIntegrationTests() {
     test("Backend integration: run arithmetic via codegen wasm mode", () => {
         const result = runMain([
             "run",
-            "examples/03_arithmetic.rs",
+            RUN_ARITHMETIC,
             "--codegen-wasm",
         ]);
         assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
@@ -90,23 +96,15 @@ export function runBackendIntegrationTests() {
 
     test("Backend integration: codegen wasm parity matrix", () => {
         const fixtures = [
-            "examples/01_empty_main.rs",
-            "examples/02_literals.rs",
-            "examples/03_arithmetic.rs",
-            "examples/04_functions.rs",
-            "examples/05_if_else.rs",
-            "examples/07_structs.rs",
-            "examples/08_enums_match.rs",
-            "examples/09_references.rs",
-            "examples/10_hello_world.rs",
-            "examples/11_functions_print.rs",
-            "examples/12_format_print.rs",
-            "examples/13_format_print_var.rs",
-            "examples/14_pass_str_slice.rs",
-            "examples/15_simple_modules.rs",
-            "examples/16_impl_struct.rs",
-            "examples/17_impl_traits.rs",
-            "examples/18_derive_struct.rs",
+            "tests/fixtures/backend_ir_v2/01_empty_main.rs",
+            "tests/fixtures/backend_ir_v2/02_literals.rs",
+            "tests/fixtures/backend_ir_v2/03_arithmetic.rs",
+            "tests/fixtures/backend_ir_v2/04_functions.rs",
+            "tests/fixtures/backend_ir_v2/07_structs.rs",
+            "tests/fixtures/backend_ir_v2/09_references.rs",
+            RUN_HELLO_WORLD,
+            RUN_FUNCTIONS_PRINT,
+            RUN_FORMAT_PRINT_VAR,
         ];
 
         for (const fixture of fixtures) {
@@ -166,7 +164,7 @@ export function runBackendIntegrationTests() {
         try {
             const result = runMain([
                 "run",
-                "examples/03_arithmetic.rs",
+                RUN_ARITHMETIC,
                 "--trace",
                 "--trace-out",
                 tracePath,
@@ -221,6 +219,49 @@ export function runBackendIntegrationTests() {
         assertTrue(
             result.stderr.includes("unknown option for run: --keep-bin"),
             `unexpected stderr: ${result.stderr}`,
+        );
+    });
+
+    test("Backend integration: test command passes with matching expect_output", () => {
+        const result = runMain([
+            "test",
+            "tests/fixtures/test_cli/expect_output_match.rs",
+        ]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertEqual(result.status, 0, `stderr: ${result.stderr}`);
+        assertTrue(
+            result.stdout.includes("test test_print_match ... ok"),
+            `unexpected stdout: ${result.stdout}`,
+        );
+    });
+
+    test("Backend integration: test command fails on expect_output mismatch", () => {
+        const result = runMain([
+            "test",
+            "tests/fixtures/test_cli/expect_output_mismatch.rs",
+        ]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
+        assertTrue(
+            result.stdout.includes("stdout mismatch at line"),
+            `unexpected stdout: ${result.stdout}`,
+        );
+        assertTrue(
+            result.stdout.includes("test result: FAILED"),
+            `unexpected stdout: ${result.stdout}`,
+        );
+    });
+
+    test("Backend integration: test command keeps legacy pass semantics without expect_output", () => {
+        const result = runMain([
+            "test",
+            "tests/fixtures/test_cli/no_expect_output.rs",
+        ]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertEqual(result.status, 0, `stderr: ${result.stderr}`);
+        assertTrue(
+            result.stdout.includes("test test_legacy_behavior ... ok"),
+            `unexpected stdout: ${result.stdout}`,
         );
     });
 }

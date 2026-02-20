@@ -1,6 +1,4 @@
-
-#[test]
-fn test_example() {
+fn main() {
     let hello_world = "Hello, world!";
     println!("{}", hello_world);
 
@@ -15,5 +13,4 @@ fn test_example() {
 
     let character = 'a';
     println!("{}", character);
-
 }
