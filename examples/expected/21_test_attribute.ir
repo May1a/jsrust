@@ -1,0 +1,41 @@
+; Module: root
+
+; String literals:
+;   lit0 = "a = {}"
+;   lit1 = "x = {}"
+;   lit2 = "Running main function"
+
+fn test_basic() -> () {
+
+    block0:
+        v0 = iconst i32 1
+        v1 = iconst i32 2
+        v2 = iadd v0, v1
+        v3 = sconst lit0
+        v4 = iconst i32 1
+        v5 = call 862609(v3, v4, v2)
+        ret
+
+}
+
+fn test_multiplication() -> () {
+
+    block0:
+        v6 = iconst i32 4
+        v7 = iconst i32 5
+        v8 = imul v6, v7
+        v9 = sconst lit1
+        v10 = iconst i32 1
+        v11 = call 862609(v9, v10, v8)
+        ret
+
+}
+
+fn main() -> () {
+
+    block0:
+        v12 = sconst lit2
+        v13 = call 862609(v12)
+        ret
+
+}

@@ -5,6 +5,7 @@ import { tokenize, TokenType } from "./tokenizer.js";
 /** @typedef {import('./ast.js').Node} Node */
 /** @typedef {import('./ast.js').BinaryOpValue} BinaryOpValue */
 import {
+    NodeKind,
     LiteralKind,
     UnaryOp,
     BinaryOp,
@@ -296,11 +297,12 @@ function matchInvalidSymbol(state, symbol) {
 
 /**
  * @param {ParserState} state
- * @returns {string[]}
+ * @returns {{ derives: string[], isTest: boolean }}
  */
-function parseOuterDeriveAttributes(state) {
+function parseOuterAttributes(state) {
     /** @type {string[]} */
     const derives = [];
+    let isTest = false;
     while (
         peek(state).type === TokenType.Invalid &&
         peek(state).value === "#" &&
@@ -315,6 +317,11 @@ function parseOuterDeriveAttributes(state) {
             continue;
         }
         const attrIdent = advance(state).value;
+        if (attrIdent === "test") {
+            isTest = true;
+            expectToken(state, TokenType.CloseSquare, "Expected ] after test attribute");
+            continue;
+        }
         if (attrIdent !== "derive") {
             addError(
                 state,
@@ -342,7 +349,7 @@ function parseOuterDeriveAttributes(state) {
         expectToken(state, TokenType.CloseParen, "Expected ) after derive list");
         expectToken(state, TokenType.CloseSquare, "Expected ] after attribute");
     }
-    return derives;
+    return { derives, isTest };
 }
 
 /**
@@ -1791,7 +1798,7 @@ function parseUseItem(state, isPub) {
  * @returns {Node | null}
  */
 function parseItem(state) {
-    const derives = parseOuterDeriveAttributes(state);
+    const { derives, isTest } = parseOuterAttributes(state);
     let isPub = false;
     let isUnsafe = false;
     if (matchToken(state, TokenType.Pub)) {
@@ -1811,6 +1818,9 @@ function parseItem(state) {
     else if (check(state, TokenType.Impl)) item = parseImplItem(state, isUnsafe);
     if (item) {
         item.derives = derives;
+        if (isTest && item.kind === NodeKind.FnItem) {
+            item.isTest = true;
+        }
         return item;
     }
     addError(state, "Expected item", peek(state), null);
