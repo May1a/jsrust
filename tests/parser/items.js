@@ -30,6 +30,28 @@ export function runParserItemTests() {
         assertEqual(item.variants.length, 2);
     });
 
+    test("trait item and trait impl item", () => {
+        const result = parseModule(
+            "trait Add { fn add(&self, other: &Self) -> Self; } impl Add for i32 { fn add(&self, other: &Self) -> Self { self + other } }",
+        );
+        assertTrue(result.ok);
+        const traitItem = result.value.items[0];
+        const implItem = result.value.items[1];
+        assertEqual(traitItem.kind, NodeKind.TraitItem);
+        assertEqual(traitItem.methods.length, 1);
+        assertEqual(implItem.kind, NodeKind.ImplItem);
+        assertTrue(implItem.traitType !== null);
+    });
+
+    test("derive attribute on struct", () => {
+        const result = parseModule("#[derive(Clone, Copy, Debug)] struct S { x: i32 }");
+        assertTrue(result.ok);
+        const item = result.value.items[0];
+        assertEqual(item.kind, NodeKind.StructItem);
+        assertEqual(item.derives.length, 3);
+        assertEqual(item.derives[0], "Clone");
+    });
+
     test("mod item", () => {
         const result = parseModule("mod inner { fn f() {} }");
         assertTrue(result.ok);
@@ -79,5 +101,5 @@ export function runParserItemTests() {
         assertEqual(result.value.items[0].fields[0].isPub, true);
     });
 
-    return 8;
+    return 10;
 }

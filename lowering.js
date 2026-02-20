@@ -352,12 +352,15 @@ function lowerItemIntoList(ctx, item, typeCtx, output) {
         return;
     }
     if (item.kind === NodeKind.ImplItem) {
+        const traitName = item.traitType?.name || null;
         for (const method of item.methods || []) {
             lowerItemIntoList(
                 ctx,
                 {
                     ...method,
-                    name: `${item.targetType?.name || "unknown"}::${method.name}`,
+                    name: traitName
+                        ? `${item.targetType?.name || "unknown"}::<${traitName}>::${method.name}`
+                        : `${item.targetType?.name || "unknown"}::${method.name}`,
                     implTargetName: item.targetType?.name || null,
                     isImplMethod: true,
                     unqualifiedName: method.name,
@@ -408,13 +411,18 @@ function registerItem(ctx, item, typeCtx) {
             }
             break;
         }
+        case NodeKind.TraitItem:
+            break;
         case NodeKind.ImplItem: {
+            const traitName = item.traitType?.name || null;
             for (const method of item.methods || []) {
                 registerItem(
                     ctx,
                     {
                         ...method,
-                        name: `${item.targetType?.name || "unknown"}::${method.name}`,
+                        name: traitName
+                            ? `${item.targetType?.name || "unknown"}::<${traitName}>::${method.name}`
+                            : `${item.targetType?.name || "unknown"}::${method.name}`,
                     },
                     typeCtx,
                 );
@@ -445,6 +453,7 @@ function lowerItem(ctx, item, typeCtx) {
             return lowerStructItem(ctx, item, typeCtx);
         case NodeKind.EnumItem:
             return lowerEnumItem(ctx, item, typeCtx);
+        case NodeKind.TraitItem:
         case NodeKind.ModItem:
         case NodeKind.UseItem:
         case NodeKind.ImplItem:
@@ -906,8 +915,46 @@ function lowerIdentifier(ctx, ident, typeCtx) {
  * @returns {import('./hir.js').HBinaryExpr}
  */
 function lowerBinary(ctx, binary, typeCtx) {
-    const left = lowerExpr(ctx, binary.left, typeCtx);
-    const right = lowerExpr(ctx, binary.right, typeCtx);
+    /**
+     * @param {import('./hir.js').HExpr} expr
+     * @param {Span} span
+     * @returns {import('./hir.js').HExpr}
+     */
+    function autoDeref(expr, span) {
+        let out = expr;
+        while (
+            out.ty &&
+            (out.ty.kind === TypeKind.Ref || out.ty.kind === TypeKind.Ptr)
+        ) {
+            out = makeHDerefExpr(span, out, out.ty.inner);
+        }
+        return out;
+    }
+
+    let left = lowerExpr(ctx, binary.left, typeCtx);
+    let right = lowerExpr(ctx, binary.right, typeCtx);
+
+    const shouldAutoDeref =
+        binary.op === BinaryOp.Add ||
+        binary.op === BinaryOp.Sub ||
+        binary.op === BinaryOp.Mul ||
+        binary.op === BinaryOp.Div ||
+        binary.op === BinaryOp.Rem ||
+        binary.op === BinaryOp.Eq ||
+        binary.op === BinaryOp.Ne ||
+        binary.op === BinaryOp.Lt ||
+        binary.op === BinaryOp.Le ||
+        binary.op === BinaryOp.Gt ||
+        binary.op === BinaryOp.Ge ||
+        binary.op === BinaryOp.BitXor ||
+        binary.op === BinaryOp.BitAnd ||
+        binary.op === BinaryOp.BitOr ||
+        binary.op === BinaryOp.Shl ||
+        binary.op === BinaryOp.Shr;
+    if (shouldAutoDeref) {
+        left = autoDeref(left, binary.left.span);
+        right = autoDeref(right, binary.right.span);
+    }
 
     // Determine result type
     let ty = left.ty;
@@ -949,6 +996,45 @@ function lowerUnary(ctx, unary, typeCtx) {
 function lowerCall(ctx, call, typeCtx) {
     if (call.callee?.kind === NodeKind.FieldExpr) {
         const methodField = call.callee;
+        const resolvedSymbol = methodField.resolvedMethodSymbolName || null;
+        if (resolvedSymbol) {
+            const methodMeta = typeCtx.lookupMethodBySymbol(resolvedSymbol);
+            const receiver = lowerExpr(ctx, methodField.receiver, typeCtx);
+            if (methodMeta && methodMeta.type?.kind === TypeKind.Fn) {
+                const methodType = methodMeta.type;
+                let receiverArg = receiver;
+                const receiverType = methodType.params[0];
+                if (receiverType?.kind === TypeKind.Ref) {
+                    const refTy = {
+                        kind: TypeKind.Ref,
+                        inner: receiver.ty,
+                        mutable: receiverType.mutable === true,
+                    };
+                    receiverArg = makeHRefExpr(
+                        methodField.receiver.span,
+                        receiverType.mutable === true,
+                        receiver,
+                        refTy,
+                    );
+                }
+                const args = [
+                    receiverArg,
+                    ...(call.args || []).map((/**@type{any}*/ arg) => lowerExpr(ctx, arg, typeCtx)),
+                ];
+                const callee = makeHVarExpr(
+                    call.callee.span,
+                    resolvedSymbol,
+                    -1,
+                    methodType,
+                );
+                return makeHCallExpr(
+                    call.span,
+                    callee,
+                    args,
+                    methodType.returnType,
+                );
+            }
+        }
         const methodName =
             typeof methodField.field === "string"
                 ? methodField.field

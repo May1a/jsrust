@@ -1,0 +1,35 @@
+; Module: root
+
+; String literals:
+;   lit0 = "{} {}"
+
+fn main() -> () {
+
+    block0:
+        v0 = iconst i32 4
+        v1 = iconst i32 5
+        v2 = struct_create Pair { v0, v1 }
+        v3 = alloca Pair ; loc0
+        store Pair, v3, v2
+        v4 = call 8166(v3)
+        v5 = sconst lit0
+        v6 = iconst i32 1
+        v7 = struct_get v4, 0
+        v8 = iconst i32 1
+        v9 = struct_get v4, 1
+        v10 = call 862609(v5, v6, v7, v8, v9)
+        ret
+
+}
+
+fn Pair::<Clone>::clone(arg0: *Pair) -> Pair {
+
+    block0:
+        v12 = load Pair, v11
+        v13 = struct_get v12, 0
+        v14 = load Pair, v11
+        v15 = struct_get v14, 1
+        v16 = struct_create Pair { v13, v15 }
+        ret v16
+
+}

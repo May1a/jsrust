@@ -458,6 +458,94 @@ function substitute(ctx, type) {
     }
 }
 
+/**
+ * @param {Type} ty
+ * @returns {string | null}
+ */
+function typeKeyForMethodLookup(ty) {
+    switch (ty.kind) {
+        case TypeKind.Struct:
+        case TypeKind.Enum:
+        case TypeKind.Named:
+            return ty.name;
+        case TypeKind.Int:
+            return intWidthToName(ty.width);
+        case TypeKind.Float:
+            return floatWidthToName(ty.width);
+        case TypeKind.Bool:
+            return "bool";
+        case TypeKind.Char:
+            return "char";
+        case TypeKind.String:
+            return "str";
+        case TypeKind.Unit:
+            return "()";
+        case TypeKind.Never:
+            return "!";
+        default:
+            return null;
+    }
+}
+
+/**
+ * @param {number} width
+ * @returns {string}
+ */
+function intWidthToName(width) {
+    switch (width) {
+        case IntWidth.I8: return "i8";
+        case IntWidth.I16: return "i16";
+        case IntWidth.I32: return "i32";
+        case IntWidth.I64: return "i64";
+        case IntWidth.I128: return "i128";
+        case IntWidth.Isize: return "isize";
+        case IntWidth.U8: return "u8";
+        case IntWidth.U16: return "u16";
+        case IntWidth.U32: return "u32";
+        case IntWidth.U64: return "u64";
+        case IntWidth.U128: return "u128";
+        case IntWidth.Usize: return "usize";
+        default: return "unknown_int";
+    }
+}
+
+/**
+ * @param {number} width
+ * @returns {string}
+ */
+function floatWidthToName(width) {
+    switch (width) {
+        case FloatWidth.F32: return "f32";
+        case FloatWidth.F64: return "f64";
+        default: return "unknown_float";
+    }
+}
+
+/**
+ * @param {TypeContext} ctx
+ * @param {Node} typeNode
+ * @returns {InferenceResult}
+ */
+function resolveImplTargetType(ctx, typeNode) {
+    const tyResult = resolveTypeNode(ctx, typeNode);
+    if (!tyResult.ok) return tyResult;
+    const resolved = ctx.resolveType(tyResult.type);
+    if (resolved.kind === TypeKind.Named) {
+        const decl = ctx.lookupItem(resolved.name);
+        if (!decl && !resolveBuiltinType(resolved.name)) {
+            return err(
+                `impl target must resolve to a known type: ${resolved.name}`,
+                typeNode?.span,
+            );
+        }
+    }
+    const key = typeKeyForMethodLookup(tyResult.type);
+    if (!key) {
+        return err("impl target must be a concrete named/builtin type", typeNode?.span);
+    }
+    return ok(tyResult.type);
+}
+
 // ============================================================================
 // Task 4.1: Inference Entry Point
 // ============================================================================
@@ -525,13 +613,16 @@ function gatherDeclarations(ctx, module) {
 function gatherDeclaration(ctx, item) {
     switch (item.kind) {
         case NodeKind.FnItem: {
-            if (item.implTargetName) {
+            let pushedSelf = false;
+            if (item.implTargetName && !ctx.currentImplSelfType()) {
+                const builtinSelf = resolveBuiltinType(item.implTargetName);
                 ctx.pushImplSelfType(
-                    makeStructType(item.implTargetName, [], item.span),
+                    builtinSelf || makeStructType(item.implTargetName, [], item.span),
                 );
+                pushedSelf = true;
             }
             const typeResult = inferFnSignature(ctx, item);
-            if (item.implTargetName) {
+            if (pushedSelf) {
                 ctx.popImplSelfType();
             }
             if (!typeResult.ok) return typeResult;
@@ -608,6 +699,22 @@ function gatherDeclaration(ctx, item) {
             return { ok: true };
         }
 
+        case NodeKind.TraitItem: {
+            const registerResult = ctx.registerTrait(item.name, item);
+            if (!registerResult.ok) {
+                return {
+                    ok: false,
+                    errors: [
+                        makeTypeError(
+                            registerResult.error || "Failed to register trait",
+                            item.span,
+                        ),
+                    ],
+                };
+            }
+            return { ok: true };
+        }
+
         case NodeKind.ModItem: {
             const registerResult = ctx.registerMod(item.name, item);
             if (!registerResult.ok) {
@@ -635,38 +742,122 @@ function gatherDeclaration(ctx, item) {
             return { ok: true };
 
         case NodeKind.ImplItem: {
-            const targetName = item.targetType?.name || null;
+            const targetResult = resolveImplTargetType(ctx, item.targetType);
+            if (!targetResult.ok) {
+                return targetResult;
+            }
+            const targetType = targetResult.type;
+            const targetName = typeKeyForMethodLookup(targetType);
             if (!targetName) {
                 return {
                     ok: false,
                     errors: [
-                        makeTypeError("impl target must be a named struct type", item.span),
+                        makeTypeError("impl target must be concrete", item.span),
                     ],
                 };
             }
-            const targetDecl = ctx.lookupItem(targetName);
-            if (!targetDecl || targetDecl.kind !== "struct") {
-                return {
-                    ok: false,
-                    errors: [
+            const errors = [];
+            const isTraitImpl = !!item.traitType;
+
+            /** @type {Map<string, Node>} */
+            const implMethodsByName = new Map();
+            for (const method of item.methods || []) {
+                if (implMethodsByName.has(method.name)) {
+                    errors.push(
                         makeTypeError(
-                            `impl target must resolve to a struct: ${targetName}`,
-                            item.span,
+                            `Duplicate method in impl block: ${method.name}`,
+                            method.span,
                         ),
-                    ],
-                };
+                    );
+                    continue;
+                }
+                implMethodsByName.set(method.name, method);
             }
 
-            const selfType = makeStructType(targetName, [], item.span);
-            ctx.pushImplSelfType(selfType);
-            const errors = [];
+            /** @type {Map<string, Node> | null} */
+            let traitMethodsByName = null;
+            let traitName = null;
+            if (isTraitImpl) {
+                traitName = item.traitType?.name || null;
+                if (!traitName) {
+                    errors.push(makeTypeError("Trait impl must name a trait", item.span));
+                } else {
+                    const traitDecl = ctx.lookupTrait(traitName);
+                    if (!traitDecl) {
+                        errors.push(
+                            makeTypeError(`Unknown trait: ${traitName}`, item.span),
+                        );
+                    } else {
+                        traitMethodsByName = new Map(
+                            (traitDecl.node.methods || []).map((/** @type {Node} */ m) => [m.name, m]),
+                        );
+                        const implRegisterResult = ctx.registerTraitImpl(traitName, targetName);
+                        if (!implRegisterResult.ok) {
+                            errors.push(
+                                makeTypeError(
+                                    implRegisterResult.error ||
+                                    "Duplicate trait impl",
+                                    item.span,
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+
+            ctx.pushImplSelfType(targetType);
+            if (traitMethodsByName) {
+                for (const [traitMethodName, traitMethod] of traitMethodsByName.entries()) {
+                    const implMethod = implMethodsByName.get(traitMethodName);
+                    if (!implMethod) {
+                        errors.push(
+                            makeTypeError(
+                                `Trait method not implemented: ${traitMethodName}`,
+                                item.span,
+                            ),
+                        );
+                        continue;
+                    }
+                    const traitSig = inferFnSignature(ctx, traitMethod);
+                    const implSig = inferFnSignature(ctx, implMethod);
+                    if (!traitSig.ok) {
+                        errors.push(...(traitSig.errors || []));
+                        continue;
+                    }
+                    if (!implSig.ok) {
+                        errors.push(...(implSig.errors || []));
+                        continue;
+                    }
+                    if (!typeEquals(traitSig.type, implSig.type)) {
+                        errors.push(
+                            makeTypeError(
+                                `Method signature mismatch for ${traitMethodName}: expected ${typeToString(traitSig.type)} got ${typeToString(implSig.type)}`,
+                                implMethod.span,
+                            ),
+                        );
+                    }
+                }
+                for (const [implMethodName, implMethod] of implMethodsByName.entries()) {
+                    if (!traitMethodsByName.has(implMethodName)) {
+                        errors.push(
+                            makeTypeError(
+                                `Method not in trait ${traitName}: ${implMethodName}`,
+                                implMethod.span,
+                            ),
+                        );
+                    }
+                }
+            }
+
             for (const method of item.methods || []) {
                 const typeResult = inferFnSignature(ctx, method);
                 if (!typeResult.ok) {
                     errors.push(...(typeResult.errors || []));
                     continue;
                 }
-                const symbolName = `${targetName}::${method.name}`;
+                const symbolName = isTraitImpl
+                    ? `${targetName}::<${traitName || "unknown"}>::${method.name}`
+                    : `${targetName}::${method.name}`;
                 const registerFnResult = ctx.registerFn(
                     symbolName,
                     method,
@@ -682,21 +873,41 @@ function gatherDeclaration(ctx, item) {
                     );
                     continue;
                 }
-                const registerMethodResult = ctx.registerMethod(
-                    targetName,
-                    method.name,
-                    method,
-                    typeResult.type,
-                    { receiver: method.params?.[0]?.receiverKind || null },
-                );
-                if (!registerMethodResult.ok) {
-                    errors.push(
-                        makeTypeError(
-                            registerMethodResult.error ||
-                            "Failed to register impl method",
-                            method.span,
-                        ),
+                if (isTraitImpl) {
+                    const registerTraitMethodResult = ctx.registerTraitMethod(
+                        targetName,
+                        traitName || "unknown",
+                        method.name,
+                        method,
+                        typeResult.type,
+                        { receiver: method.params?.[0]?.receiverKind || null },
                     );
+                    if (!registerTraitMethodResult.ok) {
+                        errors.push(
+                            makeTypeError(
+                                registerTraitMethodResult.error ||
+                                "Failed to register trait impl method",
+                                method.span,
+                            ),
+                        );
+                    }
+                } else {
+                    const registerMethodResult = ctx.registerMethod(
+                        targetName,
+                        method.name,
+                        method,
+                        typeResult.type,
+                        { receiver: method.params?.[0]?.receiverKind || null },
+                    );
+                    if (!registerMethodResult.ok) {
+                        errors.push(
+                            makeTypeError(
+                                registerMethodResult.error ||
+                                "Failed to register impl method",
+                                method.span,
+                            ),
+                        );
+                    }
                 }
             }
             ctx.popImplSelfType();
@@ -963,8 +1174,13 @@ function checkItem(ctx, item) {
             return checkFnItem(ctx, item);
 
         case NodeKind.ImplItem: {
-            const targetName = item.targetType?.name || "";
-            const targetType = makeStructType(targetName, [], item.span);
+            const targetResult = resolveImplTargetType(ctx, item.targetType);
+            if (!targetResult.ok) {
+                return { ok: false, errors: targetResult.errors || [] };
+            }
+            const targetType = targetResult.type;
+            const targetName = typeKeyForMethodLookup(targetType) || "unknown";
+            const traitName = item.traitType?.name || null;
             ctx.pushImplSelfType(targetType);
             const result = checkModuleItems(ctx, {
                 kind: NodeKind.Module,
@@ -972,13 +1188,18 @@ function checkItem(ctx, item) {
                 items: (item.methods || []).map((/** @type {Node} */ method) => ({
                     ...method,
                     kind: NodeKind.FnItem,
-                    name: `${targetName}::${method.name}`,
+                    name: traitName
+                        ? `${targetName}::<${traitName}>::${method.name}`
+                        : `${targetName}::${method.name}`,
                     implTargetName: targetName,
                 })),
             });
             ctx.popImplSelfType();
             return result;
         }
+
+        case NodeKind.TraitItem:
+            return { ok: true };
 
         case NodeKind.ModItem:
             if (item.isInline && item.items) {
@@ -1019,8 +1240,13 @@ function checkFnItem(ctx, fnItem) {
     }
 
     const fnType = /** @type {FnType} */ (itemDecl.type);
-    if (fnItem.implTargetName) {
-        ctx.pushImplSelfType(makeStructType(fnItem.implTargetName, [], fnItem.span));
+    let pushedSelf = false;
+    if (fnItem.implTargetName && !ctx.currentImplSelfType()) {
+        const builtinSelf = resolveBuiltinType(fnItem.implTargetName);
+        ctx.pushImplSelfType(
+            builtinSelf || makeStructType(fnItem.implTargetName, [], fnItem.span),
+        );
+        pushedSelf = true;
     }
     ctx.pushScope();
 
@@ -1072,7 +1298,7 @@ function checkFnItem(ctx, fnItem) {
 
     ctx.popScope();
     ctx.clearCurrentFn();
-    if (fnItem.implTargetName) {
+    if (pushedSelf) {
         ctx.popImplSelfType();
     }
 
@@ -1259,6 +1485,20 @@ function inferBinary(ctx, binary) {
 
     const leftType = ctx.resolveType(leftResult.type);
     const rightType = ctx.resolveType(rightResult.type);
+    let leftValueType = leftType;
+    let rightValueType = rightType;
+    while (
+        leftValueType &&
+        (leftValueType.kind === TypeKind.Ref || leftValueType.kind === TypeKind.Ptr)
+    ) {
+        leftValueType = ctx.resolveType(leftValueType.inner);
+    }
+    while (
+        rightValueType &&
+        (rightValueType.kind === TypeKind.Ref || rightValueType.kind === TypeKind.Ptr)
+    ) {
+        rightValueType = ctx.resolveType(rightValueType.inner);
+    }
 
     switch (binary.op) {
         // Arithmetic operators
@@ -1269,8 +1509,8 @@ function inferBinary(ctx, binary) {
         case BinaryOp.Rem: {
             // Both operands must be numeric
             if (
-                !isNumericType(leftType) &&
-                leftType.kind !== TypeKind.TypeVar
+                !isNumericType(leftValueType) &&
+                leftValueType.kind !== TypeKind.TypeVar
             ) {
                 return err(
                     `Expected numeric type, got ${typeToString(leftType)}`,
@@ -1278,8 +1518,8 @@ function inferBinary(ctx, binary) {
                 );
             }
             if (
-                !isNumericType(rightType) &&
-                rightType.kind !== TypeKind.TypeVar
+                !isNumericType(rightValueType) &&
+                rightValueType.kind !== TypeKind.TypeVar
             ) {
                 return err(
                     `Expected numeric type, got ${typeToString(rightType)}`,
@@ -1288,12 +1528,12 @@ function inferBinary(ctx, binary) {
             }
 
             // Unify operand types
-            const unifyResult = unify(ctx, leftType, rightType);
+            const unifyResult = unify(ctx, leftValueType, rightValueType);
             if (!unifyResult.ok) {
                 return { ok: false, errors: [unifyResult.error] };
             }
 
-            return ok(ctx.resolveType(leftType));
+            return ok(ctx.resolveType(leftValueType));
         }
 
         // Comparison operators
@@ -1304,7 +1544,7 @@ function inferBinary(ctx, binary) {
         case BinaryOp.Gt:
         case BinaryOp.Ge: {
             // Unify operand types
-            const unifyResult = unify(ctx, leftType, rightType);
+            const unifyResult = unify(ctx, leftValueType, rightValueType);
             if (!unifyResult.ok) {
                 return { ok: false, errors: [unifyResult.error] };
             }
@@ -1335,8 +1575,8 @@ function inferBinary(ctx, binary) {
         case BinaryOp.Shr: {
             // Both operands must be integers
             if (
-                !isIntegerType(leftType) &&
-                leftType.kind !== TypeKind.TypeVar
+                !isIntegerType(leftValueType) &&
+                leftValueType.kind !== TypeKind.TypeVar
             ) {
                 return err(
                     `Expected integer type, got ${typeToString(leftType)}`,
@@ -1344,8 +1584,8 @@ function inferBinary(ctx, binary) {
                 );
             }
             if (
-                !isIntegerType(rightType) &&
-                rightType.kind !== TypeKind.TypeVar
+                !isIntegerType(rightValueType) &&
+                rightValueType.kind !== TypeKind.TypeVar
             ) {
                 return err(
                     `Expected integer type, got ${typeToString(rightType)}`,
@@ -1353,12 +1593,12 @@ function inferBinary(ctx, binary) {
                 );
             }
 
-            const unifyResult = unify(ctx, leftType, rightType);
+            const unifyResult = unify(ctx, leftValueType, rightValueType);
             if (!unifyResult.ok) {
                 return { ok: false, errors: [unifyResult.error] };
             }
 
-            return ok(ctx.resolveType(leftType));
+            return ok(ctx.resolveType(leftValueType));
         }
 
         default:
@@ -1528,6 +1768,22 @@ function inferField(ctx, field) {
     const fieldName =
         typeof field.field === "string" ? field.field : field.field.name;
 
+    /**
+     * @param {FnType} fnType
+     * @param {string} symbolName
+     * @returns {InferenceResult}
+     */
+    function asBoundMethod(fnType, symbolName) {
+        const boundType = makeFnType(
+            fnType.params.slice(1),
+            fnType.returnType,
+            fnType.isUnsafe || false,
+            field.span,
+        );
+        field.resolvedMethodSymbolName = symbolName;
+        return ok(boundType);
+    }
+
     // Handle struct field access
     if (accessType.kind === TypeKind.Struct) {
         const structType = /** @type {import("./types.js").StructType} */ (accessType);
@@ -1549,17 +1805,25 @@ function inferField(ctx, field) {
                 }
                 return ok(ctx.freshTypeVar());
             }
-            const method = ctx.lookupMethod(structType.name, fieldName);
-            if (method && method.type?.kind === TypeKind.Fn) {
-                const fnType = /** @type {FnType} */ (method.type);
-                const boundType = makeFnType(
-                    fnType.params.slice(1),
-                    fnType.returnType,
-                    fnType.isUnsafe || false,
+            const candidates = ctx.lookupMethodCandidates(structType.name, fieldName);
+            if (candidates.inherent && candidates.inherent.type?.kind === TypeKind.Fn) {
+                return asBoundMethod(
+                    /** @type {FnType} */ (candidates.inherent.type),
+                    candidates.inherent.symbolName,
+                );
+            }
+            if (candidates.traits.length === 1 && candidates.traits[0].type?.kind === TypeKind.Fn) {
+                return asBoundMethod(
+                    /** @type {FnType} */ (candidates.traits[0].type),
+                    candidates.traits[0].symbolName,
+                );
+            }
+            if (candidates.traits.length > 1) {
+                const traitNames = candidates.traits.map((c) => c.traitName).join(", ");
+                return err(
+                    `Ambiguous trait method '${fieldName}' for ${structType.name}; candidates: ${traitNames}`,
                     field.span,
                 );
-                field.resolvedMethodSymbolName = method.symbolName;
-                return ok(boundType);
             }
         }
 
@@ -1578,17 +1842,25 @@ function inferField(ctx, field) {
                 (/** @type {any} */ f) => f.name === fieldName,
             );
             if (!structField) {
-                const method = ctx.lookupMethod(namedType.name, fieldName);
-                if (method && method.type?.kind === TypeKind.Fn) {
-                    const fnType = /** @type {FnType} */ (method.type);
-                    const boundType = makeFnType(
-                        fnType.params.slice(1),
-                        fnType.returnType,
-                        fnType.isUnsafe || false,
+                const candidates = ctx.lookupMethodCandidates(namedType.name, fieldName);
+                if (candidates.inherent && candidates.inherent.type?.kind === TypeKind.Fn) {
+                    return asBoundMethod(
+                        /** @type {FnType} */ (candidates.inherent.type),
+                        candidates.inherent.symbolName,
+                    );
+                }
+                if (candidates.traits.length === 1 && candidates.traits[0].type?.kind === TypeKind.Fn) {
+                    return asBoundMethod(
+                        /** @type {FnType} */ (candidates.traits[0].type),
+                        candidates.traits[0].symbolName,
+                    );
+                }
+                if (candidates.traits.length > 1) {
+                    const traitNames = candidates.traits.map((c) => c.traitName).join(", ");
+                    return err(
+                        `Ambiguous trait method '${fieldName}' for ${namedType.name}; candidates: ${traitNames}`,
                         field.span,
                     );
-                    field.resolvedMethodSymbolName = method.symbolName;
-                    return ok(boundType);
                 }
                 return err(
                     `Field '${fieldName}' not found in struct ${namedType.name}`,
@@ -1599,6 +1871,30 @@ function inferField(ctx, field) {
                 return resolveTypeNode(ctx, structField.ty);
             }
             return ok(ctx.freshTypeVar());
+        }
+    }
+
+    const typeKey = typeKeyForMethodLookup(accessType);
+    if (typeKey) {
+        const candidates = ctx.lookupMethodCandidates(typeKey, fieldName);
+        if (candidates.inherent && candidates.inherent.type?.kind === TypeKind.Fn) {
+            return asBoundMethod(
+                /** @type {FnType} */ (candidates.inherent.type),
+                candidates.inherent.symbolName,
+            );
+        }
+        if (candidates.traits.length === 1 && candidates.traits[0].type?.kind === TypeKind.Fn) {
+            return asBoundMethod(
+                /** @type {FnType} */ (candidates.traits[0].type),
+                candidates.traits[0].symbolName,
+            );
+        }
+        if (candidates.traits.length > 1) {
+            const traitNames = candidates.traits.map((c) => c.traitName).join(", ");
+            return err(
+                `Ambiguous trait method '${fieldName}' for ${typeKey}; candidates: ${traitNames}`,
+                field.span,
+            );
         }
     }
 

@@ -1,0 +1,31 @@
+; Module: root
+
+; String literals:
+;   lit0 = "{}"
+
+fn i32::<Add>::add(arg0: *i32, arg1: *i32) -> i32 {
+
+    block0:
+        v2 = load i32, v0
+        v3 = load i32, v1
+        v4 = iadd v2, v3
+        ret v4
+
+}
+
+fn main() -> () {
+
+    block0:
+        v5 = iconst i32 1
+        v6 = iconst i32 2
+        v7 = sconst lit0
+        v8 = iconst i32 1
+        v9 = alloca i32 ; loc0
+        store i32, v9, v5
+        v10 = alloca i32 ; loc0
+        store i32, v10, v6
+        v11 = call 543024(v9, v10)
+        v12 = call 862609(v7, v8, v11)
+        ret
+
+}

@@ -45,6 +45,7 @@ import {
     makeModItem,
     makeUseTree,
     makeUseItem,
+    makeTraitItem,
     makeImplItem,
     makeIdentPat,
     makeWildcardPat,
@@ -291,6 +292,76 @@ function matchInvalidSymbol(state, symbol) {
         return advance(state);
     }
     return null;
+}
+
+/**
+ * @param {ParserState} state
+ * @returns {string[]}
+ */
+function parseOuterDeriveAttributes(state) {
+    /** @type {string[]} */
+    const derives = [];
+    while (
+        peek(state).type === TokenType.Invalid &&
+        peek(state).value === "#" &&
+        peek(state, 1).type === TokenType.OpenSquare
+    ) {
+        advance(state);
+        advance(state);
+        const attrName = peek(state);
+        if (!isIdentifierToken(attrName)) {
+            addError(state, "Expected attribute name", attrName, ["Identifier"]);
+            skipAttribute(state);
+            continue;
+        }
+        const attrIdent = advance(state).value;
+        if (attrIdent !== "derive") {
+            addError(
+                state,
+                `Unsupported attribute in this compiler model: ${attrIdent}`,
+                attrName,
+                null,
+            );
+            skipAttribute(state);
+            continue;
+        }
+        if (!matchToken(state, TokenType.OpenParen)) {
+            addError(state, "Expected ( after derive", peek(state), ["("]);
+            skipAttribute(state);
+            continue;
+        }
+        while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
+            const nameToken = peek(state);
+            if (!isIdentifierToken(nameToken)) {
+                addError(state, "Expected derive trait name", nameToken, ["Identifier"]);
+                break;
+            }
+            derives.push(advance(state).value);
+            if (!matchToken(state, TokenType.Comma)) break;
+        }
+        expectToken(state, TokenType.CloseParen, "Expected ) after derive list");
+        expectToken(state, TokenType.CloseSquare, "Expected ] after attribute");
+    }
+    return derives;
+}
+
+/**
+ * @param {ParserState} state
+ */
+function skipAttribute(state) {
+    let depth = 0;
+    while (!isAtEnd(state)) {
+        if (matchToken(state, TokenType.OpenSquare)) {
+            depth += 1;
+            continue;
+        }
+        if (matchToken(state, TokenType.CloseSquare)) {
+            if (depth === 0) break;
+            depth -= 1;
+            continue;
+        }
+        advance(state);
+    }
 }
 
 /**
@@ -979,6 +1050,7 @@ function parseStmt(state) {
         check(state, TokenType.Fn) ||
         check(state, TokenType.Struct) ||
         check(state, TokenType.Enum) ||
+        check(state, TokenType.Trait) ||
         check(state, TokenType.Mod) ||
         check(state, TokenType.Use) ||
         check(state, TokenType.Impl) ||
@@ -1219,21 +1291,65 @@ function parseStructItem(state, isPub) {
 /**
  * @param {ParserState} state
  * @param {boolean} isUnsafe
+ * @param {boolean} isPub
+ * @returns {Node}
+ */
+function parseTraitItem(state, isUnsafe, isPub) {
+    const start =
+        expectToken(state, TokenType.Trait, "Expected trait") ?? peek(state);
+    const nameToken =
+        expectToken(state, TokenType.Identifier, "Expected trait name") ??
+        peek(state);
+    const methods = [];
+    expectToken(state, TokenType.OpenCurly, "Expected { after trait name");
+    while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
+        if (check(state, TokenType.Fn)) {
+            const method = parseFnItem(state, false, false, true);
+            if (method.body) {
+                addError(
+                    state,
+                    "Default trait methods are not supported in this compiler model",
+                    previous(state),
+                    null,
+                );
+            }
+            methods.push({
+                ...method,
+                body: null,
+            });
+            continue;
+        }
+        addError(
+            state,
+            "Only method signatures are supported in trait declarations",
+            peek(state),
+            null,
+        );
+        skipToRecovery(state, [TokenType.CloseCurly, TokenType.Fn]);
+    }
+    const endToken =
+        expectToken(state, TokenType.CloseCurly, "Expected } after trait block") ??
+        peek(state);
+    const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
+    return makeTraitItem(span, nameToken.value ?? "", methods, isUnsafe, isPub);
+}
+
+/**
+ * @param {ParserState} state
+ * @param {boolean} isUnsafe
  * @returns {Node}
  */
 function parseImplItem(state, isUnsafe) {
     const start =
         expectToken(state, TokenType.Impl, "Expected impl") ?? peek(state);
-    const targetType = parseType(state);
-    if (check(state, TokenType.For)) {
-        addError(
-            state,
-            "Trait impl syntax is not supported yet",
-            peek(state),
-            null,
-        );
-        advance(state);
-        parseType(state);
+    const firstType = parseType(state);
+    /** @type {Node | null} */
+    let traitType = null;
+    /** @type {Node | null} */
+    let targetType = firstType;
+    if (matchToken(state, TokenType.For)) {
+        traitType = firstType;
+        targetType = parseType(state);
     }
     const methods = [];
     expectToken(state, TokenType.OpenCurly, "Expected { after impl target");
@@ -1267,6 +1383,7 @@ function parseImplItem(state, isUnsafe) {
     return makeImplItem(
         span,
         targetType ?? makeNamedType(spanFromToken(start), "unknown", null),
+        traitType,
         methods,
         isUnsafe,
     );
@@ -1382,6 +1499,7 @@ function parseModItem(state, isPub) {
                     TokenType.Fn,
                     TokenType.Struct,
                     TokenType.Enum,
+                    TokenType.Trait,
                     TokenType.Mod,
                     TokenType.Use,
                     TokenType.Impl,
@@ -1511,6 +1629,7 @@ function parseUseItem(state, isPub) {
  * @returns {Node | null}
  */
 function parseItem(state) {
+    const derives = parseOuterDeriveAttributes(state);
     let isPub = false;
     let isUnsafe = false;
     if (matchToken(state, TokenType.Pub)) {
@@ -1519,12 +1638,19 @@ function parseItem(state) {
     if (matchToken(state, TokenType.Unsafe)) {
         isUnsafe = true;
     }
-    if (check(state, TokenType.Fn)) return parseFnItem(state, isUnsafe, isPub);
-    if (check(state, TokenType.Struct)) return parseStructItem(state, isPub);
-    if (check(state, TokenType.Enum)) return parseEnumItem(state, isPub);
-    if (check(state, TokenType.Mod)) return parseModItem(state, isPub);
-    if (check(state, TokenType.Use)) return parseUseItem(state, isPub);
-    if (check(state, TokenType.Impl)) return parseImplItem(state, isUnsafe);
+    /** @type {Node | null} */
+    let item = null;
+    if (check(state, TokenType.Fn)) item = parseFnItem(state, isUnsafe, isPub);
+    else if (check(state, TokenType.Struct)) item = parseStructItem(state, isPub);
+    else if (check(state, TokenType.Enum)) item = parseEnumItem(state, isPub);
+    else if (check(state, TokenType.Trait)) item = parseTraitItem(state, isUnsafe, isPub);
+    else if (check(state, TokenType.Mod)) item = parseModItem(state, isPub);
+    else if (check(state, TokenType.Use)) item = parseUseItem(state, isPub);
+    else if (check(state, TokenType.Impl)) item = parseImplItem(state, isUnsafe);
+    if (item) {
+        item.derives = derives;
+        return item;
+    }
     addError(state, "Expected item", peek(state), null);
     return null;
 }
@@ -2078,6 +2204,7 @@ function parseBlockExpr(state) {
             check(state, TokenType.Fn) ||
             check(state, TokenType.Struct) ||
             check(state, TokenType.Enum) ||
+            check(state, TokenType.Trait) ||
             check(state, TokenType.Mod) ||
             check(state, TokenType.Use) ||
             check(state, TokenType.Impl) ||
@@ -2181,6 +2308,7 @@ function parseModuleFromState(state) {
                 TokenType.Fn,
                 TokenType.Struct,
                 TokenType.Enum,
+                TokenType.Trait,
                 TokenType.Mod,
                 TokenType.Use,
                 TokenType.Impl,
