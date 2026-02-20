@@ -1,0 +1,24 @@
+; Module: root
+
+; String literals:
+;   lit0 = "{}"
+;   lit1 = "Hello, world!"
+
+fn print_str_slice(arg0: ptr) -> () {
+
+    block0:
+        v1 = sconst lit0
+        v2 = iconst i32 0
+        v3 = call 862609(v1, v2, v0)
+        ret
+
+}
+
+fn main() -> () {
+
+    block0:
+        v4 = sconst lit1
+        v5 = call 951474(v4)
+        ret
+
+}
