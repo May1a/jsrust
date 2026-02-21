@@ -1,24 +1,303 @@
 ; Module: root
 
+fn Vec::new() -> Vec {
+
+    block0:
+        v0 = iconst i32 0
+        v1 = call 81923(v0)
+        v2 = iconst i32 0
+        v3 = iconst i32 0
+        v4 = struct_create Vec { v1, v2, v3 }
+        ret v4
+
+}
+
+fn Vec::with_capacity(arg0: i32) -> Vec {
+
+    block0:
+        v6 = call 81923(v5)
+        v7 = iconst i32 0
+        v8 = struct_create Vec { v6, v7, v5 }
+        ret v8
+
+}
+
+fn Vec::len(arg0: *Vec) -> i32 {
+
+    block0:
+        v10 = load Vec, v9
+        v11 = struct_get v10, 1
+        ret v11
+
+}
+
+fn Vec::capacity(arg0: *Vec) -> i32 {
+
+    block0:
+        v13 = load Vec, v12
+        v14 = struct_get v13, 2
+        ret v14
+
+}
+
+fn Vec::grow(arg0: *Vec) -> () {
+
+    block0:
+        v16 = load Vec, v15
+        v17 = struct_get v16, 0
+        v18 = load Vec, v15
+        v19 = struct_get v18, 2
+        v20 = iconst i32 0
+        v21 = icmp eq v19, v20
+        br_if v21, then: block1(), else: block2()
+
+    block1:
+        v22 = iconst i32 1
+        br block3(v22)
+
+    block2:
+        v23 = iadd v19, v19
+        br block3(v23)
+
+    block3(v24: i32):
+        v25 = call 81923(v24)
+        v26 = load Vec, v15
+        v27 = struct_get v26, 1
+        v28 = iconst i32 0
+        v29 = icmp sgt v27, v28
+        br_if v29, then: block4(), else: block5()
+
+    block4:
+        v30 = load Vec, v15
+        v31 = struct_get v30, 1
+        v32 = call 988124(v17, v25, v31)
+        br block5
+
+    block5:
+        v33 = iconst i8 0
+        v34 = iconst i32 0
+        v35 = icmp sgt v19, v34
+        br_if v35, then: block6(), else: block7()
+
+    block6:
+        v36 = call 22882(v17, v19)
+        br block7
+
+    block7:
+        v37 = iconst i8 0
+        v38 = alloca *Vec ; loc0
+        store *Vec, v38, v15
+        v39 = load *Vec, v38
+        v40 = iconst i32 0
+        v41 = iconst i32 0
+        v42 = gep v39, [v40, v41]
+        store *T, v42, v25
+        v43 = load *Vec, v38
+        v44 = iconst i32 0
+        v45 = iconst i32 2
+        v46 = gep v43, [v44, v45]
+        store i32, v46, v24
+        ret
+
+}
+
+fn Vec::push(arg0: *Vec, arg1: T) -> () {
+
+    block0:
+        v49 = load Vec, v47
+        v50 = struct_get v49, 0
+        v51 = load Vec, v47
+        v52 = struct_get v51, 2
+        v53 = iconst i32 0
+        v54 = icmp eq v52, v53
+        br_if v54, then: block1(), else: block2()
+
+    block1:
+        v55 = iconst i32 1
+        br block3(v55)
+
+    block2:
+        v56 = iadd v52, v52
+        br block3(v56)
+
+    block3(v57: i32):
+        v58 = load Vec, v47
+        v59 = struct_get v58, 1
+        v60 = load Vec, v47
+        v61 = struct_get v60, 2
+        v62 = icmp eq v59, v61
+        br_if v62, then: block4(), else: block5()
+
+    block4:
+        v63 = call 827472(v50, v52, v57)
+        br block6(v63)
+
+    block5:
+        v64 = load Vec, v47
+        v65 = struct_get v64, 0
+        br block6(v65)
+
+    block6(v66: *T):
+        v67 = load Vec, v47
+        v68 = struct_get v67, 1
+        v69 = load Vec, v47
+        v70 = struct_get v69, 2
+        v71 = icmp eq v68, v70
+        br_if v71, then: block7(), else: block8()
+
+    block7:
+        br block9(v57)
+
+    block8:
+        v72 = load Vec, v47
+        v73 = struct_get v72, 2
+        br block9(v73)
+
+    block9(v74: i32):
+        v75 = alloca *Vec ; loc0
+        store *Vec, v75, v47
+        v76 = load *Vec, v75
+        v77 = iconst i32 0
+        v78 = iconst i32 0
+        v79 = gep v76, [v77, v78]
+        store *T, v79, v66
+        v80 = load *Vec, v75
+        v81 = iconst i32 0
+        v82 = iconst i32 2
+        v83 = gep v80, [v81, v82]
+        store i32, v83, v74
+        v84 = load *Vec, v75
+        v85 = iconst i32 0
+        v86 = iconst i32 0
+        v87 = gep v84, [v85, v86]
+        v88 = load *T, v87
+        v89 = load *Vec, v75
+        v90 = load Vec, v89
+        v91 = struct_get v90, 1
+        v92 = gep v88, [v91]
+        store T, v92, v48
+        v93 = load *Vec, v75
+        v94 = load Vec, v93
+        v95 = struct_get v94, 1
+        v96 = iconst i32 1
+        v97 = iadd v95, v96
+        v98 = load *Vec, v75
+        v99 = iconst i32 0
+        v100 = iconst i32 1
+        v101 = gep v98, [v99, v100]
+        store i32, v101, v97
+        ret
+
+}
+
+fn Vec::pop(arg0: *Vec) -> T {
+
+    block0:
+        v103 = load Vec, v102
+        v104 = struct_get v103, 1
+        v105 = iconst i32 0
+        v106 = icmp eq v104, v105
+        br_if v106, then: block1(), else: block2()
+
+    block1:
+        v107 = iconst i32 0
+        v108 = load Vec, v102
+        v109 = struct_get v108, 1
+        v110 = call 839352(v107, v109)
+        br block2
+
+    block2:
+        v111 = iconst i8 0
+        v112 = load Vec, v102
+        v113 = struct_get v112, 1
+        v114 = iconst i32 1
+        v115 = isub v113, v114
+        v116 = alloca *Vec ; loc0
+        store *Vec, v116, v102
+        v117 = load *Vec, v116
+        v118 = iconst i32 0
+        v119 = iconst i32 1
+        v120 = gep v117, [v118, v119]
+        store i32, v120, v115
+        v121 = load *Vec, v116
+        v122 = load Vec, v121
+        v123 = struct_get v122, 0
+        v124 = load *Vec, v116
+        v125 = load Vec, v124
+        v126 = struct_get v125, 1
+        v127 = gep v123, [v126]
+        v128 = load T, v127
+        ret v128
+
+}
+
+fn Vec::get(arg0: *Vec, arg1: i32) -> T {
+
+    block0:
+        v131 = load Vec, v129
+        v132 = struct_get v131, 1
+        v133 = icmp sge v130, v132
+        br_if v133, then: block1(), else: block2()
+
+    block1:
+        v134 = load Vec, v129
+        v135 = struct_get v134, 1
+        v136 = call 839352(v130, v135)
+        br block2
+
+    block2:
+        v137 = iconst i8 0
+        v138 = load Vec, v129
+        v139 = struct_get v138, 0
+        v140 = gep v139, [v130]
+        v141 = load T, v140
+        ret v141
+
+}
+
+fn Vec::index(arg0: *Vec, arg1: i32) -> T {
+
+    block0:
+        v144 = load Vec, v142
+        v145 = struct_get v144, 1
+        v146 = icmp sge v143, v145
+        br_if v146, then: block1(), else: block2()
+
+    block1:
+        v147 = load Vec, v142
+        v148 = struct_get v147, 1
+        v149 = call 839352(v143, v148)
+        br block2
+
+    block2:
+        v150 = iconst i8 0
+        v151 = load Vec, v142
+        v152 = struct_get v151, 0
+        v153 = gep v152, [v143]
+        v154 = load T, v153
+        ret v154
+
+}
+
 fn closure_as_parameter(arg0: fn(i32) -> i32) -> () {
 
     block0:
-        v1 = iconst i32 5
-        v2 = call_dyn v0(v1)
-        v3 = iconst i32 6
-        v4 = icmp eq v2, v3
-        br_if v4, then: block1(), else: block2()
+        v156 = iconst i32 5
+        v157 = call_dyn v155(v156)
+        v158 = iconst i32 6
+        v159 = icmp eq v157, v158
+        br_if v159, then: block1(), else: block2()
 
     block1:
-        v5 = iconst i8 0
+        v160 = iconst i8 0
         br block3
 
     block2:
-        v6 = call 632151()
+        v161 = call 632151()
         br block3
 
     block3:
-        v7 = iconst i8 0
+        v162 = iconst i8 0
         ret
 
 }
@@ -26,8 +305,8 @@ fn closure_as_parameter(arg0: fn(i32) -> i32) -> () {
 fn test_closure_as_parameter() -> () {
 
     block0:
-        v8 = iconst i64 414719
-        v9 = call 991776(v8)
+        v163 = iconst i64 414719
+        v164 = call 991776(v163)
         ret
 
 }
@@ -35,33 +314,33 @@ fn test_closure_as_parameter() -> () {
 fn test_closure_as_parameter::__closure_0(arg0: i32) -> i32 {
 
     block0:
-        v11 = iconst i32 1
-        v12 = iadd v10, v11
-        ret v12
+        v166 = iconst i32 1
+        v167 = iadd v165, v166
+        ret v167
 
 }
 
 fn test_closures() -> () {
 
     block0:
-        v13 = iconst i32 5
-        v14 = iconst i64 783928
-        v15 = iconst i32 2
-        v16 = call 783928(v13, v15)
-        v17 = iconst i32 7
-        v18 = icmp eq v16, v17
-        br_if v18, then: block1(), else: block2()
+        v168 = iconst i32 5
+        v169 = iconst i64 783928
+        v170 = iconst i32 2
+        v171 = call 783928(v168, v170)
+        v172 = iconst i32 7
+        v173 = icmp eq v171, v172
+        br_if v173, then: block1(), else: block2()
 
     block1:
-        v19 = iconst i8 0
+        v174 = iconst i8 0
         br block3
 
     block2:
-        v20 = call 632151()
+        v175 = call 632151()
         br block3
 
     block3:
-        v21 = iconst i8 0
+        v176 = iconst i8 0
         ret
 
 }
@@ -69,7 +348,7 @@ fn test_closures() -> () {
 fn test_closures::__closure_1(arg0: i32, arg1: i32) -> i32 {
 
     block0:
-        v24 = iadd v23, v22
-        ret v24
+        v179 = iadd v178, v177
+        ret v179
 
 }

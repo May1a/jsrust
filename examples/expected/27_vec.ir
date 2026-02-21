@@ -1,8 +1,5 @@
 ; Module: root
 
-; String literals:
-;   lit0 = "{} {}"
-
 fn Vec::new() -> Vec {
 
     block0:
@@ -282,33 +279,145 @@ fn Vec::index(arg0: *Vec, arg1: i32) -> T {
 
 }
 
-fn test_example() -> () {
+fn test_vec() -> () {
 
     block0:
-        v155 = iconst i32 4
-        v156 = iconst i32 5
-        v157 = struct_create Pair { v155, v156 }
-        v158 = alloca Pair ; loc0
-        store Pair, v158, v157
-        v159 = call 8166(v158)
-        v160 = sconst lit0
-        v161 = iconst i32 1
-        v162 = struct_get v159, 0
-        v163 = iconst i32 1
-        v164 = struct_get v159, 1
-        v165 = call 862609(v160, v161, v162, v163, v164)
+        v155 = call 79020()
+        v156 = alloca Vec ; loc0
+        store Vec, v156, v155
+        v157 = iconst i32 1
+        v158 = call 17586(v156, v157)
+        v159 = iconst i32 2
+        v160 = call 17586(v156, v159)
+        v161 = iconst i32 3
+        v162 = call 17586(v156, v161)
+        v163 = load Vec, v156
+        v164 = alloca Vec ; loc0
+        store Vec, v164, v163
+        v165 = call 77089(v164)
+        v166 = iconst i32 3
+        v167 = icmp eq v165, v166
+        br_if v167, then: block1(), else: block2()
+
+    block1:
+        v168 = iconst i8 0
+        br block3
+
+    block2:
+        v169 = call 632151()
+        br block3
+
+    block3:
+        v170 = iconst i8 0
+        v171 = call 777106(v164)
+        v172 = iconst i32 4
+        v173 = icmp eq v171, v172
+        br_if v173, then: block4(), else: block5()
+
+    block4:
+        v174 = iconst i8 0
+        br block6
+
+    block5:
+        v175 = call 632151()
+        br block6
+
+    block6:
+        v176 = iconst i8 0
+        v177 = iconst i32 4
+        v178 = call 17586(v164, v177)
+        v179 = call 77089(v164)
+        v180 = iconst i32 4
+        v181 = icmp eq v179, v180
+        br_if v181, then: block7(), else: block8()
+
+    block7:
+        v182 = iconst i8 0
+        br block9
+
+    block8:
+        v183 = call 632151()
+        br block9
+
+    block9:
+        v184 = iconst i8 0
+        v185 = call 777106(v164)
+        v186 = iconst i32 4
+        v187 = icmp eq v185, v186
+        br_if v187, then: block10(), else: block11()
+
+    block10:
+        v188 = iconst i8 0
+        br block12
+
+    block11:
+        v189 = call 632151()
+        br block12
+
+    block12:
+        v190 = iconst i8 0
+        v191 = iconst i32 2
+        v192 = call 72290(v164, v191)
+        v193 = iconst i32 3
+        v194 = icmp eq v192, v193
+        br_if v194, then: block13(), else: block14()
+
+    block13:
+        v195 = iconst i8 0
+        br block15
+
+    block14:
+        v196 = call 632151()
+        br block15
+
+    block15:
+        v197 = iconst i8 0
+        v198 = iconst i32 1
+        v199 = call 407518(v164, v198)
+        v200 = iconst i32 2
+        v201 = icmp eq v199, v200
+        br_if v201, then: block16(), else: block17()
+
+    block16:
+        v202 = iconst i8 0
+        br block18
+
+    block17:
+        v203 = call 632151()
+        br block18
+
+    block18:
+        v204 = iconst i8 0
+        v205 = call 81245(v164)
+        v206 = iconst i32 4
+        v207 = icmp eq v205, v206
+        br_if v207, then: block19(), else: block20()
+
+    block19:
+        v208 = iconst i8 0
+        br block21
+
+    block20:
+        v209 = call 632151()
+        br block21
+
+    block21:
+        v210 = iconst i8 0
+        v211 = call 77089(v164)
+        v212 = iconst i32 3
+        v213 = icmp eq v211, v212
+        br_if v213, then: block22(), else: block23()
+
+    block22:
+        v214 = iconst i8 0
+        br block24
+
+    block23:
+        v215 = call 632151()
+        br block24
+
+    block24:
+        v216 = iconst i8 0
         ret
-
-}
-
-fn Pair::<Clone>::clone(arg0: *Pair) -> Pair {
-
-    block0:
-        v167 = load Pair, v166
-        v168 = struct_get v167, 0
-        v169 = load Pair, v166
-        v170 = struct_get v169, 1
-        v171 = struct_create Pair { v168, v170 }
-        ret v171
 
 }

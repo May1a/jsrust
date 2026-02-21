@@ -13,5 +13,5 @@
 
 ## Future
 
-- `future/01-wasm-codegen-core.md`: in progress (expanded parity-oriented wasm emission: pointer/memory/aggregate lowering + dynamic formatter host writers + memory export)
+- `future/01-wasm-codegen-core.md`: in progress (expanded parity-oriented wasm emission: pointer/memory/aggregate lowering + dynamic formatter host writers + memory export; stdlib-first Vec builtin parity landed for alloc/realloc/dealloc/copy/panic dispatch and GEP/call coercion fixes)
 - `future/02-wasm-data-memory-abi.md`: in progress (initial linear-memory/global/data ABI, string literal data segments, and aggregate layout bridge landed)

@@ -31,7 +31,14 @@ typedef struct {
 typedef struct {
     ExecValue value;
     uint8_t occupied;
+    uint8_t ptrKind;
 } RuntimeCell;
+
+typedef enum {
+    RuntimePtrKind_Invalid = 0,
+    RuntimePtrKind_Stack = 1,
+    RuntimePtrKind_Heap = 2
+} RuntimePtrKind;
 
 typedef struct {
     uint32_t fieldCount;
@@ -95,12 +102,26 @@ const IRFunction* Runtime_findFunctionByEntry(const RuntimeContext* runtime, Byt
 const IRFunction* Runtime_findFunctionByHash(const RuntimeContext* runtime, uint32_t hashId);
 
 BackendStatus Runtime_allocateCell(RuntimeContext* runtime, ExecValue initial, uint32_t* outIndex);
+BackendStatus Runtime_allocateCells(
+    RuntimeContext* runtime,
+    uint32_t count,
+    ExecValue initial,
+    uint8_t ptrKind,
+    uint32_t* outStartIndex);
+BackendStatus Runtime_deallocateCells(
+    RuntimeContext* runtime,
+    uint32_t startIndex,
+    uint32_t count,
+    uint8_t requireHeap);
 BackendStatus Runtime_storeCell(RuntimeContext* runtime, uint32_t cellIndex, ExecValue value);
 BackendStatus Runtime_loadCell(RuntimeContext* runtime, uint32_t cellIndex, ExecValue* outValue);
 BackendStatus Runtime_copyCell(RuntimeContext* runtime, uint32_t destIndex, uint32_t srcIndex);
+BackendStatus Runtime_copyCells(RuntimeContext* runtime, uint32_t destIndex, uint32_t srcIndex, uint32_t count);
+uint8_t Runtime_cellPtrKind(const RuntimeContext* runtime, uint32_t cellIndex);
 
 BackendStatus Runtime_allocateStruct(RuntimeContext* runtime, const ExecValue* fields, uint32_t fieldCount, uint32_t* outIndex);
 BackendStatus Runtime_readStructField(RuntimeContext* runtime, uint32_t structIndex, uint32_t fieldIndex, ExecValue* outValue);
+BackendStatus Runtime_writeStructField(RuntimeContext* runtime, uint32_t structIndex, uint32_t fieldIndex, ExecValue value);
 
 BackendStatus Runtime_allocateEnum(RuntimeContext* runtime, uint32_t tag, uint8_t hasData, ExecValue data, uint32_t* outIndex);
 BackendStatus Runtime_readEnumTag(RuntimeContext* runtime, uint32_t enumIndex, uint32_t* outTag);

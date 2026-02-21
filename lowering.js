@@ -1,4 +1,5 @@
 /** @typedef {import('./types.js').Type} Type */
+/** @typedef {import('./types.js').FnType} FnType */
 /** @typedef {import('./types.js').Span} Span */
 /** @typedef {import('./ast.js').Node} Node */
 /** @typedef {import('./type_context.js').TypeContext} TypeContext */
@@ -1292,6 +1293,65 @@ function substituteLoweringGenericType(typeCtx, type, genericNames, bindings) {
 }
 
 /**
+ * @param {Type} ty
+ * @returns {Type | null}
+ */
+function vecElementTypeForType(ty) {
+    if (
+        ty &&
+        ty.kind === TypeKind.Named &&
+        ty.name === "Vec" &&
+        ty.args &&
+        ty.args.length === 1
+    ) {
+        return ty.args[0];
+    }
+    return null;
+}
+
+/**
+ * @param {TypeContext} typeCtx
+ * @param {Type} fnType
+ * @param {Type | null | undefined} receiverType
+ * @param {any} meta
+ * @returns {Type}
+ */
+function instantiateLoweringMethodType(typeCtx, fnType, receiverType, meta) {
+    const implGenericNames = Array.isArray(meta?.implGenericNames)
+        ? meta.implGenericNames
+        : [];
+    if (implGenericNames.length === 0) {
+        return fnType;
+    }
+    if (
+        !receiverType ||
+        receiverType.kind !== TypeKind.Named ||
+        !receiverType.args ||
+        receiverType.args.length === 0
+    ) {
+        return fnType;
+    }
+    const targetGenericParamNames = Array.isArray(meta?.targetGenericParamNames)
+        ? meta.targetGenericParamNames
+        : [];
+    if (targetGenericParamNames.length === 0) {
+        return fnType;
+    }
+    const genericSet = new Set(implGenericNames);
+    const bindings = new Map();
+    const count = Math.min(targetGenericParamNames.length, receiverType.args.length);
+    for (let i = 0; i < count; i++) {
+        const genericName = targetGenericParamNames[i];
+        if (!genericName || !genericSet.has(genericName)) continue;
+        bindings.set(genericName, receiverType.args[i]);
+    }
+    if (bindings.size === 0) {
+        return fnType;
+    }
+    return substituteLoweringGenericType(typeCtx, fnType, genericSet, bindings);
+}
+
+/**
  * @param {TypeContext} typeCtx
  * @param {Node} callee
  * @returns {any | null}
@@ -1373,7 +1433,12 @@ function lowerCall(ctx, call, typeCtx) {
             const methodMeta = typeCtx.lookupMethodBySymbol(resolvedSymbol);
             const receiver = lowerExpr(ctx, methodField.receiver, typeCtx);
             if (methodMeta && methodMeta.type?.kind === TypeKind.Fn) {
-                const methodType = methodMeta.type;
+                const methodType = /** @type {FnType} */ (instantiateLoweringMethodType(
+                    typeCtx,
+                    methodMeta.type,
+                    receiver.ty,
+                    methodMeta.meta,
+                ));
                 let receiverArg = receiver;
                 const receiverType = methodType.params[0];
                 if (receiverType?.kind === TypeKind.Ref) {
@@ -1425,7 +1490,12 @@ function lowerCall(ctx, call, typeCtx) {
                     methodName,
                 );
                 if (methodDecl && methodDecl.type?.kind === TypeKind.Fn) {
-                    const methodType = methodDecl.type;
+                    const methodType = /** @type {FnType} */ (instantiateLoweringMethodType(
+                        typeCtx,
+                        methodDecl.type,
+                        receiver.ty,
+                        methodDecl.meta,
+                    ));
                     let receiverArg = receiver;
                     const receiverType = methodType.params[0];
                     if (receiverType?.kind === TypeKind.Ref) {
@@ -1507,6 +1577,8 @@ function lowerMacro(ctx, macroExpr, typeCtx) {
             return lowerPrintMacro(ctx, macroExpr, typeCtx, BUILTIN_PRINT_FMT_FN);
         case "assert_eq":
             return lowerAssertEqMacro(ctx, macroExpr, typeCtx);
+        case "vec":
+            return lowerVecMacro(ctx, macroExpr, typeCtx);
         default:
             ctx.addError(`Unsupported macro in lowering: ${macroExpr.name}!`, macroExpr.span);
             return makeHUnitExpr(macroExpr.span, makeUnitType());
@@ -1652,6 +1724,85 @@ function lowerPrintMacro(ctx, macroExpr, typeCtx, builtinName) {
 }
 
 /**
+ * Lower vec![a, b, c] into prelude statements:
+ * let __vec_tmpN = Vec::new();
+ * __vec_tmpN.push(a); ...
+ * and return __vec_tmpN as expression.
+ * @param {LoweringCtx} ctx
+ * @param {Node} macroExpr
+ * @param {TypeContext} typeCtx
+ * @returns {import('./hir.js').HExpr}
+ */
+function lowerVecMacro(ctx, macroExpr, typeCtx) {
+    const args = macroExpr.args || [];
+    const loweredArgs = args.map((/** @type {any} */ arg) => lowerExpr(ctx, arg, typeCtx));
+    const elementType =
+        loweredArgs.length > 0
+            ? loweredArgs[0].ty
+            : typeCtx.freshTypeVar();
+    const vecType = {
+        kind: TypeKind.Named,
+        name: "Vec",
+        args: [elementType],
+        span: macroExpr.span,
+    };
+
+    const tempName = `__vec_tmp${ctx.freshVarId()}`;
+    const tempVar = ctx.defineVar(tempName, vecType, true);
+    const tempPat = makeHIdentPat(
+        macroExpr.span,
+        tempName,
+        tempVar.id,
+        vecType,
+        true,
+        false,
+    );
+
+    const newFnType = makeFnType([], vecType, false, false, macroExpr.span);
+    const newCallee = makeHVarExpr(macroExpr.span, "Vec::new", -1, newFnType);
+    const newCall = makeHCallExpr(macroExpr.span, newCallee, [], vecType);
+    ctx.queuePreludeStmt(makeHLetStmt(macroExpr.span, tempPat, vecType, newCall));
+
+    for (const valueExpr of loweredArgs) {
+        const receiverExpr = makeHVarExpr(
+            macroExpr.span,
+            tempName,
+            tempVar.id,
+            vecType,
+        );
+        const receiverRefType = makeRefType(vecType, true, macroExpr.span);
+        const receiverArg = makeHRefExpr(
+            macroExpr.span,
+            true,
+            receiverExpr,
+            receiverRefType,
+        );
+        const pushFnType = makeFnType(
+            [receiverRefType, valueExpr.ty],
+            makeUnitType(macroExpr.span),
+            false,
+            false,
+            macroExpr.span,
+        );
+        const pushCallee = makeHVarExpr(
+            macroExpr.span,
+            "Vec::push",
+            -1,
+            pushFnType,
+        );
+        const pushCall = makeHCallExpr(
+            macroExpr.span,
+            pushCallee,
+            [receiverArg, valueExpr],
+            makeUnitType(macroExpr.span),
+        );
+        ctx.queuePreludeStmt(makeHExprStmt(macroExpr.span, pushCall));
+    }
+
+    return makeHVarExpr(macroExpr.span, tempName, tempVar.id, vecType);
+}
+
+/**
  * Lower a field expression
  * @param {LoweringCtx} ctx
  * @param {Node} field
@@ -1692,6 +1843,41 @@ function lowerField(ctx, field, typeCtx) {
                 }
             }
         }
+    } else if (baseType && baseType.kind === TypeKind.Named) {
+        index = ctx.getFieldIndex(baseType.name, fieldName);
+        const item = typeCtx.lookupItem(baseType.name);
+        if (item && item.kind === "struct") {
+            const structField = item.node.fields?.find(
+                (/** @type {any} */ f) => f.name === fieldName,
+            );
+            if (structField?.ty) {
+                const resolvedType = resolveTypeFromAst(structField.ty, typeCtx);
+                if (resolvedType.ok) {
+                    ty = resolvedType.type || makeUnitType();
+                    const genericParams = item.node.genericParams || [];
+                    const receiverArgs = baseType.args || [];
+                    if (genericParams.length > 0 && receiverArgs.length > 0) {
+                        const genericSet = new Set();
+                        const bindings = new Map();
+                        const count = Math.min(genericParams.length, receiverArgs.length);
+                        for (let i = 0; i < count; i++) {
+                            const genericName = genericParams[i]?.name || null;
+                            if (!genericName) continue;
+                            genericSet.add(genericName);
+                            bindings.set(genericName, receiverArgs[i]);
+                        }
+                        if (bindings.size > 0) {
+                            ty = substituteLoweringGenericType(
+                                typeCtx,
+                                ty,
+                                genericSet,
+                                bindings,
+                            );
+                        }
+                    }
+                }
+            }
+        }
     } else if (baseType && baseType.kind === TypeKind.Tuple) {
         // Tuple field access by index
         index = parseInt(fieldName, 10);
@@ -1712,7 +1898,7 @@ function lowerField(ctx, field, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} index
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HIndexExpr}
+ * @returns {import('./hir.js').HExpr}
  */
 function lowerIndex(ctx, index, typeCtx) {
     const base = lowerExpr(ctx, index.receiver, typeCtx);
@@ -1724,6 +1910,33 @@ function lowerIndex(ctx, index, typeCtx) {
         ty = base.ty.element;
     } else if (base.ty && base.ty.kind === TypeKind.Slice) {
         ty = base.ty.element;
+    } else if (base.ty && base.ty.kind === TypeKind.Ptr) {
+        ty = base.ty.inner;
+    } else {
+        const vecElement = base.ty ? vecElementTypeForType(base.ty) : null;
+        if (vecElement) {
+            const receiverRefType = makeRefType(base.ty, false, index.span);
+            const receiverArg = makeHRefExpr(
+                index.span,
+                false,
+                base,
+                receiverRefType,
+            );
+            const methodType = makeFnType(
+                [receiverRefType, idx.ty],
+                vecElement,
+                false,
+                false,
+                index.span,
+            );
+            const callee = makeHVarExpr(
+                index.span,
+                "Vec::index",
+                -1,
+                methodType,
+            );
+            return makeHCallExpr(index.span, callee, [receiverArg, idx], vecElement);
+        }
     }
 
     return makeHIndexExpr(index.span, base, idx, ty);
@@ -2483,21 +2696,63 @@ function extractPlace(ctx, expr, typeCtx) {
         }
 
         case NodeKind.FieldExpr: {
-            const base = extractPlace(ctx, expr.receiver, typeCtx);
-            if (!base) return null;
+            const extractedBase = extractPlace(ctx, expr.receiver, typeCtx);
+            if (!extractedBase) return null;
+
+            let base = extractedBase;
+            let baseType = base.ty;
+            if (baseType && (baseType.kind === TypeKind.Ref || baseType.kind === TypeKind.Ptr)) {
+                baseType = baseType.inner || makeUnitType();
+                base = makeHDerefPlace(expr.span, base, baseType);
+            }
 
             const fieldName =
                 typeof expr.field === "string" ? expr.field : expr.field.name;
             let index = 0;
             let ty = makeUnitType();
 
-            if (base.ty && /** @type {any} */ (base.ty).kind === TypeKind.Struct) {
-                index = ctx.getFieldIndex(/** @type {any} */(base.ty).name, fieldName);
-                const fieldDef = /** @type {any} */ (base.ty).fields?.find(
+            if (baseType && /** @type {any} */ (baseType).kind === TypeKind.Struct) {
+                index = ctx.getFieldIndex(/** @type {any} */(baseType).name, fieldName);
+                const fieldDef = /** @type {any} */ (baseType).fields?.find(
                     (/** @type {any} */ f) => f.name === fieldName,
                 );
                 if (fieldDef) {
                     ty = fieldDef.type;
+                }
+            } else if (baseType && baseType.kind === TypeKind.Named) {
+                index = ctx.getFieldIndex(baseType.name, fieldName);
+                const item = typeCtx.lookupItem(baseType.name);
+                if (item && item.kind === "struct") {
+                    const structField = item.node.fields?.find(
+                        (/** @type {any} */ f) => f.name === fieldName,
+                    );
+                    if (structField?.ty) {
+                        const resolvedType = resolveTypeFromAst(structField.ty, typeCtx);
+                        if (resolvedType.ok) {
+                            ty = resolvedType.type || makeUnitType();
+                            const genericParams = item.node.genericParams || [];
+                            const receiverArgs = baseType.args || [];
+                            if (genericParams.length > 0 && receiverArgs.length > 0) {
+                                const genericSet = new Set();
+                                const bindings = new Map();
+                                const count = Math.min(genericParams.length, receiverArgs.length);
+                                for (let i = 0; i < count; i++) {
+                                    const genericName = genericParams[i]?.name || null;
+                                    if (!genericName) continue;
+                                    genericSet.add(genericName);
+                                    bindings.set(genericName, receiverArgs[i]);
+                                }
+                                if (bindings.size > 0) {
+                                    ty = substituteLoweringGenericType(
+                                        typeCtx,
+                                        ty,
+                                        genericSet,
+                                        bindings,
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -2515,6 +2770,8 @@ function extractPlace(ctx, expr, typeCtx) {
                 ty = base.ty.element;
             } else if (base.ty && base.ty.kind === TypeKind.Slice) {
                 ty = base.ty.element;
+            } else if (base.ty && base.ty.kind === TypeKind.Ptr) {
+                ty = base.ty.inner;
             }
 
             return makeHIndexPlace(expr.span, base, index, ty);
@@ -2560,6 +2817,16 @@ function resolveTypeFromAst(typeNode, typeCtx) {
 
     switch (typeNode.kind) {
         case NodeKind.NamedType: {
+            /** @type {Type[] | null} */
+            let args = null;
+            if (typeNode.args && typeNode.args.args) {
+                args = [];
+                for (const arg of typeNode.args.args) {
+                    const argResult = resolveTypeFromAst(arg, typeCtx);
+                    if (!argResult.ok) return argResult;
+                    args.push(argResult.type);
+                }
+            }
             // Check for builtin types
             const builtin = resolveBuiltinType(typeNode.name);
             if (builtin) {
@@ -2570,6 +2837,16 @@ function resolveTypeFromAst(typeNode, typeCtx) {
             const item = typeCtx.lookupItem(typeNode.name);
             if (item) {
                 if (item.kind === "struct") {
+                    if (args && args.length > 0) {
+                        return {
+                            ok: true,
+                            type: {
+                                kind: TypeKind.Named,
+                                name: typeNode.name,
+                                args,
+                            },
+                        };
+                    }
                     return {
                         ok: true,
                         type: {
@@ -2580,6 +2857,16 @@ function resolveTypeFromAst(typeNode, typeCtx) {
                     };
                 }
                 if (item.kind === "enum") {
+                    if (args && args.length > 0) {
+                        return {
+                            ok: true,
+                            type: {
+                                kind: TypeKind.Named,
+                                name: typeNode.name,
+                                args,
+                            },
+                        };
+                    }
                     return {
                         ok: true,
                         type: {
@@ -2594,7 +2881,7 @@ function resolveTypeFromAst(typeNode, typeCtx) {
             // Return as named type
             return {
                 ok: true,
-                type: { kind: TypeKind.Named, name: typeNode.name, args: null },
+                type: { kind: TypeKind.Named, name: typeNode.name, args },
             };
         }
 

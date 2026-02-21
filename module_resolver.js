@@ -519,7 +519,11 @@ function canTraverseModules(state, currentModulePath, targetModulePath) {
  *   moduleDecls: Map<string, any>
  * }} state
  * @param {string[]} currentModulePath
- * @param {{ kind: "item" | "module", qualifiedName: string }} target
+ * @param {{
+ *   kind: "item" | "module",
+ *   qualifiedName: string,
+ *   viaAlias?: { modulePath: string[], isPub: boolean } | null
+ * }} target
  * @returns {boolean}
  */
 function canAccessTarget(state, currentModulePath, target) {

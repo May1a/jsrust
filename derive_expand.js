@@ -89,6 +89,7 @@ function makeCloneImpl(structItem, span) {
         makeNamedType(span, "Clone", null),
         [cloneMethod],
         false,
+        null,
     );
 }
 
@@ -105,6 +106,7 @@ function makeMarkerImpl(structItem, traitName, span) {
         makeNamedType(span, traitName, null),
         [],
         false,
+        null,
     );
 }
 

@@ -7,6 +7,11 @@ static const char* g_builtinPrintName = "__jsrust_builtin_print_bytes";
 static const char* g_builtinPrintlnFmtName = "__jsrust_builtin_println_fmt";
 static const char* g_builtinPrintFmtName = "__jsrust_builtin_print_fmt";
 static const char* g_builtinAssertFailName = "__jsrust_builtin_assert_fail";
+static const char* g_builtinAllocName = "__jsrust_alloc";
+static const char* g_builtinReallocName = "__jsrust_realloc";
+static const char* g_builtinDeallocName = "__jsrust_dealloc";
+static const char* g_builtinCopyNonOverlappingName = "__jsrust_copy_nonoverlapping";
+static const char* g_builtinPanicBoundsName = "__jsrust_panic_bounds_check";
 
 enum {
     FormatTag_String = 0,
@@ -133,6 +138,71 @@ static uint32_t Exec_builtinAssertFailId(void)
 
     if (!initialized) {
         cached = Exec_hashNameToFunctionId(g_builtinAssertFailName);
+        initialized = true;
+    }
+
+    return cached;
+}
+
+static uint32_t Exec_builtinAllocId(void)
+{
+    static uint32_t cached;
+    static bool initialized;
+
+    if (!initialized) {
+        cached = Exec_hashNameToFunctionId(g_builtinAllocName);
+        initialized = true;
+    }
+
+    return cached;
+}
+
+static uint32_t Exec_builtinReallocId(void)
+{
+    static uint32_t cached;
+    static bool initialized;
+
+    if (!initialized) {
+        cached = Exec_hashNameToFunctionId(g_builtinReallocName);
+        initialized = true;
+    }
+
+    return cached;
+}
+
+static uint32_t Exec_builtinDeallocId(void)
+{
+    static uint32_t cached;
+    static bool initialized;
+
+    if (!initialized) {
+        cached = Exec_hashNameToFunctionId(g_builtinDeallocName);
+        initialized = true;
+    }
+
+    return cached;
+}
+
+static uint32_t Exec_builtinCopyNonOverlappingId(void)
+{
+    static uint32_t cached;
+    static bool initialized;
+
+    if (!initialized) {
+        cached = Exec_hashNameToFunctionId(g_builtinCopyNonOverlappingName);
+        initialized = true;
+    }
+
+    return cached;
+}
+
+static uint32_t Exec_builtinPanicBoundsId(void)
+{
+    static uint32_t cached;
+    static bool initialized;
+
+    if (!initialized) {
+        cached = Exec_hashNameToFunctionId(g_builtinPanicBoundsName);
         initialized = true;
     }
 
@@ -630,6 +700,158 @@ static bool Exec_isZeroValue(ExecValue value)
     return value.i64 == 0;
 }
 
+static BackendStatus Exec_readU32FromInt(ExecValue value, const char* message, uint32_t* outValue)
+{
+    if (value.kind != ExecValueKind_Int)
+        return Exec_error(message);
+    if (value.i64 < 0 || (uint64_t)value.i64 > UINT32_MAX)
+        return Exec_error(message);
+    *outValue = (uint32_t)value.i64;
+    return BackendStatus_ok();
+}
+
+static BackendStatus Exec_pointerAddCells(
+    RuntimeContext* runtime,
+    ExecValue base,
+    uint32_t offset,
+    ExecValue* outPointer)
+{
+    uint64_t nextAux;
+    uint64_t absolute;
+    uint8_t ptrKind;
+
+    if (base.kind != ExecValueKind_Ptr)
+        return Exec_error("pointer arithmetic base is not pointer");
+    if (base.index == UINT32_MAX) {
+        if (offset != 0)
+            return Exec_error("pointer arithmetic on null pointer");
+        *outPointer = base;
+        return BackendStatus_ok();
+    }
+    if (base.index >= runtime->cellCount)
+        return Exec_error("pointer base out of bounds");
+
+    ptrKind = Runtime_cellPtrKind(runtime, base.index);
+    if (ptrKind == RuntimePtrKind_Invalid)
+        return Exec_error("pointer base is invalid");
+
+    nextAux = (uint64_t)base.aux + (uint64_t)offset;
+    if (nextAux > UINT32_MAX)
+        return Exec_error("pointer offset overflow");
+
+    if (ptrKind == RuntimePtrKind_Heap) {
+        absolute = (uint64_t)base.index + nextAux;
+        if (absolute >= runtime->cellCount)
+            return Exec_error("pointer offset out of bounds");
+    }
+
+    *outPointer = base;
+    outPointer->b = 0;
+    outPointer->aux = (uint32_t)nextAux;
+    return BackendStatus_ok();
+}
+
+static BackendStatus Exec_loadPointerValue(
+    RuntimeContext* runtime,
+    ExecValue pointer,
+    ExecValue* outValue)
+{
+    uint32_t absoluteIndex;
+    ExecValue baseValue;
+    uint8_t ptrKind;
+    uint64_t absolute;
+
+    if (pointer.kind != ExecValueKind_Ptr || pointer.index == UINT32_MAX)
+        return Exec_error("load operand is not a valid pointer");
+    if (pointer.index >= runtime->cellCount)
+        return Exec_error("load pointer base out of bounds");
+
+    ptrKind = Runtime_cellPtrKind(runtime, pointer.index);
+    if (ptrKind == RuntimePtrKind_Invalid)
+        return Exec_error("load pointer base is invalid");
+
+    if (pointer.b != 0) {
+        BackendStatus status;
+        status = Runtime_loadCell(runtime, pointer.index, &baseValue);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        if (baseValue.kind != ExecValueKind_StructRef)
+            return Exec_error("stack field pointer base is not struct reference");
+        return Runtime_readStructField(runtime, baseValue.index, pointer.aux, outValue);
+    }
+
+    absolute = (uint64_t)pointer.index + (uint64_t)pointer.aux;
+    if (absolute >= runtime->cellCount)
+        return Exec_error("load pointer out of bounds");
+    absoluteIndex = (uint32_t)absolute;
+    return Runtime_loadCell(runtime, absoluteIndex, outValue);
+}
+
+static BackendStatus Exec_storePointerValue(
+    RuntimeContext* runtime,
+    ExecValue pointer,
+    ExecValue value)
+{
+    uint32_t absoluteIndex;
+    ExecValue baseValue;
+    uint8_t ptrKind;
+    uint64_t absolute;
+
+    if (pointer.kind != ExecValueKind_Ptr || pointer.index == UINT32_MAX)
+        return Exec_error("store operand is not a valid pointer");
+    if (pointer.index >= runtime->cellCount)
+        return Exec_error("store pointer base out of bounds");
+
+    ptrKind = Runtime_cellPtrKind(runtime, pointer.index);
+    if (ptrKind == RuntimePtrKind_Invalid)
+        return Exec_error("store pointer base is invalid");
+
+    if (pointer.b != 0) {
+        BackendStatus status;
+        status = Runtime_loadCell(runtime, pointer.index, &baseValue);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        if (baseValue.kind != ExecValueKind_StructRef)
+            return Exec_error("stack field pointer base is not struct reference");
+        return Runtime_writeStructField(runtime, baseValue.index, pointer.aux, value);
+    }
+
+    absolute = (uint64_t)pointer.index + (uint64_t)pointer.aux;
+    if (absolute >= runtime->cellCount)
+        return Exec_error("store pointer out of bounds");
+    absoluteIndex = (uint32_t)absolute;
+    return Runtime_storeCell(runtime, absoluteIndex, value);
+}
+
+static BackendStatus Exec_heapPointerToCellIndex(
+    RuntimeContext* runtime,
+    ExecValue pointer,
+    const char* errorPrefix,
+    uint32_t* outCellIndex)
+{
+    uint8_t ptrKind;
+    uint64_t absolute;
+
+    if (pointer.kind != ExecValueKind_Ptr)
+        return Exec_error(errorPrefix);
+    if (pointer.index == UINT32_MAX)
+        return Exec_error(errorPrefix);
+    if (pointer.b != 0)
+        return Exec_error(errorPrefix);
+    if (pointer.index >= runtime->cellCount)
+        return Exec_error(errorPrefix);
+
+    ptrKind = Runtime_cellPtrKind(runtime, pointer.index);
+    if (ptrKind != RuntimePtrKind_Heap)
+        return Exec_error(errorPrefix);
+
+    absolute = (uint64_t)pointer.index + (uint64_t)pointer.aux;
+    if (absolute >= runtime->cellCount)
+        return Exec_error(errorPrefix);
+    *outCellIndex = (uint32_t)absolute;
+    return BackendStatus_ok();
+}
+
 static BackendStatus Exec_executeBuiltinPrint(
     ExecEngine* engine,
     ExecFrame* frame,
@@ -972,6 +1194,258 @@ static BackendStatus Exec_executeBuiltinPrintFmt(
     return BackendStatus_ok();
 }
 
+static BackendStatus Exec_executeBuiltinAlloc(
+    ExecEngine* engine,
+    ExecFrame* frame,
+    const IRInstruction* inst,
+    ExecValue* outValue)
+{
+    BackendStatus status;
+    ExecValue countValue;
+    uint32_t count;
+    uint32_t startCell;
+
+    if (inst->callArgs.count != 1)
+        return Exec_error("alloc builtin expects one argument");
+
+    status = Exec_readOperand(frame, inst->callArgs.items[0], &countValue);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+    status = Exec_readU32FromInt(countValue, "alloc count must be non-negative integer", &count);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    status = Runtime_allocateCells(
+        engine->runtime,
+        count,
+        ExecValue_makeUnit(),
+        RuntimePtrKind_Heap,
+        &startCell);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    *outValue = ExecValue_makePtr(startCell);
+    return BackendStatus_ok();
+}
+
+static BackendStatus Exec_executeBuiltinRealloc(
+    ExecEngine* engine,
+    ExecFrame* frame,
+    const IRInstruction* inst,
+    ExecValue* outValue)
+{
+    BackendStatus status;
+    ExecValue ptrValue;
+    ExecValue oldCountValue;
+    ExecValue newCountValue;
+    uint32_t oldCount;
+    uint32_t newCount;
+    uint32_t newStart;
+
+    if (inst->callArgs.count != 3)
+        return Exec_error("realloc builtin expects three arguments");
+
+    status = Exec_readOperand(frame, inst->callArgs.items[0], &ptrValue);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+    status = Exec_readOperand(frame, inst->callArgs.items[1], &oldCountValue);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+    status = Exec_readOperand(frame, inst->callArgs.items[2], &newCountValue);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    status = Exec_readU32FromInt(oldCountValue, "realloc old_count must be non-negative integer", &oldCount);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+    status = Exec_readU32FromInt(newCountValue, "realloc new_count must be non-negative integer", &newCount);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    if (newCount == 0) {
+        if (oldCount > 0 && ptrValue.kind == ExecValueKind_Ptr && ptrValue.index != UINT32_MAX) {
+            uint32_t oldStart;
+            status = Exec_heapPointerToCellIndex(
+                engine->runtime,
+                ptrValue,
+                "realloc pointer must be a valid heap pointer",
+                &oldStart);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+            status = Runtime_deallocateCells(engine->runtime, oldStart, oldCount, 1);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+        }
+        *outValue = ExecValue_makePtr(UINT32_MAX);
+        return BackendStatus_ok();
+    }
+
+    status = Runtime_allocateCells(
+        engine->runtime,
+        newCount,
+        ExecValue_makeUnit(),
+        RuntimePtrKind_Heap,
+        &newStart);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    if (oldCount > 0 && ptrValue.kind == ExecValueKind_Ptr && ptrValue.index != UINT32_MAX) {
+        uint32_t oldStart;
+        uint32_t copyCount;
+        status = Exec_heapPointerToCellIndex(
+            engine->runtime,
+            ptrValue,
+            "realloc pointer must be a valid heap pointer",
+            &oldStart);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+        copyCount = oldCount < newCount ? oldCount : newCount;
+        if (copyCount > 0) {
+            status = Runtime_copyCells(engine->runtime, newStart, oldStart, copyCount);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+        }
+        status = Runtime_deallocateCells(engine->runtime, oldStart, oldCount, 1);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+    }
+
+    *outValue = ExecValue_makePtr(newStart);
+    return BackendStatus_ok();
+}
+
+static BackendStatus Exec_executeBuiltinDealloc(
+    ExecEngine* engine,
+    ExecFrame* frame,
+    const IRInstruction* inst,
+    ExecValue* outValue)
+{
+    BackendStatus status;
+    ExecValue ptrValue;
+    ExecValue countValue;
+    uint32_t count;
+    uint32_t startCell;
+
+    if (inst->callArgs.count != 2)
+        return Exec_error("dealloc builtin expects two arguments");
+
+    status = Exec_readOperand(frame, inst->callArgs.items[0], &ptrValue);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+    status = Exec_readOperand(frame, inst->callArgs.items[1], &countValue);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+    status = Exec_readU32FromInt(countValue, "dealloc count must be non-negative integer", &count);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    if (count == 0 || ptrValue.index == UINT32_MAX) {
+        *outValue = ExecValue_makeUnit();
+        return BackendStatus_ok();
+    }
+
+    status = Exec_heapPointerToCellIndex(
+        engine->runtime,
+        ptrValue,
+        "dealloc pointer must be a valid heap pointer",
+        &startCell);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    status = Runtime_deallocateCells(engine->runtime, startCell, count, 1);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    *outValue = ExecValue_makeUnit();
+    return BackendStatus_ok();
+}
+
+static BackendStatus Exec_executeBuiltinCopyNonOverlapping(
+    ExecEngine* engine,
+    ExecFrame* frame,
+    const IRInstruction* inst,
+    ExecValue* outValue)
+{
+    BackendStatus status;
+    ExecValue srcValue;
+    ExecValue dstValue;
+    ExecValue countValue;
+    uint32_t count;
+    uint32_t srcStart;
+    uint32_t dstStart;
+
+    if (inst->callArgs.count != 3)
+        return Exec_error("copy_nonoverlapping builtin expects three arguments");
+
+    status = Exec_readOperand(frame, inst->callArgs.items[0], &srcValue);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+    status = Exec_readOperand(frame, inst->callArgs.items[1], &dstValue);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+    status = Exec_readOperand(frame, inst->callArgs.items[2], &countValue);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+    status = Exec_readU32FromInt(
+        countValue,
+        "copy_nonoverlapping count must be non-negative integer",
+        &count);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    if (count == 0) {
+        *outValue = ExecValue_makeUnit();
+        return BackendStatus_ok();
+    }
+
+    status = Exec_heapPointerToCellIndex(
+        engine->runtime,
+        srcValue,
+        "copy_nonoverlapping src must be a valid heap pointer",
+        &srcStart);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+    status = Exec_heapPointerToCellIndex(
+        engine->runtime,
+        dstValue,
+        "copy_nonoverlapping dst must be a valid heap pointer",
+        &dstStart);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    status = Runtime_copyCells(engine->runtime, dstStart, srcStart, count);
+    if (status.code != JSRUST_BACKEND_OK)
+        return status;
+
+    *outValue = ExecValue_makeUnit();
+    return BackendStatus_ok();
+}
+
+static BackendStatus Exec_executeBuiltinPanicBoundsCheck(
+    ExecEngine* engine,
+    ExecFrame* frame,
+    const IRInstruction* inst,
+    ExecValue* outValue)
+{
+    ExecValue ignored;
+    BackendStatus status;
+
+    if (inst->callArgs.count > 0) {
+        status = Exec_readOperand(frame, inst->callArgs.items[0], &ignored);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+    }
+    if (inst->callArgs.count > 1) {
+        status = Exec_readOperand(frame, inst->callArgs.items[1], &ignored);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+    }
+
+    (void)engine;
+    (void)outValue;
+    return Exec_error("index out of bounds");
+}
+
 static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* frame, const IRInstruction* inst, ExecValue* outValue)
 {
     ExecValue left;
@@ -1114,9 +1588,7 @@ static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* fram
         status = Exec_readOperand(frame, inst->ptr, &left);
         if (status.code != JSRUST_BACKEND_OK)
             return status;
-        if (left.kind != ExecValueKind_Ptr || left.index == UINT32_MAX)
-            return Exec_error("load operand is not a valid pointer");
-        return Runtime_loadCell(engine->runtime, left.index, outValue);
+        return Exec_loadPointerValue(engine->runtime, left, outValue);
     case IRInstKind_Store:
         status = Exec_readOperand(frame, inst->ptr, &left);
         if (status.code != JSRUST_BACKEND_OK)
@@ -1124,9 +1596,7 @@ static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* fram
         status = Exec_readOperand(frame, inst->value, &right);
         if (status.code != JSRUST_BACKEND_OK)
             return status;
-        if (left.kind != ExecValueKind_Ptr || left.index == UINT32_MAX)
-            return Exec_error("store operand is not a valid pointer");
-        return Runtime_storeCell(engine->runtime, left.index, right);
+        return Exec_storePointerValue(engine->runtime, left, right);
     case IRInstKind_Memcpy:
         status = Exec_readOperand(frame, inst->dest, &left);
         if (status.code != JSRUST_BACKEND_OK)
@@ -1138,23 +1608,87 @@ static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* fram
             return Exec_error("memcpy operands must be pointers");
         if (left.index == UINT32_MAX || right.index == UINT32_MAX)
             return Exec_error("memcpy pointer is null");
-        return Runtime_copyCell(engine->runtime, left.index, right.index);
+        {
+            ExecValue copied;
+            status = Exec_loadPointerValue(engine->runtime, right, &copied);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+            return Exec_storePointerValue(engine->runtime, left, copied);
+        }
     case IRInstKind_Gep:
         status = Exec_readOperand(frame, inst->ptr, &left);
         if (status.code != JSRUST_BACKEND_OK)
             return status;
         if (left.kind != ExecValueKind_Ptr)
             return Exec_error("gep base is not a pointer");
-        for (uint32_t i = 0; i < inst->indices.count; ++i) {
-            ExecValue idx;
-            status = Exec_readOperand(frame, inst->indices.items[i], &idx);
+        if (left.b != 0 && inst->indices.count == 1) {
+            ExecValue indexValue;
+            ExecValue pointeePointer;
+            uint32_t offset;
+
+            status = Exec_readOperand(frame, inst->indices.items[0], &indexValue);
             if (status.code != JSRUST_BACKEND_OK)
                 return status;
-            if (!Exec_isZeroValue(idx))
-                return Exec_error("gep currently supports only zero offsets");
+            status = Exec_readU32FromInt(indexValue, "gep index must be non-negative integer", &offset);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+            status = Exec_loadPointerValue(engine->runtime, left, &pointeePointer);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+            if (pointeePointer.kind != ExecValueKind_Ptr)
+                return Exec_error("gep field pointer does not reference pointer value");
+            return Exec_pointerAddCells(engine->runtime, pointeePointer, offset, outValue);
         }
-        *outValue = left;
-        return BackendStatus_ok();
+        if (
+            inst->indices.count >= 2 &&
+            left.index != UINT32_MAX &&
+            Runtime_cellPtrKind(engine->runtime, left.index) == RuntimePtrKind_Stack
+        ) {
+            ExecValue firstIndex;
+            ExecValue fieldIndex;
+            uint32_t fieldOffset;
+
+            status = Exec_readOperand(frame, inst->indices.items[0], &firstIndex);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+            if (!Exec_isZeroValue(firstIndex))
+                return Exec_error("stack field gep requires zero first index");
+            status = Exec_readOperand(frame, inst->indices.items[1], &fieldIndex);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+            status = Exec_readU32FromInt(
+                fieldIndex,
+                "stack field gep index must be non-negative integer",
+                &fieldOffset);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+
+            *outValue = left;
+            outValue->b = 1;
+            outValue->aux = fieldOffset;
+            return BackendStatus_ok();
+        }
+        {
+            uint32_t totalOffset;
+            uint32_t i;
+            totalOffset = 0;
+            for (i = 0; i < inst->indices.count; ++i) {
+                ExecValue idx;
+                uint32_t offset;
+                uint64_t sum;
+                status = Exec_readOperand(frame, inst->indices.items[i], &idx);
+                if (status.code != JSRUST_BACKEND_OK)
+                    return status;
+                status = Exec_readU32FromInt(idx, "gep index must be non-negative integer", &offset);
+                if (status.code != JSRUST_BACKEND_OK)
+                    return status;
+                sum = (uint64_t)totalOffset + (uint64_t)offset;
+                if (sum > UINT32_MAX)
+                    return Exec_error("gep offset overflow");
+                totalOffset = (uint32_t)sum;
+            }
+            return Exec_pointerAddCells(engine->runtime, left, totalOffset, outValue);
+        }
     case IRInstKind_Ptradd:
         status = Exec_readOperand(frame, inst->ptr, &left);
         if (status.code != JSRUST_BACKEND_OK)
@@ -1164,10 +1698,13 @@ static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* fram
             return status;
         if (left.kind != ExecValueKind_Ptr)
             return Exec_error("ptradd base is not a pointer");
-        if (!Exec_isZeroValue(right))
-            return Exec_error("ptradd currently supports only zero offset");
-        *outValue = left;
-        return BackendStatus_ok();
+        {
+            uint32_t offset;
+            status = Exec_readU32FromInt(right, "ptradd offset must be non-negative integer", &offset);
+            if (status.code != JSRUST_BACKEND_OK)
+                return status;
+            return Exec_pointerAddCells(engine->runtime, left, offset, outValue);
+        }
     case IRInstKind_Trunc:
     case IRInstKind_Sext:
     case IRInstKind_Zext:
@@ -1233,6 +1770,16 @@ static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* fram
                 return Exec_executeBuiltinPrintFmt(engine, frame, inst, false, outValue);
             if (calleeHash == Exec_builtinAssertFailId())
                 return Exec_error("assertion failed: assert_eq!");
+            if (calleeHash == Exec_builtinAllocId())
+                return Exec_executeBuiltinAlloc(engine, frame, inst, outValue);
+            if (calleeHash == Exec_builtinReallocId())
+                return Exec_executeBuiltinRealloc(engine, frame, inst, outValue);
+            if (calleeHash == Exec_builtinDeallocId())
+                return Exec_executeBuiltinDealloc(engine, frame, inst, outValue);
+            if (calleeHash == Exec_builtinCopyNonOverlappingId())
+                return Exec_executeBuiltinCopyNonOverlapping(engine, frame, inst, outValue);
+            if (calleeHash == Exec_builtinPanicBoundsId())
+                return Exec_executeBuiltinPanicBoundsCheck(engine, frame, inst, outValue);
             return Exec_error("call target function id not found");
         }
 

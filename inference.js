@@ -772,6 +772,89 @@ function typeKeyForMethodLookup(ty) {
 }
 
 /**
+ * @param {Node | null | undefined} typeNode
+ * @returns {string[]}
+ */
+function extractTypeNodeGenericParamNames(typeNode) {
+    if (!typeNode || typeNode.kind !== NodeKind.NamedType || !typeNode.args?.args) {
+        return [];
+    }
+    const names = [];
+    for (const arg of typeNode.args.args) {
+        if (arg?.kind === NodeKind.NamedType && arg.name) {
+            names.push(arg.name);
+        } else {
+            names.push("");
+        }
+    }
+    return names;
+}
+
+/**
+ * @param {Type} receiverType
+ * @returns {Type | null}
+ */
+function vecElementTypeForType(receiverType) {
+    if (
+        receiverType.kind === TypeKind.Named &&
+        receiverType.name === "Vec" &&
+        receiverType.args &&
+        receiverType.args.length === 1
+    ) {
+        return receiverType.args[0];
+    }
+    return null;
+}
+
+/**
+ * Instantiate impl generic method signatures for a concrete receiver type.
+ * @param {TypeContext} ctx
+ * @param {FnType} fnType
+ * @param {Type} receiverType
+ * @param {any} meta
+ * @returns {FnType}
+ */
+function instantiateMethodTypeForReceiver(ctx, fnType, receiverType, meta) {
+    const implGenericNames = Array.isArray(meta?.implGenericNames)
+        ? meta.implGenericNames
+        : [];
+    if (implGenericNames.length === 0) {
+        return fnType;
+    }
+    const targetGenericParamNames = Array.isArray(meta?.targetGenericParamNames)
+        ? meta.targetGenericParamNames
+        : [];
+    if (
+        receiverType.kind !== TypeKind.Named ||
+        !receiverType.args ||
+        receiverType.args.length === 0 ||
+        targetGenericParamNames.length === 0
+    ) {
+        return fnType;
+    }
+    const genericSet = new Set(implGenericNames);
+    const bindings = new Map();
+    const count = Math.min(targetGenericParamNames.length, receiverType.args.length);
+    for (let i = 0; i < count; i++) {
+        const genericName = targetGenericParamNames[i];
+        if (!genericName || !genericSet.has(genericName)) continue;
+        bindings.set(genericName, receiverType.args[i]);
+    }
+    if (bindings.size === 0) {
+        return fnType;
+    }
+    return /** @type {FnType} */ (
+        substituteGenericTypeBindings(
+            ctx,
+            fnType,
+            genericSet,
+            bindings,
+            false,
+        )
+    );
+}
+
+/**
  * @param {number} width
  * @returns {string}
  */
@@ -1053,6 +1136,10 @@ function gatherDeclaration(ctx, item) {
             }
             const errors = [];
             const isTraitImpl = !!item.traitType;
+            const implGenericNames = (item.genericParams || []).map(
+                (/** @type {{ name?: string }} */ p) => p.name || "",
+            ).filter((/** @type {string} */ name) => name.length > 0);
+            const targetGenericParamNames = extractTypeNodeGenericParamNames(item.targetType);
 
             /** @type {Map<string, Node>} */
             const implMethodsByName = new Map();
@@ -1176,7 +1263,12 @@ function gatherDeclaration(ctx, item) {
                         method.name,
                         method,
                         typeResult.type,
-                        { receiver: method.params?.[0]?.receiverKind || null },
+                        {
+                            receiver: method.params?.[0]?.receiverKind || null,
+                            implGenericNames,
+                            targetGenericParamNames,
+                            targetTypeName: targetName,
+                        },
                     );
                     if (!registerTraitMethodResult.ok) {
                         errors.push(
@@ -1193,7 +1285,12 @@ function gatherDeclaration(ctx, item) {
                         method.name,
                         method,
                         typeResult.type,
-                        { receiver: method.params?.[0]?.receiverKind || null },
+                        {
+                            receiver: method.params?.[0]?.receiverKind || null,
+                            implGenericNames,
+                            targetGenericParamNames,
+                            targetTypeName: targetName,
+                        },
                     );
                     if (!registerMethodResult.ok) {
                         errors.push(
@@ -1278,6 +1375,17 @@ function resolveTypeNode(ctx, typeNode) {
                     return ok(selfType);
                 }
             }
+            /** @type {Type[] | null} */
+            let args = null;
+            if (typeNode.args && typeNode.args.args) {
+                const argsResult = combineResults(
+                    typeNode.args.args.map((/** @type {Node} */ a) => resolveTypeNode(ctx, a)),
+                );
+                if (!argsResult.ok) {
+                    return { ok: false, errors: argsResult.errors };
+                }
+                args = argsResult.types;
+            }
             // Check for builtin types
             const builtin = resolveBuiltinType(typeNode.name);
             if (builtin) {
@@ -1288,9 +1396,15 @@ function resolveTypeNode(ctx, typeNode) {
             const item = ctx.lookupItem(typeNode.name);
             if (item) {
                 if (item.kind === "struct") {
+                    if (args && args.length > 0) {
+                        return ok(makeNamedType(typeNode.name, args, typeNode.span));
+                    }
                     return ok(makeStructType(typeNode.name, [], typeNode.span));
                 }
                 if (item.kind === "enum") {
+                    if (args && args.length > 0) {
+                        return ok(makeNamedType(typeNode.name, args, typeNode.span));
+                    }
                     return ok(makeEnumType(typeNode.name, [], typeNode.span));
                 }
             }
@@ -1302,16 +1416,6 @@ function resolveTypeNode(ctx, typeNode) {
             }
 
             // Unknown type - keep as named for now
-            let args = null;
-            if (typeNode.args && typeNode.args.args) {
-                const argsResult = combineResults(
-                    typeNode.args.args.map((/** @type {Node} */ a) => resolveTypeNode(ctx, a)),
-                );
-                if (!argsResult.ok) {
-                    return { ok: false, errors: argsResult.errors };
-                }
-                args = argsResult.types;
-            }
             return ok(makeNamedType(typeNode.name, args, typeNode.span));
         }
 
@@ -1446,41 +1550,7 @@ function isCopyableInContext(ctx, ty, visiting = new Set()) {
             if (ctx.traitImpls && ctx.traitImpls.has(`Copy::${name}`)) {
                 return true;
             }
-            const item = ctx.lookupItem(name);
-            if (!item) return false;
-            const key = `${item.kind}:${name}`;
-            if (visiting.has(key)) {
-                return true;
-            }
-            visiting.add(key);
-            let result = false;
-            if (item.kind === "struct") {
-                result = (item.node.fields || []).every((/** @type {any} */ field) => {
-                    if (!field.ty) return false;
-                    const fieldTyResult = resolveTypeNode(ctx, field.ty);
-                    return (
-                        fieldTyResult.ok &&
-                        isCopyableInContext(ctx, fieldTyResult.type, visiting)
-                    );
-                });
-            } else if (item.kind === "enum") {
-                result = (item.node.variants || []).every((/** @type {any} */ variant) =>
-                    (variant.fields || []).every((/** @type {any} */ field) => {
-                        if (!field.ty) return true;
-                        const fieldTyResult = resolveTypeNode(ctx, field.ty);
-                        return (
-                            fieldTyResult.ok &&
-                            isCopyableInContext(
-                                ctx,
-                                fieldTyResult.type,
-                                visiting,
-                            )
-                        );
-                    }),
-                );
-            }
-            visiting.delete(key);
-            return result;
+            return false;
         },
     });
 }
@@ -2070,7 +2140,10 @@ function inferUnary(ctx, unary) {
  */
 function inferCall(ctx, call) {
     ctx.enterAllowCapturingClosureValue();
-    const calleeResult = inferExpr(ctx, call.callee);
+    const calleeResult =
+        call.callee?.kind === NodeKind.FieldExpr
+            ? inferField(ctx, call.callee, true)
+            : inferExpr(ctx, call.callee);
     ctx.exitAllowCapturingClosureValue();
     if (!calleeResult.ok) return calleeResult;
 
@@ -2305,9 +2378,10 @@ function inferClosure(ctx, closure, expectedType = undefined) {
  * Infer field access type
  * @param {TypeContext} ctx
  * @param {Node} field
+ * @param {boolean} [preferMethod=false]
  * @returns {InferenceResult}
  */
-function inferField(ctx, field) {
+function inferField(ctx, field, preferMethod = false) {
     const receiverResult = inferExpr(ctx, field.receiver);
     if (!receiverResult.ok) return receiverResult;
 
@@ -2321,18 +2395,36 @@ function inferField(ctx, field) {
     }
     const fieldName =
         typeof field.field === "string" ? field.field : field.field.name;
+    const vecElementType = vecElementTypeForType(accessType);
+    if (
+        vecElementType &&
+        (fieldName === "get" || fieldName === "pop" || fieldName === "index") &&
+        !isCopyableInContext(ctx, vecElementType)
+    ) {
+        return err(
+            `Vec ${fieldName} by-value requires Copy element type, got ${typeToString(vecElementType)}`,
+            field.span,
+        );
+    }
 
     /**
      * @param {FnType} fnType
      * @param {string} symbolName
+     * @param {any} [meta]
      * @returns {InferenceResult}
      */
-    function asBoundMethod(fnType, symbolName) {
+    function asBoundMethod(fnType, symbolName, meta = null) {
+        const instantiated = instantiateMethodTypeForReceiver(
+            ctx,
+            fnType,
+            accessType,
+            meta,
+        );
         const boundType = makeFnType(
-            fnType.params.slice(1),
-            fnType.returnType,
-            fnType.isUnsafe || false,
-            fnType.isConst || false,
+            instantiated.params.slice(1),
+            instantiated.returnType,
+            instantiated.isUnsafe || false,
+            instantiated.isConst || false,
             field.span,
         );
         field.resolvedMethodSymbolName = symbolName;
@@ -2342,6 +2434,23 @@ function inferField(ctx, field) {
     // Handle struct field access
     if (accessType.kind === TypeKind.Struct) {
         const structType = /** @type {import("./types.js").StructType} */ (accessType);
+        if (preferMethod) {
+            const candidates = ctx.lookupMethodCandidates(structType.name, fieldName);
+            if (candidates.inherent && candidates.inherent.type?.kind === TypeKind.Fn) {
+                return asBoundMethod(
+                    /** @type {FnType} */(candidates.inherent.type),
+                    candidates.inherent.symbolName,
+                    candidates.inherent.meta,
+                );
+            }
+            if (candidates.traits.length === 1 && candidates.traits[0].type?.kind === TypeKind.Fn) {
+                return asBoundMethod(
+                    /** @type {FnType} */(candidates.traits[0].type),
+                    candidates.traits[0].symbolName,
+                    candidates.traits[0].meta,
+                );
+            }
+        }
         const fieldDef = structType.fields.find((/** @type {any} */ f) => f.name === fieldName);
         if (fieldDef) {
             return ok(fieldDef.type);
@@ -2365,12 +2474,14 @@ function inferField(ctx, field) {
                 return asBoundMethod(
                     /** @type {FnType} */(candidates.inherent.type),
                     candidates.inherent.symbolName,
+                    candidates.inherent.meta,
                 );
             }
             if (candidates.traits.length === 1 && candidates.traits[0].type?.kind === TypeKind.Fn) {
                 return asBoundMethod(
                     /** @type {FnType} */(candidates.traits[0].type),
                     candidates.traits[0].symbolName,
+                    candidates.traits[0].meta,
                 );
             }
             if (candidates.traits.length > 1) {
@@ -2393,6 +2504,23 @@ function inferField(ctx, field) {
         const namedType = /** @type {import("./types.js").NamedType} */ (accessType);
         const item = ctx.lookupItem(namedType.name);
         if (item && item.kind === "struct") {
+            if (preferMethod) {
+                const candidates = ctx.lookupMethodCandidates(namedType.name, fieldName);
+                if (candidates.inherent && candidates.inherent.type?.kind === TypeKind.Fn) {
+                    return asBoundMethod(
+                        /** @type {FnType} */(candidates.inherent.type),
+                        candidates.inherent.symbolName,
+                        candidates.inherent.meta,
+                    );
+                }
+                if (candidates.traits.length === 1 && candidates.traits[0].type?.kind === TypeKind.Fn) {
+                    return asBoundMethod(
+                        /** @type {FnType} */(candidates.traits[0].type),
+                        candidates.traits[0].symbolName,
+                        candidates.traits[0].meta,
+                    );
+                }
+            }
             const structField = item.node.fields?.find(
                 (/** @type {any} */ f) => f.name === fieldName,
             );
@@ -2402,12 +2530,14 @@ function inferField(ctx, field) {
                     return asBoundMethod(
                         /** @type {FnType} */(candidates.inherent.type),
                         candidates.inherent.symbolName,
+                        candidates.inherent.meta,
                     );
                 }
                 if (candidates.traits.length === 1 && candidates.traits[0].type?.kind === TypeKind.Fn) {
                     return asBoundMethod(
                         /** @type {FnType} */(candidates.traits[0].type),
                         candidates.traits[0].symbolName,
+                        candidates.traits[0].meta,
                     );
                 }
                 if (candidates.traits.length > 1) {
@@ -2436,12 +2566,14 @@ function inferField(ctx, field) {
             return asBoundMethod(
                 /** @type {FnType} */(candidates.inherent.type),
                 candidates.inherent.symbolName,
+                candidates.inherent.meta,
             );
         }
         if (candidates.traits.length === 1 && candidates.traits[0].type?.kind === TypeKind.Fn) {
             return asBoundMethod(
                 /** @type {FnType} */(candidates.traits[0].type),
                 candidates.traits[0].symbolName,
+                candidates.traits[0].meta,
             );
         }
         if (candidates.traits.length > 1) {
@@ -2500,7 +2632,7 @@ function inferIndex(ctx, index) {
     const indexType = ctx.resolveType(indexResult.type);
 
     // Index must be integer
-    const intType = makeIntType(IntWidth.Isize);
+    const intType = makeIntType(IntWidth.I32);
     const indexUnify = unify(ctx, indexType, intType);
     if (!indexUnify.ok) {
         return { ok: false, errors: [indexUnify.error] };
@@ -2514,6 +2646,23 @@ function inferIndex(ctx, index) {
     // Slice indexing
     if (receiverType.kind === TypeKind.Slice) {
         return ok(receiverType.element);
+    }
+
+    // Raw pointer indexing
+    if (receiverType.kind === TypeKind.Ptr) {
+        return ok(receiverType.inner);
+    }
+
+    // Vec<T> indexing by value
+    const vecElementType = vecElementTypeForType(receiverType);
+    if (vecElementType) {
+        if (!isCopyableInContext(ctx, vecElementType)) {
+            return err(
+                `Vec index by-value requires Copy element type, got ${typeToString(vecElementType)}`,
+                index.span,
+            );
+        }
+        return ok(vecElementType);
     }
 
     // Type variable
@@ -3384,10 +3533,9 @@ function inferMacro(ctx, macroExpr) {
         }
 
         case "vec": {
-            // vec! creates a vector
-            // For now, return a slice type
+            // vec![a, b, c] lowers to Vec<T>.
             if (!macroExpr.args || macroExpr.args.length === 0) {
-                return ok(makeSliceType(ctx.freshTypeVar(), macroExpr.span));
+                return ok(makeNamedType("Vec", [ctx.freshTypeVar()], macroExpr.span));
             }
 
             const firstResult = inferExpr(ctx, macroExpr.args[0]);
@@ -3406,7 +3554,7 @@ function inferMacro(ctx, macroExpr) {
                 }
             }
 
-            return ok(makeSliceType(elementType, macroExpr.span));
+            return ok(makeNamedType("Vec", [elementType], macroExpr.span));
         }
 
         default:

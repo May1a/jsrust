@@ -1,5 +1,27 @@
 # Plan: Stdlib Vec via Allocator Builtins
 
+## Status (2026-02-21)
+
+Implemented milestone scope:
+
+- Compiler-managed stdlib injection is active (`stdlib/vec_core.rs` prepended in `/Users/may/jsrust/main.js`) with prelude `Vec` exposure.
+- Builtin declaration metadata is implemented on `FnItem` via `#[builtin(name = \"...\")]` and declaration-only builtin signatures.
+- Builtin symbol registry is live in `/Users/may/jsrust/builtin_symbols.js` with:
+  `__jsrust_alloc`, `__jsrust_realloc`, `__jsrust_dealloc`, `__jsrust_copy_nonoverlapping`, `__jsrust_panic_bounds_check`.
+- Frontend generic impl plumbing needed for `impl<T> Vec<T>` method resolution/lowering is in place.
+- Vec surface for this milestone is implemented:
+  `vec![a, b, c]` list form, `new`, `with_capacity`, `len`, `capacity`, `push`, `pop` (panic-on-empty), `get` by value, `[]` by value.
+- Negative frontend gates are implemented:
+  repeat form (`vec![x; n]`) emits deterministic unsupported diagnostic, and by-value Vec access requires explicit `Copy`.
+- Backend interpreter and wasm codegen both dispatch allocator/copy/panic builtins, with parity on Vec run fixtures.
+- Conformance/snapshot artifacts were regenerated (`examples/expected/*`, `tests/fixtures/backend_ir_v2/*`).
+
+Deferred (unchanged for this milestone):
+
+- `std::vec::Vec` pathing (still prelude-only `Vec`).
+- By-reference indexing.
+- `Option<T>` `pop` semantics.
+
 ## Overview
 
 This plan outlines a scalable approach to implementing `Vec<T>` and other standard library types in jsrust. Instead of hardcoding type-specific runtime handlers, we implement:
