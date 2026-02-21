@@ -5,38 +5,38 @@
         {
             "source": "01_empty_main.rs",
             "artifact": "01_empty_main.bin",
-            "bytes": 103,
-            "sha256": "96996ae6ece1f1a1328be87c79655f0c706f8428d876da537121414c9eee9053"
+            "bytes": 3523,
+            "sha256": "9d7e029d21521f1d5eaef4fbe85c10a4420aaa32231e71f9f0ee7568450dfcf5"
         },
         {
             "source": "02_literals.rs",
             "artifact": "02_literals.bin",
-            "bytes": 159,
-            "sha256": "aa2aae9d7081e09c69ebd65dc37a15ebefb99daf08c25bd0cd0dc23c55c3df1d"
+            "bytes": 3579,
+            "sha256": "24ae29d5c1fc4dc4fddd232ed3b0ba45069ca14a9923c8c0678f975018862bb9"
         },
         {
             "source": "03_arithmetic.rs",
             "artifact": "03_arithmetic.bin",
-            "bytes": 268,
-            "sha256": "f782db9f582bde75d0d27264eb6f57653cc0a86b2d3bd42a47d8e141d98b1356"
+            "bytes": 3688,
+            "sha256": "79ae386041560ecebf1456b3d5facb25afcd105d0f5ccddb6f9f8e2ac7e90887"
         },
         {
             "source": "04_functions.rs",
             "artifact": "04_functions.bin",
-            "bytes": 242,
-            "sha256": "daa75f8927182ef639f08412566771ac453655f038ecb4c9df1ad3e71181befc"
+            "bytes": 3646,
+            "sha256": "8bf5ec858602a602514ddf638b4693f13d1dfda920be3d78b75380c268555914"
         },
         {
             "source": "07_structs.rs",
             "artifact": "07_structs.bin",
-            "bytes": 179,
-            "sha256": "3fb02ad53f70f7191377c1269c128aaa2f5a330495feb67a0ed8604d610f31ec"
+            "bytes": 3599,
+            "sha256": "bf877f06ef46b4ab70c30ecb8a5863e8fce8ab5f147253930473997673cdf328"
         },
         {
             "source": "09_references.rs",
             "artifact": "09_references.bin",
-            "bytes": 151,
-            "sha256": "8eb621e25e4929ea165b6a19e2b187794d13f55afe0ff3e6cbf0e9c35dcccf74"
+            "bytes": 3571,
+            "sha256": "56e17c6a507086692614035d680adc3fc2041501ef35f08661e7d1e52b7f812b"
         }
     ]
 }

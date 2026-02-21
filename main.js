@@ -17,6 +17,8 @@ import { validateFunction as validateIRFunction } from "./ir_validate.js";
 import { serializeModule } from "./ir_serialize.js";
 import { runBackendCodegenWasm, runBackendWasm } from "./backend_runner.js";
 
+const STDLIB_VEC_CORE_PATH = path.resolve(process.cwd(), "stdlib/vec_core.rs");
+
 /**
  * @typedef {object} CompileOptions
  * @property {boolean} [emitAst=false]
@@ -87,6 +89,20 @@ function compileToIRModule(source, options = {}) {
     }
 
     const ast = parseResult.value;
+    if (!ast) {
+        errors.push({
+            message: "Internal parser error: missing module AST",
+            kind: "internal",
+        });
+        return { ok: false, errors };
+    }
+    const stdlibInjectResult = injectStdlibItems(ast);
+    if (!stdlibInjectResult.ok) {
+        for (const err of stdlibInjectResult.errors) {
+            errors.push(err);
+        }
+        return { ok: false, errors };
+    }
     const resolveResult = resolveModuleTree(ast, { sourcePath });
     if (!resolveResult.ok || !resolveResult.module) {
         for (const err of resolveResult.errors || []) {
@@ -154,6 +170,9 @@ function compileToIRModule(source, options = {}) {
 
     for (const item of hirModule.items || []) {
         if (item.kind === HItemKind.Fn) {
+            if (!item.body) {
+                continue;
+            }
             try {
                 const irFn = lowerHirToSsa(/** @type {import('./hir.js').HFnDecl} */(item), { irModule });
 
@@ -196,6 +215,43 @@ function compileToIRModule(source, options = {}) {
     }
 
     return result;
+}
+
+/**
+ * Parse and prepend compiler-managed stdlib items.
+ * @param {import("./ast.js").Node} ast
+ * @returns {{ ok: true } | { ok: false, errors: CompileDiagnostic[] }}
+ */
+function injectStdlibItems(ast) {
+    /** @type {CompileDiagnostic[]} */
+    const errors = [];
+    let stdlibSource = "";
+    try {
+        stdlibSource = fs.readFileSync(STDLIB_VEC_CORE_PATH, "utf-8");
+    } catch (e) {
+        return {
+            ok: false,
+            errors: [{
+                message: `Failed to read stdlib source: ${STDLIB_VEC_CORE_PATH}: ${e instanceof Error ? e.message : String(e)}`,
+                kind: "internal",
+            }],
+        };
+    }
+
+    const stdlibParse = parseModule(stdlibSource);
+    if (!stdlibParse.ok || !stdlibParse.value) {
+        for (const err of stdlibParse.errors || []) {
+            errors.push({
+                message: `In stdlib vec_core.rs: ${err.message}`,
+                span: err.span,
+                kind: "parse",
+            });
+        }
+        return { ok: false, errors };
+    }
+
+    ast.items = [...(stdlibParse.value.items || []), ...(ast.items || [])];
+    return { ok: true };
 }
 
 /**
@@ -658,6 +714,17 @@ function runTestCli(args) {
     }
 
     const ast = parseResult.value;
+    if (!ast) {
+        console.error("error: internal parser error: missing module AST");
+        return 1;
+    }
+    const stdlibInjectResult = injectStdlibItems(ast);
+    if (!stdlibInjectResult.ok) {
+        for (const err of stdlibInjectResult.errors) {
+            console.error(`error: ${err.message}`);
+        }
+        return 1;
+    }
     const resolveResult = resolveModuleTree(ast, { sourcePath: inputFile });
     if (!resolveResult.ok || !resolveResult.module) {
         for (const err of resolveResult.errors || []) {
@@ -725,6 +792,9 @@ function runTestCli(args) {
     const irModule = makeIRModule(hirModule.name || "main");
     for (const item of hirModule.items || []) {
         if (item.kind === HItemKind.Fn) {
+            if (!item.body) {
+                continue;
+            }
             try {
                 const irFn = lowerHirToSsa(/** @type {import('./hir.js').HFnDecl} */(item), { irModule });
                 if (validate) {

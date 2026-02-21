@@ -87,6 +87,8 @@ class TypeContext {
 
         /** @type {Type[]} */
         this.implSelfTypeStack = [];
+        /** @type {Map<string, Type>[]} */
+        this.implGenericBindingStack = [];
 
         /** @type {{ closureDepth: number, captures: Map<string, { name: string, type: Type, mutable: boolean, span?: Span, closureInfo?: any }> }[]} */
         this.closureCaptureTrackers = [];
@@ -489,6 +491,32 @@ class TypeContext {
     currentImplSelfType() {
         if (this.implSelfTypeStack.length === 0) return null;
         return this.implSelfTypeStack[this.implSelfTypeStack.length - 1];
+    }
+
+    /**
+     * Push impl generic bindings.
+     * @param {Map<string, Type>} bindings
+     * @returns {void}
+     */
+    pushImplGenericBindings(bindings) {
+        this.implGenericBindingStack.push(bindings);
+    }
+
+    /**
+     * Pop impl generic bindings.
+     * @returns {Map<string, Type> | null}
+     */
+    popImplGenericBindings() {
+        return this.implGenericBindingStack.pop() || null;
+    }
+
+    /**
+     * Get the current impl generic binding map.
+     * @returns {Map<string, Type> | null}
+     */
+    currentImplGenericBindings() {
+        if (this.implGenericBindingStack.length === 0) return null;
+        return this.implGenericBindingStack[this.implGenericBindingStack.length - 1];
     }
 
     /**

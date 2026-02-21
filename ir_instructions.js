@@ -8,7 +8,7 @@
 /** @typedef {import('./ir.js').IntWidthValue} IntWidthValue */
 /** @typedef {import('./ir.js').FloatWidthValue} FloatWidthValue */
 
-import { IRInstKind, freshValueId } from "./ir.js";
+import { IRInstKind, freshValueId, makeIRPtrType } from "./ir.js";
 
 /**
  * @param {IRInstKindValue} kind
@@ -456,7 +456,7 @@ function makeGep(ptr, indices, resultTy) {
     return {
         kind: IRInstKind.Gep,
         id,
-        ty: resultTy,
+        ty: makeIRPtrType(resultTy),
         ptr,
         indices,
     };

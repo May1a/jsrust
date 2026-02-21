@@ -495,6 +495,8 @@ function makeParam(
  * @param {string[]} [ignoredLifetimeParams=[]]
  * @param {boolean} [isTest=false]
  * @param {string | null} [expectedOutput=null]
+ * @param {boolean} [isBuiltin=false]
+ * @param {string | null} [builtinName=null]
  * @returns {Node}
  */
 function makeFnItem(
@@ -513,6 +515,8 @@ function makeFnItem(
     ignoredLifetimeParams = [],
     isTest = false,
     expectedOutput = null,
+    isBuiltin = false,
+    builtinName = null,
 ) {
     return makeNode(NodeKind.FnItem, span, {
         name,
@@ -529,6 +533,8 @@ function makeFnItem(
         isPub,
         isTest,
         expectedOutput,
+        isBuiltin,
+        builtinName,
     });
 }
 
@@ -671,6 +677,7 @@ function makeTraitItem(span, name, methods, isUnsafe = false, isPub = false) {
  * @param {Node | null} traitType
  * @param {Node[]} methods
  * @param {boolean} [isUnsafe=false]
+ * @param {{ name: string, bounds: Node[] }[] | null} [genericParams=null]
  * @param {string[]} [ignoredLifetimeParams=[]]
  * @returns {Node}
  */
@@ -680,6 +687,7 @@ function makeImplItem(
     traitType,
     methods,
     isUnsafe = false,
+    genericParams = null,
     ignoredLifetimeParams = [],
 ) {
     return makeNode(NodeKind.ImplItem, span, {
@@ -687,6 +695,7 @@ function makeImplItem(
         traitType,
         methods,
         isUnsafe,
+        genericParams,
         ignoredLifetimeParams,
     });
 }

@@ -893,9 +893,12 @@ export class HirToSsaCtx {
         const index = this.lowerExpr(expr.index);
         const elemTy = this.translateType(expr.ty);
 
-        // For arrays, use gep
-        const inst = this.builder.gep(base, [index], elemTy);
-        return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
+        const ptrInst = this.builder.gep(base, [index], elemTy);
+        const loadInst = this.builder.load(
+            /** @type {ValueId} */ (/** @type {ValueId} */ (ptrInst.id)),
+            elemTy,
+        );
+        return /** @type {ValueId} */ (/** @type {ValueId} */ (loadInst.id));
     }
 
     /**
@@ -970,7 +973,7 @@ export class HirToSsaCtx {
      */
     lowerPlaceToRef(place) {
         // Handle expressions that are places
-        if (place.kind === HExprKind.Var) {
+        if (place.kind === HExprKind.Var && typeof place.name === "string") {
             const varInfo = this.varNames.get(place.name);
             if (varInfo) {
                 return this.ensureVarAlloca(
@@ -983,7 +986,9 @@ export class HirToSsaCtx {
 
         if (place.kind === HExprKind.Field) {
             // Field access - need pointer to field
-            const basePtr = this.lowerPlaceToRef(place.base);
+            const basePtr = place.base.ty && place.base.ty.kind === TypeKind.Ptr
+                ? this.lowerExpr(place.base)
+                : this.lowerPlaceToRef(place.base);
             const fieldIndex = place.index;
             const fieldTy = this.translateType(place.ty);
             const inst = this.builder.gep(
@@ -999,7 +1004,9 @@ export class HirToSsaCtx {
 
         if (place.kind === HExprKind.Index) {
             // Index access - need pointer to element
-            const basePtr = this.lowerPlaceToRef(place.base);
+            const basePtr = place.base.ty && place.base.ty.kind === TypeKind.Ptr
+                ? this.lowerExpr(place.base)
+                : this.lowerPlaceToRef(place.base);
             const index = this.lowerExpr(place.index);
             const elemTy = this.translateType(place.ty);
             const inst = this.builder.gep(basePtr, [index], elemTy);
@@ -1020,7 +1027,18 @@ export class HirToSsaCtx {
                 );
             }
             case HPlaceKind.Field: {
-                const basePtr = this.lowerPlaceToRef(place.base);
+                let basePtr;
+                if (place.base.ty && place.base.ty.kind === TypeKind.Ptr) {
+                    if (place.base.kind === HPlaceKind.Deref) {
+                        basePtr = this.lowerPlaceToRef(place.base);
+                    } else {
+                        const baseAddr = this.lowerPlaceToRef(place.base);
+                        const ptrTy = this.translateType(place.base.ty);
+                        basePtr = /** @type {ValueId} */ (this.builder.load(baseAddr, ptrTy).id);
+                    }
+                } else {
+                    basePtr = this.lowerPlaceToRef(place.base);
+                }
                 const fieldIndex = place.index;
                 const fieldTy = this.translateType(place.ty);
                 const inst = this.builder.gep(
@@ -1034,14 +1052,28 @@ export class HirToSsaCtx {
                 return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
             }
             case HPlaceKind.Index: {
-                const basePtr = this.lowerPlaceToRef(place.base);
+                let basePtr;
+                if (place.base.ty && place.base.ty.kind === TypeKind.Ptr) {
+                    if (place.base.kind === HPlaceKind.Deref) {
+                        basePtr = this.lowerPlaceToRef(place.base);
+                    } else {
+                        const baseAddr = this.lowerPlaceToRef(place.base);
+                        const ptrTy = this.translateType(place.base.ty);
+                        basePtr = /** @type {ValueId} */ (this.builder.load(baseAddr, ptrTy).id);
+                    }
+                } else {
+                    basePtr = this.lowerPlaceToRef(place.base);
+                }
                 const index = this.lowerExpr(place.index);
                 const elemTy = this.translateType(place.ty);
                 const inst = this.builder.gep(basePtr, [index], elemTy);
                 return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
             }
             case HPlaceKind.Deref: {
-                return this.lowerExpr(place.base);
+                const basePtr = this.lowerPlaceToRef(place.base);
+                const ptrTy = this.translateType(place.base.ty);
+                const inst = this.builder.load(basePtr, ptrTy);
+                return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
             }
             default:
                 throw new Error(`Unknown place kind: ${place.kind}`);
@@ -1715,8 +1747,8 @@ export class HirToSsaCtx {
                     this.translateType(ty.returnType),
                 );
             case TypeKind.Named:
-                // Named type - treat as unit for now
-                return makeIRUnitType();
+                // Preserve named aggregate identity instead of collapsing to unit.
+                return makeIRStructType(ty.name || "", []);
             case TypeKind.TypeVar:
                 if (ty.bound) {
                     return this.translateType(ty.bound);

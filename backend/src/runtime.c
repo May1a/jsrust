@@ -260,10 +260,71 @@ BackendStatus Runtime_allocateCell(RuntimeContext* runtime, ExecValue initial, u
 
     cell = &runtime->cells[runtime->cellCount];
     cell->occupied = 1;
+    cell->ptrKind = RuntimePtrKind_Stack;
     cell->value = initial;
 
     *outIndex = runtime->cellCount;
     runtime->cellCount += 1;
+    return BackendStatus_ok();
+}
+
+BackendStatus Runtime_allocateCells(
+    RuntimeContext* runtime,
+    uint32_t count,
+    ExecValue initial,
+    uint8_t ptrKind,
+    uint32_t* outStartIndex)
+{
+    uint32_t index;
+    uint32_t startIndex;
+    RuntimeCell* cell;
+
+    if (count == 0) {
+        *outStartIndex = UINT32_MAX;
+        return BackendStatus_ok();
+    }
+
+    if (!Runtime_reserveCells(runtime, runtime->cellCount + count))
+        return BackendStatus_make(JSRUST_BACKEND_ERR_INTERNAL, ByteSpan_fromCString("arena allocation failed for memory cells"));
+
+    startIndex = runtime->cellCount;
+    for (index = 0; index < count; ++index) {
+        cell = &runtime->cells[runtime->cellCount + index];
+        cell->occupied = 1;
+        cell->ptrKind = ptrKind;
+        cell->value = initial;
+    }
+
+    runtime->cellCount += count;
+    *outStartIndex = startIndex;
+    return BackendStatus_ok();
+}
+
+BackendStatus Runtime_deallocateCells(
+    RuntimeContext* runtime,
+    uint32_t startIndex,
+    uint32_t count,
+    uint8_t requireHeap)
+{
+    uint32_t index;
+    RuntimeCell* cell;
+
+    if (count == 0 || startIndex == UINT32_MAX)
+        return BackendStatus_ok();
+    if (startIndex >= runtime->cellCount || count > runtime->cellCount - startIndex)
+        return Runtime_error("invalid pointer range for deallocation");
+
+    for (index = 0; index < count; ++index) {
+        cell = &runtime->cells[startIndex + index];
+        if (!cell->occupied)
+            return Runtime_error("double free or invalid deallocation range");
+        if (requireHeap && cell->ptrKind != RuntimePtrKind_Heap)
+            return Runtime_error("deallocation requires heap pointer range");
+        cell->occupied = 0;
+        cell->ptrKind = RuntimePtrKind_Invalid;
+        cell->value = ExecValue_makeUnit();
+    }
+
     return BackendStatus_ok();
 }
 
@@ -295,6 +356,27 @@ BackendStatus Runtime_copyCell(RuntimeContext* runtime, uint32_t destIndex, uint
         return status;
 
     return Runtime_storeCell(runtime, destIndex, source);
+}
+
+BackendStatus Runtime_copyCells(RuntimeContext* runtime, uint32_t destIndex, uint32_t srcIndex, uint32_t count)
+{
+    uint32_t index;
+    BackendStatus status;
+
+    for (index = 0; index < count; ++index) {
+        status = Runtime_copyCell(runtime, destIndex + index, srcIndex + index);
+        if (status.code != JSRUST_BACKEND_OK)
+            return status;
+    }
+
+    return BackendStatus_ok();
+}
+
+uint8_t Runtime_cellPtrKind(const RuntimeContext* runtime, uint32_t cellIndex)
+{
+    if (!runtime || cellIndex >= runtime->cellCount || !runtime->cells[cellIndex].occupied)
+        return RuntimePtrKind_Invalid;
+    return runtime->cells[cellIndex].ptrKind;
 }
 
 BackendStatus Runtime_allocateStruct(RuntimeContext* runtime, const ExecValue* fields, uint32_t fieldCount, uint32_t* outIndex)
@@ -334,6 +416,21 @@ BackendStatus Runtime_readStructField(RuntimeContext* runtime, uint32_t structIn
         return Runtime_error("struct field index out of bounds");
 
     *outValue = object->fields[fieldIndex];
+    return BackendStatus_ok();
+}
+
+BackendStatus Runtime_writeStructField(RuntimeContext* runtime, uint32_t structIndex, uint32_t fieldIndex, ExecValue value)
+{
+    RuntimeStructObject* object;
+
+    if (structIndex >= runtime->structCount)
+        return Runtime_error("struct reference out of bounds");
+
+    object = &runtime->structs[structIndex];
+    if (fieldIndex >= object->fieldCount)
+        return Runtime_error("struct field index out of bounds");
+
+    object->fields[fieldIndex] = value;
     return BackendStatus_ok();
 }
 

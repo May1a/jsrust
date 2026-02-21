@@ -298,7 +298,7 @@ function matchInvalidSymbol(state, symbol) {
 
 /**
  * @param {ParserState} state
- * @returns {{ derives: string[], isTest: boolean, expectedOutput: string | null, consumedOnlyInert: boolean }}
+ * @returns {{ derives: string[], isTest: boolean, expectedOutput: string | null, builtinName: string | null, consumedOnlyInert: boolean }}
  */
 function parseOuterAttributes(state) {
     /** @type {string[]} */
@@ -306,6 +306,8 @@ function parseOuterAttributes(state) {
     let isTest = false;
     /** @type {string | null} */
     let expectedOutput = null;
+    /** @type {string | null} */
+    let builtinName = null;
     let consumedAny = false;
     let consumedMeaningful = false;
     while (
@@ -409,6 +411,54 @@ function parseOuterAttributes(state) {
             expectToken(state, TokenType.CloseSquare, "Expected ] after attribute");
             continue;
         }
+        if (attrIdent === "builtin") {
+            consumedMeaningful = true;
+            builtinName = "__attribute_builtin__";
+            if (matchToken(state, TokenType.OpenParen)) {
+                const keyToken = peek(state);
+                if (!isIdentifierToken(keyToken) || keyToken.value !== "name") {
+                    addError(
+                        state,
+                        "Expected builtin attribute argument `name = \"...\"`",
+                        keyToken,
+                        ["Identifier"],
+                    );
+                    skipBalancedParens(state);
+                } else {
+                    advance(state);
+                    if (!matchToken(state, TokenType.Eq)) {
+                        addError(
+                            state,
+                            "Expected = after builtin attribute name",
+                            peek(state),
+                            ["="],
+                        );
+                    }
+                    const valueToken = peek(state);
+                    if (
+                        valueToken.type === TokenType.String &&
+                        !valueToken.value.startsWith("'")
+                    ) {
+                        advance(state);
+                        builtinName = parseStringToken(valueToken);
+                    } else {
+                        addError(
+                            state,
+                            "Expected string literal for builtin attribute name",
+                            valueToken,
+                            ["String"],
+                        );
+                    }
+                    if (!check(state, TokenType.CloseParen)) {
+                        skipBalancedParens(state);
+                    } else {
+                        expectToken(state, TokenType.CloseParen, "Expected ) after builtin attribute");
+                    }
+                }
+            }
+            expectToken(state, TokenType.CloseSquare, "Expected ] after builtin attribute");
+            continue;
+        }
         // Inert unknown attributes are accepted and ignored.
         if (matchToken(state, TokenType.OpenParen)) {
             skipBalancedParens(state);
@@ -419,6 +469,7 @@ function parseOuterAttributes(state) {
         derives,
         isTest,
         expectedOutput,
+        builtinName,
         consumedOnlyInert: consumedAny && !consumedMeaningful,
     };
 }
@@ -1086,6 +1137,24 @@ function parseMacroArgs(state) {
         while (!check(state, endToken) && !isAtEnd(state)) {
             const arg = parseExpr(state, 0);
             if (arg) args.push(arg);
+            if (
+                endToken === TokenType.CloseSquare &&
+                check(state, TokenType.Semicolon)
+            ) {
+                const semi = advance(state);
+                addError(
+                    state,
+                    "Macro repeat form `[expr; count]` is not supported yet",
+                    semi,
+                    null,
+                );
+                const repeatCount = parseExpr(state, 0);
+                if (repeatCount) args.push(repeatCount);
+                while (!check(state, endToken) && !isAtEnd(state)) {
+                    advance(state);
+                }
+                break;
+            }
             if (!matchToken(state, TokenType.Comma)) break;
         }
     }
@@ -1865,6 +1934,7 @@ function parseImplItem(state, isUnsafe) {
     const start =
         expectToken(state, TokenType.Impl, "Expected impl") ?? peek(state);
     const genericList = parseGenericParamList(state);
+    const genericParams = genericList ? genericList.genericParams : null;
     const ignoredLifetimeParams = genericList
         ? genericList.ignoredLifetimeParams
         : [];
@@ -1917,6 +1987,7 @@ function parseImplItem(state, isUnsafe) {
         traitType,
         methods,
         isUnsafe,
+        genericParams,
         ignoredLifetimeParams,
     );
 }
@@ -2117,6 +2188,7 @@ function parseUsePath(state) {
  */
 function parseUseTree(state) {
     const startToken = peek(state);
+    /** @type {string[]} */
     let path = [];
     let hasWildcard = false;
     const startsWithGroup = check(state, TokenType.OpenCurly);
@@ -2181,7 +2253,7 @@ function parseUseItem(state, isPub) {
  * @returns {Node | null}
  */
 function parseItem(state) {
-    const { derives, isTest, expectedOutput, consumedOnlyInert } = parseOuterAttributes(state);
+    const { derives, isTest, expectedOutput, builtinName, consumedOnlyInert } = parseOuterAttributes(state);
     let isPub = false;
     let isUnsafe = false;
     let isConst = false;
@@ -2215,6 +2287,20 @@ function parseItem(state) {
             if (expectedOutput !== null) {
                 item.expectedOutput = expectedOutput;
             }
+            if (builtinName !== null) {
+                item.isBuiltin = true;
+                item.builtinName =
+                    builtinName === "__attribute_builtin__"
+                        ? item.name
+                        : builtinName;
+            }
+        } else if (builtinName !== null) {
+            addError(
+                state,
+                "#[builtin(...)] is only valid on function items",
+                peek(state),
+                null,
+            );
         } else if (expectedOutput !== null) {
             addError(
                 state,
@@ -2566,7 +2652,7 @@ function parseType(state) {
         let mutability = Mutability.Immutable;
         if (matchToken(state, TokenType.Const)) {
             mutability = Mutability.Immutable;
-        } else if (isIdentifierValue(peek(state), "mut")) {
+        } else if (check(state, TokenType.Mut) || isIdentifierValue(peek(state), "mut")) {
             advance(state);
             mutability = Mutability.Mutable;
         }

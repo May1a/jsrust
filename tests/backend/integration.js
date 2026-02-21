@@ -13,6 +13,12 @@ const RUN_HELLO_WORLD = `${RUN_FIXTURES_DIR}/10_hello_world.rs`;
 const RUN_FUNCTIONS_PRINT = `${RUN_FIXTURES_DIR}/11_functions_print.rs`;
 const RUN_FORMAT_PRINT_VAR = `${RUN_FIXTURES_DIR}/13_format_print_var.rs`;
 const RUN_CLOSURE_PARAM = `${RUN_FIXTURES_DIR}/14_closure_param.rs`;
+const RUN_VEC_LEN = `${RUN_FIXTURES_DIR}/15_vec_len.rs`;
+const RUN_VEC_OPS = `${RUN_FIXTURES_DIR}/16_vec_ops.rs`;
+const RUN_VEC_POP_EMPTY_PANIC = `${RUN_FIXTURES_DIR}/17_vec_pop_empty_panic.rs`;
+const RUN_VEC_BOUNDS_PANIC = `${RUN_FIXTURES_DIR}/18_vec_bounds_panic.rs`;
+const RUN_VEC_REPEAT_UNSUPPORTED = `${RUN_FIXTURES_DIR}/19_vec_repeat_unsupported.rs`;
+const RUN_VEC_NON_COPY_INDEX_ERROR = `${RUN_FIXTURES_DIR}/20_vec_non_copy_index_error.rs`;
 
 /**
  * @returns {{ ok: true } | { ok: false, reason: string }}
@@ -91,6 +97,22 @@ export function runBackendIntegrationTests() {
         assertEqual(result.stdout.trim(), "ok");
     });
 
+    test("Backend integration: run vec ops example", () => {
+        const result = runMain(["run", RUN_VEC_OPS]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertEqual(result.status, 0, `stderr: ${result.stderr}`);
+        const lines = result.stdout.trimEnd().split("\n");
+        assertEqual(lines[0], "3");
+        assertEqual(lines[1], "4");
+        assertEqual(lines[2], "4");
+        assertEqual(lines[3], "4");
+        assertEqual(lines[4], "3");
+        assertEqual(lines[5], "2");
+        assertEqual(lines[6], "4");
+        assertEqual(lines[7], "3");
+        assertEqual(lines[lines.length - 1], "ok");
+    });
+
     test("Backend integration: run arithmetic via codegen wasm mode", () => {
         const result = runMain([
             "run",
@@ -113,6 +135,8 @@ export function runBackendIntegrationTests() {
             RUN_HELLO_WORLD,
             RUN_FUNCTIONS_PRINT,
             RUN_FORMAT_PRINT_VAR,
+            RUN_VEC_LEN,
+            RUN_VEC_OPS,
         ];
 
         for (const fixture of fixtures) {
@@ -130,6 +154,62 @@ export function runBackendIntegrationTests() {
                 `stdout parity mismatch for ${fixture}`,
             );
         }
+    });
+
+    test("Backend integration: vec empty pop panic in both modes", () => {
+        const interpreted = runMain(["run", RUN_VEC_POP_EMPTY_PANIC]);
+        assertTrue(!interpreted.error, `spawn failed for interpreted run: ${interpreted.error?.message || ""}`);
+        assertTrue((interpreted.status ?? 0) !== 0, "expected non-zero interpreted status");
+        assertTrue(
+            interpreted.stderr.includes("error[execute-error]:"),
+            `unexpected interpreted stderr: ${interpreted.stderr}`,
+        );
+
+        const generated = runMain(["run", RUN_VEC_POP_EMPTY_PANIC, "--codegen-wasm"]);
+        assertTrue(!generated.error, `spawn failed for codegen run: ${generated.error?.message || ""}`);
+        assertTrue((generated.status ?? 0) !== 0, "expected non-zero codegen status");
+        assertTrue(
+            generated.stderr.includes("error[execute-error]:"),
+            `unexpected codegen stderr: ${generated.stderr}`,
+        );
+    });
+
+    test("Backend integration: vec bounds panic in both modes", () => {
+        const interpreted = runMain(["run", RUN_VEC_BOUNDS_PANIC]);
+        assertTrue(!interpreted.error, `spawn failed for interpreted run: ${interpreted.error?.message || ""}`);
+        assertTrue((interpreted.status ?? 0) !== 0, "expected non-zero interpreted status");
+        assertTrue(
+            interpreted.stderr.includes("error[execute-error]:"),
+            `unexpected interpreted stderr: ${interpreted.stderr}`,
+        );
+
+        const generated = runMain(["run", RUN_VEC_BOUNDS_PANIC, "--codegen-wasm"]);
+        assertTrue(!generated.error, `spawn failed for codegen run: ${generated.error?.message || ""}`);
+        assertTrue((generated.status ?? 0) !== 0, "expected non-zero codegen status");
+        assertTrue(
+            generated.stderr.includes("error[execute-error]:"),
+            `unexpected codegen stderr: ${generated.stderr}`,
+        );
+    });
+
+    test("Backend integration: vec repeat form is compile-time unsupported", () => {
+        const result = runMain([RUN_VEC_REPEAT_UNSUPPORTED]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
+        assertTrue(
+            result.stderr.includes("Macro repeat form `[expr; count]` is not supported yet"),
+            `unexpected stderr: ${result.stderr}`,
+        );
+    });
+
+    test("Backend integration: vec non-copy by-value indexing is compile-time error", () => {
+        const result = runMain([RUN_VEC_NON_COPY_INDEX_ERROR]);
+        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
+        assertTrue(
+            result.stderr.includes("Vec index by-value requires Copy element type"),
+            `unexpected stderr: ${result.stderr}`,
+        );
     });
 
     test("Backend integration: --trace rejected in codegen wasm mode", () => {

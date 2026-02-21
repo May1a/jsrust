@@ -448,6 +448,32 @@ export function runE2ETests() {
         testsRun++;
     });
 
+    test("E2E: vec repeat form is unsupported", () => {
+        const result = assertFails(
+            `fn main() { let v = vec![1; 3]; }`,
+            "vec repeat unsupported",
+        );
+        const messages = result.errors.map((e) => e.message).join("\n");
+        assertTrue(
+            messages.includes("Macro repeat form `[expr; count]` is not supported yet"),
+            `unexpected errors: ${messages}`,
+        );
+        testsRun++;
+    });
+
+    test("E2E: vec non-copy by-value index fails", () => {
+        const result = assertFails(
+            `struct S { x: i32 } fn main() { let v = vec![S { x: 1 }]; let _x = v[0]; }`,
+            "vec non-copy index error",
+        );
+        const messages = result.errors.map((e) => e.message).join("\n");
+        assertTrue(
+            messages.includes("Vec index by-value requires Copy element type"),
+            `unexpected errors: ${messages}`,
+        );
+        testsRun++;
+    });
+
     return testsRun;
 }
 
