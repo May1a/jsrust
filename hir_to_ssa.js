@@ -1297,7 +1297,7 @@ export class HirToSsaCtx {
             if (!(/** @type {import("./ir.js").IRBlock} */ (this.builder.currentBlock)).terminator) {
                 this.builder.br(
                     mergeId,
-                    hasResult && armResult !== null ? [armResult] : [],
+                    [],
                 );
             }
             this.builder.sealBlock(armBlocks[i]);
@@ -1320,7 +1320,9 @@ export class HirToSsaCtx {
      * @param {any} resultTy
      */
     lowerEnumMatch(expr, scrutinee, arms, hasResult, resultTy) {
-        const mergeId = this.builder.createBlock("match_merge");
+        const mergeParams =
+            hasResult && resultTy ? [this.translateType(resultTy)] : [];
+        const mergeId = this.builder.createBlock("match_merge", mergeParams);
         const armBlocks = arms.map((_, i) =>
             this.builder.createBlock(`arm${i}`),
         );
@@ -1331,18 +1333,23 @@ export class HirToSsaCtx {
         // Build switch on tag
         const cases = [];
         let defaultBlock = mergeId;
+        const armVariantIndices = new Array(arms.length).fill(-1);
 
         for (let i = 0; i < arms.length; i++) {
             const arm = arms[i];
-            if (
-                arm.pat.kind === HPatKind.Struct &&
-                arm.pat.name === expr.scrutinee.ty.name
-            ) {
-                // Enum variant pattern - need to find variant index
+            if (arm.pat.kind === HPatKind.Struct) {
+                const patternName = arm.pat.name || "";
+                const variantName = patternName.includes("::")
+                    ? patternName.split("::").slice(-1)[0]
+                    : patternName;
                 const variantIndex = this.findEnumVariantIndex(
                     expr.scrutinee.ty,
-                    arm.pat.name,
+                    variantName,
                 );
+                if (variantIndex < 0) {
+                    continue;
+                }
+                armVariantIndices[i] = variantIndex;
                 const caseValue = /** @type {ValueId} */ (this.builder.iconst(
                     variantIndex,
                     IntWidth.I32,
@@ -1360,20 +1367,37 @@ export class HirToSsaCtx {
             }
         }
 
-        this.builder.switch(/** @type {ValueId} */(/** @type {ValueId} */ (tag.id)), cases, defaultBlock, []);
+        const defaultArgs = hasResult && mergeParams.length > 0 && defaultBlock === mergeId
+            ? [/** @type {ValueId} */ (this.builder.iconst(0, IntWidth.I32).id)]
+            : [];
+        this.builder.switch(
+            /** @type {ValueId} */(/** @type {ValueId} */ (tag.id)),
+            cases,
+            defaultBlock,
+            defaultArgs,
+        );
 
         // Lower each arm
         for (let i = 0; i < arms.length; i++) {
             this.builder.switchToBlock(armBlocks[i]);
 
             // Bind pattern
-            this.bindEnumPattern(arms[i].pat, scrutinee, expr.scrutinee.ty);
+            this.bindEnumPattern(
+                arms[i].pat,
+                scrutinee,
+                expr.scrutinee.ty,
+                armVariantIndices[i],
+            );
 
             const armResult = this.lowerBlock(arms[i].body);
             if (!(/** @type {import("./ir.js").IRBlock} */ (this.builder.currentBlock)).terminator) {
+                const branchArgs =
+                    hasResult && armResult !== null
+                        ? [armResult]
+                        : [];
                 this.builder.br(
                     mergeId,
-                    hasResult && armResult !== null ? [armResult] : [],
+                    branchArgs,
                 );
             }
             this.builder.sealBlock(armBlocks[i]);
@@ -1382,9 +1406,14 @@ export class HirToSsaCtx {
         this.builder.switchToBlock(mergeId);
         this.builder.sealBlock(mergeId);
 
-        return hasResult
-            ? this.builder.iconst(0, IntWidth.I32).id
-            : this.builder.iconst(0, IntWidth.I8).id;
+        if (hasResult) {
+            const mergeParam = /** @type {import("./ir.js").IRBlock} */ (this.builder.currentBlock).params[0];
+            if (mergeParam) {
+                return /** @type {ValueId} */ (mergeParam.id);
+            }
+            return /** @type {ValueId} */ (this.builder.iconst(0, IntWidth.I32).id);
+        }
+        return /** @type {ValueId} */ (this.builder.iconst(0, IntWidth.I8).id);
     }
 
     /**
@@ -1392,16 +1421,17 @@ export class HirToSsaCtx {
      * @param {any} pat
      * @param {any} enumValue
      * @param {any} enumTy
+     * @param {number} variantIndex
      */
-    bindEnumPattern(pat, enumValue, enumTy) {
+    bindEnumPattern(pat, enumValue, enumTy, variantIndex) {
         if (pat.kind === HPatKind.Struct && pat.fields) {
             // Extract and bind each field
             for (let i = 0; i < pat.fields.length; i++) {
                 const field = pat.fields[i];
-                const fieldTy = this.getEnumFieldType(enumTy, i);
+                const fieldTy = this.getEnumFieldType(enumTy, variantIndex, i);
                 const fieldValue = this.builder.enumGetData(
                     enumValue,
-                    0,
+                    variantIndex < 0 ? 0 : variantIndex,
                     i,
                     this.translateType(fieldTy),
                 );
@@ -1457,7 +1487,7 @@ export class HirToSsaCtx {
             if (!(/** @type {import("./ir.js").IRBlock} */ (this.builder.currentBlock)).terminator) {
                 this.builder.br(
                     mergeId,
-                    hasResult && armResult !== null ? [armResult] : [],
+                    [],
                 );
             }
 
@@ -1731,7 +1761,14 @@ export class HirToSsaCtx {
             case TypeKind.Enum:
                 return makeIREnumType(
                     /** @type {any} */(ty).name || "",
-                    /** @type {any} */(ty).variants ? /** @type {any} */ (ty).variants.map((/** @type {any} */ v) => v.fields || []) : [],
+                    /** @type {any} */(ty).variants
+                        ? /** @type {any} */ (ty).variants.map(
+                            (/** @type {any} */ v) =>
+                                (v.fields || []).map((/** @type {any} */ f) =>
+                                    this.translateType(f),
+                                ),
+                        )
+                        : [],
                 );
             case TypeKind.Array:
                 return makeIRArrayType(
@@ -1832,12 +1869,16 @@ export class HirToSsaCtx {
     /**
      * Get enum field type
      * @param {Type} enumTy
+     * @param {number} variantIndex
      * @param {number} fieldIndex
      * @returns {Type}
      */
-    getEnumFieldType(enumTy, fieldIndex) {
+    getEnumFieldType(enumTy, variantIndex, fieldIndex) {
         if (enumTy.kind === TypeKind.Enum && enumTy.variants) {
-            const variant = enumTy.variants[0]; // Simplified
+            const variant =
+                variantIndex >= 0 && variantIndex < enumTy.variants.length
+                    ? enumTy.variants[variantIndex]
+                    : null;
             if (
                 variant &&
                 variant.fields &&
@@ -1863,7 +1904,7 @@ export class HirToSsaCtx {
                 }
             }
         }
-        return 0;
+        return -1;
     }
 
     /**

@@ -342,6 +342,16 @@ function makeNamedType(name, args, span) {
     return { kind: TypeKind.Named, name, args, span };
 }
 
+/**
+ * Helper to create Option<T> type
+ * @param {Type} innerType
+ * @param {Span} [span]
+ * @returns {Type}
+ */
+function makeOptionType(innerType, span) {
+    return makeNamedType("Option", [innerType], span);
+}
+
 // ============================================================================
 // Task 3.9: Type Utilities
 // ============================================================================
@@ -924,6 +934,7 @@ export {
     resetTypeVarId,
     // Named type
     makeNamedType,
+    makeOptionType,
     // Type utilities
     typeEquals,
     typeToString,

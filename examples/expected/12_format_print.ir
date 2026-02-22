@@ -200,7 +200,7 @@ fn Vec::push(arg0: *Vec, arg1: T) -> () {
 
 }
 
-fn Vec::pop(arg0: *Vec) -> T {
+fn Vec::pop(arg0: *Vec) -> Option {
 
     block0:
         v103 = load Vec, v102
@@ -210,104 +210,106 @@ fn Vec::pop(arg0: *Vec) -> T {
         br_if v106, then: block1(), else: block2()
 
     block1:
-        v107 = iconst i32 0
+        v107 = enum_create Option, variant 0
+        br block3(v107)
+
+    block2:
         v108 = load Vec, v102
         v109 = struct_get v108, 1
-        v110 = call 839352(v107, v109)
-        br block2
+        v110 = iconst i32 1
+        v111 = isub v109, v110
+        v112 = alloca *Vec ; loc0
+        store *Vec, v112, v102
+        v113 = load *Vec, v112
+        v114 = iconst i32 0
+        v115 = iconst i32 1
+        v116 = gep v113, [v114, v115]
+        store i32, v116, v111
+        v117 = load *Vec, v112
+        v118 = load Vec, v117
+        v119 = struct_get v118, 0
+        v120 = load *Vec, v112
+        v121 = load Vec, v120
+        v122 = struct_get v121, 1
+        v123 = gep v119, [v122]
+        v124 = load T, v123
+        v125 = enum_create Option, variant 1 [v124]
+        br block3(v125)
 
-    block2:
-        v111 = iconst i8 0
-        v112 = load Vec, v102
-        v113 = struct_get v112, 1
-        v114 = iconst i32 1
-        v115 = isub v113, v114
-        v116 = alloca *Vec ; loc0
-        store *Vec, v116, v102
-        v117 = load *Vec, v116
-        v118 = iconst i32 0
-        v119 = iconst i32 1
-        v120 = gep v117, [v118, v119]
-        store i32, v120, v115
-        v121 = load *Vec, v116
-        v122 = load Vec, v121
-        v123 = struct_get v122, 0
-        v124 = load *Vec, v116
-        v125 = load Vec, v124
-        v126 = struct_get v125, 1
-        v127 = gep v123, [v126]
-        v128 = load T, v127
-        ret v128
+    block3(v126: Option):
+        ret v126
 
 }
 
-fn Vec::get(arg0: *Vec, arg1: i32) -> T {
+fn Vec::get(arg0: *Vec, arg1: i32) -> Option {
 
     block0:
-        v131 = load Vec, v129
-        v132 = struct_get v131, 1
-        v133 = icmp sge v130, v132
-        br_if v133, then: block1(), else: block2()
+        v129 = load Vec, v127
+        v130 = struct_get v129, 1
+        v131 = icmp sge v128, v130
+        br_if v131, then: block1(), else: block2()
 
     block1:
-        v134 = load Vec, v129
-        v135 = struct_get v134, 1
-        v136 = call 839352(v130, v135)
-        br block2
+        v132 = enum_create Option, variant 0
+        br block3(v132)
 
     block2:
-        v137 = iconst i8 0
-        v138 = load Vec, v129
-        v139 = struct_get v138, 0
-        v140 = gep v139, [v130]
-        v141 = load T, v140
-        ret v141
+        v133 = load Vec, v127
+        v134 = struct_get v133, 0
+        v135 = gep v134, [v128]
+        v136 = load T, v135
+        v137 = enum_create Option, variant 1 [v136]
+        br block3(v137)
+
+    block3(v138: Option):
+        ret v138
 
 }
 
-fn Vec::index(arg0: *Vec, arg1: i32) -> T {
+fn Vec::index(arg0: *Vec, arg1: i32) -> Option {
 
     block0:
-        v144 = load Vec, v142
-        v145 = struct_get v144, 1
-        v146 = icmp sge v143, v145
-        br_if v146, then: block1(), else: block2()
+        v141 = load Vec, v139
+        v142 = struct_get v141, 1
+        v143 = icmp sge v140, v142
+        br_if v143, then: block1(), else: block2()
 
     block1:
-        v147 = load Vec, v142
-        v148 = struct_get v147, 1
-        v149 = call 839352(v143, v148)
-        br block2
+        v144 = enum_create Option, variant 0
+        br block3(v144)
 
     block2:
-        v150 = iconst i8 0
-        v151 = load Vec, v142
-        v152 = struct_get v151, 0
-        v153 = gep v152, [v143]
-        v154 = load T, v153
-        ret v154
+        v145 = load Vec, v139
+        v146 = struct_get v145, 0
+        v147 = gep v146, [v140]
+        v148 = load T, v147
+        v149 = enum_create Option, variant 1 [v148]
+        br block3(v149)
+
+    block3(v150: Option):
+        ret v150
 
 }
 
 fn test_example() -> () {
 
     block0:
-        v155 = sconst lit0
+        v151 = sconst lit0
+        v152 = iconst i32 0
+        v153 = sconst lit1
+        v154 = call 862609(v151, v152, v153)
+        v155 = sconst lit2
         v156 = iconst i32 0
-        v157 = sconst lit1
-        v158 = call 862609(v155, v156, v157)
-        v159 = sconst lit2
-        v160 = iconst i32 0
-        v161 = sconst lit3
+        v157 = sconst lit3
+        v158 = iconst i32 0
+        v159 = sconst lit4
+        v160 = call 862609(v155, v156, v157, v158, v159)
+        v161 = sconst lit5
         v162 = iconst i32 0
-        v163 = sconst lit4
-        v164 = call 862609(v159, v160, v161, v162, v163)
-        v165 = sconst lit5
-        v166 = iconst i32 0
-        v167 = sconst lit6
-        v168 = call 862609(v165, v166, v167)
-        v169 = sconst lit7
-        v170 = call 862609(v169)
+        v163 = sconst lit6
+        v164 = call 862609(v161, v162, v163)
+        v165 = sconst lit7
+        v166 = call 862609(v165)
         ret
 
 }

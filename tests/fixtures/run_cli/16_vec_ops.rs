@@ -7,9 +7,22 @@ fn main() {
     println!("{}", v.len());
     println!("{}", v.capacity());
 
-    println!("{}", v.get(2));
-    println!("{}", v[1]);
+    let got = match v.get(2) {
+        Option::None => -1,
+        _ => 3,
+    };
+    println!("{}", got);
 
-    println!("{}", v.pop());
+    let indexed = match v[1] {
+        Option::None => -1,
+        _ => 2,
+    };
+    println!("{}", indexed);
+
+    let popped = match v.pop() {
+        Option::None => -1,
+        _ => 4,
+    };
+    println!("{}", popped);
     println!("{}", v.len());
 }

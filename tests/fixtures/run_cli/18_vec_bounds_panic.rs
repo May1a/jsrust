@@ -1,4 +1,8 @@
 fn main() {
     let v = vec![1, 2, 3];
-    println!("{}", v[4]);
+    let out = match v[4] {
+        Option::None => -1,
+        _ => 0,
+    };
+    println!("{}", out);
 }

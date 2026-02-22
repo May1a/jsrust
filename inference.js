@@ -26,6 +26,7 @@ import {
     makeFnType,
     makeTypeVar,
     makeNamedType,
+    makeOptionType,
     typeEquals,
     typeToString,
     isNumericType,
@@ -2395,18 +2396,6 @@ function inferField(ctx, field, preferMethod = false) {
     }
     const fieldName =
         typeof field.field === "string" ? field.field : field.field.name;
-    const vecElementType = vecElementTypeForType(accessType);
-    if (
-        vecElementType &&
-        (fieldName === "get" || fieldName === "pop" || fieldName === "index") &&
-        !isCopyableInContext(ctx, vecElementType)
-    ) {
-        return err(
-            `Vec ${fieldName} by-value requires Copy element type, got ${typeToString(vecElementType)}`,
-            field.span,
-        );
-    }
-
     /**
      * @param {FnType} fnType
      * @param {string} symbolName
@@ -2653,16 +2642,10 @@ function inferIndex(ctx, index) {
         return ok(receiverType.inner);
     }
 
-    // Vec<T> indexing by value
+    // Vec<T> indexing delegates to stdlib method semantics (`Vec::index`).
     const vecElementType = vecElementTypeForType(receiverType);
     if (vecElementType) {
-        if (!isCopyableInContext(ctx, vecElementType)) {
-            return err(
-                `Vec index by-value requires Copy element type, got ${typeToString(vecElementType)}`,
-                index.span,
-            );
-        }
-        return ok(vecElementType);
+        return ok(makeOptionType(vecElementType, index.span));
     }
 
     // Type variable
@@ -3111,6 +3094,13 @@ function inferPath(ctx, pathExpr) {
     if (item.kind === "enum" && pathExpr.segments.length === 2) {
         const variantName = pathExpr.segments[1];
         const enumNode = item.node;
+        const enumGenericParams = (enumNode.generics || [])
+            .map((/** @type {string} */ name) => name || "")
+            .filter((/** @type {string} */ name) => name.length > 0);
+        const enumGenericSet = new Set(enumGenericParams);
+        const enumBindings = new Map(
+            enumGenericParams.map((/** @type {string} */ name) => [name, ctx.freshTypeVar()]),
+        );
 
         // Find the variant
         const variants = enumNode.variants || [];
@@ -3121,18 +3111,16 @@ function inferPath(ctx, pathExpr) {
 
         const variant = variants[variantIndex];
         const variantFields = variant.fields || [];
-
-        // Build the enum type
-        /** @type {import("./types.js").EnumType} */
-        const enumType = {
-            kind: TypeKind.Enum,
-            name: itemName,
-            variants: variants.map((/** @type {any} */ v) => ({
-                name: v.name,
-                fields: (v.fields || []).map((/** @type {any} */ f) => f.ty || null),
-            })),
-            span: pathExpr.span,
-        };
+        const enumType =
+            enumGenericParams.length > 0
+                ? makeNamedType(
+                    itemName,
+                    enumGenericParams.map((/** @type {string} */ name) =>
+                        enumBindings.get(name) || ctx.freshTypeVar(),
+                    ),
+                    pathExpr.span,
+                )
+                : makeEnumType(itemName, [], pathExpr.span);
 
         // If the variant has fields, return a function type that constructs the enum
         if (variantFields.length > 0) {
@@ -3142,7 +3130,14 @@ function inferPath(ctx, pathExpr) {
                 if (field.ty) {
                     const fieldTyResult = resolveTypeNode(ctx, field.ty);
                     if (fieldTyResult.ok) {
-                        fieldTypes.push(fieldTyResult.type);
+                        fieldTypes.push(
+                            substituteGenericTypeBindings(
+                                ctx,
+                                fieldTyResult.type,
+                                enumGenericSet,
+                                enumBindings,
+                            ),
+                        );
                     } else {
                         fieldTypes.push(ctx.freshTypeVar());
                     }
@@ -4017,30 +4012,139 @@ function checkPattern(ctx, pattern, expectedType) {
         }
 
         case NodeKind.StructPat: {
-            // Get struct type from path
+            const pathSegments =
+                pattern.path?.kind === NodeKind.PathExpr
+                    ? pattern.path.segments || []
+                    : [];
+            const isEnumVariantPath = pathSegments.length === 2;
+            if (isEnumVariantPath) {
+                const enumName = pathSegments[0];
+                const variantName = pathSegments[1];
+                const enumItem = ctx.lookupItem(enumName);
+                if (!enumItem || enumItem.kind !== "enum") {
+                    return {
+                        ok: false,
+                        errors: [
+                            makeTypeError(`Unknown enum: ${enumName}`, pattern.span),
+                        ],
+                    };
+                }
+
+                /** @type {Type} */
+                let enumPatternType = makeEnumType(enumName, [], pattern.span);
+                const enumGenericParams = (enumItem.node.generics || [])
+                    .map((/** @type {string} */ name) => name || "")
+                    .filter((/** @type {string} */ name) => name.length > 0);
+                if (enumGenericParams.length > 0) {
+                    const expectedResolved = ctx.resolveType(expectedType);
+                    let args = null;
+                    if (
+                        expectedResolved.kind === TypeKind.Named &&
+                        expectedResolved.name === enumName &&
+                        expectedResolved.args
+                    ) {
+                        args = expectedResolved.args;
+                    }
+                    enumPatternType = makeNamedType(
+                        enumName,
+                        args || enumGenericParams.map(() => ctx.freshTypeVar()),
+                        pattern.span,
+                    );
+                }
+
+                const enumUnify = unify(ctx, enumPatternType, expectedType);
+                if (!enumUnify.ok) {
+                    return { ok: false, errors: [enumUnify.error] };
+                }
+
+                const variant = (enumItem.node.variants || []).find(
+                    (/** @type {any} */ v) => v.name === variantName,
+                );
+                if (!variant) {
+                    return {
+                        ok: false,
+                        errors: [
+                            makeTypeError(
+                                `Unknown variant: ${enumName}::${variantName}`,
+                                pattern.span,
+                            ),
+                        ],
+                    };
+                }
+
+                const variantFields = variant.fields || [];
+                if (pattern.fields.length !== variantFields.length) {
+                    return {
+                        ok: false,
+                        errors: [
+                            makeTypeError(
+                                `Variant ${enumName}::${variantName} expects ${variantFields.length} field(s), got ${pattern.fields.length}`,
+                                pattern.span,
+                            ),
+                        ],
+                    };
+                }
+
+                const expectedResolved = ctx.resolveType(expectedType);
+                const expectedArgs =
+                    expectedResolved.kind === TypeKind.Named &&
+                    expectedResolved.name === enumName &&
+                    expectedResolved.args
+                        ? expectedResolved.args
+                        : null;
+                const bindings = new Map();
+                const genericSet = new Set(enumGenericParams);
+                if (expectedArgs) {
+                    const count = Math.min(expectedArgs.length, enumGenericParams.length);
+                    for (let i = 0; i < count; i++) {
+                        bindings.set(enumGenericParams[i], expectedArgs[i]);
+                    }
+                }
+
+                const errors = [];
+                for (let i = 0; i < pattern.fields.length; i++) {
+                    const field = pattern.fields[i];
+                    const fieldDef = variantFields[i];
+                    let fieldType = ctx.freshTypeVar();
+                    if (fieldDef?.ty) {
+                        const fieldTypeResult = resolveTypeNode(ctx, fieldDef.ty);
+                        if (!fieldTypeResult.ok) {
+                            errors.push(...(fieldTypeResult.errors || []));
+                            continue;
+                        }
+                        fieldType = substituteGenericTypeBindings(
+                            ctx,
+                            fieldTypeResult.type,
+                            genericSet,
+                            bindings,
+                        );
+                    }
+
+                    const fieldResult = checkPattern(ctx, field.pat, fieldType);
+                    if (!fieldResult.ok) {
+                        errors.push(...(fieldResult.errors || []));
+                    }
+                }
+                return errors.length > 0 ? { ok: false, errors } : { ok: true };
+            }
+
+            // Regular struct pattern.
             const pathResult = inferExpr(ctx, pattern.path);
             if (!pathResult.ok) {
                 return { ok: false, errors: pathResult.errors };
             }
-
             const structType = ctx.resolveType(pathResult.type);
-
-            // Unify with expected type
             const unifyResult = unify(ctx, structType, expectedType);
             if (!unifyResult.ok) {
                 return { ok: false, errors: [unifyResult.error] };
             }
 
-            // Get struct definition
             let structDef = null;
             if (structType.kind === TypeKind.Struct) {
-                const sType = /** @type {import("./types.js").StructType} */ (structType);
-                structDef = ctx.lookupItem(sType.name);
+                structDef = ctx.lookupItem(structType.name);
             } else if (structType.kind === TypeKind.Named) {
-                const nType = /** @type {import("./types.js").NamedType} */ (structType);
-                structDef = ctx.lookupItem(nType.name);
+                structDef = ctx.lookupItem(structType.name);
             }
-
             if (!structDef || structDef.kind !== "struct") {
                 return {
                     ok: false,
@@ -4053,13 +4157,10 @@ function checkPattern(ctx, pattern, expectedType) {
                 };
             }
 
-            // Check fields
             const errors = [];
             const seenFields = new Set();
-
             for (const field of pattern.fields || []) {
                 seenFields.add(field.name);
-
                 const fieldDef = structDef.node.fields?.find(
                     (/** @type {any} */ f) => f.name === field.name,
                 );
@@ -4073,7 +4174,7 @@ function checkPattern(ctx, pattern, expectedType) {
                     continue;
                 }
 
-                let fieldType;
+                let fieldType = ctx.freshTypeVar();
                 if (fieldDef.ty) {
                     const typeResult = resolveTypeNode(ctx, fieldDef.ty);
                     if (!typeResult.ok) {
@@ -4081,17 +4182,12 @@ function checkPattern(ctx, pattern, expectedType) {
                         continue;
                     }
                     fieldType = typeResult.type;
-                } else {
-                    fieldType = ctx.freshTypeVar();
                 }
-
                 const fieldResult = checkPattern(ctx, field.pat, fieldType);
                 if (!fieldResult.ok) {
                     errors.push(...(fieldResult.errors || []));
                 }
             }
-
-            // Check for missing fields (unless rest pattern is present)
             if (!pattern.rest) {
                 for (const fieldDef of structDef.node.fields || []) {
                     if (!seenFields.has(fieldDef.name)) {
@@ -4104,11 +4200,7 @@ function checkPattern(ctx, pattern, expectedType) {
                     }
                 }
             }
-
-            if (errors.length > 0) {
-                return { ok: false, errors };
-            }
-            return { ok: true };
+            return errors.length > 0 ? { ok: false, errors } : { ok: true };
         }
 
         case NodeKind.BindingPat: {
