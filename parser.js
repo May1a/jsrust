@@ -2374,22 +2374,18 @@ function parsePatternAtom(state) {
         // Check if this is a qualified path (e.g., Color::Red)
         if (segments.length > 1) {
             // This is a qualified path like Color::Red - could be enum variant or struct
-            const path = makePathExpr(spanFromToken(startToken), segments);
+            const endToken = previous(state);
+            const path = makePathExpr(
+                mergeSpans(spanFromToken(startToken), spanFromToken(endToken)),
+                segments,
+            );
             if (check(state, TokenType.OpenCurly)) {
                 return parseStructPattern(state, path, startToken);
             }
             if (check(state, TokenType.OpenParen)) {
-                return parseTuplePattern(state, startToken, segments.join("::"));
+                return parseEnumTupleVariantPattern(state, path, startToken);
             }
-            // Return as an identifier pattern with the full path as name
-            // For enum variants, this will be handled specially
-            return makeIdentPat(
-                spanFromToken(startToken),
-                segments.join("::"),
-                Mutability.Immutable,
-                false,
-                null,
-            );
+            return makeStructPat(path.span, path, [], false);
         }
 
         if (matchInvalidSymbol(state, "@")) {
@@ -2538,6 +2534,33 @@ function parseStructPattern(state, path, startToken) {
         ) ?? peek(state);
     const span = mergeSpans(spanFromToken(startToken), spanFromToken(endToken));
     return makeStructPat(span, path, fields, rest);
+}
+
+/**
+ * @param {ParserState} state
+ * @param {Node} path
+ * @param {Token} startToken
+ * @returns {Node}
+ */
+function parseEnumTupleVariantPattern(state, path, startToken) {
+    const elements = [];
+    expectToken(state, TokenType.OpenParen, "Expected ( in enum variant pattern");
+    if (!check(state, TokenType.CloseParen)) {
+        while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
+            const pat = parsePattern(state);
+            if (pat) elements.push(pat);
+            if (!matchToken(state, TokenType.Comma)) break;
+        }
+    }
+    const endToken =
+        expectToken(
+            state,
+            TokenType.CloseParen,
+            "Expected ) in enum variant pattern",
+        ) ?? peek(state);
+    const fields = elements.map((pat, i) => ({ name: String(i), pat }));
+    const span = mergeSpans(spanFromToken(startToken), spanFromToken(endToken));
+    return makeStructPat(span, path, fields, false);
 }
 
 /**

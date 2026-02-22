@@ -338,7 +338,7 @@ export function runE2ETests() {
 
     test("E2E: enum with data", () => {
         const result = assertCompiles(
-            `enum Option { Some(i32), None } fn main() { let o = Option::Some(42); }`,
+            `enum Maybe { Some(i32), None } fn main() { let o = Maybe::Some(42); }`,
             "enum with data"
         );
         assertTrue(result.ir, "should compile enum with data");
@@ -461,16 +461,12 @@ export function runE2ETests() {
         testsRun++;
     });
 
-    test("E2E: vec non-copy by-value index fails", () => {
-        const result = assertFails(
-            `struct S { x: i32 } fn main() { let v = vec![S { x: 1 }]; let _x = v[0]; }`,
-            "vec non-copy index error",
+    test("E2E: vec non-copy index returns Option", () => {
+        const result = assertCompiles(
+            `struct S { x: i32 } fn main() { let v = vec![S { x: 1 }]; let _x = match v[0] { Option::None => 0, _ => 1 }; }`,
+            "vec non-copy index option",
         );
-        const messages = result.errors.map((e) => e.message).join("\n");
-        assertTrue(
-            messages.includes("Vec index by-value requires Copy element type"),
-            `unexpected errors: ${messages}`,
-        );
+        assertTrue(result.ir, "should compile non-copy vec index via Option");
         testsRun++;
     });
 

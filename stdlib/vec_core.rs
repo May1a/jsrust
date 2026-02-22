@@ -79,25 +79,28 @@ impl<T> Vec<T> {
         self.len = self.len + 1;
     }
 
-    pub fn pop(&mut self) -> T {
+    pub fn pop(&mut self) -> Option<T> {
         if self.len == 0 {
-            __jsrust_panic_bounds_check(0, self.len);
-        };
-        self.len = self.len - 1;
-        self.ptr[self.len]
+            Option::None
+        } else {
+            self.len = self.len - 1;
+            Option::Some(self.ptr[self.len])
+        }
     }
 
-    pub fn get(&self, index: i32) -> T {
+    pub fn get(&self, index: i32) -> Option<T> {
         if index >= self.len {
-            __jsrust_panic_bounds_check(index, self.len);
-        };
-        self.ptr[index]
+            Option::None
+        } else {
+            Option::Some(self.ptr[index])
+        }
     }
 
-    pub fn index(&self, index: i32) -> T {
+    pub fn index(&self, index: i32) -> Option<T> {
         if index >= self.len {
-            __jsrust_panic_bounds_check(index, self.len);
-        };
-        self.ptr[index]
+            Option::None
+        } else {
+            Option::Some(self.ptr[index])
+        }
     }
 }

@@ -6,6 +6,13 @@ export const BUILTIN_SYMBOLS = Object.freeze({
     PANIC_BOUNDS_CHECK: "__jsrust_panic_bounds_check",
 });
 
+export const BUILTIN_ENUMS = Object.freeze({
+    Option: Object.freeze({
+        variants: Object.freeze(["None", "Some"]),
+        genericParams: Object.freeze(["T"]),
+    }),
+});
+
 export const BUILTIN_CATEGORIES = Object.freeze({
     ALLOCATOR: [
         BUILTIN_SYMBOLS.ALLOC,

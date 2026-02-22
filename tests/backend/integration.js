@@ -156,40 +156,36 @@ export function runBackendIntegrationTests() {
         }
     });
 
-    test("Backend integration: vec empty pop panic in both modes", () => {
+    test("Backend integration: vec empty pop returns Option::None in both modes", () => {
         const interpreted = runMain(["run", RUN_VEC_POP_EMPTY_PANIC]);
         assertTrue(!interpreted.error, `spawn failed for interpreted run: ${interpreted.error?.message || ""}`);
-        assertTrue((interpreted.status ?? 0) !== 0, "expected non-zero interpreted status");
-        assertTrue(
-            interpreted.stderr.includes("error[execute-error]:"),
-            `unexpected interpreted stderr: ${interpreted.stderr}`,
-        );
+        assertEqual(interpreted.status, 0, `interpreted stderr: ${interpreted.stderr}`);
+        const interpretedLines = interpreted.stdout.trimEnd().split("\n");
+        assertEqual(interpretedLines[0], "0");
+        assertEqual(interpretedLines[interpretedLines.length - 1], "ok");
 
         const generated = runMain(["run", RUN_VEC_POP_EMPTY_PANIC, "--codegen-wasm"]);
         assertTrue(!generated.error, `spawn failed for codegen run: ${generated.error?.message || ""}`);
-        assertTrue((generated.status ?? 0) !== 0, "expected non-zero codegen status");
-        assertTrue(
-            generated.stderr.includes("error[execute-error]:"),
-            `unexpected codegen stderr: ${generated.stderr}`,
-        );
+        assertEqual(generated.status, 0, `codegen stderr: ${generated.stderr}`);
+        const generatedLines = generated.stdout.trimEnd().split("\n");
+        assertEqual(generatedLines[0], "0");
+        assertEqual(generatedLines[generatedLines.length - 1], "ok");
     });
 
-    test("Backend integration: vec bounds panic in both modes", () => {
+    test("Backend integration: vec out-of-bounds index returns Option::None in both modes", () => {
         const interpreted = runMain(["run", RUN_VEC_BOUNDS_PANIC]);
         assertTrue(!interpreted.error, `spawn failed for interpreted run: ${interpreted.error?.message || ""}`);
-        assertTrue((interpreted.status ?? 0) !== 0, "expected non-zero interpreted status");
-        assertTrue(
-            interpreted.stderr.includes("error[execute-error]:"),
-            `unexpected interpreted stderr: ${interpreted.stderr}`,
-        );
+        assertEqual(interpreted.status, 0, `interpreted stderr: ${interpreted.stderr}`);
+        const interpretedLines = interpreted.stdout.trimEnd().split("\n");
+        assertEqual(interpretedLines[0], "0");
+        assertEqual(interpretedLines[interpretedLines.length - 1], "ok");
 
         const generated = runMain(["run", RUN_VEC_BOUNDS_PANIC, "--codegen-wasm"]);
         assertTrue(!generated.error, `spawn failed for codegen run: ${generated.error?.message || ""}`);
-        assertTrue((generated.status ?? 0) !== 0, "expected non-zero codegen status");
-        assertTrue(
-            generated.stderr.includes("error[execute-error]:"),
-            `unexpected codegen stderr: ${generated.stderr}`,
-        );
+        assertEqual(generated.status, 0, `codegen stderr: ${generated.stderr}`);
+        const generatedLines = generated.stdout.trimEnd().split("\n");
+        assertEqual(generatedLines[0], "0");
+        assertEqual(generatedLines[generatedLines.length - 1], "ok");
     });
 
     test("Backend integration: vec repeat form is compile-time unsupported", () => {
@@ -202,14 +198,13 @@ export function runBackendIntegrationTests() {
         );
     });
 
-    test("Backend integration: vec non-copy by-value indexing is compile-time error", () => {
-        const result = runMain([RUN_VEC_NON_COPY_INDEX_ERROR]);
+    test("Backend integration: vec non-copy indexing returns Option and compiles", () => {
+        const result = runMain(["run", RUN_VEC_NON_COPY_INDEX_ERROR]);
         assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
-        assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
-        assertTrue(
-            result.stderr.includes("Vec index by-value requires Copy element type"),
-            `unexpected stderr: ${result.stderr}`,
-        );
+        assertEqual(result.status, 0, `stderr: ${result.stderr}`);
+        const lines = result.stdout.trimEnd().split("\n");
+        assertEqual(lines[0], "1");
+        assertEqual(lines[lines.length - 1], "ok");
     });
 
     test("Backend integration: --trace rejected in codegen wasm mode", () => {

@@ -71,6 +71,7 @@ import {
     makeBoolType,
     makeRefType,
     makeFnType,
+    makeOptionType,
     makeUnitType,
     typeToString,
 } from "./types.js";
@@ -615,6 +616,12 @@ function lowerFnItem(ctx, fn, typeCtx) {
 
     // Get return type
     let returnType = /** @type {any} */ (fnType)?.returnType || makeUnitType();
+    returnType = substituteLoweringGenericType(
+        typeCtx,
+        returnType,
+        new Set(),
+        new Map(),
+    );
 
     // Lower body
     let body = null;
@@ -1215,12 +1222,47 @@ function substituteLoweringGenericType(typeCtx, type, genericNames, bindings) {
             const bound = bindings.get(resolved.name);
             return bound ? typeCtx.resolveType(bound) : resolved;
         }
-        if (!resolved.args) return resolved;
+        const substitutedArgs = resolved.args
+            ? resolved.args.map((/** @type {Type} */ t) =>
+                substituteLoweringGenericType(typeCtx, t, genericNames, bindings),
+            )
+            : null;
+        const item = typeCtx.lookupItem(resolved.name);
+        if (item && item.kind === "enum") {
+            const enumGenericParams = (item.node.generics || [])
+                .map((/** @type {string} */ name) => name || "")
+                .filter((/** @type {string} */ name) => name.length > 0);
+            const enumBindings = new Map();
+            if (substitutedArgs) {
+                const count = Math.min(enumGenericParams.length, substitutedArgs.length);
+                for (let i = 0; i < count; i++) {
+                    enumBindings.set(enumGenericParams[i], substitutedArgs[i]);
+                }
+            }
+            const enumGenericSet = new Set(enumGenericParams);
+            return {
+                kind: TypeKind.Enum,
+                name: resolved.name,
+                variants: (item.node.variants || []).map((/** @type {any} */ variant) => ({
+                    name: variant.name,
+                    fields: (variant.fields || []).map((/** @type {any} */ field) => {
+                        if (!field?.ty) return makeUnitType();
+                        const fieldType = resolveTypeFromAst(field.ty, typeCtx);
+                        if (!fieldType.ok) return makeUnitType();
+                        return substituteLoweringGenericType(
+                            typeCtx,
+                            fieldType.type,
+                            enumGenericSet,
+                            enumBindings,
+                        );
+                    }),
+                })),
+                span: resolved.span,
+            };
+        }
         return {
             ...resolved,
-            args: resolved.args.map((/** @type {Type} */ t) =>
-                substituteLoweringGenericType(typeCtx, t, genericNames, bindings),
-            ),
+            args: substitutedArgs,
         };
     }
     if (resolved.kind === TypeKind.Ref) {
@@ -1377,7 +1419,7 @@ function lookupLoweringCallItem(typeCtx, callee) {
  * @param {LoweringCtx} ctx
  * @param {Node} call
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HCallExpr}
+ * @returns {import('./hir.js').HExpr}
  */
 function lowerCall(ctx, call, typeCtx) {
     if (call.callee?.kind === NodeKind.IdentifierExpr) {
@@ -1533,6 +1575,65 @@ function lowerCall(ctx, call, typeCtx) {
                     call.callee.span,
                 );
             }
+        }
+    }
+
+    if (call.callee?.kind === NodeKind.PathExpr && call.callee.segments?.length === 2) {
+        const enumName = call.callee.segments[0];
+        const variantName = call.callee.segments[1];
+        const enumItem = ctx.lookupItem(enumName);
+        if (enumItem && enumItem.kind === "enum") {
+            const loweredArgs = (call.args || []).map((/** @type {any} */ arg) =>
+                lowerExpr(ctx, arg, typeCtx),
+            );
+            const variantIndex = findEnumVariantIndex(enumItem.node, variantName);
+            const enumNodeVariants = enumItem.node.variants || [];
+            const variantNode = enumNodeVariants[variantIndex] || null;
+            const enumGenericParams = (enumItem.node.generics || [])
+                .map((/** @type {string} */ name) => name || "")
+                .filter((/** @type {string} */ name) => name.length > 0);
+            const genericSet = new Set(enumGenericParams);
+            const bindings = new Map();
+
+            if (variantNode && variantNode.fields) {
+                const count = Math.min(variantNode.fields.length, loweredArgs.length);
+                for (let i = 0; i < count; i++) {
+                    const field = variantNode.fields[i];
+                    if (!field?.ty) continue;
+                    const fieldType = resolveTypeFromAst(field.ty, typeCtx);
+                    if (!fieldType.ok || fieldType.type.kind !== TypeKind.Named) continue;
+                    if (!genericSet.has(fieldType.type.name) || fieldType.type.args) continue;
+                    bindings.set(fieldType.type.name, loweredArgs[i].ty);
+                }
+            }
+
+            const enumTy = {
+                kind: TypeKind.Enum,
+                name: enumName,
+                variants: enumNodeVariants.map((/** @type {any} */ variant) => {
+                    const fields = (variant.fields || []).map((/** @type {any} */ field) => {
+                        if (!field?.ty) return makeUnitType();
+                        const resolved = resolveTypeFromAst(field.ty, typeCtx);
+                        if (!resolved.ok) return makeUnitType();
+                        return substituteLoweringGenericType(
+                            typeCtx,
+                            resolved.type,
+                            genericSet,
+                            bindings,
+                        );
+                    });
+                    return { name: variant.name, fields };
+                }),
+            };
+
+            return makeHEnumExpr(
+                call.span,
+                enumName,
+                variantName,
+                variantIndex,
+                loweredArgs,
+                enumTy,
+            );
         }
     }
 
@@ -1854,14 +1955,14 @@ function lowerField(ctx, field, typeCtx) {
                 const resolvedType = resolveTypeFromAst(structField.ty, typeCtx);
                 if (resolvedType.ok) {
                     ty = resolvedType.type || makeUnitType();
-                    const genericParams = item.node.genericParams || [];
+                    const genericParams = item.node.generics || [];
                     const receiverArgs = baseType.args || [];
                     if (genericParams.length > 0 && receiverArgs.length > 0) {
                         const genericSet = new Set();
                         const bindings = new Map();
                         const count = Math.min(genericParams.length, receiverArgs.length);
                         for (let i = 0; i < count; i++) {
-                            const genericName = genericParams[i]?.name || null;
+                            const genericName = genericParams[i] || null;
                             if (!genericName) continue;
                             genericSet.add(genericName);
                             bindings.set(genericName, receiverArgs[i]);
@@ -1915,6 +2016,12 @@ function lowerIndex(ctx, index, typeCtx) {
     } else {
         const vecElement = base.ty ? vecElementTypeForType(base.ty) : null;
         if (vecElement) {
+            const optionElement = substituteLoweringGenericType(
+                typeCtx,
+                makeOptionType(vecElement, index.span),
+                new Set(),
+                new Map(),
+            );
             const receiverRefType = makeRefType(base.ty, false, index.span);
             const receiverArg = makeHRefExpr(
                 index.span,
@@ -1924,7 +2031,7 @@ function lowerIndex(ctx, index, typeCtx) {
             );
             const methodType = makeFnType(
                 [receiverRefType, idx.ty],
-                vecElement,
+                optionElement,
                 false,
                 false,
                 index.span,
@@ -1935,7 +2042,7 @@ function lowerIndex(ctx, index, typeCtx) {
                 -1,
                 methodType,
             );
-            return makeHCallExpr(index.span, callee, [receiverArg, idx], vecElement);
+            return makeHCallExpr(index.span, callee, [receiverArg, idx], optionElement);
         }
     }
 
@@ -2230,7 +2337,13 @@ function lowerMatch(ctx, matchExpr, typeCtx) {
             guard = lowerExpr(ctx, arm.guard, typeCtx);
         }
 
-        const body = lowerBlock(ctx, arm.body, typeCtx);
+        const body =
+            arm.body.kind === NodeKind.BlockExpr
+                ? lowerBlock(ctx, arm.body, typeCtx)
+                : (() => {
+                    const expr = lowerExpr(ctx, arm.body, typeCtx);
+                    return makeHBlock(arm.body.span, [], expr, expr.ty);
+                })();
 
         ctx.popScope();
 
@@ -2421,7 +2534,14 @@ function lowerPath(ctx, pathExpr, typeCtx) {
             const enumTy = {
                 kind: TypeKind.Enum,
                 name: itemName,
-                variants: [],
+                variants: (item.node.variants || []).map((/** @type {any} */ variant) => ({
+                    name: variant.name,
+                    fields: (variant.fields || []).map((/** @type {any} */ field) => {
+                        if (!field?.ty) return makeUnitType();
+                        const resolved = resolveTypeFromAst(field.ty, typeCtx);
+                        return resolved.ok ? resolved.type : makeUnitType();
+                    }),
+                })),
             };
             const variantIndex = findEnumVariantIndex(item.node, variantName);
             return makeHEnumExpr(
@@ -2563,26 +2683,92 @@ function lowerIdentPat(ctx, pat, expectedType, typeCtx) {
  * @returns {import('./hir.js').HStructPat}
  */
 function lowerStructPat(ctx, pat, expectedType, typeCtx) {
-    // Get struct name from path
+    // Get struct/enum-variant name from path.
     let structName = "";
-    if (pat.path) {
-        if (pat.path.kind === NodeKind.IdentifierExpr) {
-            structName = pat.path.name;
-        } else if (pat.path.kind === NodeKind.PathExpr && pat.path.segments) {
+    let enumName = "";
+    let enumVariantName = "";
+    if (pat.path?.kind === NodeKind.IdentifierExpr) {
+        structName = pat.path.name;
+    } else if (pat.path?.kind === NodeKind.PathExpr && pat.path.segments) {
+        if (pat.path.segments.length === 2) {
+            enumName = pat.path.segments[0];
+            enumVariantName = pat.path.segments[1];
+            structName = `${enumName}::${enumVariantName}`;
+        } else {
             structName = pat.path.segments[pat.path.segments.length - 1];
         }
     }
 
-    // Get struct info
-    const structItem = ctx.lookupItem(structName);
+    const structItem = enumName ? null : ctx.lookupItem(structName);
     const structNode = structItem?.node;
+    const enumItem = enumName ? ctx.lookupItem(enumName) : null;
+    const enumNode = enumItem?.kind === "enum" ? enumItem.node : null;
+    const enumVariant = enumNode
+        ? (enumNode.variants || []).find(
+            (/** @type {any} */ variant) => variant.name === enumVariantName,
+        )
+        : null;
+    const enumGenericParams = (enumNode?.generics || [])
+        .map((/** @type {string} */ name) => name || "")
+        .filter((/** @type {string} */ name) => name.length > 0);
+    const enumGenericSet = new Set(enumGenericParams);
+    const enumBindings = new Map();
+    if (
+        enumName &&
+        expectedType?.kind === TypeKind.Named &&
+        expectedType.name === enumName &&
+        expectedType.args
+    ) {
+        const count = Math.min(enumGenericParams.length, expectedType.args.length);
+        for (let i = 0; i < count; i++) {
+            enumBindings.set(enumGenericParams[i], expectedType.args[i]);
+        }
+    }
+    const expectedEnumVariant =
+        enumName &&
+        expectedType?.kind === TypeKind.Enum &&
+        expectedType.name === enumName
+            ? (expectedType.variants || []).find(
+                (/** @type {any} */ variant) => variant.name === enumVariantName,
+            )
+            : null;
 
     // Lower field patterns
     const fields = (pat.fields || []).map((/**@type{any}*/ field) => {
         let fieldType = makeUnitType();
 
-        // Find field type from struct definition
-        if (structNode && structNode.fields) {
+        if (enumVariant && enumVariant.fields) {
+            const tupleFieldIndex = Number.parseInt(field.name, 10);
+            if (
+                Number.isInteger(tupleFieldIndex) &&
+                tupleFieldIndex >= 0 &&
+                tupleFieldIndex < enumVariant.fields.length
+            ) {
+                if (
+                    expectedEnumVariant &&
+                    expectedEnumVariant.fields &&
+                    tupleFieldIndex < expectedEnumVariant.fields.length
+                ) {
+                    fieldType = expectedEnumVariant.fields[tupleFieldIndex];
+                }
+                const tupleField = enumVariant.fields[tupleFieldIndex];
+                if (
+                    tupleField?.ty &&
+                    !(expectedEnumVariant && expectedEnumVariant.fields && tupleFieldIndex < expectedEnumVariant.fields.length)
+                ) {
+                    const typeResult = resolveTypeFromAst(tupleField.ty, typeCtx);
+                    if (typeResult.ok) {
+                        fieldType = substituteLoweringGenericType(
+                            typeCtx,
+                            typeResult.type,
+                            enumGenericSet,
+                            enumBindings,
+                        );
+                    }
+                }
+            }
+        } else if (structNode && structNode.fields) {
+            // Find field type from struct definition.
             const fieldDef = structNode.fields.find(
                 (/** @type {any} */ f) => f.name === field.name,
             );
@@ -2730,14 +2916,14 @@ function extractPlace(ctx, expr, typeCtx) {
                         const resolvedType = resolveTypeFromAst(structField.ty, typeCtx);
                         if (resolvedType.ok) {
                             ty = resolvedType.type || makeUnitType();
-                            const genericParams = item.node.genericParams || [];
+                            const genericParams = item.node.generics || [];
                             const receiverArgs = baseType.args || [];
                             if (genericParams.length > 0 && receiverArgs.length > 0) {
                                 const genericSet = new Set();
                                 const bindings = new Map();
                                 const count = Math.min(genericParams.length, receiverArgs.length);
                                 for (let i = 0; i < count; i++) {
-                                    const genericName = genericParams[i]?.name || null;
+                                    const genericName = genericParams[i] || null;
                                     if (!genericName) continue;
                                     genericSet.add(genericName);
                                     bindings.set(genericName, receiverArgs[i]);
@@ -2857,22 +3043,36 @@ function resolveTypeFromAst(typeNode, typeCtx) {
                     };
                 }
                 if (item.kind === "enum") {
+                    const genericNames = (item.node.generics || []).filter(
+                        (/** @type {string} */ name) => !!name,
+                    );
+                    const genericSet = new Set(genericNames);
+                    const bindings = new Map();
                     if (args && args.length > 0) {
-                        return {
-                            ok: true,
-                            type: {
-                                kind: TypeKind.Named,
-                                name: typeNode.name,
-                                args,
-                            },
-                        };
+                        const count = Math.min(genericNames.length, args.length);
+                        for (let i = 0; i < count; i++) {
+                            bindings.set(genericNames[i], args[i]);
+                        }
                     }
                     return {
                         ok: true,
                         type: {
                             kind: TypeKind.Enum,
                             name: typeNode.name,
-                            variants: [],
+                            variants: (item.node.variants || []).map((/** @type {any} */ variant) => ({
+                                name: variant.name,
+                                fields: (variant.fields || []).map((/** @type {any} */ field) => {
+                                    if (!field?.ty) return makeUnitType();
+                                    const fieldType = resolveTypeFromAst(field.ty, typeCtx);
+                                    if (!fieldType.ok) return makeUnitType();
+                                    return substituteLoweringGenericType(
+                                        typeCtx,
+                                        fieldType.type,
+                                        genericSet,
+                                        bindings,
+                                    );
+                                }),
+                            })),
                         },
                     };
                 }

@@ -18,6 +18,11 @@ import { serializeModule } from "./ir_serialize.js";
 import { runBackendCodegenWasm, runBackendWasm } from "./backend_runner.js";
 
 const STDLIB_VEC_CORE_PATH = path.resolve(process.cwd(), "stdlib/vec_core.rs");
+const STDLIB_BUILTIN_SOURCE = `pub enum Option<T> {
+    None,
+    Some(T),
+}
+`;
 
 /**
  * @typedef {object} CompileOptions
@@ -238,7 +243,7 @@ function injectStdlibItems(ast) {
         };
     }
 
-    const stdlibParse = parseModule(stdlibSource);
+    const stdlibParse = parseModule(`${STDLIB_BUILTIN_SOURCE}\n${stdlibSource}`);
     if (!stdlibParse.ok || !stdlibParse.value) {
         for (const err of stdlibParse.errors || []) {
             errors.push({

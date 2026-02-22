@@ -12,7 +12,7 @@ Implemented milestone scope:
 - Vec surface for this milestone is implemented:
   `vec![a, b, c]` list form, `new`, `with_capacity`, `len`, `capacity`, `push`, `pop` (panic-on-empty), `get` by value, `[]` by value.
 - Negative frontend gates are implemented:
-  repeat form (`vec![x; n]`) emits deterministic unsupported diagnostic, and by-value Vec access requires explicit `Copy`.
+  repeat form (`vec![x; n]`) emits deterministic unsupported diagnostic, and `get`/`[]`/`pop` now return built-in `Option<T>` (no Copy-gated by-value diagnostic path).
 - Backend interpreter and wasm codegen both dispatch allocator/copy/panic builtins, with parity on Vec run fixtures.
 - Conformance/snapshot artifacts were regenerated (`examples/expected/*`, `tests/fixtures/backend_ir_v2/*`).
 
@@ -20,7 +20,7 @@ Deferred (unchanged for this milestone):
 
 - `std::vec::Vec` pathing (still prelude-only `Vec`).
 - By-reference indexing.
-- `Option<T>` `pop` semantics.
+- by-reference indexing semantics (currently `[]` is `Option<T>`).
 
 ## Overview
 
