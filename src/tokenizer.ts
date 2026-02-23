@@ -1,15 +1,4 @@
-declare global {
-    var iota: number | undefined;
-}
-
-globalThis.iota = undefined;
-
-function iota(reset: boolean = false) {
-    if (!globalThis.iota || reset) globalThis.iota = 0;
-    return globalThis.iota++;
-}
-
-const TokenType = {
+export const TokenType = {
     Invalid: 0,
     Fn: 1,
     Let: 2,
@@ -81,14 +70,19 @@ const TokenType = {
     Eof: 68,
 } as const;
 
-type TokenTypeValue = (typeof TokenType)[keyof typeof TokenType];
-type Token = {
+export type TokenTypeValue = (typeof TokenType)[keyof typeof TokenType];
+export type Token = {
     type: TokenTypeValue;
     value: string;
     line: number;
     column: number;
 };
-type LexerState = { source: string; pos: number; line: number; column: number };
+export type LexerState = {
+    source: string;
+    pos: number;
+    line: number;
+    column: number;
+};
 
 /** @type {{ [key: string]: TokenTypeValue }} */
 const KEYWORDS: Record<string, TokenTypeValue> = {
@@ -375,7 +369,7 @@ function readOperatorOrDelimiter(state: LexerState): Token | null {
         "^": TokenType.Caret,
     };
 
-    const twoCharTokens: { [key: string]: TokenTypeValue; } = {
+    const twoCharTokens: { [key: string]: TokenTypeValue } = {
         "+=": TokenType.PlusEq,
         "-=": TokenType.MinusEq,
         "*=": TokenType.StarEq,
@@ -429,7 +423,7 @@ function readOperatorOrDelimiter(state: LexerState): Token | null {
     return null;
 }
 
-function tokenize(source: string): Token[] {
+export function tokenize(source: string): Token[] {
     const state = initState(source);
     const tokens: Token[] = [];
 
@@ -494,5 +488,3 @@ function tokenize(source: string): Token[] {
     tokens.push(makeToken(TokenType.Eof, "", state.line, state.column));
     return tokens;
 }
-
-export { tokenize, TokenType };

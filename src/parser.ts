@@ -1146,12 +1146,9 @@ function parseAtom(state, allowStructLiteral = true) {
 /**
  * Parse macro invocation arguments
  * Macros use different delimiters: println!("..."), vec![...], macro!{...}
- * @param {ParserState} state
- * @returns {Node[]}
  */
-function parseMacroArgs(state) {
-    /** @type {Node[]} */
-    const args = [];
+function parseMacroArgs(state: ParserState): Node[] {
+    const args: Node[] = [];
 
     // Determine the delimiter
     let endToken = TokenType.CloseParen;
