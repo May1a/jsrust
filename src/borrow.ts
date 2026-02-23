@@ -1,53 +1,44 @@
 import { NodeKind } from "./ast";
+import type { TypeContext } from "./type_context";
 
-/**
- * @typedef {{ kind: "param", name?: string } | { kind: "local", name?: string, depth: number } | { kind: "temporary" }} RefOrigin
- */
+export type RefOrigin =
+    | { kind: "param"; name?: string }
+    | { kind: "local"; name?: string; depth: number }
+    | { kind: "temporary" };
 
-/**
- * @typedef {{ kind: "param" | "local", depth: number, refOrigin: RefOrigin | null }} BindingInfo
- */
+export interface BindingInfo {
+    kind: "param" | "local";
+    depth: number;
+    refOrigin: RefOrigin | null;
+}
 
-/**
- * @typedef {{ message: string, span?: { line: number, column: number, start: number, end: number } }} BorrowLiteError
- */
+export interface BorrowLiteError {
+    message: string;
+    span?: { line: number; column: number; start: number; end: number };
+}
 
-/**
- * @typedef {{
- *   scopeStack: string[][],
- *   bindings: Map<string, BindingInfo[]>,
- *   errors: BorrowLiteError[]
- * }} FnEnv
- */
+export interface FnEnv {
+    scopeStack: string[][];
+    bindings: Map<string, BindingInfo[]>;
+    errors: BorrowLiteError[];
+}
 
-/**
- * @param {string} message
- * @param {{ line: number, column: number, start: number, end: number } | undefined} span
- * @returns {BorrowLiteError}
- */
-function makeBorrowError(message, span) {
+function makeBorrowError(
+    message: string,
+    span?: { line: number; column: number; start: number; end: number },
+): BorrowLiteError {
     return { message, span };
 }
 
-/**
- * @param {FnEnv} env
- * @returns {number}
- */
-function currentDepth(env) {
+function currentDepth(env: FnEnv): number {
     return env.scopeStack.length - 1;
 }
 
-/**
- * @param {FnEnv} env
- */
-function pushScope(env) {
+function pushScope(env: FnEnv): void {
     env.scopeStack.push([]);
 }
 
-/**
- * @param {FnEnv} env
- */
-function popScope(env) {
+function popScope(env: FnEnv): void {
     const names = env.scopeStack.pop() || [];
     for (let i = names.length - 1; i >= 0; i--) {
         const name = names[i];
@@ -60,12 +51,7 @@ function popScope(env) {
     }
 }
 
-/**
- * @param {FnEnv} env
- * @param {string} name
- * @param {BindingInfo} info
- */
-function defineBinding(env, name, info) {
+function defineBinding(env: FnEnv, name: string, info: BindingInfo): void {
     const stack = env.bindings.get(name) || [];
     stack.push(info);
     env.bindings.set(name, stack);
@@ -75,22 +61,13 @@ function defineBinding(env, name, info) {
     }
 }
 
-/**
- * @param {FnEnv} env
- * @param {string} name
- * @returns {BindingInfo | null}
- */
-function lookupBinding(env, name) {
+function lookupBinding(env: FnEnv, name: string): BindingInfo | null {
     const stack = env.bindings.get(name);
     if (!stack || stack.length === 0) return null;
     return stack[stack.length - 1];
 }
 
-/**
- * @param {import("./ast").Node} pat
- * @param {string[]} out
- */
-function collectPatternBindings(pat, out) {
+function collectPatternBindings(pat: any, out: string[]): void {
     if (!pat) return;
     switch (pat.kind) {
         case NodeKind.IdentPat:
@@ -122,12 +99,7 @@ function collectPatternBindings(pat, out) {
     }
 }
 
-/**
- * @param {import("./ast").Node | null} expr
- * @param {FnEnv} env
- * @returns {RefOrigin | null}
- */
-function getRefOrigin(expr, env) {
+function getRefOrigin(expr: any, env: FnEnv): RefOrigin | null {
     if (!expr) return null;
     switch (expr.kind) {
         case NodeKind.RefExpr: {
@@ -164,12 +136,7 @@ function getRefOrigin(expr, env) {
     }
 }
 
-/**
- * @param {import("./ast").Node | null} place
- * @param {FnEnv} env
- * @returns {RefOrigin | null}
- */
-function getPlaceOrigin(place, env) {
+function getPlaceOrigin(place: any, env: FnEnv): RefOrigin | null {
     if (!place) return null;
     switch (place.kind) {
         case NodeKind.IdentifierExpr: {
@@ -208,21 +175,15 @@ function getPlaceOrigin(place, env) {
     }
 }
 
-/**
- * @param {RefOrigin | null} origin
- * @returns {boolean}
- */
-function isInvalidReturnOrigin(origin) {
+function isInvalidReturnOrigin(origin: RefOrigin | null): boolean {
     if (!origin) return false;
     return origin.kind === "local" || origin.kind === "temporary";
 }
 
-/**
- * @param {RefOrigin | null} origin
- * @param {BindingInfo | null} target
- * @returns {boolean}
- */
-function isEscapingStore(origin, target) {
+function isEscapingStore(
+    origin: RefOrigin | null,
+    target: BindingInfo | null,
+): boolean {
     if (!origin || !target) return false;
     if (origin.kind === "temporary") return true;
     if (origin.kind !== "local") return false;
@@ -230,19 +191,14 @@ function isEscapingStore(origin, target) {
     return targetDepth < origin.depth;
 }
 
-/**
- * @param {import("./ast").Node} expr
- * @param {FnEnv} env
- */
-function checkExpr(expr, env) {
+function checkExpr(expr: any, env: FnEnv): void {
     if (!expr) return;
     switch (expr.kind) {
         case NodeKind.AssignExpr: {
             checkExpr(expr.value, env);
             const valueOrigin = getRefOrigin(expr.value, env);
             const targetOrigin = getPlaceOrigin(expr.target, env);
-            /** @type {BindingInfo | null} */
-            let targetBinding = null;
+            let targetBinding: BindingInfo | null = null;
             if (expr.target.kind === NodeKind.IdentifierExpr) {
                 targetBinding = lookupBinding(env, expr.target.name);
             } else if (
@@ -252,14 +208,12 @@ function checkExpr(expr, env) {
             ) {
                 targetBinding = lookupBinding(env, expr.target.segments[0]);
             } else if (targetOrigin && targetOrigin.kind === "local") {
-                /** @type {BindingInfo} */
                 targetBinding = {
                     kind: "local",
                     depth: targetOrigin.depth,
                     refOrigin: null,
                 };
             } else if (targetOrigin && targetOrigin.kind === "param") {
-                /** @type {BindingInfo} */
                 targetBinding = {
                     kind: "param",
                     depth: -1,
@@ -326,12 +280,10 @@ function checkExpr(expr, env) {
         case NodeKind.ForExpr:
             checkExpr(expr.iter, env);
             pushScope(env);
-            /** @type {string[]} */
-            const forNames = [];
+            const forNames: string[] = [];
             collectPatternBindings(expr.pat, forNames);
             for (const name of forNames) {
-                /** @type {BindingInfo} */
-                const binding = {
+                const binding: BindingInfo = {
                     kind: "local",
                     depth: currentDepth(env),
                     refOrigin: null,
@@ -405,11 +357,7 @@ function checkExpr(expr, env) {
     }
 }
 
-/**
- * @param {import("./ast").Node} stmt
- * @param {FnEnv} env
- */
-function checkStmt(stmt, env) {
+function checkStmt(stmt: any, env: FnEnv): void {
     if (!stmt) return;
     switch (stmt.kind) {
         case NodeKind.LetStmt: {
@@ -417,12 +365,10 @@ function checkStmt(stmt, env) {
                 checkExpr(stmt.init, env);
             }
             const initOrigin = stmt.init ? getRefOrigin(stmt.init, env) : null;
-            /** @type {string[]} */
-            const names = [];
+            const names: string[] = [];
             collectPatternBindings(stmt.pat, names);
             for (const name of names) {
-                /** @type {BindingInfo} */
-                const binding = {
+                const binding: BindingInfo = {
                     kind: "local",
                     depth: currentDepth(env),
                     refOrigin: initOrigin,
@@ -449,12 +395,7 @@ function checkStmt(stmt, env) {
     }
 }
 
-/**
- * @param {import("./ast").Node} block
- * @param {FnEnv} env
- * @param {boolean} checkTailAsReturn
- */
-function checkBlock(block, env, checkTailAsReturn) {
+function checkBlock(block: any, env: FnEnv, checkTailAsReturn: boolean): void {
     pushScope(env);
     for (const stmt of block.stmts || []) {
         checkStmt(stmt, env);
@@ -476,14 +417,9 @@ function checkBlock(block, env, checkTailAsReturn) {
     popScope(env);
 }
 
-/**
- * @param {import("./ast").Node} fnItem
- * @returns {BorrowLiteError[]}
- */
-function checkFnItem(fnItem) {
+function checkFnItem(fnItem: any): BorrowLiteError[] {
     if (!fnItem.body) return [];
-    /** @type {FnEnv} */
-    const env = {
+    const env: FnEnv = {
         scopeStack: [],
         bindings: new Map(),
         errors: [],
@@ -502,11 +438,7 @@ function checkFnItem(fnItem) {
     return env.errors;
 }
 
-/**
- * @param {import("./ast").Node} item
- * @param {BorrowLiteError[]} errors
- */
-function checkItem(item, errors) {
+function checkItem(item: any, errors: BorrowLiteError[]): void {
     if (!item) return;
     switch (item.kind) {
         case NodeKind.FnItem:
@@ -525,15 +457,11 @@ function checkItem(item, errors) {
     }
 }
 
-/**
- * Run relaxed borrow-lite checks. Only obvious dangling-reference escapes are rejected.
- * @param {import("./ast").Node} moduleAst
- * @param {import("./type_context").TypeContext} _typeCtx
- * @returns {{ ok: boolean, errors?: BorrowLiteError[] }}
- */
-function checkBorrowLite(moduleAst, _typeCtx) {
-    /** @type {BorrowLiteError[]} */
-    const errors = [];
+export function checkBorrowLite(
+    moduleAst: any,
+    _typeCtx: TypeContext,
+): { ok: boolean; errors?: BorrowLiteError[] } {
+    const errors: BorrowLiteError[] = [];
     for (const item of moduleAst.items || []) {
         checkItem(item, errors);
     }
@@ -542,5 +470,3 @@ function checkBorrowLite(moduleAst, _typeCtx) {
     }
     return { ok: true };
 }
-
-export { checkBorrowLite };
