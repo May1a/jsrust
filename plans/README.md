@@ -1,21 +1,9 @@
 # JSRust Plans
 
-This directory is organized into three tracks:
-
-- `old/`: archived historical plans and prior status/index documents.
-- `future/`: future-looking initiatives that are not immediate implementation work.
-- `active/`: currently relevant planning tracks (immediate and long-term execution planning).
+## Plan removal
+After the completion of a plan it should be deleted.
 
 ## Current Plan Files
 
-- `active/01-compiler-progress.md`: long-term progress vs. remaining work for a functioning Rust compiler.
-- `active/02-new-backend.md`: active C backend initiative and backend-oriented repository overview.
-- `active/03-relaxed-borrow-model.md`: relaxed borrow semantics + lifetime erasure implementation track.
-- `active/04-stdlib-vec-via-builtins.md`: scalable stdlib approach via allocator builtins + Rust-implemented `Vec<T>`.
-- `future/01-node-addon-availability.md`: deferred compiler availability track for a Node addon surface.
-- `future/02-untrusted-compatibility.md`: deferred compatibility target for compiling upstream `untrusted`.
-- `STATUS.md`: status tracker for the new active/future plan set.
+- `STATUS.md`: status tracker for the active plan set.
 
-## Archived Plans
-
-All previous plan artifacts are in `old/`.

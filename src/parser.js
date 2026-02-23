@@ -323,7 +323,9 @@ function parseOuterAttributes(state) {
         expectToken(state, TokenType.OpenSquare, "Expected [ after #");
         const attrName = peek(state);
         if (!isIdentifierToken(attrName)) {
-            addError(state, "Expected attribute name", attrName, ["Identifier"]);
+            addError(state, "Expected attribute name", attrName, [
+                "Identifier",
+            ]);
             skipAttribute(state);
             continue;
         }
@@ -342,18 +344,19 @@ function parseOuterAttributes(state) {
         if (attrIdent === "test") {
             isTest = true;
             consumedMeaningful = true;
-            expectToken(state, TokenType.CloseSquare, "Expected ] after test attribute");
+            expectToken(
+                state,
+                TokenType.CloseSquare,
+                "Expected ] after test attribute",
+            );
             continue;
         }
         if (attrIdent === "expect_output") {
             consumedMeaningful = true;
             if (!matchToken(state, TokenType.OpenParen)) {
-                addError(
-                    state,
-                    "Expected ( after expect_output",
-                    peek(state),
-                    ["("],
-                );
+                addError(state, "Expected ( after expect_output", peek(state), [
+                    "(",
+                ]);
                 skipAttribute(state);
                 continue;
             }
@@ -401,14 +404,24 @@ function parseOuterAttributes(state) {
             while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
                 const nameToken = peek(state);
                 if (!isIdentifierToken(nameToken)) {
-                    addError(state, "Expected derive trait name", nameToken, ["Identifier"]);
+                    addError(state, "Expected derive trait name", nameToken, [
+                        "Identifier",
+                    ]);
                     break;
                 }
                 derives.push(advance(state).value);
                 if (!matchToken(state, TokenType.Comma)) break;
             }
-            expectToken(state, TokenType.CloseParen, "Expected ) after derive list");
-            expectToken(state, TokenType.CloseSquare, "Expected ] after attribute");
+            expectToken(
+                state,
+                TokenType.CloseParen,
+                "Expected ) after derive list",
+            );
+            expectToken(
+                state,
+                TokenType.CloseSquare,
+                "Expected ] after attribute",
+            );
             continue;
         }
         if (attrIdent === "builtin") {
@@ -419,7 +432,7 @@ function parseOuterAttributes(state) {
                 if (!isIdentifierToken(keyToken) || keyToken.value !== "name") {
                     addError(
                         state,
-                        "Expected builtin attribute argument `name = \"...\"`",
+                        'Expected builtin attribute argument `name = "..."`',
                         keyToken,
                         ["Identifier"],
                     );
@@ -452,11 +465,19 @@ function parseOuterAttributes(state) {
                     if (!check(state, TokenType.CloseParen)) {
                         skipBalancedParens(state);
                     } else {
-                        expectToken(state, TokenType.CloseParen, "Expected ) after builtin attribute");
+                        expectToken(
+                            state,
+                            TokenType.CloseParen,
+                            "Expected ) after builtin attribute",
+                        );
                     }
                 }
             }
-            expectToken(state, TokenType.CloseSquare, "Expected ] after builtin attribute");
+            expectToken(
+                state,
+                TokenType.CloseSquare,
+                "Expected ] after builtin attribute",
+            );
             continue;
         }
         // Inert unknown attributes are accepted and ignored.
@@ -751,8 +772,11 @@ function parseGenericParamList(state) {
             continue;
         }
         const paramToken =
-            expectToken(state, TokenType.Identifier, "Expected generic parameter name") ??
-            peek(state);
+            expectToken(
+                state,
+                TokenType.Identifier,
+                "Expected generic parameter name",
+            ) ?? peek(state);
         const name = paramToken.value ?? "";
         /** @type {Node[]} */
         const bounds = [];
@@ -823,7 +847,11 @@ function parseOptionalWhereClause(state) {
  */
 function parseTypeBound(state) {
     const bound = parsePathTypeNode(state) || parseType(state);
-    if (!bound || bound.kind !== NodeKind.NamedType || !check(state, TokenType.OpenParen)) {
+    if (
+        !bound ||
+        bound.kind !== NodeKind.NamedType ||
+        !check(state, TokenType.OpenParen)
+    ) {
         return bound;
     }
     const pathName = typeof bound.name === "string" ? bound.name : "";
@@ -834,7 +862,11 @@ function parseTypeBound(state) {
         return bound;
     }
 
-    expectToken(state, TokenType.OpenParen, "Expected ( in function trait bound");
+    expectToken(
+        state,
+        TokenType.OpenParen,
+        "Expected ( in function trait bound",
+    );
     if (!check(state, TokenType.CloseParen)) {
         while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
             parseType(state);
@@ -868,12 +900,9 @@ function parseOptionalVisibility(state) {
 
     const first = peek(state);
     if (!isIdentifierToken(first)) {
-        addError(
-            state,
-            "Expected visibility restriction in pub(...)",
-            first,
-            ["Identifier"],
-        );
+        addError(state, "Expected visibility restriction in pub(...)", first, [
+            "Identifier",
+        ]);
     } else {
         advance(state);
         while (
@@ -1008,7 +1037,10 @@ function parseAtom(state, allowStructLiteral = true) {
 
         // Single element without comma = grouped expression
         if (elements.length === 1 && !hasComma) {
-            elements[0].span = mergeSpans(spanFromToken(startToken), spanFromToken(end));
+            elements[0].span = mergeSpans(
+                spanFromToken(startToken),
+                spanFromToken(end),
+            );
             return elements[0];
         }
 
@@ -1016,7 +1048,10 @@ function parseAtom(state, allowStructLiteral = true) {
         // For now, return as a struct expression (tuple is a struct with numeric fields)
         const span = mergeSpans(spanFromToken(startToken), spanFromToken(end));
         // Create a tuple as a struct with field names "0", "1", etc.
-        const fields = elements.map((elem, i) => ({ name: String(i), value: elem }));
+        const fields = elements.map((elem, i) => ({
+            name: String(i),
+            value: elem,
+        }));
         const path = makePathExpr(span, ["()"]); // Unit type name for tuples
         return makeStructExpr(span, path, fields, null);
     }
@@ -1087,16 +1122,16 @@ function parseAtom(state, allowStructLiteral = true) {
         let node =
             segments.length > 1
                 ? makePathExpr(
-                    mergeSpans(
-                        spanFromToken(startToken),
-                        spanFromToken(endToken),
-                    ),
-                    segments,
-                )
+                      mergeSpans(
+                          spanFromToken(startToken),
+                          spanFromToken(endToken),
+                      ),
+                      segments,
+                  )
                 : makeIdentifierExpr(
-                    spanFromToken(startToken),
-                    segments[0] ?? startToken.value,
-                );
+                      spanFromToken(startToken),
+                      segments[0] ?? startToken.value,
+                  );
         if (allowStructLiteral && check(state, TokenType.OpenCurly)) {
             node = parseStructExpr(state, node);
         }
@@ -1160,7 +1195,11 @@ function parseMacroArgs(state) {
     }
 
     // Consume closing delimiter
-    expectToken(state, endToken, "Expected closing delimiter after macro arguments");
+    expectToken(
+        state,
+        endToken,
+        "Expected closing delimiter after macro arguments",
+    );
 
     return args;
 }
@@ -1181,10 +1220,7 @@ function parsePostfix(state, expr) {
         ) {
             return result;
         }
-        if (
-            check(state, TokenType.Invalid) &&
-            peek(state).value === "?"
-        ) {
+        if (check(state, TokenType.Invalid) && peek(state).value === "?") {
             // Parse-only compatibility: consume try-operator suffix.
             advance(state);
             continue;
@@ -1199,9 +1235,11 @@ function parsePostfix(state, expr) {
             ) {
                 // Get macro name from the identifier expression
                 let macroName = null;
-                if (result.kind === 1) { // NodeKind.IdentifierExpr
+                if (result.kind === 1) {
+                    // NodeKind.IdentifierExpr
                     macroName = result.name;
-                } else if (result.kind === 17) { // NodeKind.PathExpr
+                } else if (result.kind === 17) {
+                    // NodeKind.PathExpr
                     // For paths, use the last segment
                     macroName = result.segments[result.segments.length - 1];
                 }
@@ -1209,7 +1247,10 @@ function parsePostfix(state, expr) {
                 if (macroName) {
                     const args = parseMacroArgs(state);
                     const endToken = previous(state);
-                    const span = mergeSpans(result.span, spanFromToken(endToken));
+                    const span = mergeSpans(
+                        result.span,
+                        spanFromToken(endToken),
+                    );
                     result = makeMacroExpr(span, macroName, args);
                     continue;
                 }
@@ -1280,7 +1321,11 @@ function parsePostfix(state, expr) {
                 if (typeArg) typeArgs.push(typeArg);
                 if (!matchToken(state, TokenType.Comma)) break;
             }
-            expectToken(state, TokenType.Gt, "Expected > after generic call arguments");
+            expectToken(
+                state,
+                TokenType.Gt,
+                "Expected > after generic call arguments",
+            );
             pendingTypeArgs = typeArgs;
             if (!check(state, TokenType.OpenParen)) {
                 addError(
@@ -1320,13 +1365,13 @@ function parseClosureExpr(state) {
     } else if (matchToken(state, TokenType.Pipe)) {
         while (!check(state, TokenType.Pipe) && !isAtEnd(state)) {
             const paramStart = peek(state);
-            if (!isIdentifierToken(paramStart) && !isIdentifierValue(paramStart, "_")) {
-                addError(
-                    state,
-                    "Expected closure parameter name",
-                    paramStart,
-                    ["Identifier"],
-                );
+            if (
+                !isIdentifierToken(paramStart) &&
+                !isIdentifierValue(paramStart, "_")
+            ) {
+                addError(state, "Expected closure parameter name", paramStart, [
+                    "Identifier",
+                ]);
                 break;
             }
 
@@ -1350,7 +1395,11 @@ function parseClosureExpr(state) {
                 break;
             }
         }
-        expectToken(state, TokenType.Pipe, "Expected | after closure parameters");
+        expectToken(
+            state,
+            TokenType.Pipe,
+            "Expected | after closure parameters",
+        );
     } else {
         return null;
     }
@@ -1415,7 +1464,10 @@ function parsePrefix(state, allowStructLiteral = true) {
     if (token.type === TokenType.And) {
         advance(state);
         let mutability = Mutability.Immutable;
-        if (check(state, TokenType.Mut) || isIdentifierValue(peek(state), "mut")) {
+        if (
+            check(state, TokenType.Mut) ||
+            isIdentifierValue(peek(state), "mut")
+        ) {
             advance(state);
             mutability = Mutability.Mutable;
         }
@@ -1493,11 +1545,11 @@ function parseExpr(state, minPrec = 0, allowStructLiteral = true) {
         if (rangeOp) {
             const endExpr =
                 check(state, TokenType.CloseParen) ||
-                    check(state, TokenType.CloseSquare) ||
-                    check(state, TokenType.CloseCurly) ||
-                    check(state, TokenType.Comma) ||
-                    check(state, TokenType.Semicolon) ||
-                    check(state, TokenType.Eof)
+                check(state, TokenType.CloseSquare) ||
+                check(state, TokenType.CloseCurly) ||
+                check(state, TokenType.Comma) ||
+                check(state, TokenType.Semicolon) ||
+                check(state, TokenType.Eof)
                     ? null
                     : parseExpr(state, 0, allowStructLiteral);
             const span = endExpr
@@ -1508,18 +1560,21 @@ function parseExpr(state, minPrec = 0, allowStructLiteral = true) {
         }
 
         const compoundOp = compoundAssignOps.get(peek(state).type) ?? null;
-        if (minPrec <= 1 && (check(state, TokenType.Eq) || compoundOp !== null)) {
+        if (
+            minPrec <= 1 &&
+            (check(state, TokenType.Eq) || compoundOp !== null)
+        ) {
             advance(state);
             const right = parseExpr(state, 1, allowStructLiteral);
             if (!right) return left;
             const value =
                 compoundOp !== null
                     ? makeBinaryExpr(
-                        mergeSpans(left.span, right.span),
-                        compoundOp,
-                        left,
-                        right,
-                    )
+                          mergeSpans(left.span, right.span),
+                          compoundOp,
+                          left,
+                          right,
+                      )
                     : right;
             const span = mergeSpans(left.span, right.span);
             left = makeAssignExpr(span, left, value);
@@ -1596,8 +1651,7 @@ function parseStmt(state) {
         return parseLetStmt(state);
     }
     if (
-        (peek(state).type === TokenType.Invalid &&
-            peek(state).value === "#") ||
+        (peek(state).type === TokenType.Invalid && peek(state).value === "#") ||
         check(state, TokenType.Pub) ||
         check(state, TokenType.Fn) ||
         check(state, TokenType.Struct) ||
@@ -1646,7 +1700,7 @@ function parseParamList(state, options = {}) {
             const canBeReceiver =
                 allowReceiver &&
                 paramIndex === 0 &&
-                ((startToken.type === TokenType.Self) ||
+                (startToken.type === TokenType.Self ||
                     (startToken.type === TokenType.And &&
                         (peek(state, 1).type === TokenType.Self ||
                             (peek(state, 1).type === TokenType.Mut &&
@@ -1663,7 +1717,11 @@ function parseParamList(state, options = {}) {
                         ty = makeRefType(
                             spanFromToken(startToken),
                             Mutability.Mutable,
-                            makeNamedType(spanFromToken(startToken), "Self", null),
+                            makeNamedType(
+                                spanFromToken(startToken),
+                                "Self",
+                                null,
+                            ),
                         );
                     } else {
                         expectToken(
@@ -1675,7 +1733,11 @@ function parseParamList(state, options = {}) {
                         ty = makeRefType(
                             spanFromToken(startToken),
                             Mutability.Immutable,
-                            makeNamedType(spanFromToken(startToken), "Self", null),
+                            makeNamedType(
+                                spanFromToken(startToken),
+                                "Self",
+                                null,
+                            ),
                         );
                     }
                 } else {
@@ -1690,7 +1752,10 @@ function parseParamList(state, options = {}) {
                 isReceiver = true;
                 name = "self";
             } else {
-                if (startToken.type === TokenType.Self || startToken.type === TokenType.And) {
+                if (
+                    startToken.type === TokenType.Self ||
+                    startToken.type === TokenType.And
+                ) {
                     addError(
                         state,
                         "Receiver parameter is only allowed as the first method parameter",
@@ -1718,8 +1783,12 @@ function parseParamList(state, options = {}) {
                 }
             }
 
-            const span = startToken ? spanFromToken(startToken) : currentSpan(state);
-            params.push(makeParam(span, name, ty, null, isReceiver, receiverKind));
+            const span = startToken
+                ? spanFromToken(startToken)
+                : currentSpan(state);
+            params.push(
+                makeParam(span, name, ty, null, isReceiver, receiverKind),
+            );
             paramIndex += 1;
             if (!matchToken(state, TokenType.Comma)) break;
         }
@@ -1736,7 +1805,13 @@ function parseParamList(state, options = {}) {
  * @param {boolean} [allowReceiver=false]
  * @returns {Node}
  */
-function parseFnItem(state, isUnsafe, isPub, isConst = false, allowReceiver = false) {
+function parseFnItem(
+    state,
+    isUnsafe,
+    isPub,
+    isConst = false,
+    allowReceiver = false,
+) {
     const start =
         expectToken(state, TokenType.Fn, "Expected fn") ?? peek(state);
     const nameToken =
@@ -1781,7 +1856,7 @@ function parseFnItem(state, isUnsafe, isPub, isConst = false, allowReceiver = fa
         whereClause,
         ignoredLifetimeParams,
         false, // isTest
-        null,  // expectedOutput
+        null, // expectedOutput
     );
 }
 
@@ -1895,7 +1970,13 @@ function parseTraitItem(state, isUnsafe, isPub) {
             methodIsConst = true;
         }
         if (check(state, TokenType.Fn)) {
-            const method = parseFnItem(state, false, false, methodIsConst, true);
+            const method = parseFnItem(
+                state,
+                false,
+                false,
+                methodIsConst,
+                true,
+            );
             if (method.body) {
                 addError(
                     state,
@@ -1919,8 +2000,11 @@ function parseTraitItem(state, isUnsafe, isPub) {
         skipToRecovery(state, [TokenType.CloseCurly, TokenType.Fn]);
     }
     const endToken =
-        expectToken(state, TokenType.CloseCurly, "Expected } after trait block") ??
-        peek(state);
+        expectToken(
+            state,
+            TokenType.CloseCurly,
+            "Expected } after trait block",
+        ) ?? peek(state);
     const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
     return makeTraitItem(span, nameToken.value ?? "", methods, isUnsafe, isPub);
 }
@@ -1968,7 +2052,12 @@ function parseImplItem(state, isUnsafe) {
             methods.push(method);
             continue;
         }
-        addError(state, "Expected method item in impl block", peek(state), null);
+        addError(
+            state,
+            "Expected method item in impl block",
+            peek(state),
+            null,
+        );
         skipToRecovery(state, [
             TokenType.CloseCurly,
             TokenType.Fn,
@@ -1978,8 +2067,11 @@ function parseImplItem(state, isUnsafe) {
         ]);
     }
     const endToken =
-        expectToken(state, TokenType.CloseCurly, "Expected } after impl block") ??
-        peek(state);
+        expectToken(
+            state,
+            TokenType.CloseCurly,
+            "Expected } after impl block",
+        ) ?? peek(state);
     const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
     return makeImplItem(
         span,
@@ -2253,7 +2345,8 @@ function parseUseItem(state, isPub) {
  * @returns {Node | null}
  */
 function parseItem(state) {
-    const { derives, isTest, expectedOutput, builtinName, consumedOnlyInert } = parseOuterAttributes(state);
+    const { derives, isTest, expectedOutput, builtinName, consumedOnlyInert } =
+        parseOuterAttributes(state);
     let isPub = false;
     let isUnsafe = false;
     let isConst = false;
@@ -2271,13 +2364,17 @@ function parseItem(state) {
     }
     /** @type {Node | null} */
     let item = null;
-    if (check(state, TokenType.Fn)) item = parseFnItem(state, isUnsafe, isPub, isConst);
-    else if (check(state, TokenType.Struct)) item = parseStructItem(state, isPub);
+    if (check(state, TokenType.Fn))
+        item = parseFnItem(state, isUnsafe, isPub, isConst);
+    else if (check(state, TokenType.Struct))
+        item = parseStructItem(state, isPub);
     else if (check(state, TokenType.Enum)) item = parseEnumItem(state, isPub);
-    else if (check(state, TokenType.Trait)) item = parseTraitItem(state, isUnsafe, isPub);
+    else if (check(state, TokenType.Trait))
+        item = parseTraitItem(state, isUnsafe, isPub);
     else if (check(state, TokenType.Mod)) item = parseModItem(state, isPub);
     else if (check(state, TokenType.Use)) item = parseUseItem(state, isPub);
-    else if (check(state, TokenType.Impl)) item = parseImplItem(state, isUnsafe);
+    else if (check(state, TokenType.Impl))
+        item = parseImplItem(state, isUnsafe);
     if (item) {
         item.derives = derives;
         if (item.kind === NodeKind.FnItem) {
@@ -2363,7 +2460,9 @@ function parsePatternAtom(state) {
             );
         }
         // If `mut` is not followed by an identifier, treat it as an error
-        addError(state, "Expected identifier after `mut`", nameToken, ["Identifier"]);
+        addError(state, "Expected identifier after `mut`", nameToken, [
+            "Identifier",
+        ]);
         return makeWildcardPat(spanFromToken(mutToken));
     }
     if (token.type === TokenType.Identifier || token.type === TokenType.Self) {
@@ -2544,7 +2643,11 @@ function parseStructPattern(state, path, startToken) {
  */
 function parseEnumTupleVariantPattern(state, path, startToken) {
     const elements = [];
-    expectToken(state, TokenType.OpenParen, "Expected ( in enum variant pattern");
+    expectToken(
+        state,
+        TokenType.OpenParen,
+        "Expected ( in enum variant pattern",
+    );
     if (!check(state, TokenType.CloseParen)) {
         while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
             const pat = parsePattern(state);
@@ -2655,7 +2758,10 @@ function parseType(state) {
             ignoredLifetimeName = advance(state).value ?? null;
         }
         let mutability = Mutability.Immutable;
-        if (check(state, TokenType.Mut) || isIdentifierValue(peek(state), "mut")) {
+        if (
+            check(state, TokenType.Mut) ||
+            isIdentifierValue(peek(state), "mut")
+        ) {
             advance(state);
             mutability = Mutability.Mutable;
         }
@@ -2675,7 +2781,10 @@ function parseType(state) {
         let mutability = Mutability.Immutable;
         if (matchToken(state, TokenType.Const)) {
             mutability = Mutability.Immutable;
-        } else if (check(state, TokenType.Mut) || isIdentifierValue(peek(state), "mut")) {
+        } else if (
+            check(state, TokenType.Mut) ||
+            isIdentifierValue(peek(state), "mut")
+        ) {
             advance(state);
             mutability = Mutability.Mutable;
         }
@@ -2689,7 +2798,11 @@ function parseType(state) {
             inner ?? makeNamedType(span, "unknown", null),
         );
     }
-    if (token.type === TokenType.Fn || token.type === TokenType.Unsafe || token.type === TokenType.Const) {
+    if (
+        token.type === TokenType.Fn ||
+        token.type === TokenType.Unsafe ||
+        token.type === TokenType.Const
+    ) {
         let isUnsafe = false;
         if (matchToken(state, TokenType.Unsafe)) {
             isUnsafe = true;
@@ -2749,7 +2862,11 @@ function parseType(state) {
             ) ?? start;
         // Empty parens () is unit type
         if (elements.length === 0) {
-            return makeNamedType(mergeSpans(spanFromToken(start), spanFromToken(endToken)), "()", null);
+            return makeNamedType(
+                mergeSpans(spanFromToken(start), spanFromToken(endToken)),
+                "()",
+                null,
+            );
         }
         if (!hasComma && elements.length === 1) {
             return elements[0];
@@ -2813,12 +2930,12 @@ function parseIfExpr(state) {
     return makeIfExpr(
         span,
         condition ??
-        makeLiteralExpr(
-            spanFromToken(start),
-            LiteralKind.Bool,
-            false,
-            "false",
-        ),
+            makeLiteralExpr(
+                spanFromToken(start),
+                LiteralKind.Bool,
+                false,
+                "false",
+            ),
         thenBranch,
         elseBranch,
     );
@@ -2865,7 +2982,7 @@ function parseMatchExpr(state) {
     return makeMatchExpr(
         span,
         scrutinee ??
-        makeLiteralExpr(spanFromToken(start), LiteralKind.Int, 0, "0"),
+            makeLiteralExpr(spanFromToken(start), LiteralKind.Int, 0, "0"),
         arms,
     );
 }
@@ -2960,12 +3077,12 @@ function parseWhileExpr(state) {
         span,
         null,
         condition ??
-        makeLiteralExpr(
-            spanFromToken(start),
-            LiteralKind.Bool,
-            false,
-            "false",
-        ),
+            makeLiteralExpr(
+                spanFromToken(start),
+                LiteralKind.Bool,
+                false,
+                "false",
+            ),
         body,
     );
 }

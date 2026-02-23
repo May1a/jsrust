@@ -63,12 +63,21 @@ function createTestTypeContext() {
  */
 function lowerSource(source) {
     const parseResult = parseModule(source);
-    assertTrue(parseResult.ok, `parse failed: ${parseResult.errors?.map((e) => e.message).join(", ")}`);
+    assertTrue(
+        parseResult.ok,
+        `parse failed: ${parseResult.errors?.map((e) => e.message).join(", ")}`,
+    );
     const typeCtx = new TypeContext();
     const inferResult = inferModule(typeCtx, parseResult.value);
-    assertTrue(inferResult.ok, `inference failed: ${inferResult.errors?.map((e) => e.message).join(", ")}`);
+    assertTrue(
+        inferResult.ok,
+        `inference failed: ${inferResult.errors?.map((e) => e.message).join(", ")}`,
+    );
     const lowered = lowerModule(parseResult.value, typeCtx);
-    assertTrue(!!lowered.module, `lowering failed: ${lowered.errors?.map((e) => e.message).join(", ")}`);
+    assertTrue(
+        !!lowered.module,
+        `lowering failed: ${lowered.errors?.map((e) => e.message).join(", ")}`,
+    );
     return /** @type {import("../../hir.js").HModule} */ (lowered.module);
 }
 
@@ -508,13 +517,27 @@ function testLowerMethodCallExpression() {
             makeIdentifierExpr(makeSpan(0, 0, 0, 2), "p1"),
             "sum_with",
         ),
-        [makeRefExpr(makeSpan(0, 0, 10, 2), Mutability.Immutable, makeIdentifierExpr(makeSpan(0, 0, 11, 2), "p2"))],
+        [
+            makeRefExpr(
+                makeSpan(0, 0, 10, 2),
+                Mutability.Immutable,
+                makeIdentifierExpr(makeSpan(0, 0, 11, 2), "p2"),
+            ),
+        ],
     );
 
     const hir = lowerExpr(ctx, ast, typeCtx);
     assertEqual(hir.kind, HExprKind.Call, "Should lower to call expression");
-    assertEqual(hir.callee.kind, HExprKind.Var, "Callee should be method symbol");
-    assertEqual(hir.callee.name, "Point::sum_with", "Should use qualified method symbol");
+    assertEqual(
+        hir.callee.kind,
+        HExprKind.Var,
+        "Callee should be method symbol",
+    );
+    assertEqual(
+        hir.callee.name,
+        "Point::sum_with",
+        "Should use qualified method symbol",
+    );
     assertEqual(hir.args.length, 2, "Should inject receiver as first argument");
 }
 
@@ -545,23 +568,35 @@ function testLowerClosureSynthesizesHelperFn() {
         "fn main() { let add_one = |z| z + 1; let _y: i32 = add_one(2); }",
     );
     const helper = module.items.find(
-        (item) => item.kind === HItemKind.Fn && item.name.includes("__closure_"),
+        (item) =>
+            item.kind === HItemKind.Fn && item.name.includes("__closure_"),
     );
     assertTrue(!!helper, "Expected synthesized closure helper function");
-    assertEqual(helper.params.length, 1, "Non-capturing helper should only have explicit params");
+    assertEqual(
+        helper.params.length,
+        1,
+        "Non-capturing helper should only have explicit params",
+    );
 }
 
 function testLowerCapturingClosureRewritesDirectCallWithCaptureArgs() {
     const module = lowerSource(
         "fn main() { let x: i32 = 5; let add = |z: i32| z + x; let _y: i32 = add(2); }",
     );
-    const mainFn = module.items.find((item) => item.kind === HItemKind.Fn && item.name === "main");
+    const mainFn = module.items.find(
+        (item) => item.kind === HItemKind.Fn && item.name === "main",
+    );
     assertTrue(!!mainFn, "Expected main function");
     const callLet = mainFn.body.stmts.find(
-        (stmt) => stmt.kind === 0 && stmt.init && stmt.init.kind === HExprKind.Call,
+        (stmt) =>
+            stmt.kind === 0 && stmt.init && stmt.init.kind === HExprKind.Call,
     );
     assertTrue(!!callLet, "Expected lowered direct helper call");
-    assertEqual(callLet.init.args.length, 2, "Capturing helper call should include capture argument");
+    assertEqual(
+        callLet.init.args.length,
+        2,
+        "Capturing helper call should include capture argument",
+    );
     assertTrue(
         callLet.init.callee.kind === HExprKind.Var &&
             callLet.init.callee.name.includes("__closure_"),
@@ -573,7 +608,9 @@ function testLowerAssertEqOptionSomeMismatchIncludesAssertFail() {
     const module = lowerSource(
         "enum Option<T> { None, Some(T) } fn main() { assert_eq!(Some(1), Some(2)); }",
     );
-    const mainFn = module.items.find((item) => item.kind === HItemKind.Fn && item.name === "main");
+    const mainFn = module.items.find(
+        (item) => item.kind === HItemKind.Fn && item.name === "main",
+    );
     assertTrue(!!mainFn, "Expected main function");
     assertTrue(
         hasAssertFailBuiltinCall(mainFn.body),
@@ -585,7 +622,9 @@ function testLowerAssertEqOptionNoneMismatchIncludesAssertFail() {
     const module = lowerSource(
         "enum Option<T> { None, Some(T) } fn main() { let a: Option<i32> = None; let b: Option<i32> = Some(1); assert_eq!(a, b); }",
     );
-    const mainFn = module.items.find((item) => item.kind === HItemKind.Fn && item.name === "main");
+    const mainFn = module.items.find(
+        (item) => item.kind === HItemKind.Fn && item.name === "main",
+    );
     assertTrue(!!mainFn, "Expected main function");
     assertTrue(
         hasAssertFailBuiltinCall(mainFn.body),
@@ -618,9 +657,18 @@ export function runTests() {
         ["Lower method call expression", testLowerMethodCallExpression],
         ["Lower static method path", testLowerStaticMethodPath],
         ["Lower closure helper synthesis", testLowerClosureSynthesizesHelperFn],
-        ["Lower capturing closure direct call rewrite", testLowerCapturingClosureRewritesDirectCallWithCaptureArgs],
-        ["Lower assert_eq Some mismatch", testLowerAssertEqOptionSomeMismatchIncludesAssertFail],
-        ["Lower assert_eq None mismatch", testLowerAssertEqOptionNoneMismatchIncludesAssertFail],
+        [
+            "Lower capturing closure direct call rewrite",
+            testLowerCapturingClosureRewritesDirectCallWithCaptureArgs,
+        ],
+        [
+            "Lower assert_eq Some mismatch",
+            testLowerAssertEqOptionSomeMismatchIncludesAssertFail,
+        ],
+        [
+            "Lower assert_eq None mismatch",
+            testLowerAssertEqOptionNoneMismatchIncludesAssertFail,
+        ],
     ];
 
     for (const [name, fn] of tests) {

@@ -415,7 +415,14 @@ class TypeContext {
      * @param {any} [meta]
      * @returns {{ ok: boolean, error?: string, symbolName?: string }}
      */
-    registerTraitMethod(typeName, traitName, methodName, decl, fnType, meta = null) {
+    registerTraitMethod(
+        typeName,
+        traitName,
+        methodName,
+        decl,
+        fnType,
+        meta = null,
+    ) {
         const symbolName = `${typeName}::<${traitName}>::${methodName}`;
         const key = `${typeName}::${methodName}`;
         const list = this.traitMethods.get(key) || [];
@@ -516,7 +523,9 @@ class TypeContext {
      */
     currentImplGenericBindings() {
         if (this.implGenericBindingStack.length === 0) return null;
-        return this.implGenericBindingStack[this.implGenericBindingStack.length - 1];
+        return this.implGenericBindingStack[
+            this.implGenericBindingStack.length - 1
+        ];
     }
 
     /**

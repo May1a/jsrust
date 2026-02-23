@@ -1,4 +1,3 @@
-
 const FORMAT_TAG_STRING = 0;
 const FORMAT_TAG_INT = 1;
 const FORMAT_TAG_FLOAT = 2;

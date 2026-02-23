@@ -204,7 +204,12 @@ function expandModuleItems(state, items, modulePath, filePath) {
 
         const childModulePath = [...modulePath, item.name];
         if (item.isInline) {
-            expandModuleItems(state, item.items || [], childModulePath, filePath);
+            expandModuleItems(
+                state,
+                item.items || [],
+                childModulePath,
+                filePath,
+            );
             continue;
         }
 
@@ -244,7 +249,12 @@ function expandModuleItems(state, items, modulePath, filePath) {
         item.items = parseResult.value.items || [];
         item.isInline = true;
         item.sourcePath = resolved.filePath;
-        expandModuleItems(state, item.items, childModulePath, resolved.filePath);
+        expandModuleItems(
+            state,
+            item.items,
+            childModulePath,
+            resolved.filePath,
+        );
         state.loadingStack.pop();
     }
 }
@@ -269,7 +279,8 @@ function registerModuleItems(state, items, modulePath) {
         }
 
         if (isDeclItem(item)) {
-            const qname = item.qualifiedName || qualifiedName(modulePath, item.name);
+            const qname =
+                item.qualifiedName || qualifiedName(modulePath, item.name);
             if (state.itemDecls.has(qname)) {
                 pushError(
                     state.errors,
@@ -287,10 +298,10 @@ function registerModuleItems(state, items, modulePath) {
                     item.kind === NodeKind.FnItem
                         ? "fn"
                         : item.kind === NodeKind.StructItem
-                            ? "struct"
-                            : item.kind === NodeKind.EnumItem
-                                ? "enum"
-                                : "trait",
+                          ? "struct"
+                          : item.kind === NodeKind.EnumItem
+                            ? "enum"
+                            : "trait",
             });
             scope.items.set(item.name, qname);
             continue;
@@ -326,7 +337,7 @@ function registerModuleItems(state, items, modulePath) {
  * @returns {ModuleScope}
  */
 function getScope(state, modulePath) {
-    return ensureScope(/** @type {any} */(state), modulePath);
+    return ensureScope(/** @type {any} */ (state), modulePath);
 }
 
 /**
@@ -357,20 +368,32 @@ function resolveNameInScope(state, modulePath, name) {
     if (alias) return targetFromAlias(alias, scope.path);
 
     if (scope.items.has(name)) {
-        return { kind: "item", qualifiedName: /** @type {string} */ (scope.items.get(name)) };
+        return {
+            kind: "item",
+            qualifiedName: /** @type {string} */ (scope.items.get(name)),
+        };
     }
     if (scope.modules.has(name)) {
-        return { kind: "module", qualifiedName: /** @type {string} */ (scope.modules.get(name)) };
+        return {
+            kind: "module",
+            qualifiedName: /** @type {string} */ (scope.modules.get(name)),
+        };
     }
 
     const rootScope = getScope(state, []);
     const rootAlias = rootScope.aliases.get(name);
     if (rootAlias) return targetFromAlias(rootAlias, rootScope.path);
     if (rootScope.items.has(name)) {
-        return { kind: "item", qualifiedName: /** @type {string} */ (rootScope.items.get(name)) };
+        return {
+            kind: "item",
+            qualifiedName: /** @type {string} */ (rootScope.items.get(name)),
+        };
     }
     if (rootScope.modules.has(name)) {
-        return { kind: "module", qualifiedName: /** @type {string} */ (rootScope.modules.get(name)) };
+        return {
+            kind: "module",
+            qualifiedName: /** @type {string} */ (rootScope.modules.get(name)),
+        };
     }
     return null;
 }
@@ -401,12 +424,19 @@ function resolveAbsolutePath(state, segments) {
             return targetFromAlias(rootAlias, root.path);
         }
         if (root.items.has(segments[0])) {
-            return { kind: "item", qualifiedName: /** @type {string} */ (root.items.get(segments[0])) };
+            return {
+                kind: "item",
+                qualifiedName: /** @type {string} */ (
+                    root.items.get(segments[0])
+                ),
+            };
         }
         if (root.modules.has(segments[0])) {
             return {
                 kind: "module",
-                qualifiedName: /** @type {string} */ (root.modules.get(segments[0])),
+                qualifiedName: /** @type {string} */ (
+                    root.modules.get(segments[0])
+                ),
             };
         }
         return null;
@@ -439,10 +469,16 @@ function resolveAbsolutePath(state, segments) {
         return targetFromAlias(finalAlias, finalScope.path);
     }
     if (finalScope.items.has(last)) {
-        return { kind: "item", qualifiedName: /** @type {string} */ (finalScope.items.get(last)) };
+        return {
+            kind: "item",
+            qualifiedName: /** @type {string} */ (finalScope.items.get(last)),
+        };
     }
     if (finalScope.modules.has(last)) {
-        return { kind: "module", qualifiedName: /** @type {string} */ (finalScope.modules.get(last)) };
+        return {
+            kind: "module",
+            qualifiedName: /** @type {string} */ (finalScope.modules.get(last)),
+        };
     }
     return null;
 }
@@ -485,10 +521,16 @@ function resolvePathFromModule(state, currentModulePath, segments) {
         return targetFromAlias(finalAlias, finalScope.path);
     }
     if (finalScope.items.has(last)) {
-        return { kind: "item", qualifiedName: /** @type {string} */ (finalScope.items.get(last)) };
+        return {
+            kind: "item",
+            qualifiedName: /** @type {string} */ (finalScope.items.get(last)),
+        };
     }
     if (finalScope.modules.has(last)) {
-        return { kind: "module", qualifiedName: /** @type {string} */ (finalScope.modules.get(last)) };
+        return {
+            kind: "module",
+            qualifiedName: /** @type {string} */ (finalScope.modules.get(last)),
+        };
     }
     return null;
 }
@@ -535,7 +577,9 @@ function canAccessTarget(state, currentModulePath, target) {
                 qualifiedName: target.qualifiedName,
             });
         }
-        if (!canTraverseModules(state, currentModulePath, viaAlias.modulePath)) {
+        if (
+            !canTraverseModules(state, currentModulePath, viaAlias.modulePath)
+        ) {
             return false;
         }
         if (!viaAlias.isPub) {
@@ -589,11 +633,12 @@ function resolveUseTree(state, tree, parentPath, parentTarget, scope, useItem) {
     }
 
     // Build the full path for this tree node
-    const fullPath = parentPath.length > 0 && tree.path.length > 0
-        ? [...parentPath, ...tree.path]
-        : tree.path.length > 0
-            ? tree.path
-            : parentPath;
+    const fullPath =
+        parentPath.length > 0 && tree.path.length > 0
+            ? [...parentPath, ...tree.path]
+            : tree.path.length > 0
+              ? tree.path
+              : parentPath;
 
     // Resolve the target for this path
     let target = null;
@@ -796,7 +841,11 @@ function resolveExpr(state, modulePath, expr, localScopes) {
             ) {
                 return;
             }
-            const target = resolvePathFromModule(state, modulePath, expr.segments);
+            const target = resolvePathFromModule(
+                state,
+                modulePath,
+                expr.segments,
+            );
             if (!target || target.kind !== "item") {
                 const first = resolveNameInScope(
                     state,
@@ -856,9 +905,19 @@ function resolveExpr(state, modulePath, expr, localScopes) {
             resolveBlock(state, modulePath, expr.thenBranch, localScopes);
             if (expr.elseBranch) {
                 if (expr.elseBranch.kind === NodeKind.BlockExpr) {
-                    resolveBlock(state, modulePath, expr.elseBranch, localScopes);
+                    resolveBlock(
+                        state,
+                        modulePath,
+                        expr.elseBranch,
+                        localScopes,
+                    );
                 } else {
-                    resolveExpr(state, modulePath, expr.elseBranch, localScopes);
+                    resolveExpr(
+                        state,
+                        modulePath,
+                        expr.elseBranch,
+                        localScopes,
+                    );
                 }
             }
             return;
@@ -879,7 +938,8 @@ function resolveExpr(state, modulePath, expr, localScopes) {
             return;
         case NodeKind.ReturnExpr:
         case NodeKind.BreakExpr:
-            if (expr.value) resolveExpr(state, modulePath, expr.value, localScopes);
+            if (expr.value)
+                resolveExpr(state, modulePath, expr.value, localScopes);
             return;
         case NodeKind.LoopExpr:
         case NodeKind.WhileExpr:
@@ -900,7 +960,8 @@ function resolveExpr(state, modulePath, expr, localScopes) {
             for (const field of expr.fields || []) {
                 resolveExpr(state, modulePath, field.value, localScopes);
             }
-            if (expr.spread) resolveExpr(state, modulePath, expr.spread, localScopes);
+            if (expr.spread)
+                resolveExpr(state, modulePath, expr.spread, localScopes);
             return;
         case NodeKind.RangeExpr:
             resolveExpr(state, modulePath, expr.start, localScopes);
@@ -950,7 +1011,8 @@ function resolveStmt(state, modulePath, stmt, localScopes) {
     if (!stmt) return;
     switch (stmt.kind) {
         case NodeKind.LetStmt:
-            if (stmt.init) resolveExpr(state, modulePath, stmt.init, localScopes);
+            if (stmt.init)
+                resolveExpr(state, modulePath, stmt.init, localScopes);
             bindPatternNames(stmt.pat, localScopes[localScopes.length - 1]);
             return;
         case NodeKind.ExprStmt:
@@ -1005,7 +1067,10 @@ function resolveModuleExprs(state, items, modulePath) {
             continue;
         }
         if (item.kind === NodeKind.ModItem) {
-            resolveModuleExprs(state, item.items || [], [...modulePath, item.name]);
+            resolveModuleExprs(state, item.items || [], [
+                ...modulePath,
+                item.name,
+            ]);
             continue;
         }
         if (item.kind === NodeKind.ImplItem) {
@@ -1056,7 +1121,9 @@ function flattenItems(items, out) {
  * @returns {{ ok: boolean, module?: any, errors?: ResolverError[] }}
  */
 function resolveModuleTree(ast, options = {}) {
-    const sourcePath = options.sourcePath ? path.resolve(options.sourcePath) : null;
+    const sourcePath = options.sourcePath
+        ? path.resolve(options.sourcePath)
+        : null;
     /** @type {ResolverError[]} */
     const errors = [];
 

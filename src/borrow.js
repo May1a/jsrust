@@ -176,7 +176,8 @@ function getPlaceOrigin(place, env) {
             const binding = lookupBinding(env, place.name);
             if (!binding) return null;
             if (binding.refOrigin) return binding.refOrigin;
-            if (binding.kind === "param") return { kind: "param", name: place.name };
+            if (binding.kind === "param")
+                return { kind: "param", name: place.name };
             return {
                 kind: "local",
                 name: place.name,
@@ -188,7 +189,8 @@ function getPlaceOrigin(place, env) {
             const binding = lookupBinding(env, place.segments[0]);
             if (!binding) return null;
             if (binding.refOrigin) return binding.refOrigin;
-            if (binding.kind === "param") return { kind: "param", name: place.segments[0] };
+            if (binding.kind === "param")
+                return { kind: "param", name: place.segments[0] };
             return {
                 kind: "local",
                 name: place.segments[0],
@@ -272,7 +274,11 @@ function checkExpr(expr, env) {
                     ),
                 );
             }
-            if (targetBinding && valueOrigin && expr.target.kind === NodeKind.IdentifierExpr) {
+            if (
+                targetBinding &&
+                valueOrigin &&
+                expr.target.kind === NodeKind.IdentifierExpr
+            ) {
                 const binding = lookupBinding(env, expr.target.name);
                 if (binding) {
                     binding.refOrigin = valueOrigin;

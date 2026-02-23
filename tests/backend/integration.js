@@ -48,21 +48,30 @@ function normalizedText(text) {
 export function runBackendIntegrationTests() {
     test("Backend integration: run empty main", () => {
         const result = runMain(["run", RUN_EMPTY_MAIN]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         assertEqual(result.stdout.trim(), "ok");
     });
 
     test("Backend integration: run arithmetic example", () => {
         const result = runMain(["run", RUN_ARITHMETIC]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         assertEqual(result.stdout.trim(), "ok");
     });
 
     test("Backend integration: run hello world example", () => {
         const result = runMain(["run", RUN_HELLO_WORLD]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         const lines = result.stdout.trimEnd().split("\n");
         assertEqual(lines[0], "Hello, World!");
@@ -71,7 +80,10 @@ export function runBackendIntegrationTests() {
 
     test("Backend integration: run functions print example", () => {
         const result = runMain(["run", RUN_FUNCTIONS_PRINT]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         const lines = result.stdout.trimEnd().split("\n");
         assertEqual(lines[0], "Hello, world!");
@@ -80,7 +92,10 @@ export function runBackendIntegrationTests() {
 
     test("Backend integration: run format print vars example", () => {
         const result = runMain(["run", RUN_FORMAT_PRINT_VAR]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         const lines = result.stdout.trimEnd().split("\n");
         assertEqual(lines[0], "Hello, world!");
@@ -93,14 +108,20 @@ export function runBackendIntegrationTests() {
 
     test("Backend integration: run closure function-parameter example", () => {
         const result = runMain(["run", RUN_CLOSURE_PARAM]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         assertEqual(result.stdout.trim(), "ok");
     });
 
     test("Backend integration: run vec ops example", () => {
         const result = runMain(["run", RUN_VEC_OPS]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         const lines = result.stdout.trimEnd().split("\n");
         assertEqual(lines[0], "3");
@@ -115,12 +136,11 @@ export function runBackendIntegrationTests() {
     });
 
     test("Backend integration: run arithmetic via codegen wasm mode", () => {
-        const result = runMain([
-            "run",
-            RUN_ARITHMETIC,
-            "--codegen-wasm",
-        ]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        const result = runMain(["run", RUN_ARITHMETIC, "--codegen-wasm"]);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         assertEqual(result.stdout.trim(), "ok");
     });
@@ -142,12 +162,26 @@ export function runBackendIntegrationTests() {
 
         for (const fixture of fixtures) {
             const interpreted = runMain(["run", fixture]);
-            assertTrue(!interpreted.error, `spawn failed for interpreted run (${fixture}): ${interpreted.error?.message || ""}`);
-            assertEqual(interpreted.status, 0, `interpreted stderr (${fixture}): ${interpreted.stderr}`);
+            assertTrue(
+                !interpreted.error,
+                `spawn failed for interpreted run (${fixture}): ${interpreted.error?.message || ""}`,
+            );
+            assertEqual(
+                interpreted.status,
+                0,
+                `interpreted stderr (${fixture}): ${interpreted.stderr}`,
+            );
 
             const generated = runMain(["run", fixture, "--codegen-wasm"]);
-            assertTrue(!generated.error, `spawn failed for codegen run (${fixture}): ${generated.error?.message || ""}`);
-            assertEqual(generated.status, 0, `codegen stderr (${fixture}): ${generated.stderr}`);
+            assertTrue(
+                !generated.error,
+                `spawn failed for codegen run (${fixture}): ${generated.error?.message || ""}`,
+            );
+            assertEqual(
+                generated.status,
+                0,
+                `codegen stderr (${fixture}): ${generated.stderr}`,
+            );
 
             assertEqual(
                 normalizedText(generated.stdout),
@@ -159,14 +193,28 @@ export function runBackendIntegrationTests() {
 
     test("Backend integration: vec empty pop returns Option::None in both modes", () => {
         const interpreted = runMain(["run", RUN_VEC_POP_EMPTY_PANIC]);
-        assertTrue(!interpreted.error, `spawn failed for interpreted run: ${interpreted.error?.message || ""}`);
-        assertEqual(interpreted.status, 0, `interpreted stderr: ${interpreted.stderr}`);
+        assertTrue(
+            !interpreted.error,
+            `spawn failed for interpreted run: ${interpreted.error?.message || ""}`,
+        );
+        assertEqual(
+            interpreted.status,
+            0,
+            `interpreted stderr: ${interpreted.stderr}`,
+        );
         const interpretedLines = interpreted.stdout.trimEnd().split("\n");
         assertEqual(interpretedLines[0], "-1");
         assertEqual(interpretedLines[interpretedLines.length - 1], "ok");
 
-        const generated = runMain(["run", RUN_VEC_POP_EMPTY_PANIC, "--codegen-wasm"]);
-        assertTrue(!generated.error, `spawn failed for codegen run: ${generated.error?.message || ""}`);
+        const generated = runMain([
+            "run",
+            RUN_VEC_POP_EMPTY_PANIC,
+            "--codegen-wasm",
+        ]);
+        assertTrue(
+            !generated.error,
+            `spawn failed for codegen run: ${generated.error?.message || ""}`,
+        );
         assertEqual(generated.status, 0, `codegen stderr: ${generated.stderr}`);
         const generatedLines = generated.stdout.trimEnd().split("\n");
         assertEqual(generatedLines[0], "-1");
@@ -175,36 +223,62 @@ export function runBackendIntegrationTests() {
 
     test("Backend integration: vec out-of-bounds index panics in both modes", () => {
         const interpreted = runMain(["run", RUN_VEC_BOUNDS_PANIC]);
-        assertTrue(!interpreted.error, `spawn failed for interpreted run: ${interpreted.error?.message || ""}`);
-        assertTrue((interpreted.status ?? 0) !== 0, "expected non-zero status for interpreted bounds panic");
+        assertTrue(
+            !interpreted.error,
+            `spawn failed for interpreted run: ${interpreted.error?.message || ""}`,
+        );
+        assertTrue(
+            (interpreted.status ?? 0) !== 0,
+            "expected non-zero status for interpreted bounds panic",
+        );
         assertTrue(
             interpreted.stderr.includes("index out of bounds"),
             `unexpected interpreted stderr: ${interpreted.stderr}`,
         );
 
-        const generated = runMain(["run", RUN_VEC_BOUNDS_PANIC, "--codegen-wasm"]);
-        assertTrue(!generated.error, `spawn failed for codegen run: ${generated.error?.message || ""}`);
-        assertTrue((generated.status ?? 0) !== 0, "expected non-zero status for codegen bounds panic");
+        const generated = runMain([
+            "run",
+            RUN_VEC_BOUNDS_PANIC,
+            "--codegen-wasm",
+        ]);
+        assertTrue(
+            !generated.error,
+            `spawn failed for codegen run: ${generated.error?.message || ""}`,
+        );
+        assertTrue(
+            (generated.status ?? 0) !== 0,
+            "expected non-zero status for codegen bounds panic",
+        );
         assertTrue(
             generated.stderr.includes("index out of bounds") ||
-            generated.stderr.includes("generated wasm trapped while running main: unreachable"),
+                generated.stderr.includes(
+                    "generated wasm trapped while running main: unreachable",
+                ),
             `unexpected codegen stderr: ${generated.stderr}`,
         );
     });
 
     test("Backend integration: vec repeat form is compile-time unsupported", () => {
         const result = runMain([RUN_VEC_REPEAT_UNSUPPORTED]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
         assertTrue(
-            result.stderr.includes("Macro repeat form `[expr; count]` is not supported yet"),
+            result.stderr.includes(
+                "Macro repeat form `[expr; count]` is not supported yet",
+            ),
             `unexpected stderr: ${result.stderr}`,
         );
     });
 
     test("Backend integration: vec non-copy indexing returns element and compiles", () => {
         const result = runMain(["run", RUN_VEC_NON_COPY_INDEX_ERROR]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         const lines = result.stdout.trimEnd().split("\n");
         assertEqual(lines[0], "1");
@@ -213,19 +287,37 @@ export function runBackendIntegrationTests() {
 
     test("Backend integration: vec negative index panics in both modes", () => {
         const interpreted = runMain(["run", RUN_VEC_NEGATIVE_INDEX_PANIC]);
-        assertTrue(!interpreted.error, `spawn failed for interpreted run: ${interpreted.error?.message || ""}`);
-        assertTrue((interpreted.status ?? 0) !== 0, "expected non-zero status for interpreted negative index panic");
+        assertTrue(
+            !interpreted.error,
+            `spawn failed for interpreted run: ${interpreted.error?.message || ""}`,
+        );
+        assertTrue(
+            (interpreted.status ?? 0) !== 0,
+            "expected non-zero status for interpreted negative index panic",
+        );
         assertTrue(
             interpreted.stderr.includes("index out of bounds"),
             `unexpected interpreted stderr: ${interpreted.stderr}`,
         );
 
-        const generated = runMain(["run", RUN_VEC_NEGATIVE_INDEX_PANIC, "--codegen-wasm"]);
-        assertTrue(!generated.error, `spawn failed for codegen run: ${generated.error?.message || ""}`);
-        assertTrue((generated.status ?? 0) !== 0, "expected non-zero status for codegen negative index panic");
+        const generated = runMain([
+            "run",
+            RUN_VEC_NEGATIVE_INDEX_PANIC,
+            "--codegen-wasm",
+        ]);
+        assertTrue(
+            !generated.error,
+            `spawn failed for codegen run: ${generated.error?.message || ""}`,
+        );
+        assertTrue(
+            (generated.status ?? 0) !== 0,
+            "expected non-zero status for codegen negative index panic",
+        );
         assertTrue(
             generated.stderr.includes("index out of bounds") ||
-            generated.stderr.includes("generated wasm trapped while running main: unreachable"),
+                generated.stderr.includes(
+                    "generated wasm trapped while running main: unreachable",
+                ),
             `unexpected codegen stderr: ${generated.stderr}`,
         );
     });
@@ -237,24 +329,30 @@ export function runBackendIntegrationTests() {
             "--codegen-wasm",
             "--trace",
         ]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
         assertTrue(
-            result.stderr.includes("--trace is not supported with --codegen-wasm"),
+            result.stderr.includes(
+                "--trace is not supported with --codegen-wasm",
+            ),
             `unexpected stderr: ${result.stderr}`,
         );
     });
 
     test("Backend integration: codegen wasm rejects dynamic call", () => {
-        const result = runMain([
-            "run",
-            RUN_CLOSURE_PARAM,
-            "--codegen-wasm",
-        ]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        const result = runMain(["run", RUN_CLOSURE_PARAM, "--codegen-wasm"]);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
         assertTrue(
-            result.stderr.includes("wasm codegen: dynamic calls are not supported yet"),
+            result.stderr.includes(
+                "wasm codegen: dynamic calls are not supported yet",
+            ),
             `unexpected stderr: ${result.stderr}`,
         );
     });
@@ -266,7 +364,10 @@ export function runBackendIntegrationTests() {
             "--entry",
             "does_not_exist",
         ]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertTrue(
             (result.status ?? 0) !== 0,
             "expected non-zero status for missing entry",
@@ -289,9 +390,15 @@ export function runBackendIntegrationTests() {
                 "--trace-out",
                 tracePath,
             ]);
-            assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+            assertTrue(
+                !result.error,
+                `spawn failed: ${result.error?.message || ""}`,
+            );
             assertEqual(result.status, 0, `stderr: ${result.stderr}`);
-            assertTrue(fs.existsSync(tracePath), `trace file missing: ${tracePath}`);
+            assertTrue(
+                fs.existsSync(tracePath),
+                `trace file missing: ${tracePath}`,
+            );
             const trace = fs.readFileSync(tracePath, "utf-8");
             assertTrue(trace.length > 0, "trace file should not be empty");
         } finally {
@@ -306,7 +413,10 @@ export function runBackendIntegrationTests() {
             "--backend-bin",
             "ignored",
         ]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
         assertTrue(
             result.stderr.includes("unknown option for run: --backend-bin"),
@@ -320,10 +430,15 @@ export function runBackendIntegrationTests() {
             "examples/01_empty_main.rs",
             "--no-build-backend",
         ]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
         assertTrue(
-            result.stderr.includes("unknown option for run: --no-build-backend"),
+            result.stderr.includes(
+                "unknown option for run: --no-build-backend",
+            ),
             `unexpected stderr: ${result.stderr}`,
         );
     });
@@ -334,7 +449,10 @@ export function runBackendIntegrationTests() {
             "examples/01_empty_main.rs",
             "--keep-bin",
         ]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
         assertTrue(
             result.stderr.includes("unknown option for run: --keep-bin"),
@@ -347,7 +465,10 @@ export function runBackendIntegrationTests() {
             "test",
             "tests/fixtures/test_cli/expect_output_match.rs",
         ]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         assertTrue(
             result.stdout.includes("test test_print_match ... ok"),
@@ -360,7 +481,10 @@ export function runBackendIntegrationTests() {
             "test",
             "tests/fixtures/test_cli/expect_output_mismatch.rs",
         ]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertTrue((result.status ?? 0) !== 0, "expected non-zero status");
         assertTrue(
             result.stdout.includes("stdout mismatch at line"),
@@ -377,7 +501,10 @@ export function runBackendIntegrationTests() {
             "test",
             "tests/fixtures/test_cli/no_expect_output.rs",
         ]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         assertTrue(
             result.stdout.includes("test test_legacy_behavior ... ok"),
@@ -387,7 +514,10 @@ export function runBackendIntegrationTests() {
 
     test("Backend integration: test command runs closure tests", () => {
         const result = runMain(["test", "examples/25_closures.rs"]);
-        assertTrue(!result.error, `spawn failed: ${result.error?.message || ""}`);
+        assertTrue(
+            !result.error,
+            `spawn failed: ${result.error?.message || ""}`,
+        );
         assertEqual(result.status, 0, `stderr: ${result.stderr}`);
         assertTrue(
             result.stdout.includes("test test_closure_as_parameter ... ok"),

@@ -1266,13 +1266,13 @@ function substituteLoweringGenericType(typeCtx, type, genericNames, bindings) {
         }
         const substitutedArgs = resolved.args
             ? resolved.args.map((/** @type {Type} */ t) =>
-                substituteLoweringGenericType(
-                    typeCtx,
-                    t,
-                    genericNames,
-                    bindings,
-                ),
-            )
+                  substituteLoweringGenericType(
+                      typeCtx,
+                      t,
+                      genericNames,
+                      bindings,
+                  ),
+              )
             : null;
         const item = typeCtx.lookupItem(resolved.name);
         if (item && item.kind === "enum") {
@@ -2337,7 +2337,7 @@ function lowerField(ctx, field, typeCtx) {
 
     if (baseType && baseType.kind === TypeKind.Struct) {
         index = ctx.getFieldIndex(
-            /** @type {any} */(baseType).name,
+            /** @type {any} */ (baseType).name,
             fieldName,
         );
         const fieldDef = /** @type {any} */ (baseType).fields?.find(
@@ -2346,7 +2346,7 @@ function lowerField(ctx, field, typeCtx) {
         if (fieldDef) {
             ty = fieldDef.type;
         } else {
-            const item = typeCtx.lookupItem(/** @type {any} */(baseType).name);
+            const item = typeCtx.lookupItem(/** @type {any} */ (baseType).name);
             if (item && item.kind === "struct") {
                 const structField = item.node.fields?.find(
                     (/** @type {any} */ f) => f.name === fieldName,
@@ -2589,12 +2589,12 @@ function lowerClosure(ctx, closure, typeCtx) {
         closure.inferredType && closure.inferredType.kind === TypeKind.Fn
             ? closure.inferredType
             : makeFnType(
-                [],
-                makeUnitType(closure.span),
-                false,
-                false,
-                closure.span,
-            );
+                  [],
+                  makeUnitType(closure.span),
+                  false,
+                  false,
+                  closure.span,
+              );
     const captures = closure.captureInfos || [];
     const helperName = `${ctx.currentFn || "closure"}::__closure_${ctx.nextClosureSymbolId()}`;
 
@@ -2638,10 +2638,10 @@ function lowerClosure(ctx, closure, typeCtx) {
         closure.body?.kind === NodeKind.BlockExpr
             ? closure.body
             : makeBlockExpr(
-                closure.body?.span || closure.span,
-                [],
-                closure.body || null,
-            );
+                  closure.body?.span || closure.span,
+                  [],
+                  closure.body || null,
+              );
 
     const syntheticFn = {
         kind: NodeKind.FnItem,
@@ -2781,9 +2781,9 @@ function lowerMatch(ctx, matchExpr, typeCtx) {
             arm.body.kind === NodeKind.BlockExpr
                 ? lowerBlock(ctx, arm.body, typeCtx)
                 : (() => {
-                    const expr = lowerExpr(ctx, arm.body, typeCtx);
-                    return makeHBlock(arm.body.span, [], expr, expr.ty);
-                })();
+                      const expr = lowerExpr(ctx, arm.body, typeCtx);
+                      return makeHBlock(arm.body.span, [], expr, expr.ty);
+                  })();
 
         ctx.popScope();
 
@@ -2932,7 +2932,7 @@ function lowerPath(ctx, pathExpr, typeCtx) {
     if (pathExpr.resolvedItemName) {
         return lowerIdentifier(
             ctx,
-            /** @type {any} */({
+            /** @type {any} */ ({
                 name: pathExpr.segments[pathExpr.segments.length - 1] || "",
                 resolvedItemName: pathExpr.resolvedItemName,
                 span: pathExpr.span,
@@ -2945,7 +2945,7 @@ function lowerPath(ctx, pathExpr, typeCtx) {
     if (pathExpr.segments.length === 1) {
         return lowerIdentifier(
             ctx,
-            /** @type {any} */({
+            /** @type {any} */ ({
                 name: pathExpr.segments[0],
                 resolvedItemName: pathExpr.resolvedItemName || null,
                 span: pathExpr.span,
@@ -3154,8 +3154,8 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
     const enumNode = enumItem?.kind === "enum" ? enumItem.node : null;
     const enumVariant = enumNode
         ? (enumNode.variants || []).find(
-            (/** @type {any} */ variant) => variant.name === enumVariantName,
-        )
+              (/** @type {any} */ variant) => variant.name === enumVariantName,
+          )
         : null;
     const enumGenericParams = (enumNode?.generics || [])
         .map((/** @type {string} */ name) => name || "")
@@ -3178,12 +3178,12 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
     }
     const expectedEnumVariant =
         enumName &&
-            expectedType?.kind === TypeKind.Enum &&
-            expectedType.name === enumName
+        expectedType?.kind === TypeKind.Enum &&
+        expectedType.name === enumName
             ? (expectedType.variants || []).find(
-                (/** @type {any} */ variant) =>
-                    variant.name === enumVariantName,
-            )
+                  (/** @type {any} */ variant) =>
+                      variant.name === enumVariantName,
+              )
             : null;
 
     // Lower field patterns
@@ -3368,7 +3368,7 @@ function extractPlace(ctx, expr, typeCtx) {
                 /** @type {any} */ (baseType).kind === TypeKind.Struct
             ) {
                 index = ctx.getFieldIndex(
-                    /** @type {any} */(baseType).name,
+                    /** @type {any} */ (baseType).name,
                     fieldName,
                 );
                 const fieldDef = /** @type {any} */ (baseType).fields?.find(

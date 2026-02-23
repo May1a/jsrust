@@ -124,13 +124,13 @@ All required:
 ## Risk Register
 
 - IR semantic mismatch vs JS pipeline
-  - mitigation: fixture-based parity checks and expected-result manifest
+    - mitigation: fixture-based parity checks and expected-result manifest
 - runtime memory model bugs
-  - mitigation: focused memory/global tests and invariant checks
+    - mitigation: focused memory/global tests and invariant checks
 - schema drift risk
-  - mitigation: strict version checks + CI fixture updates only via review
+    - mitigation: strict version checks + CI fixture updates only via review
 - bootstrap library quality risk (`libc.h`)
-  - mitigation: dedicated cleanup milestone before broad usage
+    - mitigation: dedicated cleanup milestone before broad usage
 
 ## Reporting Cadence
 

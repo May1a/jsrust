@@ -127,7 +127,9 @@ function canBuildBackend() {
  * @returns {{ ok: true } | { ok: false, reason: string }}
  */
 function canCompileBackendWasm() {
-    const probe = spawnSync("clang", ["--print-targets"], { encoding: "utf-8" });
+    const probe = spawnSync("clang", ["--print-targets"], {
+        encoding: "utf-8",
+    });
     if (probe.error) {
         return {
             ok: false,
@@ -575,7 +577,11 @@ function runGeneratedWasmBytes(generatedWasmBytes) {
             /** @param {bigint | number} value */
             jsrust_write_char(value) {
                 const codePoint = Number(toBigInt(value));
-                if (!Number.isInteger(codePoint) || codePoint < 0 || codePoint > 0x10ffff) {
+                if (
+                    !Number.isInteger(codePoint) ||
+                    codePoint < 0 ||
+                    codePoint > 0x10ffff
+                ) {
                     return 0;
                 }
                 if (codePoint >= 0xd800 && codePoint <= 0xdfff) {
@@ -625,9 +631,7 @@ function runGeneratedWasmBytes(generatedWasmBytes) {
     }
 
     const hasExitValue = exitValueRaw !== undefined;
-    const exitValue = hasExitValue
-        ? Number(exitValueRaw)
-        : 0;
+    const exitValue = hasExitValue ? Number(exitValueRaw) : 0;
     return {
         ok: true,
         stdoutBytes: Uint8Array.from(stdout),
@@ -793,15 +797,14 @@ function runBackendWasm(moduleBytes, options = {}) {
     const stdoutBytes = readWasmBytes(memory, stdoutPtr, stdoutLen);
     const traceBytes = readWasmBytes(memory, tracePtr, traceLen);
 
-    const message = messageBytes.length > 0
-        ? textDecoder.decode(messageBytes)
-        : label;
-    const stdout = stdoutBytes.length > 0
-        ? textDecoder.decode(stdoutBytes)
-        : "";
+    const message =
+        messageBytes.length > 0 ? textDecoder.decode(messageBytes) : label;
+    const stdout =
+        stdoutBytes.length > 0 ? textDecoder.decode(stdoutBytes) : "";
 
     if (backendCode === 0) {
-        const hasExitValue = Number(wasmExports.jsrust_wasm_result_has_exit_value()) !== 0;
+        const hasExitValue =
+            Number(wasmExports.jsrust_wasm_result_has_exit_value()) !== 0;
         const exitValue = Number(wasmExports.jsrust_wasm_result_exit_value());
         return {
             ok: true,
@@ -976,9 +979,11 @@ function runBackendCodegenWasm(moduleBytes, options = {}) {
     const wasmCodegen = wasmExports.jsrust_wasm_codegen;
     const wasmCodegenWasmPtr = wasmExports.jsrust_wasm_codegen_wasm_ptr;
     const wasmCodegenWasmLen = wasmExports.jsrust_wasm_codegen_wasm_len;
-    if (typeof wasmCodegen !== "function"
-        || typeof wasmCodegenWasmPtr !== "function"
-        || typeof wasmCodegenWasmLen !== "function") {
+    if (
+        typeof wasmCodegen !== "function" ||
+        typeof wasmCodegenWasmPtr !== "function" ||
+        typeof wasmCodegenWasmLen !== "function"
+    ) {
         return {
             ok: false,
             code: "backend_wasm_load_failed",
@@ -1025,7 +1030,8 @@ function runBackendCodegenWasm(moduleBytes, options = {}) {
     const messagePtr = Number(wasmExports.jsrust_wasm_result_message_ptr());
     const messageLen = Number(wasmExports.jsrust_wasm_result_message_len());
     const messageBytes = readWasmBytes(memory, messagePtr, messageLen);
-    const message = messageBytes.length > 0 ? textDecoder.decode(messageBytes) : label;
+    const message =
+        messageBytes.length > 0 ? textDecoder.decode(messageBytes) : label;
 
     if (backendCode !== 0) {
         return {
@@ -1046,7 +1052,11 @@ function runBackendCodegenWasm(moduleBytes, options = {}) {
 
     const generatedWasmPtr = Number(wasmCodegenWasmPtr());
     const generatedWasmLen = Number(wasmCodegenWasmLen());
-    const generatedWasmBytes = readWasmBytes(memory, generatedWasmPtr, generatedWasmLen);
+    const generatedWasmBytes = readWasmBytes(
+        memory,
+        generatedWasmPtr,
+        generatedWasmLen,
+    );
     if (generatedWasmBytes.length === 0) {
         return {
             ok: false,
@@ -1083,7 +1093,8 @@ function runBackendCodegenWasm(moduleBytes, options = {}) {
     }
 
     const stdoutBytes = generatedRun.stdoutBytes;
-    const stdout = stdoutBytes.length > 0 ? textDecoder.decode(stdoutBytes) : "";
+    const stdout =
+        stdoutBytes.length > 0 ? textDecoder.decode(stdoutBytes) : "";
     return {
         ok: true,
         code: "ok",

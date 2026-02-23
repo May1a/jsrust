@@ -35,19 +35,19 @@ Establish a deterministic, dependency-free C backend scaffold for IR execution.
 ### Task 2.2 - CLI Skeleton
 
 - initial command contract:
-  - `jsrust-backend-c run --input <module.jsrbin> [--entry <fn>] [--trace]`
+    - `jsrust-backend-c run --input <module.jsrbin> [--entry <fn>] [--trace]`
 - strict argument validation and clear usage output
 - deterministic default entry policy (`main`)
 
 ### Task 2.3 - Error Taxonomy
 
 - define stable numeric error classes:
-  - invalid args
-  - io/read failure
-  - deserialize/schema failure
-  - validate failure
-  - execute/runtime trap
-  - internal failure
+    - invalid args
+    - io/read failure
+    - deserialize/schema failure
+    - validate failure
+    - execute/runtime trap
+    - internal failure
 - central mapping function from internal errors to process exit codes
 
 ### Task 2.4 - IO Primitives

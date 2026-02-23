@@ -297,34 +297,57 @@ function irTypeEquals(a, b) {
             return true;
         case IRTypeKind.Struct: {
             if (a.name !== b.name) return false;
-            if ((a.fields?.length ?? 0) !== (b.fields?.length ?? 0)) return false;
+            if ((a.fields?.length ?? 0) !== (b.fields?.length ?? 0))
+                return false;
             for (let i = 0; i < (a.fields?.length ?? 0); i++) {
-                if (!irTypeEquals(/** @type {IRType} */(a.fields?.[i]), /** @type {IRType} */(b.fields?.[i]))) return false;
+                if (
+                    !irTypeEquals(
+                        /** @type {IRType} */ (a.fields?.[i]),
+                        /** @type {IRType} */ (b.fields?.[i]),
+                    )
+                )
+                    return false;
             }
             return true;
         }
         case IRTypeKind.Enum: {
             if (a.name !== b.name) return false;
-            if ((a.variants?.length ?? 0) !== (b.variants?.length ?? 0)) return false;
+            if ((a.variants?.length ?? 0) !== (b.variants?.length ?? 0))
+                return false;
             for (let i = 0; i < (a.variants?.length ?? 0); i++) {
                 const av = /** @type {IRType[]} */ (a.variants?.[i] ?? []);
                 const bv = /** @type {IRType[]} */ (b.variants?.[i] ?? []);
                 if (av.length !== bv.length) return false;
                 for (let j = 0; j < av.length; j++) {
-                    if (!irTypeEquals(av[j], bv[j]))
-                        return false;
+                    if (!irTypeEquals(av[j], bv[j])) return false;
                 }
             }
             return true;
         }
         case IRTypeKind.Array:
-            return a.length === b.length && irTypeEquals(/** @type {IRType} */(a.element), /** @type {IRType} */(b.element));
+            return (
+                a.length === b.length &&
+                irTypeEquals(
+                    /** @type {IRType} */ (a.element),
+                    /** @type {IRType} */ (b.element),
+                )
+            );
         case IRTypeKind.Fn: {
-            if ((a.params?.length ?? 0) !== (b.params?.length ?? 0)) return false;
+            if ((a.params?.length ?? 0) !== (b.params?.length ?? 0))
+                return false;
             for (let i = 0; i < (a.params?.length ?? 0); i++) {
-                if (!irTypeEquals(/** @type {IRType} */(a.params?.[i]), /** @type {IRType} */(b.params?.[i]))) return false;
+                if (
+                    !irTypeEquals(
+                        /** @type {IRType} */ (a.params?.[i]),
+                        /** @type {IRType} */ (b.params?.[i]),
+                    )
+                )
+                    return false;
             }
-            return irTypeEquals(/** @type {IRType} */(a.returnType), /** @type {IRType} */(b.returnType));
+            return irTypeEquals(
+                /** @type {IRType} */ (a.returnType),
+                /** @type {IRType} */ (b.returnType),
+            );
         }
         default:
             return false;
@@ -338,9 +361,11 @@ function irTypeEquals(a, b) {
 function irTypeToString(type) {
     switch (type.kind) {
         case IRTypeKind.Int:
-            return intWidthToString(/** @type {IntWidthValue} */(type.width));
+            return intWidthToString(/** @type {IntWidthValue} */ (type.width));
         case IRTypeKind.Float:
-            return floatWidthToString(/** @type {FloatWidthValue} */(type.width));
+            return floatWidthToString(
+                /** @type {FloatWidthValue} */ (type.width),
+            );
         case IRTypeKind.Bool:
             return "bool";
         case IRTypeKind.Ptr:
@@ -352,10 +377,10 @@ function irTypeToString(type) {
         case IRTypeKind.Enum:
             return type.name ?? "<enum>";
         case IRTypeKind.Array:
-            return `[${irTypeToString(/** @type {IRType} */(type.element))}; ${type.length}]`;
+            return `[${irTypeToString(/** @type {IRType} */ (type.element))}; ${type.length}]`;
         case IRTypeKind.Fn: {
             const params = (type.params ?? []).map(irTypeToString).join(", ");
-            return `fn(${params}) -> ${irTypeToString(/** @type {IRType} */(type.returnType))}`;
+            return `fn(${params}) -> ${irTypeToString(/** @type {IRType} */ (type.returnType))}`;
         }
         default:
             return "<unknown>";

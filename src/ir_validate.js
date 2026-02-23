@@ -275,7 +275,12 @@ function validateFunction(fn, ctx = makeValidationCtx()) {
 
     // Register function parameters
     for (const param of fn.params) {
-        defineValue(ctx, param.id, param.ty, /** @type {import('./ir').IRBlock} */(fn.entry).id);
+        defineValue(
+            ctx,
+            param.id,
+            param.ty,
+            /** @type {import('./ir').IRBlock} */ (fn.entry).id,
+        );
     }
 
     // Validate all blocks
@@ -812,7 +817,11 @@ function validateSwitch(term, blockId, ctx) {
         if (!isIntLiteral) {
             addError(
                 ctx,
-                errTypeMismatch("integer literal", typeof c.value, "switch case value"),
+                errTypeMismatch(
+                    "integer literal",
+                    typeof c.value,
+                    "switch case value",
+                ),
             );
         }
 
@@ -1152,7 +1161,7 @@ function validateReachability(entry, ctx) {
         if (visited.has(blockId)) continue;
         visited.add(blockId);
 
-        const block = getBlock(ctx, /** @type {BlockId} */(blockId));
+        const block = getBlock(ctx, /** @type {BlockId} */ (blockId));
         if (!block || !block.terminator) continue;
 
         // Add successors to worklist

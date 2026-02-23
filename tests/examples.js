@@ -40,7 +40,10 @@ function loadExpectedIrMap(examplesDir, rsFiles, updateExamples) {
     for (const irFile of expectedFiles) {
         const rsFile = irFile.replace(/\.ir$/, ".rs");
         const expectedPath = path.join(expectedDir, irFile);
-        expectedMap.set(rsFile, normalizeNewlines(fs.readFileSync(expectedPath, "utf-8")));
+        expectedMap.set(
+            rsFile,
+            normalizeNewlines(fs.readFileSync(expectedPath, "utf-8")),
+        );
     }
 
     if (!updateExamples) {
@@ -55,7 +58,9 @@ function loadExpectedIrMap(examplesDir, rsFiles, updateExamples) {
 
         test("Examples: no orphan expected .ir files", () => {
             const rsSet = new Set(rsFiles);
-            const orphans = [...expectedMap.keys()].filter((file) => !rsSet.has(file));
+            const orphans = [...expectedMap.keys()].filter(
+                (file) => !rsSet.has(file),
+            );
             assertEqual(
                 orphans.length,
                 0,
@@ -115,10 +120,9 @@ export function runExamplesTests(options = {}) {
                     expectedDir,
                     file.replace(/\.rs$/, ".ir"),
                 );
-                const previous =
-                    fs.existsSync(expectedPath)
-                        ? normalizeNewlines(fs.readFileSync(expectedPath, "utf-8"))
-                        : null;
+                const previous = fs.existsSync(expectedPath)
+                    ? normalizeNewlines(fs.readFileSync(expectedPath, "utf-8"))
+                    : null;
                 if (previous !== actual) {
                     fs.writeFileSync(expectedPath, actual);
                     expectedMap.set(file, actual);
@@ -128,12 +132,16 @@ export function runExamplesTests(options = {}) {
             }
 
             const expected = expectedMap.get(file);
-            assertTrue(expected !== undefined, `Missing expected IR for ${file}`);
+            assertTrue(
+                expected !== undefined,
+                `Missing expected IR for ${file}`,
+            );
             if (actual !== expected) {
                 const line = firstDiffLine(actual, expected);
                 const actualLines = actual.split("\n");
                 const expectedLines = expected.split("\n");
-                const actualLine = line > 0 ? (actualLines[line - 1] ?? "") : "";
+                const actualLine =
+                    line > 0 ? (actualLines[line - 1] ?? "") : "";
                 const expectedLine =
                     line > 0 ? (expectedLines[line - 1] ?? "") : "";
                 assertEqual(

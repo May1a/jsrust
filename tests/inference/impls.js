@@ -12,11 +12,19 @@ function inferSource(source) {
     }
     const resolveResult = resolveModuleTree(parseResult.value);
     if (!resolveResult.ok || !resolveResult.module) {
-        return { ok: false, stage: "resolve", errors: resolveResult.errors || [] };
+        return {
+            ok: false,
+            stage: "resolve",
+            errors: resolveResult.errors || [],
+        };
     }
     const deriveResult = expandDerives(resolveResult.module);
     if (!deriveResult.ok || !deriveResult.module) {
-        return { ok: false, stage: "derive", errors: deriveResult.errors || [] };
+        return {
+            ok: false,
+            stage: "derive",
+            errors: deriveResult.errors || [],
+        };
     }
     const ctx = new TypeContext();
     const inferResult = inferModule(ctx, deriveResult.module);

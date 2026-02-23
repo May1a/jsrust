@@ -86,7 +86,11 @@ class IRDeserializer {
      * @param {number} [byteOffset]
      * @param {number} [byteLength]
      */
-    constructor(buffer, byteOffset = 0, byteLength = buffer.byteLength - byteOffset) {
+    constructor(
+        buffer,
+        byteOffset = 0,
+        byteLength = buffer.byteLength - byteOffset,
+    ) {
         /** @type {DataView} */
         this.view = new DataView(buffer, byteOffset, byteLength);
         /** @type {number} */
@@ -998,7 +1002,7 @@ class IRDeserializer {
  */
 function deserializeModule(data) {
     const deserializer = new IRDeserializer(
-        /** @type {ArrayBuffer} */(data.buffer),
+        /** @type {ArrayBuffer} */ (data.buffer),
         data.byteOffset,
         data.byteLength,
     );

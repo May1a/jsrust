@@ -323,7 +323,10 @@ export function testLowerWhileMutableCarriesThroughBackedge() {
     }
 
     assertTrue(hasAlloca, "Mutable loop var should get a stable alloca");
-    assertTrue(hasLoad, "Mutable loop var should be loaded in loop condition/body");
+    assertTrue(
+        hasLoad,
+        "Mutable loop var should be loaded in loop condition/body",
+    );
     assertTrue(hasStore, "Mutable loop var assignment should lower to store");
 }
 
@@ -421,7 +424,10 @@ export function testLowerDynamicCallThroughParam() {
     const hasCallDyn = irFn.blocks.some((block) =>
         block.instructions.some((inst) => inst.kind === IRInstKind.CallDyn),
     );
-    assertTrue(hasCallDyn, "Callable parameter invocation should lower to call_dyn");
+    assertTrue(
+        hasCallDyn,
+        "Callable parameter invocation should lower to call_dyn",
+    );
 }
 
 export function testLowerStruct() {
@@ -714,7 +720,10 @@ export function runTests() {
         ["Lower if", testLowerIf],
         ["Lower if without else", testLowerIfWithoutElse],
         ["Lower while", testLowerWhile],
-        ["Lower while mutable backedge", testLowerWhileMutableCarriesThroughBackedge],
+        [
+            "Lower while mutable backedge",
+            testLowerWhileMutableCarriesThroughBackedge,
+        ],
         ["Lower loop", testLowerLoop],
         ["Lower call", testLowerCall],
         ["Lower call with args", testLowerCallWithArgs],

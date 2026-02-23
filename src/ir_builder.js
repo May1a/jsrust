@@ -298,7 +298,10 @@ export class IRBuilder {
      */
     iconst(value, width) {
         const inst = makeIconst(value, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -309,7 +312,10 @@ export class IRBuilder {
      */
     fconst(value, width) {
         const inst = makeFconst(value, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -319,7 +325,10 @@ export class IRBuilder {
      */
     bconst(value) {
         const inst = makeBconst(value);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -329,7 +338,10 @@ export class IRBuilder {
      */
     null(ty) {
         const inst = makeNull(ty);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -345,7 +357,10 @@ export class IRBuilder {
      */
     iadd(a, b, width) {
         const inst = makeIadd(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -357,7 +372,10 @@ export class IRBuilder {
      */
     isub(a, b, width) {
         const inst = makeIsub(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -369,7 +387,10 @@ export class IRBuilder {
      */
     imul(a, b, width) {
         const inst = makeImul(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -381,7 +402,10 @@ export class IRBuilder {
      */
     idiv(a, b, width) {
         const inst = makeIdiv(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -393,7 +417,10 @@ export class IRBuilder {
      */
     imod(a, b, width) {
         const inst = makeImod(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -405,7 +432,10 @@ export class IRBuilder {
      */
     fadd(a, b, width) {
         const inst = makeFadd(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -417,7 +447,10 @@ export class IRBuilder {
      */
     fsub(a, b, width) {
         const inst = makeFsub(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -429,7 +462,10 @@ export class IRBuilder {
      */
     fmul(a, b, width) {
         const inst = makeFmul(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -441,7 +477,10 @@ export class IRBuilder {
      */
     fdiv(a, b, width) {
         const inst = makeFdiv(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -452,7 +491,10 @@ export class IRBuilder {
      */
     ineg(a, width) {
         const inst = makeIneg(a, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -463,7 +505,10 @@ export class IRBuilder {
      */
     fneg(a, width) {
         const inst = makeFneg(a, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -479,7 +524,10 @@ export class IRBuilder {
      */
     iand(a, b, width) {
         const inst = makeIand(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -491,7 +539,10 @@ export class IRBuilder {
      */
     ior(a, b, width) {
         const inst = makeIor(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -503,7 +554,10 @@ export class IRBuilder {
      */
     ixor(a, b, width) {
         const inst = makeIxor(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -515,7 +569,10 @@ export class IRBuilder {
      */
     ishl(a, b, width) {
         const inst = makeIshl(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -527,7 +584,10 @@ export class IRBuilder {
      */
     ishr(a, b, width) {
         const inst = makeIshr(a, b, width);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -543,7 +603,10 @@ export class IRBuilder {
      */
     icmp(op, a, b) {
         const inst = makeIcmp(op, a, b);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -555,7 +618,10 @@ export class IRBuilder {
      */
     fcmp(op, a, b) {
         const inst = makeFcmp(op, a, b);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -570,7 +636,10 @@ export class IRBuilder {
      */
     alloca(ty, localId = null) {
         const inst = makeAlloca(ty, localId);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -581,7 +650,10 @@ export class IRBuilder {
      */
     load(ptr, ty) {
         const inst = makeLoad(ptr, ty);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -593,7 +665,10 @@ export class IRBuilder {
      */
     store(ptr, value, ty) {
         const inst = makeStore(ptr, value, ty);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -605,7 +680,10 @@ export class IRBuilder {
      */
     memcpy(dest, src, size) {
         const inst = makeMemcpy(dest, src, size);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -621,7 +699,10 @@ export class IRBuilder {
      */
     gep(ptr, indices, resultTy) {
         const inst = makeGep(ptr, indices, resultTy);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -632,7 +713,10 @@ export class IRBuilder {
      */
     ptradd(ptr, offset) {
         const inst = makePtradd(ptr, offset);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -648,7 +732,10 @@ export class IRBuilder {
      */
     trunc(val, fromType, toType) {
         const inst = makeTrunc(val, fromType, toType);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -660,7 +747,10 @@ export class IRBuilder {
      */
     sext(val, fromType, toType) {
         const inst = makeSext(val, fromType, toType);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -672,7 +762,10 @@ export class IRBuilder {
      */
     zext(val, fromType, toType) {
         const inst = makeZext(val, fromType, toType);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -683,7 +776,10 @@ export class IRBuilder {
      */
     fptoui(val, toType) {
         const inst = makeFptoui(val, toType);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -694,7 +790,10 @@ export class IRBuilder {
      */
     fptosi(val, toType) {
         const inst = makeFptosi(val, toType);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -705,7 +804,10 @@ export class IRBuilder {
      */
     uitofp(val, toType) {
         const inst = makeUitofp(val, toType);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -716,7 +818,10 @@ export class IRBuilder {
      */
     sitofp(val, toType) {
         const inst = makeSitofp(val, toType);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -727,7 +832,10 @@ export class IRBuilder {
      */
     bitcast(val, toType) {
         const inst = makeBitcast(val, toType);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -743,7 +851,10 @@ export class IRBuilder {
      */
     call(fn, args, returnType = null) {
         const inst = makeCall(fn, args, returnType);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -755,7 +866,10 @@ export class IRBuilder {
      */
     callDyn(fn, args, returnType = null) {
         const inst = makeCallDyn(fn, args, returnType);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -770,7 +884,10 @@ export class IRBuilder {
      */
     structCreate(fields, ty) {
         const inst = makeStructCreate(fields, ty);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -782,7 +899,10 @@ export class IRBuilder {
      */
     structGet(struct, fieldIndex, fieldTy) {
         const inst = makeStructGet(struct, fieldIndex, fieldTy);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -794,7 +914,10 @@ export class IRBuilder {
      */
     enumCreate(variant, data, ty) {
         const inst = makeEnumCreate(variant, data, ty);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -804,7 +927,10 @@ export class IRBuilder {
      */
     enumGetTag(enum_) {
         const inst = makeEnumGetTag(enum_);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -817,7 +943,10 @@ export class IRBuilder {
      */
     enumGetData(enum_, variant, index, dataTy) {
         const inst = makeEnumGetData(enum_, variant, index, dataTy);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -827,7 +956,10 @@ export class IRBuilder {
      */
     sconst(literalId) {
         const inst = makeSconst(literalId);
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst;
     }
 
@@ -840,7 +972,10 @@ export class IRBuilder {
      */
     ret(value = null) {
         const term = makeRet(value ?? null);
-        setIRTerminator(/** @type {import('./ir').IRBlock} */(this.currentBlock), term);
+        setIRTerminator(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            term,
+        );
     }
 
     /**
@@ -849,8 +984,14 @@ export class IRBuilder {
      */
     br(target, args = []) {
         const term = makeBr(target, args);
-        setIRTerminator(/** @type {import('./ir').IRBlock} */(this.currentBlock), term);
-        addSuccessor(/** @type {import('./ir').IRBlock} */(this.currentBlock), target);
+        setIRTerminator(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            term,
+        );
+        addSuccessor(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            target,
+        );
     }
 
     /**
@@ -862,9 +1003,18 @@ export class IRBuilder {
      */
     brIf(cond, thenBlock, thenArgs, elseBlock, elseArgs = []) {
         const term = makeBrIf(cond, thenBlock, thenArgs, elseBlock, elseArgs);
-        setIRTerminator(/** @type {import('./ir').IRBlock} */(this.currentBlock), term);
-        addSuccessor(/** @type {import('./ir').IRBlock} */(this.currentBlock), thenBlock);
-        addSuccessor(/** @type {import('./ir').IRBlock} */(this.currentBlock), elseBlock);
+        setIRTerminator(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            term,
+        );
+        addSuccessor(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            thenBlock,
+        );
+        addSuccessor(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            elseBlock,
+        );
     }
 
     /**
@@ -875,16 +1025,28 @@ export class IRBuilder {
      */
     switch(value, cases, defaultBlock, defaultArgs = []) {
         const term = makeSwitch(value, cases, defaultBlock, defaultArgs);
-        setIRTerminator(/** @type {import('./ir').IRBlock} */(this.currentBlock), term);
+        setIRTerminator(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            term,
+        );
         for (const c of cases) {
-            addSuccessor(/** @type {import('./ir').IRBlock} */(this.currentBlock), c.target);
+            addSuccessor(
+                /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+                c.target,
+            );
         }
-        addSuccessor(/** @type {import('./ir').IRBlock} */(this.currentBlock), defaultBlock);
+        addSuccessor(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            defaultBlock,
+        );
     }
 
     unreachable() {
         const term = makeUnreachable();
-        setIRTerminator(/** @type {import('./ir').IRBlock} */(this.currentBlock), term);
+        setIRTerminator(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            term,
+        );
     }
 
     // ============================================================================
@@ -896,7 +1058,10 @@ export class IRBuilder {
      * @returns {import('./ir').ValueId | null}
      */
     add(inst) {
-        addIRInstruction(/** @type {import('./ir').IRBlock} */(this.currentBlock), inst);
+        addIRInstruction(
+            /** @type {import('./ir').IRBlock} */ (this.currentBlock),
+            inst,
+        );
         return inst.id;
     }
 

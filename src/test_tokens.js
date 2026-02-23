@@ -1,15 +1,16 @@
-import { tokenize, TokenType } from './tokenizer';
+import { tokenize, TokenType } from "./tokenizer";
 
-const source = 'match c { Color::Red => 1, Color::Green => 2, Color::Blue => 3 }';
+const source =
+    "match c { Color::Red => 1, Color::Green => 2, Color::Blue => 3 }";
 const tokens = tokenize(source);
 
 // Print token names
 /** @type {Record<number, string>} */
 const tokenNames = {};
 for (const [name, value] of Object.entries(TokenType)) {
-  tokenNames[/** @type {number} */ (/** @type {any} */ (value))] = name;
+    tokenNames[/** @type {number} */ (/** @type {any} */ (value))] = name;
 }
 
 for (const t of tokens) {
-  console.log(`${tokenNames[t.type]}: '${t.value}'`);
+    console.log(`${tokenNames[t.type]}: '${t.value}'`);
 }

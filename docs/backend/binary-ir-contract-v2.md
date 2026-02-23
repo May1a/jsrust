@@ -50,8 +50,8 @@ The following invariants are required by v2 and relied upon by backend integrati
 - Block records contain block params, instruction stream, and exactly one terminator encoding.
 - Missing return value is encoded explicitly by presence byte (`0`) for `ret`.
 - Numeric constants use fixed widths:
-  - integer constants: signed `i64`
-  - float constants: `f64`
+    - integer constants: signed `i64`
+    - float constants: `f64`
 - Terminator and instruction tags are numeric enums and must be known by deserializers.
 
 ## Failure Semantics

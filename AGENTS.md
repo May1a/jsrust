@@ -8,25 +8,25 @@ Uses a custom C backend with a clang-built wasm run-path for frontend execution.
 See `plans/README.md` for the current planning structure.
 
 - Current active/future planning tracks:
-  - `plans/active/01-compiler-progress.md`
-  - `plans/active/02-new-backend.md`
-  - `plans/active/03-relaxed-borrow-model.md`
-  - `plans/future/01-node-addon-availability.md`
-  - `plans/future/02-untrusted-compatibility.md`
+    - `plans/active/01-compiler-progress.md`
+    - `plans/active/02-new-backend.md`
+    - `plans/active/03-relaxed-borrow-model.md`
+    - `plans/future/01-node-addon-availability.md`
+    - `plans/future/02-untrusted-compatibility.md`
 - Historical plans are archived in `plans/old/`.
 - Backend workspace plans (submodule-prep):
-  - `backend/plans/README.md`
-  - `backend/plans/00-master-implementation-plan.md`
-  - `backend/plans/02-backend-scaffold-and-build.md`
-  - `backend/plans/03-binary-ir-reader.md`
-  - `backend/plans/04-ir-interpreter-core.md`
-  - `backend/plans/05-ir-interpreter-runtime-model.md`
-  - `backend/plans/06-driver-cli-artifacts.md`
-  - `backend/plans/07-testing-conformance-ci.md`
-  - `backend/plans/08-libc-overhaul-plan.md`
-  - `backend/plans/future/01-wasm-codegen-core.md`
-  - `backend/plans/future/02-wasm-data-memory-abi.md`
-  - `backend/plans/STATUS.md`
+    - `backend/plans/README.md`
+    - `backend/plans/00-master-implementation-plan.md`
+    - `backend/plans/02-backend-scaffold-and-build.md`
+    - `backend/plans/03-binary-ir-reader.md`
+    - `backend/plans/04-ir-interpreter-core.md`
+    - `backend/plans/05-ir-interpreter-runtime-model.md`
+    - `backend/plans/06-driver-cli-artifacts.md`
+    - `backend/plans/07-testing-conformance-ci.md`
+    - `backend/plans/08-libc-overhaul-plan.md`
+    - `backend/plans/future/01-wasm-codegen-core.md`
+    - `backend/plans/future/02-wasm-data-memory-abi.md`
+    - `backend/plans/STATUS.md`
 
 ## Plan Status
 
@@ -60,36 +60,14 @@ Please keep this `AGENTS.md` up to date with the latest plans.
 - Minimal runtime requirements
 - Errors-as-values error Handling (no exceptions)
 
-## Backend C Coding Policy (Mandatory)
 
-The backend workspace in `/Users/may/jsrust/backend` must follow these rules:
-
-- Use WebKit-style C formatting.
-- Function names must use `TypeName_action` form (example: `Arena_alloc`).
-- Do not use identifiers containing `$`.
-- Internal strings must be length-prefixed byte spans (`ptr + len`), not NUL-terminated strings.
-- NUL-terminated strings are allowed only in short-lived host boundary adapters (CLI argv and filesystem calls).
-- Reimplement required string/byte helpers locally for backend core code paths.
-- Minimize allocations: use arena-first allocation with a single top-level backend context allocation and bounded arena growth.
-- Use arena-backed dynamic arrays for variable-length data instead of per-object heap allocations.
-
-Progress and status discipline:
-
-- Update backend milestone state in `backend/plans/STATUS.md` at each milestone boundary.
-- Keep this file updated when backend coding policy or plan status changes.
 
 ## Running
 
 ```bash
-npm run compile <file>
-```
-
-```bash
 node main.js run <file.rs>
 ```
-
 Optional run flags:
-
 - `--entry <fn>`
 - `--trace --trace-out <path>`
 - `--out-bin <path>`
@@ -114,33 +92,6 @@ npm run test:update-examples
 - The test suite compiles every `examples/*.rs` file via `tests/examples.js`
 
 ## TypeChecking (important)
-
 ```bash
 npm run typecheck
 ```
-
-## Tokenizer
-
-The tokenizer emits tokens with the following structure:
-
-```javascript
-{
-  type: number,    // TokenType enum value
-  value: string,   // Raw text
-  line: number,    // 1-based line number
-  column: number   // 1-based column number
-}
-```
-
-### Current Token Types
-
-- Keywords: `fn`, `let`, `const`, `static`, `true`, `false`, `type`, `use`, `pub`, `enum`, `struct`, `trait`, `unsafe`, `if`, `match`, `impl`, `mod`, `return`, `else`, `for`, `while`, `loop`, `where`, `self`
-- Delimiters: `(`, `)`, `[`, `]`, `{`, `}`, `,`, `;`, `:`, `.`
-- Operators: `+`, `-`, `*`, `/`, `%`, `=`, `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `&&`, `||`, `!`, `&`, `|`, `^`
-- Literals: integers, floats, strings, lifetime markers (`'a`, `'_`)
-- Identifiers: alphanumeric + underscore
-- Comments are discarded
-
-### Error Handling
-
-Invalid input produces `Invalid` tokens rather than throwing errors.

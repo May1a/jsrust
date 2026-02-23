@@ -137,7 +137,12 @@ test("undefined value in instruction", () => {
 test("undefined callee value in call_dyn instruction", () => {
     resetIRIds();
     const mod = makeIRModule("test");
-    const fn = makeIRFunction(0, "bad_call_dyn", [], makeIRIntType(IntWidth.I32));
+    const fn = makeIRFunction(
+        0,
+        "bad_call_dyn",
+        [],
+        makeIRIntType(IntWidth.I32),
+    );
     const block = makeIRBlock(0);
     const callDyn = makeCallDyn(999, [], makeIRIntType(IntWidth.I32));
     const ret = makeRet(callDyn.id);

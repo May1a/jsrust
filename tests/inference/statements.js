@@ -206,7 +206,11 @@ testGroup("Loop Control Flow Inference", () => {
     assert("loop with break value yields break type", () => {
         const ctx = new TypeContext();
         const body = makeBlockExpr(
-            [makeExprStmt(makeBreakExpr(makeLiteralExpr(LiteralKind.Int, 7, "7")))],
+            [
+                makeExprStmt(
+                    makeBreakExpr(makeLiteralExpr(LiteralKind.Int, 7, "7")),
+                ),
+            ],
             null,
         );
         const result = inferExpr(ctx, makeLoopExpr(body));
@@ -218,7 +222,11 @@ testGroup("Loop Control Flow Inference", () => {
         const ctx = new TypeContext();
         const condition = makeLiteralExpr(LiteralKind.Bool, true, "true");
         const body = makeBlockExpr(
-            [makeExprStmt(makeBreakExpr(makeLiteralExpr(LiteralKind.Int, 1, "1")))],
+            [
+                makeExprStmt(
+                    makeBreakExpr(makeLiteralExpr(LiteralKind.Int, 1, "1")),
+                ),
+            ],
             null,
         );
         const result = inferExpr(ctx, makeWhileExpr(condition, body));

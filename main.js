@@ -180,7 +180,7 @@ function compileToIRModule(source, options = {}) {
             }
             try {
                 const irFn = lowerHirToSsa(
-                    /** @type {import('./src/hir.js').HFnDecl} */(item),
+                    /** @type {import('./src/hir.js').HFnDecl} */ (item),
                     { irModule },
                 );
 
@@ -564,7 +564,7 @@ function writeFileAtomic(outputPath, bytes) {
             if (fs.existsSync(tempPath)) {
                 fs.unlinkSync(tempPath);
             }
-        } catch { }
+        } catch {}
         return {
             ok: false,
             message: `failed to write file: ${resolved}: ${e instanceof Error ? e.message : String(e)}`,
@@ -866,7 +866,7 @@ function runTestCli(args) {
             }
             try {
                 const irFn = lowerHirToSsa(
-                    /** @type {import('./src/hir.js').HFnDecl} */(item),
+                    /** @type {import('./src/hir.js').HFnDecl} */ (item),
                     { irModule },
                 );
                 if (validate) {
@@ -1056,13 +1056,13 @@ function runBackendCli(args) {
 
     const runResult = options.codegenWasm
         ? runBackendCodegenWasm(binaryResult.bytes, {
-            entry: options.entry,
-            trace: options.trace,
-        })
+              entry: options.entry,
+              trace: options.trace,
+          })
         : runBackendWasm(binaryResult.bytes, {
-            entry: options.entry,
-            trace: options.trace,
-        });
+              entry: options.entry,
+              trace: options.trace,
+          });
 
     if (!runResult.ok) {
         printBackendStatusLine(runResult.label, runResult.message);

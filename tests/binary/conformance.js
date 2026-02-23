@@ -2,7 +2,10 @@ import * as fs from "fs";
 import * as path from "path";
 import { createHash } from "crypto";
 import { compileFileToIRModule } from "../../main.js";
-import { serializeModule, VERSION as BINARY_IR_VERSION } from "../../ir_serialize.js";
+import {
+    serializeModule,
+    VERSION as BINARY_IR_VERSION,
+} from "../../ir_serialize.js";
 import { deserializeModule } from "../../ir_deserialize.js";
 import { validateModule } from "../../ir_validate.js";
 import {
@@ -40,7 +43,11 @@ function assertBytesEqual(actual, expected, context) {
     );
 
     for (let i = 0; i < actual.length; i++) {
-        assertEqual(actual[i], expected[i], `${context}: byte mismatch at ${i}`);
+        assertEqual(
+            actual[i],
+            expected[i],
+            `${context}: byte mismatch at ${i}`,
+        );
     }
 }
 
@@ -73,7 +80,10 @@ export function runBinaryConformanceTests() {
             const artifactPath = path.join(fixtureDir, fixture.artifact);
 
             const compile = compileFileToIRModule(rsPath, { validate: false });
-            assertTrue(compile.ok, `Compile failed: ${compile.errors.join("; ")}`);
+            assertTrue(
+                compile.ok,
+                `Compile failed: ${compile.errors.join("; ")}`,
+            );
             assertTrue(compile.module, "Compile result should include module");
 
             const validation = validateModule(compile.module);
@@ -85,13 +95,24 @@ export function runBinaryConformanceTests() {
             const actual = serializeModule(compile.module);
             const expected = fs.readFileSync(artifactPath);
 
-            assertEqual(fixture.bytes, expected.length, "Manifest byte size mismatch");
-            assertEqual(fixture.sha256, sha256Hex(expected), "Manifest hash mismatch");
+            assertEqual(
+                fixture.bytes,
+                expected.length,
+                "Manifest byte size mismatch",
+            );
+            assertEqual(
+                fixture.sha256,
+                sha256Hex(expected),
+                "Manifest hash mismatch",
+            );
 
             assertBytesEqual(actual, expected, fixture.source);
 
             const roundtrip = deserializeModule(expected);
-            assertTrue(roundtrip.ok, `Deserialize failed for ${fixture.source}`);
+            assertTrue(
+                roundtrip.ok,
+                `Deserialize failed for ${fixture.source}`,
+            );
 
             if (roundtrip.ok) {
                 const roundtripValidation = validateModule(roundtrip.value);

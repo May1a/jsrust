@@ -309,13 +309,18 @@ class IRSerializer {
             case IRTypeKind.Enum:
                 return 5; // tag + name string id
             case IRTypeKind.Array:
-                return 5 + this.calculateTypeSize(/** @type {IRType} */(type.element)); // tag + length + element
+                return (
+                    5 +
+                    this.calculateTypeSize(/** @type {IRType} */ (type.element))
+                ); // tag + length + element
             case IRTypeKind.Fn: {
                 let size = 5; // tag + param count
-                for (const param of (type.params ?? [])) {
+                for (const param of type.params ?? []) {
                     size += this.calculateTypeSize(param);
                 }
-                size += this.calculateTypeSize(/** @type {IRType} */(type.returnType));
+                size += this.calculateTypeSize(
+                    /** @type {IRType} */ (type.returnType),
+                );
                 return size;
             }
             default:
@@ -769,10 +774,10 @@ class IRSerializer {
         this.writeU8(type.kind);
         switch (type.kind) {
             case IRTypeKind.Int:
-                this.writeU8(/** @type {number} */(type.width));
+                this.writeU8(/** @type {number} */ (type.width));
                 break;
             case IRTypeKind.Float:
-                this.writeU8(/** @type {number} */(type.width));
+                this.writeU8(/** @type {number} */ (type.width));
                 break;
             case IRTypeKind.Bool:
             case IRTypeKind.Ptr:
@@ -780,21 +785,25 @@ class IRSerializer {
                 // No additional data
                 break;
             case IRTypeKind.Struct:
-                this.writeU32(this.strings.addString(/** @type {string} */(type.name)));
+                this.writeU32(
+                    this.strings.addString(/** @type {string} */ (type.name)),
+                );
                 break;
             case IRTypeKind.Enum:
-                this.writeU32(this.strings.addString(/** @type {string} */(type.name)));
+                this.writeU32(
+                    this.strings.addString(/** @type {string} */ (type.name)),
+                );
                 break;
             case IRTypeKind.Array:
-                this.writeU32(/** @type {number} */(type.length));
-                this.writeType(/** @type {IRType} */(type.element));
+                this.writeU32(/** @type {number} */ (type.length));
+                this.writeType(/** @type {IRType} */ (type.element));
                 break;
             case IRTypeKind.Fn:
                 this.writeU32((type.params ?? []).length);
-                for (const param of (type.params ?? [])) {
+                for (const param of type.params ?? []) {
                     this.writeType(param);
                 }
-                this.writeType(/** @type {IRType} */(type.returnType));
+                this.writeType(/** @type {IRType} */ (type.returnType));
                 break;
         }
     }

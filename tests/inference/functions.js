@@ -77,7 +77,10 @@ function makeFnItem(
         name,
         generics,
         genericParams: generics
-            ? generics.map((/** @type {string} */ g) => ({ name: g, bounds: [] }))
+            ? generics.map((/** @type {string} */ g) => ({
+                  name: g,
+                  bounds: [],
+              }))
             : null,
         whereClause: null,
         params,
@@ -112,7 +115,10 @@ function makeModule(name, items) {
  */
 function inferSource(source) {
     const parseResult = parseModule(source);
-    assert(parseResult.ok, `parse failed: ${parseResult.errors?.map((e) => e.message).join(", ")}`);
+    assert(
+        parseResult.ok,
+        `parse failed: ${parseResult.errors?.map((e) => e.message).join(", ")}`,
+    );
     const ctx = new TypeContext();
     return inferModule(ctx, parseResult.value);
 }
@@ -207,22 +213,36 @@ testGroup("Module Inference", () => {
     });
 
     assert("generic identity function compiles", () => {
-        const result = inferSource("fn id<T>(x: T) -> T { x } fn main() { let _x = id(1); }");
-        assert(result.ok, `inference failed: ${result.errors?.map((e) => e.message).join(", ")}`);
+        const result = inferSource(
+            "fn id<T>(x: T) -> T { x } fn main() { let _x = id(1); }",
+        );
+        assert(
+            result.ok,
+            `inference failed: ${result.errors?.map((e) => e.message).join(", ")}`,
+        );
     });
 
     assert("generic turbofish call compiles", () => {
-        const result = inferSource("fn id<T>(x: T) -> T { x } fn main() { let _x = id::<i32>(1); }");
-        assert(result.ok, `inference failed: ${result.errors?.map((e) => e.message).join(", ")}`);
+        const result = inferSource(
+            "fn id<T>(x: T) -> T { x } fn main() { let _x = id::<i32>(1); }",
+        );
+        assert(
+            result.ok,
+            `inference failed: ${result.errors?.map((e) => e.message).join(", ")}`,
+        );
     });
 
     assert("generic turbofish mismatch errors", () => {
-        const result = inferSource("fn id<T>(x: T) -> T { x } fn main() { let _x = id::<i32>(true); }");
+        const result = inferSource(
+            "fn id<T>(x: T) -> T { x } fn main() { let _x = id::<i32>(true); }",
+        );
         assertEq(result.ok, false);
     });
 
     assert("single-instance generic lock errors on conflicting calls", () => {
-        const result = inferSource("fn id<T>(x: T) -> T { x } fn main() { let _x = id(1); let _y = id(true); }");
+        const result = inferSource(
+            "fn id<T>(x: T) -> T { x } fn main() { let _x = id(1); let _y = id(true); }",
+        );
         assertEq(result.ok, false);
     });
 
@@ -240,14 +260,20 @@ testGroup("Module Inference", () => {
         const result = inferSource(
             "fn takes(f: fn(i32) -> i32) { let _y: i32 = f(1); } fn main() { let add_one = |z| z + 1; takes(add_one); }",
         );
-        assert(result.ok, `inference failed: ${result.errors?.map((e) => e.message).join(", ")}`);
+        assert(
+            result.ok,
+            `inference failed: ${result.errors?.map((e) => e.message).join(", ")}`,
+        );
     });
 
     assert("mutable captures are supported for direct closure calls", () => {
         const result = inferSource(
             "fn main() { let mut x: i32 = 1; let bump = |v: i32| { x += v; x }; let _y: i32 = bump(2); }",
         );
-        assert(result.ok, `inference failed: ${result.errors?.map((e) => e.message).join(", ")}`);
+        assert(
+            result.ok,
+            `inference failed: ${result.errors?.map((e) => e.message).join(", ")}`,
+        );
     });
 
     assert("capturing closures cannot escape via fn parameter passing", () => {

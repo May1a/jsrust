@@ -837,12 +837,7 @@ function makeArrayType(span, element, length) {
  * @param {string | null} [ignoredLifetimeName=null]
  * @returns {Node}
  */
-function makeRefType(
-    span,
-    mutability,
-    inner,
-    ignoredLifetimeName = null,
-) {
+function makeRefType(span, mutability, inner, ignoredLifetimeName = null) {
     return makeNode(NodeKind.RefType, span, {
         mutability,
         inner,
@@ -869,7 +864,12 @@ function makePtrType(span, mutability, inner) {
  * @returns {Node}
  */
 function makeFnType(span, params, returnType, isUnsafe, isConst = false) {
-    return makeNode(NodeKind.FnType, span, { params, returnType, isUnsafe, isConst });
+    return makeNode(NodeKind.FnType, span, {
+        params,
+        returnType,
+        isUnsafe,
+        isConst,
+    });
 }
 
 /**
@@ -896,7 +896,9 @@ function makeModule(span, name, items) {
  * @returns {boolean}
  */
 function isExpr(node) {
-    return node.kind <= NodeKind.MacroExpr || node.kind === NodeKind.ClosureExpr;
+    return (
+        node.kind <= NodeKind.MacroExpr || node.kind === NodeKind.ClosureExpr
+    );
 }
 
 /**

@@ -21,7 +21,6 @@ import {
     floatWidthToString,
 } from "./ir";
 
-
 // ============================================================================
 // Value Naming Context
 // ============================================================================
@@ -175,10 +174,10 @@ function printInstruction(inst, ctx) {
 
     switch (inst.kind) {
         case IRInstKind.Iconst:
-            return `${resultPrefix}iconst ${intWidthToString(/** @type {number} */(inst.ty.width))} ${inst.value}`;
+            return `${resultPrefix}iconst ${intWidthToString(/** @type {number} */ (inst.ty.width))} ${inst.value}`;
 
         case IRInstKind.Fconst:
-            return `${resultPrefix}fconst ${floatWidthToString(/** @type {number} */(inst.ty.width))} ${inst.value}`;
+            return `${resultPrefix}fconst ${floatWidthToString(/** @type {number} */ (inst.ty.width))} ${inst.value}`;
 
         case IRInstKind.Bconst:
             return `${resultPrefix}bconst ${inst.value}`;
@@ -241,7 +240,7 @@ function printInstruction(inst, ctx) {
             return `${resultPrefix}fcmp ${fcmpOpToString(inst.op)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
 
         case IRInstKind.Alloca:
-            return `${resultPrefix}alloca ${printType(/** @type {import('./ir').IRType} */(inst.ty.inner))} ; ${ctx.getLocalName(inst.localId)}`;
+            return `${resultPrefix}alloca ${printType(/** @type {import('./ir').IRType} */ (inst.ty.inner))} ; ${ctx.getLocalName(inst.localId)}`;
 
         case IRInstKind.Load:
             return `${resultPrefix}load ${printType(inst.ty)}, ${ctx.getValueName(inst.ptr)}`;
@@ -287,12 +286,16 @@ function printInstruction(inst, ctx) {
             return `${resultPrefix}bitcast -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
 
         case IRInstKind.Call: {
-            const args = inst.args.map((/**@type{any}*/ a) => ctx.getValueName(a)).join(", ");
+            const args = inst.args
+                .map((/**@type{any}*/ a) => ctx.getValueName(a))
+                .join(", ");
             return `${resultPrefix}call ${inst.fn}(${args})`;
         }
 
         case IRInstKind.CallDyn: {
-            const args = inst.args.map((/**@type{any}*/ a) => ctx.getValueName(a)).join(", ");
+            const args = inst.args
+                .map((/**@type{any}*/ a) => ctx.getValueName(a))
+                .join(", ");
             return `${resultPrefix}call_dyn ${ctx.getValueName(inst.fn)}(${args})`;
         }
 
@@ -347,7 +350,9 @@ function printTerminator(term, ctx) {
             return `ret ${ctx.getValueName(term.value)}`;
 
         case IRTermKind.Br: {
-            const args = term.args.map((/**@type{any}*/ a) => ctx.getValueName(a)).join(", ");
+            const args = term.args
+                .map((/**@type{any}*/ a) => ctx.getValueName(a))
+                .join(", ");
             return `br ${ctx.getBlockName(term.target)}${args ? `(${args})` : ""}`;
         }
 
@@ -516,7 +521,10 @@ function printModule(module) {
         lines.push("; Structs:");
         for (const [name, struct] of module.structs) {
             const fields = struct.fields
-                .map(( /**@type{any}*/ f, /**@type{number}*/ i) => `${i}: ${printType(f)}`)
+                .map(
+                    (/**@type{any}*/ f, /**@type{number}*/ i) =>
+                        `${i}: ${printType(f)}`,
+                )
                 .join(", ");
             lines.push(`;   struct ${name} { ${fields} }`);
         }
@@ -527,11 +535,13 @@ function printModule(module) {
         lines.push("; Enums:");
         for (const [name, enum_] of module.enums) {
             const variants = enum_.variants
-                .map(( /**@type{any}*/ v, /**@type{number}*/ i) => {
+                .map((/**@type{any}*/ v, /**@type{number}*/ i) => {
                     if (v.length === 0) {
                         return `${i}`;
                     }
-                    const fields = v.map((/**@type{any}*/ t) => printType(t)).join(", ");
+                    const fields = v
+                        .map((/**@type{any}*/ t) => printType(t))
+                        .join(", ");
                     return `${i}(${fields})`;
                 })
                 .join(", ");

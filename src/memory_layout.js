@@ -379,9 +379,9 @@ class LayoutCache {
             case IRTypeKind.Enum:
                 return `enum_${type.name}`;
             case IRTypeKind.Array:
-                return `array_${this.typeKey(/** @type {IRType} */(type.element))}_${type.length}`;
+                return `array_${this.typeKey(/** @type {IRType} */ (type.element))}_${type.length}`;
             case IRTypeKind.Fn:
-                return `fn_${(type.params ?? []).map((p) => this.typeKey(/** @type {IRType} */(p))).join("_")}_${this.typeKey(/** @type {IRType} */(type.returnType))}`;
+                return `fn_${(type.params ?? []).map((p) => this.typeKey(/** @type {IRType} */ (p))).join("_")}_${this.typeKey(/** @type {IRType} */ (type.returnType))}`;
             default:
                 return `unknown_${type.kind}`;
         }
@@ -395,9 +395,13 @@ class LayoutCache {
     computeLayout(type) {
         switch (type.kind) {
             case IRTypeKind.Int:
-                return layoutInt(/** @type {import('./ir').IntWidthValue} */(type.width));
+                return layoutInt(
+                    /** @type {import('./ir').IntWidthValue} */ (type.width),
+                );
             case IRTypeKind.Float:
-                return layoutFloat(/** @type {import('./ir').FloatWidthValue} */(type.width));
+                return layoutFloat(
+                    /** @type {import('./ir').FloatWidthValue} */ (type.width),
+                );
             case IRTypeKind.Bool:
                 return layoutBool();
             case IRTypeKind.Ptr:
@@ -405,11 +409,21 @@ class LayoutCache {
             case IRTypeKind.Unit:
                 return layoutUnit();
             case IRTypeKind.Struct:
-                return layoutStruct(/** @type {IRType[]} */(type.fields), this);
+                return layoutStruct(
+                    /** @type {IRType[]} */ (type.fields),
+                    this,
+                );
             case IRTypeKind.Enum:
-                return layoutEnum(/** @type {IRType[][]} */(type.variants), this);
+                return layoutEnum(
+                    /** @type {IRType[][]} */ (type.variants),
+                    this,
+                );
             case IRTypeKind.Array:
-                return layoutArray(/** @type {IRType} */(type.element), /** @type {number} */(type.length), this);
+                return layoutArray(
+                    /** @type {IRType} */ (type.element),
+                    /** @type {number} */ (type.length),
+                    this,
+                );
             case IRTypeKind.Fn:
                 // Function types don't have a runtime layout
                 // Return pointer size as a function pointer

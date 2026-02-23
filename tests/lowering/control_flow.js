@@ -102,7 +102,11 @@ function testLowerIfWithElse() {
 
     assertEqual(hir.kind, HExprKind.If, "Should be an if expression");
     assertTrue(hir.elseBranch !== null, "Else branch should exist");
-    assertEqual(hir.elseBranch.ty.kind, TypeKind.Unit, "Else block should be unit-typed");
+    assertEqual(
+        hir.elseBranch.ty.kind,
+        TypeKind.Unit,
+        "Else block should be unit-typed",
+    );
 }
 
 function testLowerIfWithFinalExpr() {

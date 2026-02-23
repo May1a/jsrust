@@ -1,92 +1,97 @@
-/** @type {number | undefined} */
+declare global {
+    var iota: number | undefined;
+}
+
 globalThis.iota = undefined;
 
-/**
- * @param {boolean} reset
- */
-function iota(reset = false) {
+function iota(reset: boolean = false) {
     if (!globalThis.iota || reset) globalThis.iota = 0;
     return globalThis.iota++;
 }
 
 const TokenType = {
-    Invalid: iota(true),
-    Fn: iota(),
-    Let: iota(),
-    Const: iota(),
-    Static: iota(),
-    True: iota(),
-    False: iota(),
-    Type: iota(),
-    Use: iota(),
-    Pub: iota(),
-    Enum: iota(),
-    Struct: iota(),
-    Unsafe: iota(),
-    If: iota(),
-    Else: iota(),
-    Match: iota(),
-    Trait: iota(),
-    Impl: iota(),
-    Mod: iota(),
-    Return: iota(),
-    For: iota(),
-    While: iota(),
-    Loop: iota(),
-    Where: iota(),
-    Self: iota(),
-    Mut: iota(),
-    FatArrow: iota(),
-    OpenParen: iota(),
-    CloseParen: iota(),
-    OpenCurly: iota(),
-    CloseCurly: iota(),
-    OpenSquare: iota(),
-    CloseSquare: iota(),
-    Comma: iota(),
-    Semicolon: iota(),
-    Colon: iota(),
-    Dot: iota(),
-    Plus: iota(),
-    Minus: iota(),
-    Star: iota(),
-    Slash: iota(),
-    Percent: iota(),
-    Eq: iota(),
-    PlusEq: iota(),
-    MinusEq: iota(),
-    StarEq: iota(),
-    SlashEq: iota(),
-    PercentEq: iota(),
-    AndEq: iota(),
-    PipeEq: iota(),
-    CaretEq: iota(),
-    EqEq: iota(),
-    Bang: iota(),
-    BangEq: iota(),
-    Lt: iota(),
-    Gt: iota(),
-    LtEq: iota(),
-    GtEq: iota(),
-    And: iota(),
-    AndAnd: iota(),
-    Pipe: iota(),
-    PipePipe: iota(),
-    Caret: iota(),
-    Identifier: iota(),
-    Integer: iota(),
-    Float: iota(),
-    String: iota(),
-    Lifetime: iota(),
-    Eof: iota(),
-};
+    Invalid: 0,
+    Fn: 1,
+    Let: 2,
+    Const: 3,
+    Static: 4,
+    True: 5,
+    False: 6,
+    Type: 7,
+    Use: 8,
+    Pub: 9,
+    Enum: 10,
+    Struct: 11,
+    Unsafe: 12,
+    If: 13,
+    Else: 14,
+    Match: 15,
+    Trait: 16,
+    Impl: 17,
+    Mod: 18,
+    Return: 19,
+    For: 20,
+    While: 21,
+    Loop: 22,
+    Where: 23,
+    Self: 24,
+    Mut: 25,
+    FatArrow: 26,
+    OpenParen: 27,
+    CloseParen: 28,
+    OpenCurly: 29,
+    CloseCurly: 30,
+    OpenSquare: 31,
+    CloseSquare: 32,
+    Comma: 33,
+    Semicolon: 34,
+    Colon: 35,
+    Dot: 36,
+    Plus: 37,
+    Minus: 38,
+    Star: 39,
+    Slash: 40,
+    Percent: 41,
+    Eq: 42,
+    PlusEq: 43,
+    MinusEq: 44,
+    StarEq: 45,
+    SlashEq: 46,
+    PercentEq: 47,
+    AndEq: 48,
+    PipeEq: 49,
+    CaretEq: 50,
+    EqEq: 51,
+    Bang: 52,
+    BangEq: 53,
+    Lt: 54,
+    Gt: 55,
+    LtEq: 56,
+    GtEq: 57,
+    And: 58,
+    AndAnd: 59,
+    Pipe: 60,
+    PipePipe: 61,
+    Caret: 62,
+    Identifier: 63,
+    Integer: 64,
+    Float: 65,
+    String: 66,
+    Lifetime: 67,
+    Eof: 68,
+} as const;
 
-/** @typedef {number} TokenTypeValue */
-/** @typedef {{ type: TokenTypeValue, value: string, line: number, column: number }} Token */
-/** @typedef {{ source: string, pos: number, line: number, column: number }} LexerState */
+type TokenTypeValue = (typeof TokenType)[keyof typeof TokenType];
+type Token = {
+    type: TokenTypeValue;
+    value: string;
+    line: number;
+    column: number;
+};
+type LexerState = { source: string; pos: number; line: number; column: number };
 
 /** @type {{ [key: string]: TokenTypeValue }} */
-const KEYWORDS = {
+const KEYWORDS: Record<string, TokenTypeValue> = {
     fn: TokenType.Fn,
     let: TokenType.Let,
     const: TokenType.Const,
@@ -114,36 +119,19 @@ const KEYWORDS = {
     mut: TokenType.Mut,
 };
 
-/**
- * @param {string} source
- * @returns {LexerState}
- */
-function initState(source) {
+function initState(source: string) {
     return { source, pos: 0, line: 1, column: 1 };
 }
 
-/**
- * @param {LexerState} state
- * @returns {string | undefined}
- */
-function peek(state) {
+function peek(state: LexerState) {
     return state.source[state.pos];
 }
 
-/**
- * @param {LexerState} state
- * @param {number} offset
- * @returns {string | undefined}
- */
-function peekAt(state, offset) {
+function peekAt(state: LexerState, offset: number) {
     return state.source[state.pos + offset];
 }
 
-/**
- * @param {LexerState} state
- * @returns {string | undefined}
- */
-function advance(state) {
+function advance(state: LexerState) {
     const ch = state.source[state.pos];
     if (ch === undefined) return undefined;
     state.pos++;
@@ -156,31 +144,19 @@ function advance(state) {
     return ch;
 }
 
-/**
- * @param {LexerState} state
- * @returns {void}
- */
-function skipWhitespace(state) {
+function skipWhitespace(state: LexerState) {
     while (isWhitespace(peek(state))) {
         advance(state);
     }
 }
 
-/**
- * @param {LexerState} state
- * @returns {void}
- */
-function skipLineComment(state) {
+function skipLineComment(state: LexerState) {
     while (peek(state) && peek(state) !== "\n") {
         advance(state);
     }
 }
 
-/**
- * @param {LexerState} state
- * @returns {boolean}
- */
-function skipBlockComment(state) {
+function skipBlockComment(state: LexerState): boolean {
     while (peek(state)) {
         if (peek(state) === "*" && peekAt(state, 1) === "/") {
             advance(state);
@@ -192,78 +168,44 @@ function skipBlockComment(state) {
     return false;
 }
 
-/**
- * @param {string | undefined} ch
- * @returns {ch is string}
- */
-function isIdentifierStart(ch) {
+function isIdentifierStart(ch?: string) {
     return !!ch && (ch === "_" || /[a-zA-Z]/.test(ch));
 }
 
-/**
- * @param {string | undefined} ch
- * @returns {ch is string}
- */
-function isIdentifierChar(ch) {
+function isIdentifierChar(ch?: string) {
     return !!ch && (ch === "_" || /[a-zA-Z0-9]/.test(ch));
 }
 
-/**
- * @param {string | undefined} ch
- * @returns {boolean}
- */
-function isWhitespace(ch) {
+function isWhitespace(ch?: string) {
     return !!ch && /\s/.test(ch);
 }
 
-/**
- * @param {string | undefined} ch
- * @returns {boolean}
- */
-function isDigit(ch) {
+function isDigit(ch?: string) {
     return !!ch && /[0-9]/.test(ch);
 }
 
-/**
- * @param {string | undefined} ch
- * @returns {boolean}
- */
-function isHexDigit(ch) {
+function isHexDigit(ch?: string) {
     return !!ch && /[0-9a-fA-F]/.test(ch);
 }
 
-/**
- * @param {string | undefined} ch
- * @returns {boolean}
- */
-function isOctalDigit(ch) {
+function isOctalDigit(ch?: string) {
     return !!ch && /[0-7]/.test(ch);
 }
 
-/**
- * @param {string | undefined} ch
- * @returns {boolean}
- */
-function isBinaryDigit(ch) {
+function isBinaryDigit(ch?: string) {
     return !!ch && /[01]/.test(ch);
 }
 
-/**
- * @param {TokenTypeValue} type
- * @param {string} value
- * @param {number} startLine
- * @param {number} startColumn
- * @returns {Token}
- */
-function makeToken(type, value, startLine, startColumn) {
+function makeToken(
+    type: TokenTypeValue,
+    value: string,
+    startLine: number,
+    startColumn: number,
+): Token {
     return { type, value, line: startLine, column: startColumn };
 }
 
-/**
- * @param {LexerState} state
- * @returns {Token}
- */
-function readIdentifier(state) {
+function readIdentifier(state: LexerState): Token {
     const startLine = state.line;
     const startColumn = state.column;
     let value = "";
@@ -274,11 +216,7 @@ function readIdentifier(state) {
     return makeToken(type, value, startLine, startColumn);
 }
 
-/**
- * @param {LexerState} state
- * @returns {Token}
- */
-function readNumber(state) {
+function readNumber(state: LexerState): Token {
     const startLine = state.line;
     const startColumn = state.column;
     let value = "";
@@ -351,11 +289,7 @@ function readNumber(state) {
     );
 }
 
-/**
- * @param {LexerState} state
- * @returns {Token}
- */
-function readString(state) {
+function readString(state: LexerState): Token {
     const startLine = state.line;
     const startColumn = state.column;
     const quote = advance(state);
@@ -387,11 +321,7 @@ function readString(state) {
     return makeToken(TokenType.String, value, startLine, startColumn);
 }
 
-/**
- * @param {LexerState} state
- * @returns {boolean}
- */
-function isLifetimeStart(state) {
+function isLifetimeStart(state: LexerState): boolean {
     if (peek(state) !== "'") return false;
     const next = peekAt(state, 1);
     if (!next || !(next === "_" || /[a-zA-Z]/.test(next))) {
@@ -405,11 +335,7 @@ function isLifetimeStart(state) {
     return peekAt(state, i) !== "'";
 }
 
-/**
- * @param {LexerState} state
- * @returns {Token}
- */
-function readLifetime(state) {
+function readLifetime(state: LexerState): Token {
     const startLine = state.line;
     const startColumn = state.column;
     let value = "";
@@ -420,19 +346,14 @@ function readLifetime(state) {
     return makeToken(TokenType.Lifetime, value, startLine, startColumn);
 }
 
-/**
- * @param {LexerState} state
- * @returns {Token | null}
- */
-function readOperatorOrDelimiter(state) {
+function readOperatorOrDelimiter(state: LexerState): Token | null {
     const startLine = state.line;
     const startColumn = state.column;
     const ch = peek(state);
 
     if (!ch) return null;
 
-    /** @type {{ [key: string]: TokenTypeValue }} */
-    const singleCharTokens = {
+    const singleCharTokens: Record<string, TokenTypeValue> = {
         "(": TokenType.OpenParen,
         ")": TokenType.CloseParen,
         "{": TokenType.OpenCurly,
@@ -454,8 +375,7 @@ function readOperatorOrDelimiter(state) {
         "^": TokenType.Caret,
     };
 
-    /** @type {{ [key: string]: TokenTypeValue }} */
-    const twoCharTokens = {
+    const twoCharTokens: { [key: string]: TokenTypeValue; } = {
         "+=": TokenType.PlusEq,
         "-=": TokenType.MinusEq,
         "*=": TokenType.StarEq,
@@ -509,13 +429,9 @@ function readOperatorOrDelimiter(state) {
     return null;
 }
 
-/**
- * @param {string} source
- * @returns {Token[]}
- */
-function tokenize(source) {
+function tokenize(source: string): Token[] {
     const state = initState(source);
-    const tokens = [];
+    const tokens: Token[] = [];
 
     while (peek(state)) {
         skipWhitespace(state);

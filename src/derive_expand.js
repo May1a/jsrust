@@ -65,10 +65,12 @@ function makeCloneImpl(structItem, span) {
     const selfParam = makeParam(span, "self", selfRefTy, null, true, "ref");
 
     const selfIdent = makeIdentifierExpr(span, "self");
-    const fields = (structItem.fields || []).map((/** @type {any} */ field) => ({
-        name: field.name,
-        value: makeFieldExpr(span, selfIdent, field.name),
-    }));
+    const fields = (structItem.fields || []).map(
+        (/** @type {any} */ field) => ({
+            name: field.name,
+            value: makeFieldExpr(span, selfIdent, field.name),
+        }),
+    );
     const structPath = makeIdentifierExpr(span, structItem.name);
     const bodyExpr = makeStructExpr(span, structPath, fields, null);
     const body = makeBlockExpr(span, [], bodyExpr);
@@ -122,7 +124,9 @@ function expandDerives(module) {
     const builtinTraits = ["Clone", "Copy", "Debug"];
     const traitNames = new Set(
         items
-            .filter((/** @type {any} */ item) => item.kind === NodeKind.TraitItem)
+            .filter(
+                (/** @type {any} */ item) => item.kind === NodeKind.TraitItem,
+            )
             .map((/** @type {any} */ item) => item.name),
     );
     const synthesized = [];
@@ -139,7 +143,8 @@ function expandDerives(module) {
         if (!Array.isArray(derives) || derives.length === 0) continue;
         if (item.kind !== NodeKind.StructItem) {
             errors.push({
-                message: "derive is supported only on structs in this compiler model",
+                message:
+                    "derive is supported only on structs in this compiler model",
                 span: spanOf(item),
                 kind: "derive",
             });
@@ -178,7 +183,9 @@ function expandDerives(module) {
             if (deriveName === "Clone") {
                 synthesized.push(makeCloneImpl(item, spanOf(item)));
             } else {
-                synthesized.push(makeMarkerImpl(item, deriveName, spanOf(item)));
+                synthesized.push(
+                    makeMarkerImpl(item, deriveName, spanOf(item)),
+                );
             }
         }
     }

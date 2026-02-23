@@ -379,10 +379,14 @@ function typeEquals(a, b) {
 
     switch (a.kind) {
         case TypeKind.Int:
-            return a.width === /** @type {{ width?: IntWidthValue }} */ (b).width;
+            return (
+                a.width === /** @type {{ width?: IntWidthValue }} */ (b).width
+            );
 
         case TypeKind.Float:
-            return a.width === /** @type {{ width?: FloatWidthValue }} */ (b).width;
+            return (
+                a.width === /** @type {{ width?: FloatWidthValue }} */ (b).width
+            );
 
         case TypeKind.Bool:
         case TypeKind.Char:
@@ -396,8 +400,7 @@ function typeEquals(a, b) {
             const bElements = bTuple.elements ?? [];
             if (a.elements.length !== bElements.length) return false;
             for (let i = 0; i < a.elements.length; i++) {
-                if (!typeEquals(a.elements[i], bElements[i]))
-                    return false;
+                if (!typeEquals(a.elements[i], bElements[i])) return false;
             }
             return true;
         }
@@ -415,7 +418,9 @@ function typeEquals(a, b) {
 
         case TypeKind.Slice: {
             const bSlice =
-                /** @type {{ kind: typeof TypeKind.Slice, element: Type }} */ (b);
+                /** @type {{ kind: typeof TypeKind.Slice, element: Type }} */ (
+                    b
+                );
             return typeEquals(a.element, bSlice.element);
         }
 

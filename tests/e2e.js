@@ -22,11 +22,7 @@ function assertCompiles(source, description) {
 // Helper to check compilation fails
 function assertFails(source, description) {
     const result = compile(source, { validate: false });
-    assertEqual(
-        result.ok,
-        false,
-        `${description}: compilation should fail`,
-    );
+    assertEqual(result.ok, false, `${description}: compilation should fail`);
     return result;
 }
 
@@ -58,170 +54,251 @@ export function runE2ETests() {
     });
 
     test("E2E: function with unit return", () => {
-        const result = assertCompiles(`fn foo() -> () {}`, "unit return function");
+        const result = assertCompiles(
+            `fn foo() -> () {}`,
+            "unit return function",
+        );
         assertIRContains(result, "fn foo()", "unit return");
         testsRun++;
     });
 
     // Literals and constants
     test("E2E: integer literal", () => {
-        const result = assertCompiles(`fn main() { let x = 42; }`, "integer literal");
+        const result = assertCompiles(
+            `fn main() { let x = 42; }`,
+            "integer literal",
+        );
         assertIRContains(result, "iconst", "integer constant");
         testsRun++;
     });
 
     test("E2E: float literal", () => {
-        const result = assertCompiles(`fn main() { let x = 3.14; }`, "float literal");
+        const result = assertCompiles(
+            `fn main() { let x = 3.14; }`,
+            "float literal",
+        );
         assertIRContains(result, "fconst", "float constant");
         testsRun++;
     });
 
     test("E2E: boolean literals", () => {
-        const result = assertCompiles(`fn main() { let a = true; let b = false; }`, "boolean literals");
+        const result = assertCompiles(
+            `fn main() { let a = true; let b = false; }`,
+            "boolean literals",
+        );
         assertIRContains(result, "bconst", "boolean constant");
         testsRun++;
     });
 
     test("E2E: string literal", () => {
-        const result = assertCompiles(`fn main() { let s = "hello"; }`, "string literal");
+        const result = assertCompiles(
+            `fn main() { let s = "hello"; }`,
+            "string literal",
+        );
         assertTrue(result.ir, "should compile string");
         testsRun++;
     });
 
     // Arithmetic operations
     test("E2E: addition", () => {
-        const result = assertCompiles(`fn main() { let x = 1 + 2; }`, "addition");
+        const result = assertCompiles(
+            `fn main() { let x = 1 + 2; }`,
+            "addition",
+        );
         assertIRContains(result, "iadd", "addition instruction");
         testsRun++;
     });
 
     test("E2E: subtraction", () => {
-        const result = assertCompiles(`fn main() { let x = 5 - 3; }`, "subtraction");
+        const result = assertCompiles(
+            `fn main() { let x = 5 - 3; }`,
+            "subtraction",
+        );
         assertIRContains(result, "isub", "subtraction instruction");
         testsRun++;
     });
 
     test("E2E: multiplication", () => {
-        const result = assertCompiles(`fn main() { let x = 4 * 3; }`, "multiplication");
+        const result = assertCompiles(
+            `fn main() { let x = 4 * 3; }`,
+            "multiplication",
+        );
         assertIRContains(result, "imul", "multiplication instruction");
         testsRun++;
     });
 
     test("E2E: division", () => {
-        const result = assertCompiles(`fn main() { let x = 10 / 2; }`, "division");
+        const result = assertCompiles(
+            `fn main() { let x = 10 / 2; }`,
+            "division",
+        );
         assertIRContains(result, "idiv", "division instruction");
         testsRun++;
     });
 
     test("E2E: modulo", () => {
-        const result = assertCompiles(`fn main() { let x = 10 % 3; }`, "modulo");
+        const result = assertCompiles(
+            `fn main() { let x = 10 % 3; }`,
+            "modulo",
+        );
         assertIRContains(result, "imod", "modulo instruction");
         testsRun++;
     });
 
     test("E2E: float arithmetic", () => {
-        const result = assertCompiles(`fn main() { let x = 1.5 + 2.5; }`, "float addition");
+        const result = assertCompiles(
+            `fn main() { let x = 1.5 + 2.5; }`,
+            "float addition",
+        );
         assertIRContains(result, "fadd", "float addition instruction");
         testsRun++;
     });
 
     // Comparison operations
     test("E2E: equality", () => {
-        const result = assertCompiles(`fn main() { let b = 5 == 5; }`, "equality");
+        const result = assertCompiles(
+            `fn main() { let b = 5 == 5; }`,
+            "equality",
+        );
         assertIRContains(result, "icmp", "integer comparison");
         testsRun++;
     });
 
     test("E2E: inequality", () => {
-        const result = assertCompiles(`fn main() { let b = 5 != 3; }`, "inequality");
+        const result = assertCompiles(
+            `fn main() { let b = 5 != 3; }`,
+            "inequality",
+        );
         assertIRContains(result, "icmp", "integer comparison");
         testsRun++;
     });
 
     test("E2E: less than", () => {
-        const result = assertCompiles(`fn main() { let b = 3 < 5; }`, "less than");
+        const result = assertCompiles(
+            `fn main() { let b = 3 < 5; }`,
+            "less than",
+        );
         assertIRContains(result, "icmp", "integer comparison");
         testsRun++;
     });
 
     test("E2E: greater than", () => {
-        const result = assertCompiles(`fn main() { let b = 5 > 3; }`, "greater than");
+        const result = assertCompiles(
+            `fn main() { let b = 5 > 3; }`,
+            "greater than",
+        );
         assertIRContains(result, "icmp", "integer comparison");
         testsRun++;
     });
 
     // Logical operations
     test("E2E: logical and", () => {
-        const result = assertCompiles(`fn main() { let b = true && false; }`, "logical and");
+        const result = assertCompiles(
+            `fn main() { let b = true && false; }`,
+            "logical and",
+        );
         assertIRContains(result, "iand", "and instruction");
         testsRun++;
     });
 
     test("E2E: logical or", () => {
-        const result = assertCompiles(`fn main() { let b = true || false; }`, "logical or");
+        const result = assertCompiles(
+            `fn main() { let b = true || false; }`,
+            "logical or",
+        );
         assertIRContains(result, "ior", "or instruction");
         testsRun++;
     });
 
     test("E2E: logical not", () => {
-        const result = assertCompiles(`fn main() { let b = !true; }`, "logical not");
+        const result = assertCompiles(
+            `fn main() { let b = !true; }`,
+            "logical not",
+        );
         assertIRContains(result, "ixor", "xor for not");
         testsRun++;
     });
 
     // Bitwise operations
     test("E2E: bitwise and", () => {
-        const result = assertCompiles(`fn main() { let x = 0xFF & 0x0F; }`, "bitwise and");
+        const result = assertCompiles(
+            `fn main() { let x = 0xFF & 0x0F; }`,
+            "bitwise and",
+        );
         assertIRContains(result, "iand", "bitwise and");
         testsRun++;
     });
 
     test("E2E: bitwise or", () => {
-        const result = assertCompiles(`fn main() { let x = 0xF0 | 0x0F; }`, "bitwise or");
+        const result = assertCompiles(
+            `fn main() { let x = 0xF0 | 0x0F; }`,
+            "bitwise or",
+        );
         assertIRContains(result, "ior", "bitwise or");
         testsRun++;
     });
 
     test("E2E: bitwise xor", () => {
-        const result = assertCompiles(`fn main() { let x = 0xFF ^ 0xAA; }`, "bitwise xor");
+        const result = assertCompiles(
+            `fn main() { let x = 0xFF ^ 0xAA; }`,
+            "bitwise xor",
+        );
         assertIRContains(result, "ixor", "bitwise xor");
         testsRun++;
     });
 
     // Variables and assignments
     test("E2E: variable declaration", () => {
-        const result = assertCompiles(`fn main() { let x = 10; }`, "variable declaration");
+        const result = assertCompiles(
+            `fn main() { let x = 10; }`,
+            "variable declaration",
+        );
         assertTrue(result.ir, "should compile");
         testsRun++;
     });
 
     test("E2E: mutable variable", () => {
-        const result = assertCompiles(`fn main() { let mut x = 10; x = 20; }`, "mutable variable");
+        const result = assertCompiles(
+            `fn main() { let mut x = 10; x = 20; }`,
+            "mutable variable",
+        );
         assertTrue(result.ir, "should compile");
         testsRun++;
     });
 
     test("E2E: type annotation", () => {
-        const result = assertCompiles(`fn main() { let x: i32 = 10; }`, "type annotation");
+        const result = assertCompiles(
+            `fn main() { let x: i32 = 10; }`,
+            "type annotation",
+        );
         assertTrue(result.ir, "should compile");
         testsRun++;
     });
 
     test("E2E: multiple variables", () => {
-        const result = assertCompiles(`fn main() { let a = 1; let b = 2; let c = a + b; }`, "multiple variables");
+        const result = assertCompiles(
+            `fn main() { let a = 1; let b = 2; let c = a + b; }`,
+            "multiple variables",
+        );
         assertIRContains(result, "iadd", "addition");
         testsRun++;
     });
 
     // Functions
     test("E2E: function with parameters", () => {
-        const result = assertCompiles(`fn add(a: i32, b: i32) -> i32 { a + b }`, "function with parameters");
+        const result = assertCompiles(
+            `fn add(a: i32, b: i32) -> i32 { a + b }`,
+            "function with parameters",
+        );
         assertIRContains(result, "fn add", "function definition");
         testsRun++;
     });
 
     test("E2E: function with return", () => {
-        const result = assertCompiles(`fn forty_two() -> i32 { return 42; }`, "function with return");
+        const result = assertCompiles(
+            `fn forty_two() -> i32 { return 42; }`,
+            "function with return",
+        );
         assertIRContains(result, "ret", "return instruction");
         testsRun++;
     });
@@ -229,7 +306,7 @@ export function runE2ETests() {
     test("E2E: function call", () => {
         const result = assertCompiles(
             `fn double(x: i32) -> i32 { x * 2 } fn main() { let y = double(5); }`,
-            "function call"
+            "function call",
         );
         assertIRContains(result, "call", "call instruction");
         testsRun++;
@@ -238,7 +315,7 @@ export function runE2ETests() {
     test("E2E: function call with &str parameter", () => {
         const result = assertCompiles(
             `fn print_msg(msg: &str) {} fn main() { let hello = "hello"; print_msg(hello); }`,
-            "function call with &str parameter"
+            "function call with &str parameter",
         );
         assertIRContains(result, "call", "call instruction");
         testsRun++;
@@ -247,7 +324,7 @@ export function runE2ETests() {
     test("E2E: multiple functions", () => {
         const result = assertCompiles(
             `fn a() -> i32 { 1 } fn b() -> i32 { 2 } fn main() { let x = a() + b(); }`,
-            "multiple functions"
+            "multiple functions",
         );
         assertIRContains(result, "fn a", "function a");
         assertIRContains(result, "fn b", "function b");
@@ -257,13 +334,19 @@ export function runE2ETests() {
 
     // Control flow
     test("E2E: if expression", () => {
-        const result = assertCompiles(`fn main() { let x = if true { 1 } else { 2 }; }`, "if expression");
+        const result = assertCompiles(
+            `fn main() { let x = if true { 1 } else { 2 }; }`,
+            "if expression",
+        );
         assertIRContains(result, "br_if", "conditional branch");
         testsRun++;
     });
 
     test("E2E: if without else", () => {
-        const result = assertCompiles(`fn main() { if true { let x = 1; } }`, "if without else");
+        const result = assertCompiles(
+            `fn main() { if true { let x = 1; } }`,
+            "if without else",
+        );
         assertIRContains(result, "br_if", "conditional branch");
         testsRun++;
     });
@@ -271,7 +354,7 @@ export function runE2ETests() {
     test("E2E: nested if", () => {
         const result = assertCompiles(
             `fn main() { let x = if true { if false { 1 } else { 2 } } else { 3 }; }`,
-            "nested if"
+            "nested if",
         );
         assertTrue(result.ir, "should compile nested if");
         testsRun++;
@@ -284,7 +367,10 @@ export function runE2ETests() {
     });
 
     test("E2E: while loop", () => {
-        const result = assertCompiles(`fn main() { let mut i = 0; while i < 10 { i = i + 1; } }`, "while loop");
+        const result = assertCompiles(
+            `fn main() { let mut i = 0; while i < 10 { i = i + 1; } }`,
+            "while loop",
+        );
         assertIRContains(result, "br_if", "conditional branch for while");
         testsRun++;
     });
@@ -296,14 +382,20 @@ export function runE2ETests() {
     });
 
     test("E2E: continue", () => {
-        const result = assertCompiles(`fn main() { loop { continue; } }`, "continue");
+        const result = assertCompiles(
+            `fn main() { loop { continue; } }`,
+            "continue",
+        );
         assertTrue(result.ir, "should compile continue");
         testsRun++;
     });
 
     // Structs
     test("E2E: empty struct", () => {
-        const result = assertCompiles(`struct Empty {} fn main() { let e = Empty {}; }`, "empty struct");
+        const result = assertCompiles(
+            `struct Empty {} fn main() { let e = Empty {}; }`,
+            "empty struct",
+        );
         assertTrue(result.ir, "should compile empty struct");
         testsRun++;
     });
@@ -311,7 +403,7 @@ export function runE2ETests() {
     test("E2E: struct with fields", () => {
         const result = assertCompiles(
             `struct Point { x: i32, y: i32 } fn main() { let p = Point { x: 1, y: 2 }; }`,
-            "struct with fields"
+            "struct with fields",
         );
         assertTrue(result.ir, "should compile struct with fields");
         testsRun++;
@@ -320,7 +412,7 @@ export function runE2ETests() {
     test("E2E: struct field access", () => {
         const result = assertCompiles(
             `struct Point { x: i32, y: i32 } fn main() { let p = Point { x: 1, y: 2 }; let x = p.x; }`,
-            "struct field access"
+            "struct field access",
         );
         assertTrue(result.ir, "should compile field access");
         testsRun++;
@@ -330,7 +422,7 @@ export function runE2ETests() {
     test("E2E: simple enum", () => {
         const result = assertCompiles(
             `enum Color { Red, Green, Blue } fn main() { let c = Color::Red; }`,
-            "simple enum"
+            "simple enum",
         );
         assertTrue(result.ir, "should compile enum");
         testsRun++;
@@ -339,7 +431,7 @@ export function runE2ETests() {
     test("E2E: enum with data", () => {
         const result = assertCompiles(
             `enum Maybe { Some(i32), None } fn main() { let o = Maybe::Some(42); }`,
-            "enum with data"
+            "enum with data",
         );
         assertTrue(result.ir, "should compile enum with data");
         testsRun++;
@@ -349,33 +441,45 @@ export function runE2ETests() {
     test("E2E: match on enum", () => {
         const result = assertCompiles(
             `enum Color { Red, Green, Blue } fn main() { let c = Color::Red; match c { Color::Red => 1, Color::Green => 2, Color::Blue => 3 }; }`,
-            "match on enum"
+            "match on enum",
         );
         assertTrue(result.ir, "should compile match");
         testsRun++;
     });
 
     test("E2E: match with wildcard", () => {
-        const result = assertCompiles(`fn main() { let x = 5; match x { 0 => 1, _ => 2 }; }`, "match with wildcard");
+        const result = assertCompiles(
+            `fn main() { let x = 5; match x { 0 => 1, _ => 2 }; }`,
+            "match with wildcard",
+        );
         assertTrue(result.ir, "should compile match with wildcard");
         testsRun++;
     });
 
     // References
     test("E2E: immutable reference", () => {
-        const result = assertCompiles(`fn main() { let x = 10; let r = &x; }`, "immutable reference");
+        const result = assertCompiles(
+            `fn main() { let x = 10; let r = &x; }`,
+            "immutable reference",
+        );
         assertTrue(result.ir, "should compile reference");
         testsRun++;
     });
 
     test("E2E: mutable reference", () => {
-        const result = assertCompiles(`fn main() { let mut x = 10; let r = &mut x; }`, "mutable reference");
+        const result = assertCompiles(
+            `fn main() { let mut x = 10; let r = &mut x; }`,
+            "mutable reference",
+        );
         assertTrue(result.ir, "should compile mutable reference");
         testsRun++;
     });
 
     test("E2E: dereference", () => {
-        const result = assertCompiles(`fn main() { let x = 10; let r = &x; let y = *r; }`, "dereference");
+        const result = assertCompiles(
+            `fn main() { let x = 10; let r = &x; let y = *r; }`,
+            "dereference",
+        );
         assertTrue(result.ir, "should compile dereference");
         testsRun++;
     });
@@ -392,29 +496,54 @@ export function runE2ETests() {
 
     // Type annotations
     test("E2E: integer types", () => {
-        const types = ["i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize"];
+        const types = [
+            "i8",
+            "i16",
+            "i32",
+            "i64",
+            "i128",
+            "isize",
+            "u8",
+            "u16",
+            "u32",
+            "u64",
+            "u128",
+            "usize",
+        ];
         for (const ty of types) {
-            const result = assertCompiles(`fn main() { let x: ${ty} = 10; }`, `integer type ${ty}`);
+            const result = assertCompiles(
+                `fn main() { let x: ${ty} = 10; }`,
+                `integer type ${ty}`,
+            );
             assertTrue(result.ir, `should compile ${ty}`);
         }
         testsRun++;
     });
 
     test("E2E: float types", () => {
-        const result = assertCompiles(`fn main() { let x: f32 = 1.0; let y: f64 = 2.0; }`, "float types");
+        const result = assertCompiles(
+            `fn main() { let x: f32 = 1.0; let y: f64 = 2.0; }`,
+            "float types",
+        );
         assertTrue(result.ir, "should compile float types");
         testsRun++;
     });
 
     test("E2E: tuple type", () => {
-        const result = assertCompiles(`fn main() { let t: (i32, i32) = (1, 2); }`, "tuple type");
+        const result = assertCompiles(
+            `fn main() { let t: (i32, i32) = (1, 2); }`,
+            "tuple type",
+        );
         assertTrue(result.ir, "should compile tuple type");
         testsRun++;
     });
 
     // Complex expressions
     test("E2E: chained arithmetic", () => {
-        const result = assertCompiles(`fn main() { let x = 1 + 2 * 3 - 4 / 2; }`, "chained arithmetic");
+        const result = assertCompiles(
+            `fn main() { let x = 1 + 2 * 3 - 4 / 2; }`,
+            "chained arithmetic",
+        );
         assertTrue(result.ir, "should compile chained arithmetic");
         testsRun++;
     });
@@ -422,7 +551,7 @@ export function runE2ETests() {
     test("E2E: nested function calls", () => {
         const result = assertCompiles(
             `fn f(x: i32) -> i32 { x * 2 } fn g(x: i32) -> i32 { f(x) + 1 } fn main() { let x = g(f(5)); }`,
-            "nested function calls"
+            "nested function calls",
         );
         assertIRContains(result, "call", "call instruction");
         testsRun++;
@@ -431,7 +560,7 @@ export function runE2ETests() {
     test("E2E: complex condition", () => {
         const result = assertCompiles(
             `fn main() { let x = if (1 < 2) && (3 > 2) { 1 } else { 0 }; }`,
-            "complex condition"
+            "complex condition",
         );
         assertTrue(result.ir, "should compile complex condition");
         testsRun++;
@@ -444,7 +573,10 @@ export function runE2ETests() {
     });
 
     test("E2E: undefined function", () => {
-        assertFails(`fn main() { let x = undefined_fn(); }`, "undefined function");
+        assertFails(
+            `fn main() { let x = undefined_fn(); }`,
+            "undefined function",
+        );
         testsRun++;
     });
 
@@ -455,7 +587,9 @@ export function runE2ETests() {
         );
         const messages = result.errors.map((e) => e.message).join("\n");
         assertTrue(
-            messages.includes("Macro repeat form `[expr; count]` is not supported yet"),
+            messages.includes(
+                "Macro repeat form `[expr; count]` is not supported yet",
+            ),
             `unexpected errors: ${messages}`,
         );
         testsRun++;
@@ -475,7 +609,10 @@ export function runE2ETests() {
             `fn main() { let n: Option<i32> = None; let m: Option<i32> = None; assert_eq!(Some(1), Some(1)); assert_eq!(n, m); }`,
             "assert_eq option success",
         );
-        assertTrue(result.ir, "should compile Some/None assert_eq success cases");
+        assertTrue(
+            result.ir,
+            "should compile Some/None assert_eq success cases",
+        );
         testsRun++;
     });
 
@@ -486,7 +623,9 @@ export function runE2ETests() {
         );
         const messages = result.errors.map((e) => e.message).join("\\n");
         assertTrue(
-            messages.includes("assert_eq! for Option<T> is only supported when T is int/float/bool"),
+            messages.includes(
+                "assert_eq! for Option<T> is only supported when T is int/float/bool",
+            ),
             `unexpected errors: ${messages}`,
         );
         testsRun++;

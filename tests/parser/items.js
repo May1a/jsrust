@@ -44,7 +44,9 @@ export function runParserItemTests() {
     });
 
     test("derive attribute on struct", () => {
-        const result = parseModule("#[derive(Clone, Copy, Debug)] struct S { x: i32 }");
+        const result = parseModule(
+            "#[derive(Clone, Copy, Debug)] struct S { x: i32 }",
+        );
         assertTrue(result.ok);
         const item = result.value.items[0];
         assertEqual(item.kind, NodeKind.StructItem);
@@ -54,7 +56,7 @@ export function runParserItemTests() {
 
     test("test attribute with expected output on function", () => {
         const result = parseModule(
-            "#[expect_output(\"hello\\n\")]\n#[test]\nfn sample() { println!(\"hello\"); }",
+            '#[expect_output("hello\\n")]\n#[test]\nfn sample() { println!("hello"); }',
         );
         assertTrue(result.ok);
         const item = result.value.items[0];
@@ -67,7 +69,9 @@ export function runParserItemTests() {
         const result = parseModule("#[expect_output] fn sample() {}");
         assertEqual(result.ok, false);
         assertTrue(
-            result.errors.some((e) => e.message.includes("Expected ( after expect_output")),
+            result.errors.some((e) =>
+                e.message.includes("Expected ( after expect_output"),
+            ),
             `expected expect_output parse error, got: ${result.errors.map((e) => e.message).join(", ")}`,
         );
     });
@@ -111,7 +115,9 @@ export function runParserItemTests() {
     });
 
     test("pub item visibility flags", () => {
-        const result = parseModule("pub fn f() {} pub struct S {} pub enum E { A } pub mod m {}");
+        const result = parseModule(
+            "pub fn f() {} pub struct S {} pub enum E { A } pub mod m {}",
+        );
         assertTrue(result.ok);
         assertEqual(result.value.items[0].isPub, true);
         assertEqual(result.value.items[1].isPub, true);
@@ -226,9 +232,7 @@ export function runParserItemTests() {
     });
 
     test("postfix try operator is consumed for syntax compatibility", () => {
-        const result = parseModule(
-            "fn f() { let v = read()?; consume(v)?; }",
-        );
+        const result = parseModule("fn f() { let v = read()?; consume(v)?; }");
         assertTrue(result.ok);
     });
 
