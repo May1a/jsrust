@@ -1,49 +1,7 @@
-/** @typedef {number} TypeKindValue */
-/** @typedef {number} IntWidthValue */
-/** @typedef {number} FloatWidthValue */
-/** @typedef {number} TypeVarId */
+type TypeVarId = number;
 
-/** @typedef {{ line: number, column: number, start: number, end: number }} Span */
-/** @typedef {0} IntKind */
-/** @typedef {1} FloatKind */
-/** @typedef {2} BoolKind */
-/** @typedef {3} CharKind */
-/** @typedef {4} StringKind */
-/** @typedef {5} UnitKind */
-/** @typedef {6} NeverKind */
-/** @typedef {7} TupleKind */
-/** @typedef {8} ArrayKind */
-/** @typedef {9} SliceKind */
-/** @typedef {10} StructKind */
-/** @typedef {11} EnumKind */
-/** @typedef {12} RefKind */
-/** @typedef {13} PtrKind */
-/** @typedef {14} FnKind */
-/** @typedef {15} TypeVarKind */
-/** @typedef {16} NamedKind */
+export type Span = { line: number; column: number; start: number; end: number };
 
-/**
- * Type kinds for the type system
- * @type {{
- *   Int: IntKind,
- *   Float: FloatKind,
- *   Bool: BoolKind,
- *   Char: CharKind,
- *   String: StringKind,
- *   Unit: UnitKind,
- *   Never: NeverKind,
- *   Tuple: TupleKind,
- *   Array: ArrayKind,
- *   Slice: SliceKind,
- *   Struct: StructKind,
- *   Enum: EnumKind,
- *   Ref: RefKind,
- *   Ptr: PtrKind,
- *   Fn: FnKind,
- *   TypeVar: TypeVarKind,
- *   Named: NamedKind
- * }}
- */
 const TypeKind = {
     // Primitive types
     Int: 0,
@@ -73,35 +31,112 @@ const TypeKind = {
 
     // Named type (for user-defined types before resolution)
     Named: 16,
-};
+} as const satisfies Record<string, number>;
 
 /**
  * Structural type model used throughout the compiler.
- *
- * @typedef {{ kind: IntKind, width: IntWidthValue, span?: Span }} IntType
- * @typedef {{ kind: FloatKind, width: FloatWidthValue, span?: Span }} FloatType
- * @typedef {{ kind: BoolKind, span?: Span }} BoolType
- * @typedef {{ kind: CharKind, span?: Span }} CharType
- * @typedef {{ kind: StringKind, span?: Span }} StringType
- * @typedef {{ kind: UnitKind, span?: Span }} UnitType
- * @typedef {{ kind: NeverKind, span?: Span }} NeverType
- * @typedef {{ kind: TupleKind, elements: Type[], span?: Span }} TupleType
- * @typedef {{ kind: ArrayKind, element: Type, length: number, span?: Span }} ArrayType
- * @typedef {{ kind: SliceKind, element: Type, span?: Span }} SliceType
- * @typedef {{ kind: StructKind, name: string, fields: { name: string, type: Type }[], span?: Span }} StructType
- * @typedef {{ kind: EnumKind, name: string, variants: { name: string, fields?: Type[] }[], span?: Span }} EnumType
- * @typedef {{ kind: RefKind, inner: Type, mutable: boolean, span?: Span }} RefType
- * @typedef {{ kind: PtrKind, inner: Type, mutable: boolean, span?: Span }} PtrType
- * @typedef {{ kind: FnKind, params: Type[], returnType: Type, isUnsafe: boolean, isConst: boolean, span?: Span }} FnType
- * @typedef {{ kind: TypeVarKind, id: number, bound: Type | null, span?: Span }} TypeVarType
- * @typedef {{ kind: NamedKind, name: string, args: Type[] | null, span?: Span }} NamedType
- *
- * @typedef {IntType | FloatType | BoolType | CharType | StringType | UnitType | NeverType | TupleType | ArrayType | SliceType | StructType | EnumType | RefType | PtrType | FnType | TypeVarType | NamedType} Type
  */
+type IntType = { kind: typeof TypeKind.Int; width: IntWidthValue; span: Span };
+type FloatType = {
+    kind: typeof TypeKind.Float;
+    width: FloatWidthValue;
+    span: Span;
+};
+type BoolType = { kind: typeof TypeKind.Bool; span: Span };
+type CharType = { kind: typeof TypeKind.Char; span: Span };
+type StringType = { kind: typeof TypeKind.String; span: Span };
+type UnitType = { kind: typeof TypeKind.Unit; span: Span };
+type NeverType = { kind: typeof TypeKind.Never; span: Span };
+type TupleType = { kind: typeof TypeKind.Tuple; elements: Type[]; span: Span };
+type ArrayType = {
+    kind: typeof TypeKind.Array;
+    element: Type;
+    length: number;
+    span: Span;
+};
+type SliceType = { kind: typeof TypeKind.Slice; element: Type; span: Span };
 
-/**
- * Integer type widths
- */
+type StructField = {
+    name: string;
+    type: Type;
+};
+
+type StructType = {
+    kind: typeof TypeKind.Struct;
+    name: string;
+    fields: StructField[];
+    span: Span;
+};
+
+type EnumVariant = {
+    name: string;
+    fields: Type[];
+};
+
+type EnumType = {
+    kind: typeof TypeKind.Enum;
+    name: string;
+    variants: EnumVariant[];
+    span: Span;
+};
+
+type RefType = {
+    kind: typeof TypeKind.Ref;
+    inner: Type;
+    mutable: boolean;
+    span: Span;
+};
+
+type PtrType = {
+    kind: typeof TypeKind.Ptr;
+    inner: Type;
+    mutable: boolean;
+    span: Span;
+};
+
+// TODO: have separate fn types of const and unsafe functions
+type FnType = {
+    kind: typeof TypeKind.Fn;
+    params: Type[];
+    returnType: Type;
+    isUnsafe: boolean;
+    isConst: boolean;
+    span: Span;
+};
+
+type TypeVarType = {
+    kind: typeof TypeKind.TypeVar;
+    id: number;
+    bound: Type | null;
+    span: Span;
+};
+
+type NamedType = {
+    kind: typeof TypeKind.Named;
+    name: string;
+    args: Type[] | null;
+    span: Span;
+};
+
+export type Type =
+    | IntType
+    | FloatType
+    | BoolType
+    | CharType
+    | StringType
+    | UnitType
+    | NeverType
+    | TupleType
+    | ArrayType
+    | SliceType
+    | StructType
+    | EnumType
+    | RefType
+    | PtrType
+    | FnType
+    | TypeVarType
+    | NamedType;
+
 const IntWidth = {
     I8: 0,
     I16: 1,
@@ -116,74 +151,42 @@ const IntWidth = {
     U128: 10,
     Usize: 11,
 };
-
-/**
- * Float type widths
- */
+type IntWidthValue = (typeof IntWidth)[keyof typeof IntWidth];
 const FloatWidth = {
     F32: 0,
     F64: 1,
 };
+type FloatWidthValue = (typeof FloatWidth)[keyof typeof FloatWidth];
 
 // ============================================================================
 // Task 3.1: Type Representation - Primitive Types
 // ============================================================================
 
-/**
- * @param {IntWidthValue} width
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeIntType(width, span) {
+function makeIntType(width: IntWidthValue, span: Span): Type {
     return { kind: TypeKind.Int, width, span };
 }
 
-/**
- * @param {FloatWidthValue} width
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeFloatType(width, span) {
+function makeFloatType(width: FloatWidthValue, span: Span): Type {
     return { kind: TypeKind.Float, width, span };
 }
 
-/**
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeBoolType(span) {
+function makeBoolType(span: Span): Type {
     return { kind: TypeKind.Bool, span };
 }
 
-/**
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeCharType(span) {
+function makeCharType(span: Span): Type {
     return { kind: TypeKind.Char, span };
 }
 
-/**
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeStringType(span) {
+function makeStringType(span: Span): Type {
     return { kind: TypeKind.String, span };
 }
 
-/**
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeUnitType(span) {
+function makeUnitType(span: Span): Type {
     return { kind: TypeKind.Unit, span };
 }
 
-/**
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeNeverType(span) {
+function makeNeverType(span: Span): Type {
     return { kind: TypeKind.Never, span };
 }
 
@@ -191,51 +194,23 @@ function makeNeverType(span) {
 // Task 3.2: Composite Types
 // ============================================================================
 
-/**
- * @param {Type[]} elements
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeTupleType(elements, span) {
+function makeTupleType(elements: Type[], span: Span): Type {
     return { kind: TypeKind.Tuple, elements, span };
 }
 
-/**
- * @param {Type} element
- * @param {number} length
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeArrayType(element, length, span) {
+function makeArrayType(element: Type, length: number, span: Span): Type {
     return { kind: TypeKind.Array, element, length, span };
 }
 
-/**
- * @param {Type} element
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeSliceType(element, span) {
+function makeSliceType(element: Type, span: Span): Type {
     return { kind: TypeKind.Slice, element, span };
 }
 
-/**
- * @param {string} name
- * @param {{ name: string, type: Type }[]} fields
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeStructType(name, fields, span) {
+function makeStructType(name: string, fields: StructField[], span: Span): Type {
     return { kind: TypeKind.Struct, name, fields, span };
 }
 
-/**
- * @param {string} name
- * @param {{ name: string, fields?: Type[] }[]} variants
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeEnumType(name, variants, span) {
+function makeEnumType(name: string, variants: EnumVariant[], span: Span): Type {
     return { kind: TypeKind.Enum, name, variants, span };
 }
 
@@ -243,23 +218,11 @@ function makeEnumType(name, variants, span) {
 // Task 3.3: Reference Types
 // ============================================================================
 
-/**
- * @param {Type} inner
- * @param {boolean} mutable
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeRefType(inner, mutable, span) {
+function makeRefType(inner: Type, mutable: boolean, span: Span): Type {
     return { kind: TypeKind.Ref, inner, mutable, span };
 }
 
-/**
- * @param {Type} inner
- * @param {boolean} mutable
- * @param {Span} [span]
- * @returns {Type}
- */
-function makePtrType(inner, mutable, span) {
+function makePtrType(inner: Type, mutable: boolean, span: Span): Type {
     return { kind: TypeKind.Ptr, inner, mutable, span };
 }
 
@@ -275,7 +238,13 @@ function makePtrType(inner, mutable, span) {
  * @param {Span} [span]
  * @returns {Type}
  */
-function makeFnType(params, returnType, isUnsafe, isConst = false, span) {
+function makeFnType(
+    params: Type[],
+    returnType: Type,
+    isUnsafe: boolean,
+    isConst: boolean = false,
+    span: Span,
+): Type {
     return { kind: TypeKind.Fn, params, returnType, isUnsafe, isConst, span };
 }
 
@@ -283,8 +252,7 @@ function makeFnType(params, returnType, isUnsafe, isConst = false, span) {
 // Task 3.5: Type Variables (for inference)
 // ============================================================================
 
-/** @type {TypeVarId} */
-let nextTypeVarId = 0;
+let nextTypeVarId: TypeVarId = 0;
 
 /**
  * Reset type variable counter (useful for testing)
@@ -293,38 +261,20 @@ function resetTypeVarId() {
     nextTypeVarId = 0;
 }
 
-/**
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeTypeVar(span) {
+function makeTypeVar(span: Span): Type {
     const id = nextTypeVarId++;
     return { kind: TypeKind.TypeVar, id, bound: null, span };
 }
 
-/**
- * @param {TypeVarId} id
- * @param {Type} type
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeBoundTypeVar(id, type, span) {
+function makeBoundTypeVar(id: TypeVarId, type: Type, span: Span): Type {
     return { kind: TypeKind.TypeVar, id, bound: type, span };
 }
 
-/**
- * @param {Type} typeVar
- * @returns {boolean}
- */
-function isBoundTypeVar(typeVar) {
+function isBoundTypeVar(typeVar: Type): boolean {
     return typeVar.kind === TypeKind.TypeVar && typeVar.bound !== null;
 }
 
-/**
- * @param {Type} typeVar
- * @returns {boolean}
- */
-function isUnboundTypeVar(typeVar) {
+function isUnboundTypeVar(typeVar: Type): boolean {
     return typeVar.kind === TypeKind.TypeVar && typeVar.bound === null;
 }
 
@@ -332,23 +282,12 @@ function isUnboundTypeVar(typeVar) {
 // Named Type (for unresolved type references)
 // ============================================================================
 
-/**
- * @param {string} name
- * @param {Type[] | null} args
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeNamedType(name, args, span) {
+function makeNamedType(name: string, args: Type[] | null, span: Span): Type {
     return { kind: TypeKind.Named, name, args, span };
 }
 
-/**
- * Helper to create Option<T> type
- * @param {Type} innerType
- * @param {Span} [span]
- * @returns {Type}
- */
-function makeOptionType(innerType, span) {
+// TODO: rethink this
+function makeOptionType(innerType: Type, span: Span): Type {
     return makeNamedType("Option", [innerType], span);
 }
 
@@ -356,48 +295,41 @@ function makeOptionType(innerType, span) {
 // Task 3.9: Type Utilities
 // ============================================================================
 
-/**
- * Check structural equality of two types
- * @param {Type} a
- * @param {Type} b
- * @returns {boolean}
- */
-function typeEquals(a, b) {
-    // Handle null/undefined
-    if (!a || !b) return a === b;
+function compareKind<
+    T extends { kind: (typeof TypeKind)[keyof typeof TypeKind] },
+>(a: T, b: { kind: (typeof TypeKind)[keyof typeof TypeKind] }): b is T {
+    return a.kind === b.kind;
+}
 
+function typeEquals(a: Type, b: Type): boolean {
+    if (!a || !b) throw "unreachable";
     // Handle type variables
     if (a.kind === TypeKind.TypeVar && b.kind === TypeKind.TypeVar) {
         if (a.id !== b.id) return false;
-        if (a.bound === null && b.bound === null) return true;
-        if (a.bound === null || b.bound === null) return false;
+        if (!a.bound && !b.bound) return true;
+        if (!a.bound || !b.bound) return false;
         return typeEquals(a.bound, b.bound);
     }
 
     // Different kinds are not equal
-    if (a.kind !== b.kind) return false;
+    if (!compareKind(a, b)) return false;
 
     switch (a.kind) {
-        case TypeKind.Int:
-            return (
-                a.width === /** @type {{ width?: IntWidthValue }} */ (b).width
-            );
-
-        case TypeKind.Float:
-            return (
-                a.width === /** @type {{ width?: FloatWidthValue }} */ (b).width
-            );
-
+        case TypeKind.Int: {
+            return a.width === (b as typeof a).width;
+        }
+        case TypeKind.Float: {
+            return a.width === (b as typeof a).width;
+        }
         case TypeKind.Bool:
         case TypeKind.Char:
         case TypeKind.String:
         case TypeKind.Unit:
-        case TypeKind.Never:
+        case TypeKind.Never: {
             return true;
-
+        }
         case TypeKind.Tuple: {
-            const bTuple = /** @type {{ elements?: Type[] }} */ (b);
-            const bElements = bTuple.elements ?? [];
+            const bElements = (b as typeof a).elements;
             if (a.elements.length !== bElements.length) return false;
             for (let i = 0; i < a.elements.length; i++) {
                 if (!typeEquals(a.elements[i], bElements[i])) return false;
@@ -406,10 +338,7 @@ function typeEquals(a, b) {
         }
 
         case TypeKind.Array: {
-            const bArray =
-                /** @type {{ kind: typeof TypeKind.Array, element: Type, length: number }} */ (
-                    b
-                );
+            const bArray = b as typeof a;
             return (
                 a.length === bArray.length &&
                 typeEquals(a.element, bArray.element)
@@ -417,18 +346,12 @@ function typeEquals(a, b) {
         }
 
         case TypeKind.Slice: {
-            const bSlice =
-                /** @type {{ kind: typeof TypeKind.Slice, element: Type }} */ (
-                    b
-                );
+            const bSlice = b as typeof a;
             return typeEquals(a.element, bSlice.element);
         }
 
         case TypeKind.Struct: {
-            const bStruct =
-                /** @type {{ kind: typeof TypeKind.Struct, name: string, fields: { name: string, type: Type }[] }} */ (
-                    b
-                );
+            const bStruct = b as typeof a;
             if (a.name !== bStruct.name) return false;
             if (a.fields.length !== bStruct.fields.length) return false;
             for (let i = 0; i < a.fields.length; i++) {
@@ -438,12 +361,8 @@ function typeEquals(a, b) {
             }
             return true;
         }
-
         case TypeKind.Enum: {
-            const bEnum =
-                /** @type {{ kind: typeof TypeKind.Enum, name: string, variants: { name: string, fields?: Type[] }[] }} */ (
-                    b
-                );
+            const bEnum = b as typeof a;
             if (a.name !== bEnum.name) return false;
             if (a.variants.length !== bEnum.variants.length) return false;
             for (let i = 0; i < a.variants.length; i++) {
@@ -459,32 +378,22 @@ function typeEquals(a, b) {
             }
             return true;
         }
-
         case TypeKind.Ref: {
-            const bRef =
-                /** @type {{ kind: typeof TypeKind.Ref, inner: Type, mutable: boolean }} */ (
-                    b
-                );
+            const bRef = b as typeof a;
             return (
                 a.mutable === bRef.mutable && typeEquals(a.inner, bRef.inner)
             );
         }
 
         case TypeKind.Ptr: {
-            const bPtr =
-                /** @type {{ kind: typeof TypeKind.Ptr, inner: Type, mutable: boolean }} */ (
-                    b
-                );
+            const bPtr = b as typeof a;
             return (
                 a.mutable === bPtr.mutable && typeEquals(a.inner, bPtr.inner)
             );
         }
 
         case TypeKind.Fn: {
-            const bFn =
-                /** @type {{ kind: typeof TypeKind.Fn, params: Type[], returnType: Type, isUnsafe: boolean, isConst: boolean }} */ (
-                    b
-                );
+            const bFn = b as typeof a;
             if (a.params.length !== bFn.params.length) return false;
             if (a.isUnsafe !== bFn.isUnsafe) return false;
             if (a.isConst !== bFn.isConst) return false;
@@ -495,10 +404,7 @@ function typeEquals(a, b) {
         }
 
         case TypeKind.Named: {
-            const bNamed =
-                /** @type {{ kind: typeof TypeKind.Named, name: string, args: Type[] | null }} */ (
-                    b
-                );
+            const bNamed = b as typeof a;
             if (a.name !== bNamed.name) return false;
             if (!a.args && !bNamed.args) return true;
             if (!a.args || !bNamed.args) return false;
@@ -508,7 +414,6 @@ function typeEquals(a, b) {
             }
             return true;
         }
-
         default:
             return false;
     }
@@ -519,50 +424,36 @@ function typeEquals(a, b) {
  * @param {Type} type
  * @returns {string}
  */
-function typeToString(type) {
+function typeToString(type: Type): string {
     switch (type.kind) {
         case TypeKind.Int:
             return intWidthToString(type.width);
-
         case TypeKind.Float:
             return floatWidthToString(type.width);
-
         case TypeKind.Bool:
             return "bool";
-
         case TypeKind.Char:
             return "char";
-
         case TypeKind.String:
             return "&str";
-
         case TypeKind.Unit:
             return "()";
-
         case TypeKind.Never:
             return "!";
-
         case TypeKind.Tuple:
             return `(${type.elements.map(typeToString).join(", ")})`;
-
         case TypeKind.Array:
             return `[${typeToString(type.element)}; ${type.length}]`;
-
         case TypeKind.Slice:
             return `[${typeToString(type.element)}]`;
-
         case TypeKind.Struct:
             return type.name;
-
         case TypeKind.Enum:
             return type.name;
-
         case TypeKind.Ref:
             return `&${type.mutable ? "mut " : ""}${typeToString(type.inner)}`;
-
         case TypeKind.Ptr:
             return `*${type.mutable ? "mut " : "const "}${typeToString(type.inner)}`;
-
         case TypeKind.Fn: {
             const params = type.params.map(typeToString).join(", ");
             const ret = typeToString(type.returnType);
@@ -570,260 +461,111 @@ function typeToString(type) {
             const const_ = type.isConst ? "const " : "";
             return `${const_}${unsafe}fn(${params}) -> ${ret}`;
         }
-
         case TypeKind.TypeVar:
             if (type.bound) {
                 return typeToString(type.bound);
             }
             return `?${type.id}`;
-
         case TypeKind.Named: {
             if (!type.args || type.args.length === 0) {
                 return type.name;
             }
             return `${type.name}<${type.args.map(typeToString).join(", ")}>`;
         }
-
         default:
             return `<unknown>`;
     }
 }
 
-/**
- * @param {IntWidthValue} width
- * @returns {string}
- */
-function intWidthToString(width) {
-    switch (width) {
-        case IntWidth.I8:
-            return "i8";
-        case IntWidth.I16:
-            return "i16";
-        case IntWidth.I32:
-            return "i32";
-        case IntWidth.I64:
-            return "i64";
-        case IntWidth.I128:
-            return "i128";
-        case IntWidth.Isize:
-            return "isize";
-        case IntWidth.U8:
-            return "u8";
-        case IntWidth.U16:
-            return "u16";
-        case IntWidth.U32:
-            return "u32";
-        case IntWidth.U64:
-            return "u64";
-        case IntWidth.U128:
-            return "u128";
-        case IntWidth.Usize:
-            return "usize";
-        default:
-            return `<unknown int>`;
-    }
+function intWidthToString(width: IntWidthValue): string {
+    const intStr = Object.entries(IntWidth).find((kv) => kv[1] == width);
+    if (!intStr) return "<unknown int>";
+    return intStr[0].toLowerCase();
 }
 
 /**
  * @param {FloatWidthValue} width
  * @returns {string}
  */
-function floatWidthToString(width) {
-    switch (width) {
-        case FloatWidth.F32:
-            return "f32";
-        case FloatWidth.F64:
-            return "f64";
-        default:
-            return `<unknown float>`;
-    }
+function floatWidthToString(width: FloatWidthValue): string {
+    const floatStr = Object.entries(FloatWidth).find((kv) => kv[1] == width);
+    if (!floatStr) return `<unknown float>`;
+    return floatStr[0].toLowerCase();
 }
 
-/**
- * Check if type is an integer type
- * @param {Type} type
- * @returns {boolean}
- */
-function isIntegerType(type) {
+function isIntegerType(type: Type): boolean {
     return type.kind === TypeKind.Int;
 }
-
-/**
- * Check if type is a float type
- * @param {Type} type
- * @returns {boolean}
- */
-function isFloatType(type) {
+function isFloatType(type: Type): boolean {
     return type.kind === TypeKind.Float;
 }
-
-/**
- * Check if type is numeric (integer or float)
- * @param {Type} type
- * @returns {boolean}
- */
-function isNumericType(type) {
-    return type.kind === TypeKind.Int || type.kind === TypeKind.Float;
+function isNumericType(type: Type): boolean {
+    return isIntegerType(type) || isFloatType(type);
 }
-
-/**
- * Check if type is a reference type (&T or &mut T)
- * @param {Type} type
- * @returns {boolean}
- */
-function isReferenceType(type) {
+function isReferenceType(type: Type): boolean {
     return type.kind === TypeKind.Ref;
 }
-
-/**
- * Check if type is a pointer type (*const T or *mut T)
- * @param {Type} type
- * @returns {boolean}
- */
-function isPointerType(type) {
+function isPointerType(type: Type): boolean {
     return type.kind === TypeKind.Ptr;
 }
-
-/**
- * Check if type is a function type
- * @param {Type} type
- * @returns {boolean}
- */
-function isFnType(type) {
+function isFnType(type: Type): boolean {
     return type.kind === TypeKind.Fn;
 }
-
-/**
- * Check if type is a tuple type
- * @param {Type} type
- * @returns {boolean}
- */
-function isTupleType(type) {
+function isTupleType(type: Type): boolean {
     return type.kind === TypeKind.Tuple;
 }
-
-/**
- * Check if type is an array type
- * @param {Type} type
- * @returns {boolean}
- */
-function isArrayType(type) {
+function isArrayType(type: Type): boolean {
     return type.kind === TypeKind.Array;
 }
-
-/**
- * Check if type is a slice type
- * @param {Type} type
- * @returns {boolean}
- */
-function isSliceType(type) {
+function isSliceType(type: Type): boolean {
     return type.kind === TypeKind.Slice;
 }
-
-/**
- * Check if type is unit type
- * @param {Type} type
- * @returns {boolean}
- */
-function isUnitType(type) {
+function isUnitType(type: Type): boolean {
     return type.kind === TypeKind.Unit;
 }
-
-/**
- * Check if type is never type
- * @param {Type} type
- * @returns {boolean}
- */
-function isNeverType(type) {
+function isNeverType(type: Type): boolean {
     return type.kind === TypeKind.Never;
 }
-
-/**
- * Check if type is bool type
- * @param {Type} type
- * @returns {boolean}
- */
-function isBoolType(type) {
+function isBoolType(type: Type): boolean {
     return type.kind === TypeKind.Bool;
 }
-
-/**
- * Check if type is char type
- * @param {Type} type
- * @returns {boolean}
- */
-function isCharType(type) {
+function isCharType(type: Type): boolean {
     return type.kind === TypeKind.Char;
 }
-
-/**
- * Check if type is string type
- * @param {Type} type
- * @returns {boolean}
- */
-function isStringType(type) {
+function isStringType(type: Type): boolean {
     return type.kind === TypeKind.String;
 }
-
-/**
- * Check if type is a type variable
- * @param {Type} type
- * @returns {boolean}
- */
-function isTypeVar(type) {
+function isTypeVar(type: Type): boolean {
     return type.kind === TypeKind.TypeVar;
 }
-
-/**
- * Check if type is a named type (unresolved)
- * @param {Type} type
- * @returns {boolean}
- */
-function isNamedType(type) {
+function isNamedType(type: Type): boolean {
     return type.kind === TypeKind.Named;
 }
-
-/**
- * Check if type is a struct type
- * @param {Type} type
- * @returns {boolean}
- */
-function isStructType(type) {
+function isStructType(type: Type): boolean {
     return type.kind === TypeKind.Struct;
 }
-
-/**
- * Check if type is an enum type
- * @param {Type} type
- * @returns {boolean}
- */
-function isEnumType(type) {
+function isEnumType(type: Type): boolean {
     return type.kind === TypeKind.Enum;
 }
 
 /**
  * Check if a type is copyable in the relaxed ownership model.
  * Named type copyability is delegated to `options.hasNamedTypeCopy`.
- * @param {Type} type
- * @param {{
- *   resolveType?: (type: Type) => Type,
- *   hasNamedTypeCopy?: (name: string) => boolean
- * }} [options]
- * @returns {boolean}
  */
-function isCopyableType(type, options = {}) {
-    const resolveType = options.resolveType || ((/** @type {Type} */ t) => t);
-    const hasNamedTypeCopy = options.hasNamedTypeCopy || (() => false);
-    /** @type {Set<string>} */
-    const seen = new Set();
+function isCopyableType(
+    type: Type,
+    options: {
+        resolveType?: (type: Type) => Type;
+        hasNamedTypeCopy?: (name: string) => boolean;
+    } = {},
+): boolean {
+    const resolveType = options.resolveType ?? ((t: Type) => t);
+    const hasNamedTypeCopy = options.hasNamedTypeCopy ?? (() => false);
+    const seen: Set<string> = new Set();
 
-    /**
-     * @param {Type} ty
-     * @returns {boolean}
-     */
-    function visit(ty) {
-        const resolved = resolveType(ty);
-        switch (resolved.kind) {
+    const visit = (ty: Type): boolean => {
+        const resolvedType = resolveType(ty);
+        switch (resolvedType.kind) {
             case TypeKind.Int:
             case TypeKind.Float:
             case TypeKind.Bool:
@@ -837,43 +579,41 @@ function isCopyableType(type, options = {}) {
             case TypeKind.String:
                 return false;
             case TypeKind.Tuple:
-                return resolved.elements.every(visit);
+                return resolvedType.elements.every(visit);
             case TypeKind.Array:
-                return visit(resolved.element);
+                // TODO: should probably always return false?
+                return visit(resolvedType.element);
             case TypeKind.Slice:
-                return visit(resolved.element);
+                // TODO: should probably always return true?
+                return visit(resolvedType.element);
             case TypeKind.TypeVar:
-                return resolved.bound ? visit(resolved.bound) : false;
+                if (!resolvedType.bound) return false;
+                return visit(resolvedType.bound);
             case TypeKind.Struct:
             case TypeKind.Enum:
             case TypeKind.Named: {
-                const key = `${resolved.kind}:${resolved.name}`;
+                const key = `${resolvedType.kind}:${resolvedType.name}`;
                 if (seen.has(key)) {
                     return true;
                 }
                 seen.add(key);
                 let argsCopy = true;
-                if (resolved.kind === TypeKind.Named && resolved.args) {
-                    argsCopy = resolved.args.every(visit);
+                if (resolvedType.kind === TypeKind.Named && resolvedType.args) {
+                    argsCopy = resolvedType.args.every(visit);
                 }
-                const namedCopy = hasNamedTypeCopy(resolved.name);
+                const namedCopy = hasNamedTypeCopy(resolvedType.name);
                 seen.delete(key);
                 return argsCopy && namedCopy;
             }
             default:
                 return false;
         }
-    }
+    };
 
     return visit(type);
 }
 
-/**
- * Get the size of an integer type in bytes
- * @param {IntWidthValue} width
- * @returns {number}
- */
-function getIntWidthSize(width) {
+function getIntWidthSize(width: IntWidthValue): number {
     switch (width) {
         case IntWidth.I8:
         case IntWidth.U8:
@@ -899,12 +639,7 @@ function getIntWidthSize(width) {
     }
 }
 
-/**
- * Check if integer type is signed
- * @param {IntWidthValue} width
- * @returns {boolean}
- */
-function isSignedInt(width) {
+function isSignedInt(width: IntWidthValue): boolean {
     return width <= IntWidth.Isize;
 }
 

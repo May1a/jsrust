@@ -1,44 +1,40 @@
-import { TypeKind, makeTypeVar } from "./types";
+import { TypeVarType } from "./inference";
+import { Span, Type, TypeKind, makeTypeVar } from "./types";
 
-/** @typedef {import("./types").Type} Type */
-/** @typedef {import("./types").TypeVarType} TypeVarType */
-/** @typedef {import("./types").FnType} FnType */
-/** @typedef {import("./types").NamedType} NamedType */
-/** @typedef {import("./ast").Node} Node */
+type VarBinding = {
+    name: string;
+    type: Type;
+    mutable: boolean;
+    span: Span;
+    closureInfo?: {
+        captures: Array<{
+            name: string;
+            type: Type;
+            mutable: boolean;
+            byRef?: boolean;
+        }>;
+        inferredType?: Type;
+    } | null;
+};
 
-/**
- * @typedef {object} VarBinding
- * @property {string} name
- * @property {Type} type
- * @property {boolean} mutable
- * @property {Span} [span]
- * @property {{ captures: Array<{ name: string, type: Type, mutable: boolean, byRef?: boolean }>, inferredType?: Type } | null} [closureInfo]
- */
+type ItemDecl = {
+    name: string;
+    kind: "fn" | "struct" | "enum" | "mod" | "type" | "trait";
+    node: Node;
+    type?: Type;
+    genericBindings?: Map<string, Type>;
+};
 
-/**
- * @typedef {object} ItemDecl
- * @property {string} name
- * @property {'fn' | 'struct' | 'enum' | 'mod' | 'type' | 'trait'} kind
- * @property {Node} node
- * @property {Type} [type]
- * @property {Map<string, Type>} [genericBindings]
- */
-
-/**
- * @typedef {object} Scope
- * @property {Map<string, VarBinding>} bindings
- * @property {Scope | null} parent
- */
+type Scope = {
+    bindings: Map<string, VarBinding>;
+    parent: Scope | null;
+};
 
 /**
  * @typedef {object} LoopContext
  * @property {boolean} allowsBreakValue
  * @property {Type | null} breakType
  * @property {boolean} hasBreak
- */
-
-/**
- * @typedef {{ line: number, column: number, start: number, end: number }} Span
  */
 
 // ============================================================================
@@ -49,11 +45,15 @@ import { TypeKind, makeTypeVar } from "./types";
  * Type context for tracking scopes, bindings, and item declarations
  */
 class TypeContext {
+    currentScope: Scope;
+    items: Map<string, ItemDecl>;
+    typeAliases: Map<string, Type>;
+    currentFn: Type | null;
+    currentReturnType: Type | null;
+    typeVars: Map<number, TypeVarType>;
+    internedTypes: Map<string, Type>;
     constructor() {
-        /** @type {Scope} */
         this.currentScope = { bindings: new Map(), parent: null };
-
-        /** @type {Map<string, ItemDecl>} */
         this.items = new Map();
 
         /** @type {Map<string, Type>} */
@@ -656,7 +656,7 @@ class TypeContext {
      * @returns {Type}
      */
     freshTypeVar() {
-        const tv = /** @type {TypeVarType} */ (makeTypeVar());
+        const tv = /** @type {TypeVarType} */ makeTypeVar();
         this.typeVars.set(tv.id, tv);
         return tv;
     }
@@ -795,7 +795,7 @@ class TypeContext {
             case TypeKind.Named:
                 return `Named(${type.name}${type.args ? `<${type.args.map((t) => this.typeToKey(t)).join(",")}>` : ""})`;
             default:
-                return `Unknown(${/** @type {any} */ (type).kind})`;
+                return `Unknown(${/** @type {any} */ type.kind})`;
         }
     }
 }

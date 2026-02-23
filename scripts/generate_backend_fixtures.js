@@ -3,12 +3,12 @@
 import * as fs from "fs";
 import * as path from "path";
 import { createHash } from "crypto";
-import { compileFileToIRModule } from "../main.js";
+import { compileFileToIRModule } from "../main";
 import {
     serializeModule,
     VERSION as BINARY_IR_VERSION,
-} from "../ir_serialize.js";
-import { validateModule } from "../ir_validate.js";
+} from "../src/ir_serialize";
+import { validateModule } from "../src/ir_validate";
 
 const fixtureDir = path.resolve(process.cwd(), "tests/fixtures/backend_ir_v2");
 

@@ -1,9 +1,6 @@
 import { tokenize, TokenType } from "./tokenizer";
-/** @typedef {import('./tokenizer').Token} Token */
-/** @typedef {import('./tokenizer').TokenTypeValue} TokenTypeValue */
-/** @typedef {import('./ast').Span} Span */
-/** @typedef {import('./ast').Node} Node */
-/** @typedef {import('./ast').BinaryOpValue} BinaryOpValue */
+import type { Token } from "./tokenizer";
+
 import {
     NodeKind,
     LiteralKind,
@@ -67,43 +64,31 @@ import {
     makeFnType,
     makeGenericArgs,
     makeModule,
+    type Span,
+    BinaryOpValue,
 } from "./ast";
 
-const tokenNames = Object.fromEntries(
-    Object.entries(TokenType).map(([k, v]) => [v, k]),
-);
+type ParserState = { tokens: Token[]; pos: number; errors: ParseError[] };
+type ParseError = {
+    message: string;
+    span: Span;
+    expected: string[] | null;
+    found: string | null;
+};
+type ParseResult = { ok: boolean; value: Node | null; errors: ParseError[] };
 
-/**
- * @typedef {{ tokens: Token[], pos: number, errors: ParseError[] }} ParserState
- * @typedef {{ message: string, span: Span, expected: string[] | null, found: string | null }} ParseError
- * @typedef {{ ok: boolean, value: Node | null, errors: ParseError[] }} ParseResult
- */
-
-/**
- * @param {Token[]} tokens
- * @returns {ParserState}
- */
-function createState(tokens) {
+function createState(tokens: Token[]) {
     return { tokens, pos: 0, errors: [] };
 }
 
-/**
- * @param {ParserState} state
- * @param {number} [offset=0]
- * @returns {Token}
- */
-function peek(state, offset = 0) {
+function peek(state: ParserState, offset: number = 0): Token {
     return (
         state.tokens[state.pos + offset] ??
         state.tokens[state.tokens.length - 1]
     );
 }
 
-/**
- * @param {ParserState} state
- * @returns {Token}
- */
-function advance(state) {
+function advance(state: ParserState): Token {
     const token = peek(state);
     if (state.pos < state.tokens.length) {
         state.pos += 1;
@@ -111,61 +96,37 @@ function advance(state) {
     return token;
 }
 
-/**
- * @param {ParserState} state
- * @returns {Token}
- */
-function previous(state) {
+function previous(state: ParserState): Token {
     if (state.pos - 1 >= 0) {
         return state.tokens[state.pos - 1];
     }
     return state.tokens[0] ?? peek(state);
 }
 
-/**
- * @param {ParserState} state
- * @param {number} type
- * @returns {boolean}
- */
-function check(state, type) {
+function check(state: ParserState, type: number): boolean {
     return peek(state).type === type;
 }
 
-/**
- * @param {ParserState} state
- * @returns {boolean}
- */
-function isAtEnd(state) {
+function isAtEnd(state: ParserState): boolean {
     return peek(state).type === TokenType.Eof;
 }
 
-/**
- * @param {Token} token
- * @returns {Span}
- */
-function spanFromToken(token) {
+function spanFromToken(token: Token): Span {
     const start = token.column;
     const end = token.column + (token.value ? token.value.length : 0);
     return makeSpan(token.line, token.column, start, end);
 }
 
-/**
- * @param {Span} a
- * @param {Span} b
- * @returns {Span}
- */
-function mergeSpans(a, b) {
+function mergeSpans(a: Span, b: Span): Span {
     return makeSpan(a.line, a.column, a.start, b.end);
 }
 
-/**
- * @param {ParserState} state
- * @param {string} message
- * @param {Token | null} [token=null]
- * @param {string[] | null} [expected=null]
- * @returns {void}
- */
-function addError(state, message, token, expected = null) {
+function addError(
+    state: ParserState,
+    message: string,
+    token: Token | null,
+    expected: string[] | null = null,
+): void {
     const span = token ? spanFromToken(token) : spanFromToken(peek(state));
     state.errors.push({
         message,
@@ -175,25 +136,14 @@ function addError(state, message, token, expected = null) {
     });
 }
 
-/**
- * @param {ParserState} state
- * @param {number} type
- * @returns {Token | null}
- */
-function matchToken(state, type) {
+function matchToken(state: ParserState, type: number): Token | null {
     if (check(state, type)) {
         return advance(state);
     }
     return null;
 }
 
-/**
- * @param {ParserState} state
- * @param {number} type
- * @param {string} message
- * @returns {Token | null}
- */
-function expectToken(state, type, message) {
+function expectToken(state: ParserState, type: number, message: string) {
     if (check(state, type)) {
         return advance(state);
     }
@@ -201,48 +151,25 @@ function expectToken(state, type, message) {
     return null;
 }
 
-/**
- * @param {ParserState} state
- * @returns {Span}
- */
-function currentSpan(state) {
+function currentSpan(state: ParserState): Span {
     return spanFromToken(peek(state));
 }
 
-/**
- * @param {ParserState} state
- * @param {number[]} tokenTypes
- * @returns {void}
- */
-function skipToRecovery(state, tokenTypes) {
+function skipToRecovery(state: ParserState, tokenTypes: number[]): void {
     while (!isAtEnd(state) && !tokenTypes.includes(peek(state).type)) {
         advance(state);
     }
 }
 
-/**
- * @param {Token} token
- * @returns {boolean}
- */
-function isIdentifierToken(token) {
+function isIdentifierToken(token: Token): boolean {
     return token.type === TokenType.Identifier || token.type === TokenType.Self;
 }
 
-/**
- * @param {Token} token
- * @param {string} value
- * @returns {boolean}
- */
-function isIdentifierValue(token, value) {
+function isIdentifierValue(token: Token, value: string): boolean {
     return token.type === TokenType.Identifier && token.value === value;
 }
 
-/**
- * @param {ParserState} state
- * @param {number} type
- * @returns {Token | null}
- */
-function matchDouble(state, type) {
+function matchDouble(state: ParserState, type: number): Token | null {
     if (check(state, type) && peek(state, 1).type === type) {
         const first = advance(state);
         advance(state);
@@ -251,11 +178,7 @@ function matchDouble(state, type) {
     return null;
 }
 
-/**
- * @param {ParserState} state
- * @returns {Token | null}
- */
-function matchArrow(state) {
+function matchArrow(state: ParserState): Token | null {
     if (check(state, TokenType.Minus) && peek(state, 1).type === TokenType.Gt) {
         const token = advance(state);
         advance(state);
@@ -264,11 +187,7 @@ function matchArrow(state) {
     return null;
 }
 
-/**
- * @param {ParserState} state
- * @returns {Token | null}
- */
-function matchFatArrow(state) {
+function matchFatArrow(state: ParserState): Token | null {
     if (check(state, TokenType.FatArrow)) {
         return advance(state);
     }
@@ -281,12 +200,7 @@ function matchFatArrow(state) {
     return null;
 }
 
-/**
- * @param {ParserState} state
- * @param {string} symbol
- * @returns {Token | null}
- */
-function matchInvalidSymbol(state, symbol) {
+function matchInvalidSymbol(state: ParserState, symbol: string): Token | null {
     if (
         peek(state).type === TokenType.Invalid &&
         peek(state).value === symbol
@@ -296,18 +210,17 @@ function matchInvalidSymbol(state, symbol) {
     return null;
 }
 
-/**
- * @param {ParserState} state
- * @returns {{ derives: string[], isTest: boolean, expectedOutput: string | null, builtinName: string | null, consumedOnlyInert: boolean }}
- */
-function parseOuterAttributes(state) {
-    /** @type {string[]} */
-    const derives = [];
+function parseOuterAttributes(state: ParserState): {
+    derives: string[];
+    isTest: boolean;
+    expectedOutput: string | null;
+    builtinName: string | null;
+    consumedOnlyInert: boolean;
+} {
+    const derives: string[] = [];
     let isTest = false;
-    /** @type {string | null} */
-    let expectedOutput = null;
-    /** @type {string | null} */
-    let builtinName = null;
+    let expectedOutput: string | null = null;
+    let builtinName: string | null = null;
     let consumedAny = false;
     let consumedMeaningful = false;
     while (
@@ -495,10 +408,7 @@ function parseOuterAttributes(state) {
     };
 }
 
-/**
- * @param {ParserState} state
- */
-function skipAttribute(state) {
+function skipAttribute(state: ParserState) {
     let depth = 0;
     while (!isAtEnd(state)) {
         if (matchToken(state, TokenType.OpenSquare)) {
@@ -514,10 +424,7 @@ function skipAttribute(state) {
     }
 }
 
-/**
- * @param {ParserState} state
- */
-function skipBalancedParens(state) {
+function skipBalancedParens(state: ParserState) {
     let depth = 1;
     while (!isAtEnd(state) && depth > 0) {
         if (matchToken(state, TokenType.OpenParen)) {
@@ -532,11 +439,7 @@ function skipBalancedParens(state) {
     }
 }
 
-/**
- * @param {Token} token
- * @returns {number}
- */
-function parseIntegerToken(token) {
+function parseIntegerToken(token: Token): number {
     if (token.value.startsWith("0x") || token.value.startsWith("0X")) {
         return Number.parseInt(token.value.slice(2), 16);
     }
@@ -549,19 +452,11 @@ function parseIntegerToken(token) {
     return Number.parseInt(token.value, 10);
 }
 
-/**
- * @param {Token} token
- * @returns {number}
- */
-function parseFloatToken(token) {
+function parseFloatToken(token: Token): number {
     return Number.parseFloat(token.value);
 }
 
-/**
- * @param {string} value
- * @returns {string}
- */
-function decodeEscapes(value) {
+function decodeEscapes(value: string): string {
     let result = "";
     for (let i = 0; i < value.length; i += 1) {
         const ch = value[i];
@@ -583,22 +478,13 @@ function decodeEscapes(value) {
     return result;
 }
 
-/**
- * @param {Token} token
- * @returns {string}
- */
-function parseStringToken(token) {
+function parseStringToken(token: Token): string {
     const raw = token.value;
     const inner = raw.length >= 2 ? raw.slice(1, -1) : "";
     return decodeEscapes(inner);
 }
 
-/**
- * @param {Token} token
- * @param {ParserState} state
- * @returns {string}
- */
-function parseCharToken(token, state) {
+function parseCharToken(token: Token, state: ParserState): string {
     const value = parseStringToken(token);
     if (value.length !== 1) {
         addError(state, "Invalid char literal", token, null);
@@ -606,11 +492,7 @@ function parseCharToken(token, state) {
     return value[0] ?? "";
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node | null}
- */
-function parseLiteralExpr(state) {
+function parseLiteralExpr(state: ParserState) {
     const token = peek(state);
     if (token.type === TokenType.Integer) {
         advance(state);
@@ -663,13 +545,8 @@ function parseLiteralExpr(state) {
     return null;
 }
 
-/**
- * @param {ParserState} state
- * @returns {string[]}
- */
-function parsePathSegments(state) {
-    /** @type {string[]} */
-    const segments = [];
+function parsePathSegments(state: ParserState): string[] {
+    const segments: string[] = [];
     const first = peek(state);
     if (!isIdentifierToken(first)) {
         addError(state, "Expected identifier", first, ["Identifier"]);
@@ -697,11 +574,7 @@ function parsePathSegments(state) {
     return segments;
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node | null}
- */
-function parsePathTypeNode(state) {
+function parsePathTypeNode(state: ParserState) {
     const start = peek(state);
     if (!isIdentifierToken(start)) {
         return null;
@@ -711,10 +584,9 @@ function parsePathTypeNode(state) {
         return null;
     }
     const endToken = previous(state);
-    let args = null;
+    let args: Node | undefined;
     if (matchToken(state, TokenType.Lt)) {
-        /** @type {Node[]} */
-        const typeArgs = [];
+        const typeArgs: Node[] = [];
         while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
             if (check(state, TokenType.Lifetime)) {
                 advance(state);
@@ -743,14 +615,17 @@ function parsePathTypeNode(state) {
  * @param {ParserState} state
  * @returns {{ genericParams: { name: string, bounds: Node[] }[], ignoredLifetimeParams: string[] } | null}
  */
-function parseGenericParamList(state) {
+function parseGenericParamList(state: ParserState): {
+    genericParams: { name: string; bounds: Node[] }[];
+    ignoredLifetimeParams: string[];
+} | null {
     if (!matchToken(state, TokenType.Lt)) {
         return null;
     }
     /** @type {{ name: string, bounds: Node[] }[]} */
-    const genericParams = [];
+    const genericParams: { name: string; bounds: Node[] }[] = [];
     /** @type {string[]} */
-    const ignoredLifetimeParams = [];
+    const ignoredLifetimeParams: string[] = [];
     while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
         if (check(state, TokenType.Lifetime)) {
             const lifetimeToken = advance(state);
@@ -779,7 +654,7 @@ function parseGenericParamList(state) {
             ) ?? peek(state);
         const name = paramToken.value ?? "";
         /** @type {Node[]} */
-        const bounds = [];
+        const bounds: Node[] = [];
         if (matchToken(state, TokenType.Colon)) {
             while (!isAtEnd(state)) {
                 const bound = parseTypeBound(state);
@@ -798,12 +673,14 @@ function parseGenericParamList(state) {
  * @param {ParserState} state
  * @returns {{ name: string, bounds: Node[] }[] | null}
  */
-function parseOptionalWhereClause(state) {
+function parseOptionalWhereClause(
+    state: ParserState,
+): { name: string; bounds: Node[] }[] | null {
     if (!matchToken(state, TokenType.Where)) {
         return null;
     }
     /** @type {{ name: string, bounds: Node[] }[]} */
-    const whereClause = [];
+    const whereClause: { name: string; bounds: Node[] }[] = [];
     while (
         !check(state, TokenType.OpenCurly) &&
         !check(state, TokenType.Semicolon) &&
@@ -817,7 +694,7 @@ function parseOptionalWhereClause(state) {
             ) ?? peek(state);
         const name = paramToken.value ?? "";
         /** @type {Node[]} */
-        const bounds = [];
+        const bounds: Node[] = [];
         if (matchToken(state, TokenType.Colon)) {
             while (!isAtEnd(state)) {
                 const bound = parseTypeBound(state);
@@ -845,7 +722,7 @@ function parseOptionalWhereClause(state) {
  * @param {ParserState} state
  * @returns {Node | null}
  */
-function parseTypeBound(state) {
+function parseTypeBound(state: ParserState): Node | null {
     const bound = parsePathTypeNode(state) || parseType(state);
     if (
         !bound ||
@@ -890,7 +767,7 @@ function parseTypeBound(state) {
  * @param {ParserState} state
  * @returns {boolean}
  */
-function parseOptionalVisibility(state) {
+function parseOptionalVisibility(state: ParserState): boolean {
     if (!matchToken(state, TokenType.Pub)) {
         return false;
     }
@@ -938,7 +815,7 @@ function parseOptionalVisibility(state) {
  * @param {Node} pathNode
  * @returns {Node}
  */
-function parseStructExpr(state, pathNode) {
+function parseStructExpr(state: ParserState, pathNode: Node): Node {
     const fields = [];
     let spread = null;
     expectToken(state, TokenType.OpenCurly, "Expected { in struct literal");
@@ -997,7 +874,10 @@ function parseStructExpr(state, pathNode) {
  * @param {boolean} [allowStructLiteral=true]
  * @returns {Node | null}
  */
-function parseAtom(state, allowStructLiteral = true) {
+function parseAtom(
+    state: ParserState,
+    allowStructLiteral: boolean = true,
+): Node | null {
     const literal = parseLiteralExpr(state);
     if (literal) return literal;
 
@@ -1206,10 +1086,10 @@ function parseMacroArgs(state: ParserState): Node[] {
  * @param {Node} expr
  * @returns {Node | null}
  */
-function parsePostfix(state, expr) {
+function parsePostfix(state: ParserState, expr: Node): Node | null {
     let result = expr;
     /** @type {Node[] | null} */
-    let pendingTypeArgs = null;
+    let pendingTypeArgs: Node[] | null = null;
     while (result) {
         if (
             check(state, TokenType.Dot) &&
@@ -1312,7 +1192,7 @@ function parsePostfix(state, expr) {
                 continue;
             }
             /** @type {Node[]} */
-            const typeArgs = [];
+            const typeArgs: Node[] = [];
             while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
                 const typeArg = parseType(state);
                 if (typeArg) typeArgs.push(typeArg);
@@ -1344,7 +1224,7 @@ function parsePostfix(state, expr) {
  * @param {ParserState} state
  * @returns {Node | null}
  */
-function parseClosureExpr(state) {
+function parseClosureExpr(state: ParserState): Node | null {
     let isMove = false;
     let startToken = peek(state);
     if (isIdentifierValue(peek(state), "move")) {
@@ -1425,7 +1305,10 @@ function parseClosureExpr(state) {
  * @param {boolean} [allowStructLiteral=true]
  * @returns {Node | null}
  */
-function parsePrefix(state, allowStructLiteral = true) {
+function parsePrefix(
+    state: ParserState,
+    allowStructLiteral: boolean = true,
+): Node | null {
     const token = peek(state);
     if (
         token.type === TokenType.PipePipe ||
@@ -1478,12 +1361,9 @@ function parsePrefix(state, allowStructLiteral = true) {
     return parsePostfix(state, atom);
 }
 
-/**
- * @typedef {{ prec: number, op: BinaryOpValue, assoc: string }} BinaryOpInfo
- */
+type BinaryOpInfo = { prec: number; op: BinaryOpValue; assoc: string };
 
-/** @type {Map<number, BinaryOpInfo>} */
-const binaryOps = new Map([
+const binaryOps: Map<number, BinaryOpInfo> = new Map([
     [TokenType.PipePipe, { prec: 2, op: BinaryOp.Or, assoc: "left" }],
     [TokenType.AndAnd, { prec: 3, op: BinaryOp.And, assoc: "left" }],
     [TokenType.Pipe, { prec: 4, op: BinaryOp.BitOr, assoc: "left" }],
@@ -1503,7 +1383,7 @@ const binaryOps = new Map([
 ]);
 
 /** @type {Map<number, BinaryOpValue>} */
-const compoundAssignOps = new Map([
+const compoundAssignOps: Map<number, BinaryOpValue> = new Map([
     [TokenType.PlusEq, BinaryOp.Add],
     [TokenType.MinusEq, BinaryOp.Sub],
     [TokenType.StarEq, BinaryOp.Mul],
@@ -1518,7 +1398,9 @@ const compoundAssignOps = new Map([
  * @param {ParserState} state
  * @returns {{ token: Token, inclusive: boolean } | null}
  */
-function parseRangeOperator(state) {
+function parseRangeOperator(
+    state: ParserState,
+): { token: Token; inclusive: boolean } | null {
     if (check(state, TokenType.Dot) && peek(state, 1).type === TokenType.Dot) {
         const startToken = advance(state);
         advance(state);
@@ -1534,7 +1416,11 @@ function parseRangeOperator(state) {
  * @param {boolean} [allowStructLiteral=true]
  * @returns {Node | null}
  */
-function parseExpr(state, minPrec = 0, allowStructLiteral = true) {
+function parseExpr(
+    state: ParserState,
+    minPrec: number = 0,
+    allowStructLiteral: boolean = true,
+): Node | null {
     let left = parsePrefix(state, allowStructLiteral);
     if (!left) return null;
     while (true) {
@@ -1595,7 +1481,7 @@ function parseExpr(state, minPrec = 0, allowStructLiteral = true) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parseLetStmt(state) {
+function parseLetStmt(state: ParserState): Node {
     const start =
         expectToken(state, TokenType.Let, "Expected let") ?? peek(state);
     const pat = parsePattern(state);
@@ -1628,7 +1514,7 @@ function parseLetStmt(state) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parseExprStmt(state) {
+function parseExprStmt(state: ParserState): Node {
     const expr = parseExpr(state, 0);
     const hasSemicolon = matchToken(state, TokenType.Semicolon) !== null;
     const span = expr ? mergeSpans(expr.span, expr.span) : currentSpan(state);
@@ -1643,7 +1529,7 @@ function parseExprStmt(state) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parseStmt(state) {
+function parseStmt(state: ParserState): Node {
     if (check(state, TokenType.Let)) {
         return parseLetStmt(state);
     }
@@ -1680,7 +1566,10 @@ function parseStmt(state) {
  * @param {{ allowReceiver?: boolean }} [options]
  * @returns {Node[]}
  */
-function parseParamList(state, options = {}) {
+function parseParamList(
+    state: ParserState,
+    options: { allowReceiver?: boolean } = {},
+): Node[] {
     const { allowReceiver = false } = options;
     const params = [];
     expectToken(state, TokenType.OpenParen, "Expected ( in parameter list");
@@ -1692,7 +1581,7 @@ function parseParamList(state, options = {}) {
             let ty = null;
             let isReceiver = false;
             /** @type {"value" | "ref" | "ref_mut" | null} */
-            let receiverKind = null;
+            let receiverKind: "value" | "ref" | "ref_mut" | null = null;
 
             const canBeReceiver =
                 allowReceiver &&
@@ -1803,12 +1692,12 @@ function parseParamList(state, options = {}) {
  * @returns {Node}
  */
 function parseFnItem(
-    state,
-    isUnsafe,
-    isPub,
-    isConst = false,
-    allowReceiver = false,
-) {
+    state: ParserState,
+    isUnsafe: boolean,
+    isPub: boolean,
+    isConst: boolean = false,
+    allowReceiver: boolean = false,
+): Node {
     const start =
         expectToken(state, TokenType.Fn, "Expected fn") ?? peek(state);
     const nameToken =
@@ -1820,7 +1709,9 @@ function parseFnItem(
         ? genericList.ignoredLifetimeParams
         : [];
     const generics = genericParams
-        ? genericParams.map((/** @type {{ name: string }} */ p) => p.name)
+        ? genericParams.map(
+              (/** @type {{ name: string }} */ p: { name: string }) => p.name,
+          )
         : null;
     const params = parseParamList(state, { allowReceiver });
     let returnType = null;
@@ -1862,7 +1753,7 @@ function parseFnItem(
  * @param {boolean} isPub
  * @returns {Node}
  */
-function parseStructItem(state, isPub) {
+function parseStructItem(state: ParserState, isPub: boolean): Node {
     const start =
         expectToken(state, TokenType.Struct, "Expected struct") ?? peek(state);
     const nameToken =
@@ -1874,7 +1765,9 @@ function parseStructItem(state, isPub) {
         ? genericList.ignoredLifetimeParams
         : [];
     const generics = genericParams
-        ? genericParams.map((/** @type {{ name: string }} */ p) => p.name)
+        ? genericParams.map(
+              (/** @type {{ name: string }} */ p: { name: string }) => p.name,
+          )
         : null;
     const fields = [];
     let isTuple = false;
@@ -1952,7 +1845,11 @@ function parseStructItem(state, isPub) {
  * @param {boolean} isPub
  * @returns {Node}
  */
-function parseTraitItem(state, isUnsafe, isPub) {
+function parseTraitItem(
+    state: ParserState,
+    isUnsafe: boolean,
+    isPub: boolean,
+): Node {
     const start =
         expectToken(state, TokenType.Trait, "Expected trait") ?? peek(state);
     const nameToken =
@@ -2011,7 +1908,7 @@ function parseTraitItem(state, isUnsafe, isPub) {
  * @param {boolean} isUnsafe
  * @returns {Node}
  */
-function parseImplItem(state, isUnsafe) {
+function parseImplItem(state: ParserState, isUnsafe: boolean): Node {
     const start =
         expectToken(state, TokenType.Impl, "Expected impl") ?? peek(state);
     const genericList = parseGenericParamList(state);
@@ -2021,9 +1918,9 @@ function parseImplItem(state, isUnsafe) {
         : [];
     const firstType = parseType(state);
     /** @type {Node | null} */
-    let traitType = null;
+    let traitType: Node | null = null;
     /** @type {Node | null} */
-    let targetType = firstType;
+    let targetType: Node | null = firstType;
     if (matchToken(state, TokenType.For)) {
         traitType = firstType;
         targetType = parseType(state);
@@ -2086,7 +1983,7 @@ function parseImplItem(state, isUnsafe) {
  * @param {boolean} isPub
  * @returns {Node}
  */
-function parseEnumItem(state, isPub) {
+function parseEnumItem(state: ParserState, isPub: boolean): Node {
     const start =
         expectToken(state, TokenType.Enum, "Expected enum") ?? peek(state);
     const nameToken =
@@ -2098,7 +1995,9 @@ function parseEnumItem(state, isPub) {
         ? genericList.ignoredLifetimeParams
         : [];
     const generics = genericParams
-        ? genericParams.map((/** @type {{ name: string }} */ p) => p.name)
+        ? genericParams.map(
+              (/** @type {{ name: string }} */ p: { name: string }) => p.name,
+          )
         : null;
     const variants = [];
     expectToken(state, TokenType.OpenCurly, "Expected { after enum name");
@@ -2128,7 +2027,7 @@ function parseEnumItem(state, isPub) {
                         "Expected field name",
                     ) ?? peek(state);
                 /** @type {Node | null} */
-                let ty = null;
+                let ty: Node | null = null;
                 if (matchToken(state, TokenType.Colon)) {
                     ty = parseType(state);
                 }
@@ -2149,7 +2048,7 @@ function parseEnumItem(state, isPub) {
             );
         }
         /** @type {Node | null} */
-        let discriminant = null;
+        let discriminant: Node | null = null;
         if (matchToken(state, TokenType.Eq)) {
             discriminant = parseExpr(state, 0);
         }
@@ -2186,14 +2085,14 @@ function parseEnumItem(state, isPub) {
  * @param {boolean} isPub
  * @returns {Node}
  */
-function parseModItem(state, isPub) {
+function parseModItem(state: ParserState, isPub: boolean): Node {
     const start =
         expectToken(state, TokenType.Mod, "Expected mod") ?? peek(state);
     const nameToken =
         expectToken(state, TokenType.Identifier, "Expected module name") ??
         peek(state);
     /** @type {Node[]} */
-    let items = [];
+    let items: Node[] = [];
     let isInline = false;
     if (matchToken(state, TokenType.OpenCurly)) {
         isInline = true;
@@ -2228,9 +2127,12 @@ function parseModItem(state, isPub) {
  * @param {ParserState} state
  * @returns {{ path: string[], hasWildcard: boolean }}
  */
-function parseUsePath(state) {
+function parseUsePath(state: ParserState): {
+    path: string[];
+    hasWildcard: boolean;
+} {
     /** @type {string[]} */
-    const path = [];
+    const path: string[] = [];
     let hasWildcard = false;
     const first = peek(state);
     if (!isIdentifierToken(first)) {
@@ -2275,10 +2177,10 @@ function parseUsePath(state) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parseUseTree(state) {
+function parseUseTree(state: ParserState): Node {
     const startToken = peek(state);
     /** @type {string[]} */
-    let path = [];
+    let path: string[] = [];
     let hasWildcard = false;
     const startsWithGroup = check(state, TokenType.OpenCurly);
     if (!startsWithGroup) {
@@ -2287,7 +2189,7 @@ function parseUseTree(state) {
         hasWildcard = parsed.hasWildcard;
     }
     /** @type {string | null} */
-    let alias = null;
+    let alias: string | null = null;
     if (!startsWithGroup && isIdentifierValue(peek(state), "as")) {
         advance(state);
         const aliasToken =
@@ -2296,7 +2198,7 @@ function parseUseTree(state) {
         alias = aliasToken.value ?? null;
     }
     /** @type {Node[] | null} */
-    let children = null;
+    let children: Node[] | null = null;
     if (matchToken(state, TokenType.OpenCurly)) {
         children = [];
         if (!check(state, TokenType.CloseCurly)) {
@@ -2326,7 +2228,7 @@ function parseUseTree(state) {
  * @param {boolean} isPub
  * @returns {Node}
  */
-function parseUseItem(state, isPub) {
+function parseUseItem(state: ParserState, isPub: boolean): Node {
     const start =
         expectToken(state, TokenType.Use, "Expected use") ?? peek(state);
     const tree = parseUseTree(state);
@@ -2341,7 +2243,7 @@ function parseUseItem(state, isPub) {
  * @param {ParserState} state
  * @returns {Node | null}
  */
-function parseItem(state) {
+function parseItem(state: ParserState): Node | null {
     const { derives, isTest, expectedOutput, builtinName, consumedOnlyInert } =
         parseOuterAttributes(state);
     let isPub = false;
@@ -2360,7 +2262,7 @@ function parseItem(state) {
         }
     }
     /** @type {Node | null} */
-    let item = null;
+    let item: Node | null = null;
     if (check(state, TokenType.Fn))
         item = parseFnItem(state, isUnsafe, isPub, isConst);
     else if (check(state, TokenType.Struct))
@@ -2416,7 +2318,7 @@ function parseItem(state) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parsePattern(state) {
+function parsePattern(state: ParserState): Node {
     const alternatives = [];
     const first = parsePatternAtom(state);
     if (first) alternatives.push(first);
@@ -2436,7 +2338,7 @@ function parsePattern(state) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parsePatternAtom(state) {
+function parsePatternAtom(state: ParserState): Node {
     const token = peek(state);
     if (token.type === TokenType.Identifier && token.value === "_") {
         advance(state);
@@ -2548,7 +2450,7 @@ function parsePatternAtom(state) {
  * @param {ParserState} state
  * @returns {Node | null}
  */
-function parseLiteralPat(state) {
+function parseLiteralPat(state: ParserState): Node | null {
     const token = peek(state);
     if (token.type === TokenType.Integer) {
         advance(state);
@@ -2590,7 +2492,11 @@ function parseLiteralPat(state) {
  * @param {Token} startToken
  * @returns {Node}
  */
-function parseStructPattern(state, path, startToken) {
+function parseStructPattern(
+    state: ParserState,
+    path: Node,
+    startToken: Token,
+): Node {
     const fields = [];
     let rest = false;
     expectToken(state, TokenType.OpenCurly, "Expected { in struct pattern");
@@ -2607,7 +2513,7 @@ function parseStructPattern(state, path, startToken) {
             expectToken(state, TokenType.Identifier, "Expected field name") ??
             peek(state);
         /** @type {Node | null} */
-        let pat = null;
+        let pat: Node | null = null;
         if (matchToken(state, TokenType.Colon)) {
             pat = parsePattern(state);
         } else {
@@ -2638,7 +2544,11 @@ function parseStructPattern(state, path, startToken) {
  * @param {Token} startToken
  * @returns {Node}
  */
-function parseEnumTupleVariantPattern(state, path, startToken) {
+function parseEnumTupleVariantPattern(
+    state: ParserState,
+    path: Node,
+    startToken: Token,
+): Node {
     const elements = [];
     expectToken(
         state,
@@ -2669,7 +2579,11 @@ function parseEnumTupleVariantPattern(state, path, startToken) {
  * @param {string | null} name
  * @returns {Node}
  */
-function parseTuplePattern(state, startToken, name) {
+function parseTuplePattern(
+    state: ParserState,
+    startToken: Token,
+    name: string | null,
+): Node {
     const elements = [];
     expectToken(state, TokenType.OpenParen, "Expected ( in tuple pattern");
     let hasComma = false;
@@ -2707,7 +2621,7 @@ function parseTuplePattern(state, startToken, name) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parseSlicePattern(state) {
+function parseSlicePattern(state: ParserState): Node {
     const startToken =
         expectToken(
             state,
@@ -2716,7 +2630,7 @@ function parseSlicePattern(state) {
         ) ?? peek(state);
     const elements = [];
     /** @type {Node | null} */
-    let rest = null;
+    let rest: Node | null = null;
     if (!check(state, TokenType.CloseSquare)) {
         while (!check(state, TokenType.CloseSquare) && !isAtEnd(state)) {
             if (
@@ -2746,7 +2660,7 @@ function parseSlicePattern(state) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parseType(state) {
+function parseType(state: ParserState): Node {
     const token = peek(state);
     if (token.type === TokenType.And) {
         const start = advance(state);
@@ -2908,13 +2822,13 @@ function parseType(state) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parseIfExpr(state) {
+function parseIfExpr(state: ParserState): Node {
     const start =
         expectToken(state, TokenType.If, "Expected if") ?? peek(state);
     const condition = parseExpr(state, 0);
     const thenBranch = parseBlockExpr(state);
     /** @type {Node | null} */
-    let elseBranch = null;
+    let elseBranch: Node | null = null;
     if (matchToken(state, TokenType.Else)) {
         if (check(state, TokenType.If)) {
             elseBranch = parseIfExpr(state);
@@ -2942,7 +2856,7 @@ function parseIfExpr(state) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parseMatchExpr(state) {
+function parseMatchExpr(state: ParserState): Node {
     const start =
         expectToken(state, TokenType.Match, "Expected match") ?? peek(state);
     const scrutinee = parseExpr(state, 0, false);
@@ -2951,7 +2865,7 @@ function parseMatchExpr(state) {
     while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
         const pat = parsePattern(state);
         /** @type {Node | null} */
-        let guard = null;
+        let guard: Node | null = null;
         if (matchToken(state, TokenType.If)) {
             guard = parseExpr(state, 0);
         }
@@ -2988,12 +2902,12 @@ function parseMatchExpr(state) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parseBlockExpr(state) {
+function parseBlockExpr(state: ParserState): Node {
     const start =
         expectToken(state, TokenType.OpenCurly, "Expected {") ?? peek(state);
     const stmts = [];
     /** @type {Node | null} */
-    let expr = null;
+    let expr: Node | null = null;
     while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
         if (check(state, TokenType.Let)) {
             stmts.push(parseLetStmt(state));
@@ -3052,7 +2966,7 @@ function parseBlockExpr(state) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parseLoopExpr(state) {
+function parseLoopExpr(state: ParserState): Node {
     const start =
         expectToken(state, TokenType.Loop, "Expected loop") ?? peek(state);
     const body = parseBlockExpr(state);
@@ -3064,7 +2978,7 @@ function parseLoopExpr(state) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parseWhileExpr(state) {
+function parseWhileExpr(state: ParserState): Node {
     const start =
         expectToken(state, TokenType.While, "Expected while") ?? peek(state);
     const condition = parseExpr(state, 0);
@@ -3088,7 +3002,7 @@ function parseWhileExpr(state) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parseForExpr(state) {
+function parseForExpr(state: ParserState): Node {
     const start =
         expectToken(state, TokenType.For, "Expected for") ?? peek(state);
     const pat = parsePattern(state);
@@ -3113,7 +3027,7 @@ function parseForExpr(state) {
  * @param {ParserState} state
  * @returns {Node}
  */
-function parseModuleFromState(state) {
+function parseModuleFromState(state: ParserState): Node {
     const items = [];
     while (!isAtEnd(state)) {
         if (check(state, TokenType.Eof)) break;
@@ -3145,7 +3059,7 @@ function parseModuleFromState(state) {
  * @param {Node | null} value
  * @returns {ParseResult}
  */
-function buildResult(state, value) {
+function buildResult(state: ParserState, value: Node | null): ParseResult {
     return {
         ok: state.errors.length === 0 && value !== null,
         value,
@@ -3157,7 +3071,7 @@ function buildResult(state, value) {
  * @param {string} source
  * @returns {ParseResult}
  */
-function parseModule(source) {
+function parseModule(source: string): ParseResult {
     const tokens = tokenize(source);
     const state = createState(tokens);
     const module = parseModuleFromState(state);
@@ -3168,7 +3082,7 @@ function parseModule(source) {
  * @param {string} source
  * @returns {ParseResult}
  */
-function parseExpression(source) {
+function parseExpression(source: string): ParseResult {
     const tokens = tokenize(source);
     const state = createState(tokens);
     const expr = parseExpr(state, 0);
@@ -3179,7 +3093,7 @@ function parseExpression(source) {
  * @param {string} source
  * @returns {ParseResult}
  */
-function parseStatement(source) {
+function parseStatement(source: string): ParseResult {
     const tokens = tokenize(source);
     const state = createState(tokens);
     const stmt = parseStmt(state);
@@ -3190,7 +3104,7 @@ function parseStatement(source) {
  * @param {string} source
  * @returns {ParseResult}
  */
-function parsePatternSource(source) {
+function parsePatternSource(source: string): ParseResult {
     const tokens = tokenize(source);
     const state = createState(tokens);
     const pat = parsePattern(state);
@@ -3201,7 +3115,7 @@ function parsePatternSource(source) {
  * @param {string} source
  * @returns {ParseResult}
  */
-function parseTypeSource(source) {
+function parseTypeSource(source: string): ParseResult {
     const tokens = tokenize(source);
     const state = createState(tokens);
     const ty = parseType(state);

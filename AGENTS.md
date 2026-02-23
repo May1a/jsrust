@@ -1,73 +1,23 @@
-# JSRust - Rust compiler in JavaScript
+# JSRust - Rust compiler in TypeScript
 
-A Rust compiler written in pure JavaScript with no dependencies.
-Uses a custom C backend with a clang-built wasm run-path for frontend execution.
+A Rust compiler written in pure TypeScript with no dependencies.
 
 ## Plans
 
 See `plans/README.md` for the current planning structure.
 
-- Current active/future planning tracks:
-    - `plans/active/01-compiler-progress.md`
-    - `plans/active/02-new-backend.md`
-    - `plans/active/03-relaxed-borrow-model.md`
-    - `plans/future/01-node-addon-availability.md`
-    - `plans/future/02-untrusted-compatibility.md`
-- Historical plans are archived in `plans/old/`.
-- Backend workspace plans (submodule-prep):
-    - `backend/plans/README.md`
-    - `backend/plans/00-master-implementation-plan.md`
-    - `backend/plans/02-backend-scaffold-and-build.md`
-    - `backend/plans/03-binary-ir-reader.md`
-    - `backend/plans/04-ir-interpreter-core.md`
-    - `backend/plans/05-ir-interpreter-runtime-model.md`
-    - `backend/plans/06-driver-cli-artifacts.md`
-    - `backend/plans/07-testing-conformance-ci.md`
-    - `backend/plans/08-libc-overhaul-plan.md`
-    - `backend/plans/future/01-wasm-codegen-core.md`
-    - `backend/plans/future/02-wasm-data-memory-abi.md`
-    - `backend/plans/STATUS.md`
-
 ## Plan Status
 
-- active/01-compiler-progress.md updated (IR v2 string-literal pool + backend format-print milestone captured; module support milestone captured: inline/file modules + simple `use ... as ...` path resolution + `pub use` re-export support including grouped empty-prefix trees `use { ... };`; inherent impl milestone captured: `impl Struct` parsing + receiver/static method dispatch + `Self` in methods; simplified trait milestone captured: `trait` parsing + `impl Trait for Type` + inherent-first trait method dispatch + strict `(Trait, Type)` uniqueness; compiler-builtin derive milestone captured: `#[derive(Clone, Copy, Debug)]` struct expansion; generic function milestone captured: generic fn signatures + turbofish call syntax + single-instance generic call binding + bounds/`where` semantic hard-errors; relaxed borrow/lifetime milestone captured: lifetime syntax erasure + borrow-lite dangling-escape checks + stable address-taken local lowering; loop-mutation lowering regression fixed: assignment-expression statements now emit `HAssignStmt` and mutable loop vars lower via stable slots; closure milestone captured: closure literals + unified callable `TypeKind.Fn` model + non-capturing `fn` compatibility + capturing direct-call/non-escaping + mutable captures + `CallDyn` lowering + minimal `assert_eq!`; strict stdlib-first Vec milestone captured: compiler-managed stdlib injection + builtin declaration metadata + impl-generic Vec method instantiation + list-form `vec!` + built-in `Option<T>` + `get`/`pop` Option-return semantics + `[]` value-return with bounds panic + Option-aware `assert_eq!` lowering for int/float/bool payloads + bare `Some`/`None` prelude-style constructor/value support + enum-variant constructor/pattern lowering for `Option::Some`/`Option::None` + repeat-form unsupported diagnostic)
-- active/02-new-backend.md in progress (JS wasm run-path integration wired; binary IR v2 + formatter builtins integrated; `run --codegen-wasm` generated-wasm in-memory execution integrated; parity milestone expanded: pointer/memory/aggregate lowering + data/memory sections + dynamic format host writers + non-hanging example parity matrix; allocator/copy/panic builtin dispatch and wasm lowering landed for stdlib-first Vec path; call/GEP wasm coercion fixes added for Vec parity)
-- active/03-relaxed-borrow-model.md implemented (lifetime tokenization + parser lifetime erasure + borrow-lite pass integration + stable reference-slot lowering + focused tests)
-- active/04-stdlib-vec-via-builtins.md implemented (first milestone) (Rust stdlib `Vec<T>` via allocator builtins active in interpreter + generated-wasm for `vec![...]` list form, `push`, `len`, `capacity`, `get`, `[]`, `pop`; built-in `Option<T>` now wired for `get`/`pop`, `[]` now returns by value with bounds panic checks; by-reference indexing semantics deferred)
-- plans/future/01-node-addon-availability.md deferred (non-priority)
-- plans/future/02-untrusted-compatibility.md in progress (`third_party/untrusted` submodule added; `input.rs` syntax blockers addressed: function-trait bound tails in `where`/bounds + restricted visibility parse support for `pub(...)` + parse-only postfix `?` consumption)
-- backend/plans/00-master-implementation-plan.md overhauled (interpreter-first)
-- backend/plans/02-backend-scaffold-and-build.md implemented (initial)
-- backend/plans/03-binary-ir-reader.md implemented (initial + IR v2 literal-section ingest)
-- backend/plans/04-ir-interpreter-core.md implemented (initial + formatter builtins + `sconst` execution)
-- backend/plans/05-ir-interpreter-runtime-model.md implemented (initial)
-- backend/plans/06-driver-cli-artifacts.md implemented (initial + JS wasm adapter integration; formatter run-path active)
-- backend/plans/07-testing-conformance-ci.md implemented (initial local suite + conditional JS integration tests + v2 fixture corpus)
-- backend/plans/08-libc-overhaul-plan.md started (minimal bootstrap cleanup)
-- backend/plans/future/01-wasm-codegen-core.md in progress (expanded parity-oriented wasm emission: pointer/memory/aggregate lowering + data/memory sections + additive dynamic format writer imports)
-- backend/plans/future/02-wasm-data-memory-abi.md in progress (initial linear-memory/global/data ABI + string data segments + aggregate layout bridge)
-
-## Important
-
-Please keep this `AGENTS.md` up to date with the latest plans.
-
-## Conventions
-
-- **ES Modules** - Use `import`/`export`, not CommonJS
-- No external dependencies
-- JSDoc for type safety
-- Pure JS, Node-compatible APIs only (easy to adapt to other environments)
-- Minimal runtime requirements
-- Errors-as-values error Handling (no exceptions)
-
-
+- `plans/STATUS.md`
 
 ## Running
 
 ```bash
 node main.js run <file.rs>
 ```
+
 Optional run flags:
+
 - `--entry <fn>`
 - `--trace --trace-out <path>`
 - `--out-bin <path>`
@@ -80,18 +30,6 @@ Optional run flags:
 npm run test
 ```
 
-```bash
-npm run test:update-examples
-```
-
 - Use `npm run test:update-examples` to regenerate changed/missing IR snapshots in `examples/expected/`.
-
-## Examples
-
 - Simple Rust examples live in `examples/`
 - The test suite compiles every `examples/*.rs` file via `tests/examples.js`
-
-## TypeChecking (important)
-```bash
-npm run typecheck
-```

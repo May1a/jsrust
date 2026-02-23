@@ -4,32 +4,24 @@
  * Allocates stack slots for local variables in functions.
  */
 
-/** @typedef {import('./ir').IRFunction} IRFunction */
-/** @typedef {import('./ir').IRLocal} IRLocal */
-/** @typedef {import('./ir').LocalId} LocalId */
-/** @typedef {import('./memory_layout').TypeLayout} TypeLayout */
-
+import { IRFunction, IRLocal } from "./ir";
 import { LayoutCache } from "./memory_layout";
 
 // ============================================================================
 // Task 10.10: Frame Layout
 // ============================================================================
 
-/**
- * @typedef {object} FrameLayout
- * @property {Map<number, number>} slots - Map LocalId to frame offset
- * @property {number} size - Total frame size in bytes
- * @property {number} align - Frame alignment requirement
- */
+type FrameLayout = {
+    slots: Map<number, number>;
+    size: number;
+    align: number;
+};
 
-/**
- * Create a FrameLayout
- * @param {Map<number, number>} slots
- * @param {number} size
- * @param {number} align
- * @returns {FrameLayout}
- */
-function makeFrameLayout(slots, size, align) {
+function makeFrameLayout(
+    slots: Map<number, number>,
+    size: number,
+    align: number,
+): FrameLayout {
     return { slots, size, align };
 }
 
@@ -41,6 +33,10 @@ function makeFrameLayout(slots, size, align) {
  * Stack slot allocator for function locals
  */
 class StackAllocator {
+    currentOffset: number;
+    maxAlign: number;
+    slots: Map<number, number>;
+
     constructor() {
         /** @type {number} Current frame offset (negative, grows downward) */
         this.currentOffset = 0;
@@ -52,11 +48,8 @@ class StackAllocator {
 
     /**
      * Allocate a slot for a local variable
-     * @param {import('./ir').IRLocal} local
-     * @param {LayoutCache} layoutCache
-     * @returns {number} Frame-relative offset (negative)
      */
-    allocSlot(local, layoutCache) {
+    allocSlot(local: IRLocal, layoutCache: LayoutCache): number {
         const layout = layoutCache.getLayout(local.ty);
 
         // Update max alignment
@@ -77,30 +70,26 @@ class StackAllocator {
 
     /**
      * Get the current frame size (absolute value of currentOffset)
-     * @returns {number}
      */
-    getFrameSize() {
+    getFrameSize(): number {
         return Math.abs(this.currentOffset);
     }
 
     /**
      * Get the frame alignment
-     * @returns {number}
      */
-    getFrameAlign() {
+    getFrameAlign(): number {
         return this.maxAlign;
     }
 
     /**
      * Get the final frame layout
-     * @returns {FrameLayout}
      */
-    getFrameLayout() {
+    getFrameLayout(): FrameLayout {
         // Align the final frame size to the max alignment
         const alignedSize = alignUp(this.getFrameSize(), this.maxAlign);
         return makeFrameLayout(new Map(this.slots), alignedSize, this.maxAlign);
     }
-
     /**
      * Reset the allocator
      */
@@ -117,11 +106,8 @@ class StackAllocator {
 
 /**
  * Align offset down to alignment boundary (for downward-growing stack)
- * @param {number} offset
- * @param {number} alignment
- * @returns {number}
  */
-function alignDown(offset, alignment) {
+function alignDown(offset: number, alignment: number): number {
     if (alignment <= 1) return offset;
     const remainder = offset % alignment;
     if (remainder === 0) return offset;
@@ -130,11 +116,8 @@ function alignDown(offset, alignment) {
 
 /**
  * Align offset up to alignment boundary
- * @param {number} offset
- * @param {number} alignment
- * @returns {number}
  */
-function alignUp(offset, alignment) {
+function alignUp(offset: number, alignment: number): number {
     if (alignment <= 1) return offset;
     const remainder = offset % alignment;
     if (remainder === 0) return offset;
@@ -143,11 +126,11 @@ function alignUp(offset, alignment) {
 
 /**
  * Sort locals by alignment (descending) for better packing
- * @param {IRLocal[]} locals
- * @param {LayoutCache} layoutCache
- * @returns {IRLocal[]}
  */
-function sortLocalsByAlignment(locals, layoutCache) {
+function sortLocalsByAlignment(
+    locals: IRLocal[],
+    layoutCache: LayoutCache,
+): IRLocal[] {
     return [...locals].sort((a, b) => {
         const layoutA = layoutCache.getLayout(a.ty);
         const layoutB = layoutCache.getLayout(b.ty);
@@ -162,11 +145,8 @@ function sortLocalsByAlignment(locals, layoutCache) {
 
 /**
  * Compute frame layout for a function
- * @param {IRFunction} fn
- * @param {LayoutCache} layoutCache
- * @returns {FrameLayout}
  */
-function computeFrame(fn, layoutCache) {
+function computeFrame(fn: IRFunction, layoutCache: LayoutCache): FrameLayout {
     const allocator = new StackAllocator();
 
     // Sort locals by alignment for better packing
@@ -182,15 +162,15 @@ function computeFrame(fn, layoutCache) {
 
 /**
  * Compute frame layout for a function with params
- * @param {IRFunction} fn
- * @param {LayoutCache} layoutCache
- * @returns {{ frame: FrameLayout, paramOffsets: number[] }}
  */
-function computeFrameWithParams(fn, layoutCache) {
+function computeFrameWithParams(
+    fn: IRFunction,
+    layoutCache: LayoutCache,
+): { frame: FrameLayout; paramOffsets: number[] } {
     const allocator = new StackAllocator();
 
     // First allocate parameters (in reverse order, so first param is at lowest address)
-    const paramOffsets = [];
+    const paramOffsets: number[] = [];
     for (let i = fn.params.length - 1; i >= 0; i--) {
         const param = fn.params[i];
         const layout = layoutCache.getLayout(param.ty);
@@ -202,24 +182,17 @@ function computeFrameWithParams(fn, layoutCache) {
         allocator.currentOffset = alignedOffset;
         paramOffsets[i] = alignedOffset;
     }
-
     // Sort locals by alignment for better packing
     const sortedLocals = sortLocalsByAlignment(fn.locals, layoutCache);
-
     // Allocate slots for each local
     for (const local of sortedLocals) {
         allocator.allocSlot(local, layoutCache);
     }
-
     return {
         frame: allocator.getFrameLayout(),
         paramOffsets,
     };
 }
-
-// ============================================================================
-// Exports
-// ============================================================================
 
 export {
     makeFrameLayout,

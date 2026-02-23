@@ -68,7 +68,7 @@ export const TokenType = {
     String: 66,
     Lifetime: 67,
     Eof: 68,
-} as const;
+} as const satisfies Record<string, number>;
 
 export type TokenTypeValue = (typeof TokenType)[keyof typeof TokenType];
 export type Token = {
@@ -84,8 +84,7 @@ export type LexerState = {
     column: number;
 };
 
-/** @type {{ [key: string]: TokenTypeValue }} */
-const KEYWORDS: Record<string, TokenTypeValue> = {
+const Keywords: Record<string, TokenTypeValue> = {
     fn: TokenType.Fn,
     let: TokenType.Let,
     const: TokenType.Const,
@@ -114,7 +113,7 @@ const KEYWORDS: Record<string, TokenTypeValue> = {
 };
 
 function initState(source: string) {
-    return { source, pos: 0, line: 1, column: 1 };
+    return { source, pos: 0, line: 1, column: 1 } as LexerState;
 }
 
 function peek(state: LexerState) {
@@ -127,7 +126,7 @@ function peekAt(state: LexerState, offset: number) {
 
 function advance(state: LexerState) {
     const ch = state.source[state.pos];
-    if (ch === undefined) return undefined;
+    if (!ch) return undefined;
     state.pos++;
     if (ch === "\n") {
         state.line++;
@@ -206,7 +205,7 @@ function readIdentifier(state: LexerState): Token {
     while (isIdentifierChar(peek(state))) {
         value += advance(state);
     }
-    const type = KEYWORDS[value] ?? TokenType.Identifier;
+    const type = Keywords[value] ?? TokenType.Identifier;
     return makeToken(type, value, startLine, startColumn);
 }
 
@@ -216,6 +215,7 @@ function readNumber(state: LexerState): Token {
     let value = "";
     let isFloat = false;
 
+    // Hex digit (0x)
     if (
         peek(state) === "0" &&
         (peekAt(state, 1) === "x" || peekAt(state, 1) === "X")
@@ -227,7 +227,7 @@ function readNumber(state: LexerState): Token {
         }
         return makeToken(TokenType.Integer, value, startLine, startColumn);
     }
-
+    // Octal digit (0o)
     if (
         peek(state) === "0" &&
         (peekAt(state, 1) === "o" || peekAt(state, 1) === "O")
@@ -239,7 +239,7 @@ function readNumber(state: LexerState): Token {
         }
         return makeToken(TokenType.Integer, value, startLine, startColumn);
     }
-
+    // Binary digit (0b)
     if (
         peek(state) === "0" &&
         (peekAt(state, 1) === "b" || peekAt(state, 1) === "B")
@@ -367,9 +367,12 @@ function readOperatorOrDelimiter(state: LexerState): Token | null {
         "<": TokenType.Lt,
         ">": TokenType.Gt,
         "^": TokenType.Caret,
+        "|": TokenType.Pipe,
+        "=": TokenType.Eq,
+        "&": TokenType.And,
     };
 
-    const twoCharTokens: { [key: string]: TokenTypeValue } = {
+    const twoCharTokens: Record<string, TokenTypeValue> = {
         "+=": TokenType.PlusEq,
         "-=": TokenType.MinusEq,
         "*=": TokenType.StarEq,
@@ -398,21 +401,6 @@ function readOperatorOrDelimiter(state: LexerState): Token | null {
             startLine,
             startColumn,
         );
-    }
-
-    if (ch === "=") {
-        advance(state);
-        return makeToken(TokenType.Eq, "=", startLine, startColumn);
-    }
-
-    if (ch === "&") {
-        advance(state);
-        return makeToken(TokenType.And, "&", startLine, startColumn);
-    }
-
-    if (ch === "|") {
-        advance(state);
-        return makeToken(TokenType.Pipe, "|", startLine, startColumn);
     }
 
     if (singleCharTokens[ch]) {

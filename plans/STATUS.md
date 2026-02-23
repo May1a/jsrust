@@ -2,3 +2,4 @@
 
 ## Active Track
 
+- [] Rewrite frontend in TypeScript
