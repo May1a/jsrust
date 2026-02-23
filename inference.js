@@ -26,7 +26,6 @@ import {
     makeFnType,
     makeTypeVar,
     makeNamedType,
-    makeOptionType,
     typeEquals,
     typeToString,
     isNumericType,
@@ -1920,6 +1919,19 @@ function inferIdentifier(ctx, ident) {
         }
     }
 
+    // Prelude-style Option variants (`Some`, `None`) when unbound.
+    if (ident.name === "Some" || ident.name === "None") {
+        const optionItem = ctx.lookupItem("Option");
+        if (optionItem && optionItem.kind === "enum") {
+            return inferPath(ctx, {
+                kind: NodeKind.PathExpr,
+                segments: ["Option", ident.name],
+                span: ident.span,
+                resolvedItemName: null,
+            });
+        }
+    }
+
     return err(`Unbound identifier: ${ident.name}`, ident.span);
 }
 
@@ -2645,7 +2657,7 @@ function inferIndex(ctx, index) {
     // Vec<T> indexing delegates to stdlib method semantics (`Vec::index`).
     const vecElementType = vecElementTypeForType(receiverType);
     if (vecElementType) {
-        return ok(makeOptionType(vecElementType, index.span));
+        return ok(vecElementType);
     }
 
     // Type variable

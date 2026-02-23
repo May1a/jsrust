@@ -5,38 +5,38 @@
         {
             "source": "01_empty_main.rs",
             "artifact": "01_empty_main.bin",
-            "bytes": 3536,
-            "sha256": "bcb6c3b9469d5ad81b1f758a996dc65723416b468d44a65793606153255ef366"
+            "bytes": 3876,
+            "sha256": "406a73fb80d4cdd39ea31216b136eb92c886abbab45168e815e088be196e5941"
         },
         {
             "source": "02_literals.rs",
             "artifact": "02_literals.bin",
-            "bytes": 3592,
-            "sha256": "4bfe0162b91a03a5b695551d370cb8e2450158783a07080348589dd61a11b739"
+            "bytes": 3932,
+            "sha256": "debe38ff40d3efc2ddebc739c49e84f1db960011cdf95fd5f4a25fe1497a0762"
         },
         {
             "source": "03_arithmetic.rs",
             "artifact": "03_arithmetic.bin",
-            "bytes": 3701,
-            "sha256": "898af30302e4d12f1be4702d9799f6902756dea6634cedbbdc2feb46bdee2875"
+            "bytes": 4041,
+            "sha256": "823a343ee619f07ee0dc7c5fbb91ea311179d0ec0d8df611a79e8a9aea606be9"
         },
         {
             "source": "04_functions.rs",
             "artifact": "04_functions.bin",
-            "bytes": 3659,
-            "sha256": "ee2caa6c0d7fcc5ac6c95e50e1641459bba6b2a9e4faba99c6c53d392e24bd9c"
+            "bytes": 3999,
+            "sha256": "3cca92e89c9d66cb3a7617f37a6d3171d6fabe2ed0173030f64ca174f410f1db"
         },
         {
             "source": "07_structs.rs",
             "artifact": "07_structs.bin",
-            "bytes": 3612,
-            "sha256": "5b6d498159ed49cd3709b727c6519c14eca0d0efcb45d8969297c0b3ad96b660"
+            "bytes": 3952,
+            "sha256": "32aaf143a84b137d79f99d5fef49c96fe2ea2864dbe13caa8d6932a4a9766654"
         },
         {
             "source": "09_references.rs",
             "artifact": "09_references.bin",
-            "bytes": 3584,
-            "sha256": "1e124a342e78934245c32b3378c4b0260aeda60c58764a323ccd695c90f5c6fd"
+            "bytes": 3924,
+            "sha256": "dcc11e14df9979c1803168a606bdc639ece1e8fd8a6a68b347f3eede8e06b7e8"
         }
     ]
 }

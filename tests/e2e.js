@@ -461,12 +461,34 @@ export function runE2ETests() {
         testsRun++;
     });
 
-    test("E2E: vec non-copy index returns Option", () => {
+    test("E2E: vec non-copy index returns element", () => {
         const result = assertCompiles(
-            `struct S { x: i32 } fn main() { let v = vec![S { x: 1 }]; let _x = match v[0] { Option::None => 0, _ => 1 }; }`,
-            "vec non-copy index option",
+            `struct S { x: i32 } fn main() { let v = vec![S { x: 1 }]; let _x = v[0].x; }`,
+            "vec non-copy index element",
         );
-        assertTrue(result.ir, "should compile non-copy vec index via Option");
+        assertTrue(result.ir, "should compile non-copy vec index value");
+        testsRun++;
+    });
+
+    test("E2E: assert_eq supports bare Some/None", () => {
+        const result = assertCompiles(
+            `fn main() { let n: Option<i32> = None; let m: Option<i32> = None; assert_eq!(Some(1), Some(1)); assert_eq!(n, m); }`,
+            "assert_eq option success",
+        );
+        assertTrue(result.ir, "should compile Some/None assert_eq success cases");
+        testsRun++;
+    });
+
+    test("E2E: assert_eq Option payload rejects unsupported equality", () => {
+        const result = assertFails(
+            `struct S { x: i32 } fn main() { assert_eq!(Some(S { x: 1 }), Some(S { x: 1 })); }`,
+            "assert_eq option unsupported payload",
+        );
+        const messages = result.errors.map((e) => e.message).join("\\n");
+        assertTrue(
+            messages.includes("assert_eq! for Option<T> is only supported when T is int/float/bool"),
+            `unexpected errors: ${messages}`,
+        );
         testsRun++;
     });
 

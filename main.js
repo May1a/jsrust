@@ -179,7 +179,10 @@ function compileToIRModule(source, options = {}) {
                 continue;
             }
             try {
-                const irFn = lowerHirToSsa(/** @type {import('./hir.js').HFnDecl} */(item), { irModule });
+                const irFn = lowerHirToSsa(
+                    /** @type {import('./hir.js').HFnDecl} */ (item),
+                    { irModule },
+                );
 
                 if (validate) {
                     const validationResult = validateIRFunction(irFn);
@@ -236,16 +239,20 @@ function injectStdlibItems(ast) {
     } catch (e) {
         return {
             ok: false,
-            errors: [{
-                message: `Failed to read stdlib source: ${STDLIB_VEC_CORE_PATH}: ${e instanceof Error ? e.message : String(e)}`,
-                kind: "internal",
-            }],
+            errors: [
+                {
+                    message: `Failed to read stdlib source: ${STDLIB_VEC_CORE_PATH}: ${e instanceof Error ? e.message : String(e)}`,
+                    kind: "internal",
+                },
+            ],
         };
     }
 
-    const stdlibParse = parseModule(`${STDLIB_BUILTIN_SOURCE}\n${stdlibSource}`);
+    const stdlibParse = parseModule(
+        `${STDLIB_BUILTIN_SOURCE}\n${stdlibSource}`,
+    );
     if (!stdlibParse.ok || !stdlibParse.value) {
-        for (const err of stdlibParse.errors || []) {
+        for (const err of stdlibParse.errors) {
             errors.push({
                 message: `In stdlib vec_core.rs: ${err.message}`,
                 span: err.span,
@@ -254,7 +261,7 @@ function injectStdlibItems(ast) {
         }
         return { ok: false, errors };
     }
-
+    // FIXME: typesafety
     ast.items = [...(stdlibParse.value.items || []), ...(ast.items || [])];
     return { ok: true };
 }
@@ -293,7 +300,12 @@ function compileToBinary(source, options = {}) {
     if (!result.module) {
         return {
             ok: false,
-            errors: [/** @type {import('./main.js').CompileDiagnostic} */ ({ message: "Failed to build IR module", kind: "internal" })],
+            errors: [
+                /** @type {import('./main.js').CompileDiagnostic} */ ({
+                    message: "Failed to build IR module",
+                    kind: "internal",
+                }),
+            ],
         };
     }
 
@@ -306,7 +318,12 @@ function compileToBinary(source, options = {}) {
     } catch (e) {
         return {
             ok: false,
-            errors: [{ message: `Failed to serialize IR module: ${e instanceof Error ? e.message : String(e)}`, kind: "internal" }],
+            errors: [
+                {
+                    message: `Failed to serialize IR module: ${e instanceof Error ? e.message : String(e)}`,
+                    kind: "internal",
+                },
+            ],
         };
     }
 }
@@ -318,13 +335,19 @@ function compileToBinary(source, options = {}) {
  * @returns {CompileResult}
  */
 function compileFileToIRModule(filePath, options = {}) {
+    /** @type {string} */
     let source;
     try {
         source = fs.readFileSync(filePath, "utf-8");
     } catch (e) {
         return {
             ok: false,
-            errors: [{ message: `Failed to read file: ${filePath}: ${e instanceof Error ? e.message : String(e)}`, kind: "internal" }],
+            errors: [
+                {
+                    message: `Failed to read file: ${filePath}: ${e instanceof Error ? e.message : String(e)}`,
+                    kind: "internal",
+                },
+            ],
         };
     }
     return compileToIRModule(source, {
@@ -340,13 +363,19 @@ function compileFileToIRModule(filePath, options = {}) {
  * @returns {BinaryCompileResult}
  */
 function compileFileToBinary(filePath, options = {}) {
+    /** @type {string} */
     let source;
     try {
         source = fs.readFileSync(filePath, "utf-8");
     } catch (e) {
         return {
             ok: false,
-            errors: [{ message: `Failed to read file: ${filePath}: ${e instanceof Error ? e.message : String(e)}`, kind: "internal" }],
+            errors: [
+                {
+                    message: `Failed to read file: ${filePath}: ${e instanceof Error ? e.message : String(e)}`,
+                    kind: "internal", // FIXME: typesafety
+                },
+            ],
         };
     }
     return compileToBinary(source, {
@@ -394,14 +423,22 @@ function printBackendStatusLine(label, message) {
  * @returns {string}
  */
 function errorKindLabel(kind) {
+    // FIXME: typesafety
     switch (kind) {
-        case "parse": return "E0001";
-        case "resolve": return "E0433";
-        case "type": return "E0308";
-        case "borrow": return "E0502";
-        case "lower": return "E0000";
-        case "validation": return "E0000";
-        default: return "E0000";
+        case "parse":
+            return "E0001";
+        case "resolve":
+            return "E0433";
+        case "type":
+            return "E0308";
+        case "borrow":
+            return "E0502";
+        case "lower":
+            return "E0000";
+        case "validation":
+            return "E0000";
+        default:
+            return "E0000";
     }
 }
 
@@ -473,12 +510,16 @@ function printCompileHelp(exitCode = 0) {
     console.log("  -h, --help    Show this help");
     console.log("");
     console.log("Run options:");
-    console.log("  run <file.rs> Compile to binary IR and execute with backend runtime");
+    console.log(
+        "  run <file.rs> Compile to binary IR and execute with backend runtime",
+    );
     console.log("  --entry <fn>         Entry function (default: main)");
     console.log("  --trace              Enable backend trace output");
     console.log("  --trace-out <path>   Write backend trace to file");
     console.log("  --out-bin <path>     Write binary IR artifact to path");
-    console.log("  --codegen-wasm       Compile binary IR to wasm and run generated wasm");
+    console.log(
+        "  --codegen-wasm       Compile binary IR to wasm and run generated wasm",
+    );
     console.log("  --no-validate        Skip IR validation");
     process.exit(exitCode);
 }
@@ -496,7 +537,9 @@ function printRunHelp(exitCode = 0) {
     console.log("  --trace              Enable backend trace output");
     console.log("  --trace-out <path>   Write backend trace to file");
     console.log("  --out-bin <path>     Write binary IR artifact to path");
-    console.log("  --codegen-wasm       Compile binary IR to wasm and run generated wasm");
+    console.log(
+        "  --codegen-wasm       Compile binary IR to wasm and run generated wasm",
+    );
     console.log("  --no-validate        Skip IR validation");
     console.log("  -h, --help           Show this help");
     process.exit(exitCode);
@@ -521,8 +564,7 @@ function writeFileAtomic(outputPath, bytes) {
             if (fs.existsSync(tempPath)) {
                 fs.unlinkSync(tempPath);
             }
-        } catch {
-        }
+        } catch {}
         return {
             ok: false,
             message: `failed to write file: ${resolved}: ${e instanceof Error ? e.message : String(e)}`,
@@ -547,7 +589,8 @@ function runCompileCli(args) {
         validate: true,
     };
 
-    let inputFile = null;
+    /** @type {string | undefined} */
+    let inputFile;
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -580,13 +623,19 @@ function runCompileCli(args) {
     }
 
     const source = (() => {
-        try { return fs.readFileSync(inputFile, "utf-8"); } catch { return ""; }
+        try {
+            return fs.readFileSync(inputFile, "utf-8");
+        } catch {
+            return "";
+        }
     })();
     const result = compileFile(inputFile, options);
 
     if (!result.ok) {
         printRustcStyleErrors(result.errors, inputFile, source);
-        console.error(`aborting due to ${result.errors.length} error${result.errors.length === 1 ? "" : "s"}`);
+        console.error(
+            `aborting due to ${result.errors.length} error${result.errors.length === 1 ? "" : "s"}`,
+        );
         return 1;
     }
 
@@ -612,7 +661,9 @@ function runCompileCli(args) {
             fs.writeFileSync(options.outputFile, output);
             console.log(`Output written to ${options.outputFile}`);
         } catch (e) {
-            printOneLineError(`failed to write output file: ${e instanceof Error ? e.message : String(e)}`);
+            printOneLineError(
+                `failed to write output file: ${e instanceof Error ? e.message : String(e)}`,
+            );
             return 1;
         }
     } else {
@@ -632,13 +683,21 @@ function printTestHelp(exitCode = 0) {
     console.log("");
     console.log("Options:");
     console.log("  --no-validate        Skip IR validation");
-    console.log("  --codegen-wasm       Compile binary IR to wasm and run generated wasm");
+    console.log(
+        "  --codegen-wasm       Compile binary IR to wasm and run generated wasm",
+    );
     console.log("  -h, --help           Show this help");
     console.log("");
     console.log("Description:");
-    console.log("  Discovers and runs all functions marked with #[test] attribute.");
-    console.log("  Tests may declare expected stdout using #[expect_output(\"...\")].");
-    console.log("  Reports test results and exits with code 0 if all tests pass,");
+    console.log(
+        "  Discovers and runs all functions marked with #[test] attribute.",
+    );
+    console.log(
+        '  Tests may declare expected stdout using #[expect_output("...")].',
+    );
+    console.log(
+        "  Reports test results and exits with code 0 if all tests pass,",
+    );
     console.log("  or 1 if any test fails.");
     process.exit(exitCode);
 }
@@ -679,7 +738,8 @@ function runTestCli(args) {
 
     let validate = true;
     let codegenWasm = false;
-    let inputFile = null;
+    /** @type {string | undefined} */
+    let inputFile;
 
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];
@@ -706,7 +766,11 @@ function runTestCli(args) {
     }
 
     const source = (() => {
-        try { return fs.readFileSync(inputFile, "utf-8"); } catch { return ""; }
+        try {
+            return fs.readFileSync(inputFile, "utf-8");
+        } catch {
+            return "";
+        }
     })();
 
     // Compile to get the HIR with test functions
@@ -801,18 +865,25 @@ function runTestCli(args) {
                 continue;
             }
             try {
-                const irFn = lowerHirToSsa(/** @type {import('./hir.js').HFnDecl} */(item), { irModule });
+                const irFn = lowerHirToSsa(
+                    /** @type {import('./hir.js').HFnDecl} */ (item),
+                    { irModule },
+                );
                 if (validate) {
                     const validationResult = validateIRFunction(irFn);
                     if (!validationResult.ok) {
                         for (const err of validationResult.errors || []) {
-                            console.error(`error: in function \`${item.name}\`: ${err.message}`);
+                            console.error(
+                                `error: in function \`${item.name}\`: ${err.message}`,
+                            );
                         }
                     }
                 }
                 addIRFunction(irModule, irFn);
             } catch (e) {
-                console.error(`error: lowering function \`${item.name}\`: ${e instanceof Error ? e.message : String(e)}`);
+                console.error(
+                    `error: lowering function \`${item.name}\`: ${e instanceof Error ? e.message : String(e)}`,
+                );
             }
         }
     }
@@ -821,7 +892,9 @@ function runTestCli(args) {
     try {
         bytes = serializeModule(irModule);
     } catch (e) {
-        printOneLineError(`failed to serialize IR module: ${e instanceof Error ? e.message : String(e)}`);
+        printOneLineError(
+            `failed to serialize IR module: ${e instanceof Error ? e.message : String(e)}`,
+        );
         return 1;
     }
 
@@ -848,8 +921,10 @@ function runTestCli(args) {
             const expected = normalizeNewlines(testFn.expectedOutput);
             if (actual !== expected) {
                 const line = firstDiffLine(actual, expected);
-                const actualLine = line > 0 ? (actual.split("\n")[line - 1] ?? "") : "";
-                const expectedLine = line > 0 ? (expected.split("\n")[line - 1] ?? "") : "";
+                const actualLine =
+                    line > 0 ? (actual.split("\n")[line - 1] ?? "") : "";
+                const expectedLine =
+                    line > 0 ? (expected.split("\n")[line - 1] ?? "") : "";
                 console.log(`test ${testFn.name} ... FAILED`);
                 console.log(`  stdout mismatch at line ${line}`);
                 console.log(`  expected: ${JSON.stringify(expectedLine)}`);
@@ -864,7 +939,9 @@ function runTestCli(args) {
     }
 
     console.log("");
-    console.log(`test result: ${failed === 0 ? 'ok' : 'FAILED'}. ${passed} passed; ${failed} failed; 0 ignored`);
+    console.log(
+        `test result: ${failed === 0 ? "ok" : "FAILED"}. ${passed} passed; ${failed} failed; 0 ignored`,
+    );
 
     return failed > 0 ? 1 : 0;
 }
@@ -948,14 +1025,20 @@ function runBackendCli(args) {
     }
 
     const source = (() => {
-        try { return fs.readFileSync(inputFile, "utf-8"); } catch { return ""; }
+        try {
+            return fs.readFileSync(inputFile, "utf-8");
+        } catch {
+            return "";
+        }
     })();
     const binaryResult = compileFileToBinary(inputFile, {
         validate: options.validate,
     });
     if (!binaryResult.ok) {
         printRustcStyleErrors(binaryResult.errors, inputFile, source);
-        console.error(`aborting due to ${binaryResult.errors.length} error${binaryResult.errors.length === 1 ? "" : "s"}`);
+        console.error(
+            `aborting due to ${binaryResult.errors.length} error${binaryResult.errors.length === 1 ? "" : "s"}`,
+        );
         return 1;
     }
     if (!binaryResult.bytes) {
@@ -973,13 +1056,13 @@ function runBackendCli(args) {
 
     const runResult = options.codegenWasm
         ? runBackendCodegenWasm(binaryResult.bytes, {
-            entry: options.entry,
-            trace: options.trace,
-        })
+              entry: options.entry,
+              trace: options.trace,
+          })
         : runBackendWasm(binaryResult.bytes, {
-            entry: options.entry,
-            trace: options.trace,
-        });
+              entry: options.entry,
+              trace: options.trace,
+          });
 
     if (!runResult.ok) {
         printBackendStatusLine(runResult.label, runResult.message);
@@ -996,7 +1079,10 @@ function runBackendCli(args) {
     }
 
     if (options.traceOutPath) {
-        const traceWrite = writeFileAtomic(options.traceOutPath, runResult.traceBytes);
+        const traceWrite = writeFileAtomic(
+            options.traceOutPath,
+            runResult.traceBytes,
+        );
         if (!traceWrite.ok) {
             printOneLineError(traceWrite.message);
             return 1;

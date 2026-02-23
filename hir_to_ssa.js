@@ -1248,10 +1248,7 @@ export class HirToSsaCtx {
         for (let i = 0; i < arms.length; i++) {
             const arm = arms[i];
             if (arm.pat.kind === HPatKind.Literal) {
-                const caseValue = this.builder.iconst(
-                    Number(arm.pat.value),
-                    IntWidth.I32,
-                ).id;
+                const caseValue = Number(arm.pat.value);
                 cases.push({
                     value: caseValue,
                     target: armBlocks[i],
@@ -1307,7 +1304,7 @@ export class HirToSsaCtx {
         this.builder.sealBlock(mergeId);
 
         return hasResult
-            ? this.builder.iconst(0, IntWidth.I32).id
+            ? this.defaultValueForType(resultTy)
             : this.builder.iconst(0, IntWidth.I8).id;
     }
 
@@ -1350,12 +1347,8 @@ export class HirToSsaCtx {
                     continue;
                 }
                 armVariantIndices[i] = variantIndex;
-                const caseValue = /** @type {ValueId} */ (this.builder.iconst(
-                    variantIndex,
-                    IntWidth.I32,
-                ).id);
                 cases.push({
-                    value: caseValue,
+                    value: variantIndex,
                     target: armBlocks[i],
                     args: [],
                 });
@@ -1368,7 +1361,7 @@ export class HirToSsaCtx {
         }
 
         const defaultArgs = hasResult && mergeParams.length > 0 && defaultBlock === mergeId
-            ? [/** @type {ValueId} */ (this.builder.iconst(0, IntWidth.I32).id)]
+            ? [this.defaultValueForType(resultTy)]
             : [];
         this.builder.switch(
             /** @type {ValueId} */(/** @type {ValueId} */ (tag.id)),
@@ -1411,7 +1404,7 @@ export class HirToSsaCtx {
             if (mergeParam) {
                 return /** @type {ValueId} */ (mergeParam.id);
             }
-            return /** @type {ValueId} */ (this.builder.iconst(0, IntWidth.I32).id);
+            return this.defaultValueForType(resultTy);
         }
         return /** @type {ValueId} */ (this.builder.iconst(0, IntWidth.I8).id);
     }
@@ -1498,7 +1491,7 @@ export class HirToSsaCtx {
 
         this.builder.switchToBlock(mergeId);
         return hasResult
-            ? this.builder.iconst(0, IntWidth.I32).id
+            ? this.defaultValueForType(resultTy)
             : this.builder.iconst(0, IntWidth.I8).id;
     }
 
@@ -1848,6 +1841,27 @@ export class HirToSsaCtx {
     isSignedIntType(ty) {
         if (ty.kind !== TypeKind.Int) return false;
         return ty.width <= IntWidth.Isize;
+    }
+
+    /**
+     * Create a zero/default SSA value for a result type.
+     * @param {Type | null | undefined} ty
+     * @returns {ValueId}
+     */
+    defaultValueForType(ty) {
+        if (!ty) {
+            return /** @type {ValueId} */ (this.builder.iconst(0, IntWidth.I32).id);
+        }
+        if (ty.kind === TypeKind.Bool) {
+            return /** @type {ValueId} */ (this.builder.bconst(false).id);
+        }
+        if (ty.kind === TypeKind.Int) {
+            return /** @type {ValueId} */ (this.builder.iconst(0, this.getIntWidth(ty)).id);
+        }
+        if (ty.kind === TypeKind.Float) {
+            return /** @type {ValueId} */ (this.builder.fconst(0, this.getFloatWidth(ty)).id);
+        }
+        return /** @type {ValueId} */ (this.builder.iconst(0, IntWidth.I32).id);
     }
 
     /**

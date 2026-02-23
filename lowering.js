@@ -14,10 +14,7 @@ import {
 } from "./ast.js";
 
 import {
-    HItemKind,
-    HStmtKind,
     HPlaceKind,
-    HExprKind,
     HPatKind,
     HLiteralKind,
     makeHModule,
@@ -31,9 +28,6 @@ import {
     makeHLetStmt,
     makeHAssignStmt,
     makeHExprStmt,
-    makeHReturnStmt,
-    makeHBreakStmt,
-    makeHContinueStmt,
     makeHVarPlace,
     makeHFieldPlace,
     makeHIndexPlace,
@@ -71,7 +65,6 @@ import {
     makeBoolType,
     makeRefType,
     makeFnType,
-    makeOptionType,
     makeUnitType,
     typeToString,
 } from "./types.js";
@@ -141,7 +134,11 @@ function parseFormatString(str) {
         segments.push({ type: "literal", value: literal });
     }
 
-    return { segments: /** @type {any} */ (segments), placeholderCount: placeholderIndex, errors };
+    return {
+        segments: /** @type {any} */ (segments),
+        placeholderCount: placeholderIndex,
+        errors,
+    };
 }
 
 /**
@@ -273,7 +270,7 @@ class LoweringCtx {
      * @returns {VarInfo | null}
      */
     lookupVarById(id) {
-        return this.varById.get(id) || null;
+        return this.varById.get(id) ?? null;
     }
 
     /**
@@ -412,13 +409,13 @@ function lowerModule(ast, typeCtx) {
     const ctx = new LoweringCtx();
 
     // First pass: register all items
-    for (const item of ast.items || []) {
+    for (const item of ast.items) {
         registerItem(ctx, item, typeCtx);
     }
 
     // Second pass: lower all items
     const /** @type {import("./hir.js").HItem[]} */ items = [];
-    for (const item of ast.items || []) {
+    for (const item of ast.items) {
         lowerItemIntoList(ctx, item, typeCtx, items);
     }
 
@@ -442,14 +439,14 @@ function lowerModule(ast, typeCtx) {
  */
 function lowerItemIntoList(ctx, item, typeCtx, output) {
     if (item.kind === NodeKind.ModItem) {
-        for (const child of item.items || []) {
+        for (const child of item.items) {
             lowerItemIntoList(ctx, child, typeCtx, output);
         }
         return;
     }
     if (item.kind === NodeKind.ImplItem) {
-        const traitName = item.traitType?.name || null;
-        for (const method of item.methods || []) {
+        const traitName = item.traitType?.name || null; // FIXME: typesafety
+        for (const method of item.methods) {
             lowerItemIntoList(
                 ctx,
                 {
@@ -591,7 +588,12 @@ function lowerFnItem(ctx, fn, typeCtx) {
         const bindings = itemDecl.genericBindings;
         fnType = makeFnType(
             fnType.params.map((/** @type {Type} */ p) =>
-                substituteLoweringGenericType(typeCtx, p, genericNames, bindings),
+                substituteLoweringGenericType(
+                    typeCtx,
+                    p,
+                    genericNames,
+                    bindings,
+                ),
             ),
             substituteLoweringGenericType(
                 typeCtx,
@@ -609,7 +611,8 @@ function lowerFnItem(ctx, fn, typeCtx) {
     const params = [];
     for (let i = 0; i < (fn.params || []).length; i++) {
         const param = fn.params[i];
-        const paramType = /** @type {any} */ (fnType)?.params?.[i] || makeUnitType();
+        const paramType =
+            /** @type {any} */ (fnType)?.params?.[i] || makeUnitType();
         const hParam = lowerParam(ctx, param, paramType, typeCtx);
         params.push(hParam);
     }
@@ -702,7 +705,12 @@ function lowerStructItem(ctx, struct, typeCtx) {
         }
 
         fields.push(
-            makeHStructField(field.span, field.name, fieldType || makeUnitType(), defaultValue),
+            makeHStructField(
+                field.span,
+                field.name,
+                fieldType || makeUnitType(),
+                defaultValue,
+            ),
         );
     }
 
@@ -861,7 +869,12 @@ function lowerLetStmt(ctx, letStmt, typeCtx) {
                 sourceVar.type,
             );
             ctx.queuePreludeStmt(
-                makeHLetStmt(letStmt.span, hiddenPat, sourceVar.type, hiddenInit),
+                makeHLetStmt(
+                    letStmt.span,
+                    hiddenPat,
+                    sourceVar.type,
+                    hiddenInit,
+                ),
             );
             captures.push({
                 mode: "value",
@@ -876,7 +889,11 @@ function lowerLetStmt(ctx, letStmt, typeCtx) {
             helperType: closureMeta.helperType,
             captures,
         });
-    } else if (init && init.closureMeta && init.closureMeta.captures?.length > 0) {
+    } else if (
+        init &&
+        init.closureMeta &&
+        init.closureMeta.captures?.length > 0
+    ) {
         ctx.addError(
             "Capturing closures currently require a simple identifier let-binding",
             letStmt.span,
@@ -898,7 +915,10 @@ function lowerExprStmt(ctx, exprStmt, typeCtx) {
         const value = lowerExpr(ctx, exprStmt.expr.value, typeCtx);
         const place = extractPlace(ctx, exprStmt.expr.target, typeCtx);
         if (!place) {
-            ctx.addError("Invalid assignment target", exprStmt.expr.target.span);
+            ctx.addError(
+                "Invalid assignment target",
+                exprStmt.expr.target.span,
+            );
             return makeHExprStmt(
                 exprStmt.span,
                 makeHUnitExpr(exprStmt.span, makeUnitType()),
@@ -1073,7 +1093,12 @@ function lowerIdentifier(ctx, ident, typeCtx) {
             name: ctx.currentImplTargetName,
             fields: [],
         };
-        return makeHVarExpr(ident.span, ctx.currentImplTargetName, -1, selfType);
+        return makeHVarExpr(
+            ident.span,
+            ctx.currentImplTargetName,
+            -1,
+            selfType,
+        );
     }
 
     // Look up variable binding
@@ -1115,6 +1140,23 @@ function lowerIdentifier(ctx, ident, typeCtx) {
                 variants: [],
             };
             return makeHVarExpr(ident.span, lookupName, -1, enumTy);
+        }
+    }
+
+    // Prelude-style `None` lowering to `Option::None` when unbound.
+    if (ident.name === "None") {
+        const optionItem = ctx.lookupItem("Option");
+        if (optionItem && optionItem.kind === "enum") {
+            return lowerPath(
+                ctx,
+                {
+                    kind: NodeKind.PathExpr,
+                    segments: ["Option", "None"],
+                    span: ident.span,
+                    resolvedItemName: null,
+                },
+                typeCtx,
+            );
         }
     }
 
@@ -1224,8 +1266,13 @@ function substituteLoweringGenericType(typeCtx, type, genericNames, bindings) {
         }
         const substitutedArgs = resolved.args
             ? resolved.args.map((/** @type {Type} */ t) =>
-                substituteLoweringGenericType(typeCtx, t, genericNames, bindings),
-            )
+                  substituteLoweringGenericType(
+                      typeCtx,
+                      t,
+                      genericNames,
+                      bindings,
+                  ),
+              )
             : null;
         const item = typeCtx.lookupItem(resolved.name);
         if (item && item.kind === "enum") {
@@ -1234,7 +1281,10 @@ function substituteLoweringGenericType(typeCtx, type, genericNames, bindings) {
                 .filter((/** @type {string} */ name) => name.length > 0);
             const enumBindings = new Map();
             if (substitutedArgs) {
-                const count = Math.min(enumGenericParams.length, substitutedArgs.length);
+                const count = Math.min(
+                    enumGenericParams.length,
+                    substitutedArgs.length,
+                );
                 for (let i = 0; i < count; i++) {
                     enumBindings.set(enumGenericParams[i], substitutedArgs[i]);
                 }
@@ -1243,20 +1293,27 @@ function substituteLoweringGenericType(typeCtx, type, genericNames, bindings) {
             return {
                 kind: TypeKind.Enum,
                 name: resolved.name,
-                variants: (item.node.variants || []).map((/** @type {any} */ variant) => ({
-                    name: variant.name,
-                    fields: (variant.fields || []).map((/** @type {any} */ field) => {
-                        if (!field?.ty) return makeUnitType();
-                        const fieldType = resolveTypeFromAst(field.ty, typeCtx);
-                        if (!fieldType.ok) return makeUnitType();
-                        return substituteLoweringGenericType(
-                            typeCtx,
-                            fieldType.type,
-                            enumGenericSet,
-                            enumBindings,
-                        );
+                variants: (item.node.variants || []).map(
+                    (/** @type {any} */ variant) => ({
+                        name: variant.name,
+                        fields: (variant.fields || []).map(
+                            (/** @type {any} */ field) => {
+                                if (!field?.ty) return makeUnitType();
+                                const fieldType = resolveTypeFromAst(
+                                    field.ty,
+                                    typeCtx,
+                                );
+                                if (!fieldType.ok) return makeUnitType();
+                                return substituteLoweringGenericType(
+                                    typeCtx,
+                                    fieldType.type,
+                                    enumGenericSet,
+                                    enumBindings,
+                                );
+                            },
+                        ),
                     }),
-                })),
+                ),
                 span: resolved.span,
             };
         }
@@ -1291,7 +1348,12 @@ function substituteLoweringGenericType(typeCtx, type, genericNames, bindings) {
         return {
             ...resolved,
             elements: resolved.elements.map((/** @type {Type} */ t) =>
-                substituteLoweringGenericType(typeCtx, t, genericNames, bindings),
+                substituteLoweringGenericType(
+                    typeCtx,
+                    t,
+                    genericNames,
+                    bindings,
+                ),
             ),
         };
     }
@@ -1321,7 +1383,12 @@ function substituteLoweringGenericType(typeCtx, type, genericNames, bindings) {
         return {
             ...resolved,
             params: resolved.params.map((/** @type {Type} */ t) =>
-                substituteLoweringGenericType(typeCtx, t, genericNames, bindings),
+                substituteLoweringGenericType(
+                    typeCtx,
+                    t,
+                    genericNames,
+                    bindings,
+                ),
             ),
             returnType: substituteLoweringGenericType(
                 typeCtx,
@@ -1349,6 +1416,88 @@ function vecElementTypeForType(ty) {
         return ty.args[0];
     }
     return null;
+}
+
+/**
+ * @param {TypeContext} typeCtx
+ * @param {Type | null | undefined} ty
+ * @returns {Type | null}
+ */
+function optionElementTypeForType(typeCtx, ty) {
+    if (!ty) return null;
+    const resolved = typeCtx.resolveType(ty);
+    if (
+        resolved.kind === TypeKind.Named &&
+        resolved.name === "Option" &&
+        resolved.args &&
+        resolved.args.length === 1
+    ) {
+        return typeCtx.resolveType(resolved.args[0]);
+    }
+    if (
+        resolved.kind === TypeKind.Enum &&
+        resolved.name === "Option" &&
+        Array.isArray(resolved.variants)
+    ) {
+        const someVariant = resolved.variants.find(
+            (/** @type {{ name?: string, fields?: Type[] }} */ variant) =>
+                variant.name === "Some",
+        );
+        if (
+            someVariant &&
+            Array.isArray(someVariant.fields) &&
+            someVariant.fields.length === 1
+        ) {
+            return typeCtx.resolveType(someVariant.fields[0]);
+        }
+    }
+    return null;
+}
+
+/**
+ * @param {TypeContext} typeCtx
+ * @param {Type | null | undefined} ty
+ * @returns {Type | null}
+ */
+function optionEnumTypeForType(typeCtx, ty) {
+    if (!ty) return null;
+    const resolved = typeCtx.resolveType(ty);
+    if (resolved.kind === TypeKind.Enum && resolved.name === "Option") {
+        return resolved;
+    }
+    if (
+        resolved.kind === TypeKind.Named &&
+        resolved.name === "Option" &&
+        resolved.args &&
+        resolved.args.length === 1
+    ) {
+        const payloadType = typeCtx.resolveType(resolved.args[0]);
+        return {
+            kind: TypeKind.Enum,
+            name: "Option",
+            variants: [
+                { name: "None", fields: [] },
+                { name: "Some", fields: [payloadType] },
+            ],
+            span: resolved.span,
+        };
+    }
+    return null;
+}
+
+/**
+ * @param {TypeContext} typeCtx
+ * @param {Type | null | undefined} ty
+ * @returns {boolean}
+ */
+function isEqLowerableType(typeCtx, ty) {
+    if (!ty) return false;
+    const resolved = typeCtx.resolveType(ty);
+    return (
+        resolved.kind === TypeKind.Int ||
+        resolved.kind === TypeKind.Float ||
+        resolved.kind === TypeKind.Bool
+    );
 }
 
 /**
@@ -1381,7 +1530,10 @@ function instantiateLoweringMethodType(typeCtx, fnType, receiverType, meta) {
     }
     const genericSet = new Set(implGenericNames);
     const bindings = new Map();
-    const count = Math.min(targetGenericParamNames.length, receiverType.args.length);
+    const count = Math.min(
+        targetGenericParamNames.length,
+        receiverType.args.length,
+    );
     for (let i = 0; i < count; i++) {
         const genericName = targetGenericParamNames[i];
         if (!genericName || !genericSet.has(genericName)) continue;
@@ -1423,6 +1575,32 @@ function lookupLoweringCallItem(typeCtx, callee) {
  */
 function lowerCall(ctx, call, typeCtx) {
     if (call.callee?.kind === NodeKind.IdentifierExpr) {
+        const variantName = call.callee.name;
+        if (
+            (variantName === "Some" || variantName === "None") &&
+            !ctx.lookupVar(variantName) &&
+            !ctx.lookupItem(variantName)
+        ) {
+            const optionItem = ctx.lookupItem("Option");
+            if (optionItem && optionItem.kind === "enum") {
+                return lowerCall(
+                    ctx,
+                    {
+                        ...call,
+                        callee: {
+                            kind: NodeKind.PathExpr,
+                            segments: ["Option", variantName],
+                            span: call.callee.span,
+                            resolvedItemName: null,
+                        },
+                    },
+                    typeCtx,
+                );
+            }
+        }
+    }
+
+    if (call.callee?.kind === NodeKind.IdentifierExpr) {
         const closureVar = ctx.lookupVar(call.callee.name);
         if (closureVar) {
             const closureBinding = ctx.lookupClosureBinding(closureVar.id);
@@ -1445,8 +1623,8 @@ function lowerCall(ctx, call, typeCtx) {
                     }
                     return sourceExpr;
                 });
-                const userArgs = (call.args || []).map((/** @type {any} */ arg) =>
-                    lowerExpr(ctx, arg, typeCtx),
+                const userArgs = (call.args || []).map(
+                    (/** @type {any} */ arg) => lowerExpr(ctx, arg, typeCtx),
                 );
                 const callee = makeHVarExpr(
                     call.callee.span,
@@ -1475,12 +1653,14 @@ function lowerCall(ctx, call, typeCtx) {
             const methodMeta = typeCtx.lookupMethodBySymbol(resolvedSymbol);
             const receiver = lowerExpr(ctx, methodField.receiver, typeCtx);
             if (methodMeta && methodMeta.type?.kind === TypeKind.Fn) {
-                const methodType = /** @type {FnType} */ (instantiateLoweringMethodType(
-                    typeCtx,
-                    methodMeta.type,
-                    receiver.ty,
-                    methodMeta.meta,
-                ));
+                const methodType = /** @type {FnType} */ (
+                    instantiateLoweringMethodType(
+                        typeCtx,
+                        methodMeta.type,
+                        receiver.ty,
+                        methodMeta.meta,
+                    )
+                );
                 let receiverArg = receiver;
                 const receiverType = methodType.params[0];
                 if (receiverType?.kind === TypeKind.Ref) {
@@ -1498,7 +1678,9 @@ function lowerCall(ctx, call, typeCtx) {
                 }
                 const args = [
                     receiverArg,
-                    ...(call.args || []).map((/**@type{any}*/ arg) => lowerExpr(ctx, arg, typeCtx)),
+                    ...(call.args || []).map((/**@type{any}*/ arg) =>
+                        lowerExpr(ctx, arg, typeCtx),
+                    ),
                 ];
                 const callee = makeHVarExpr(
                     call.callee.span,
@@ -1532,12 +1714,14 @@ function lowerCall(ctx, call, typeCtx) {
                     methodName,
                 );
                 if (methodDecl && methodDecl.type?.kind === TypeKind.Fn) {
-                    const methodType = /** @type {FnType} */ (instantiateLoweringMethodType(
-                        typeCtx,
-                        methodDecl.type,
-                        receiver.ty,
-                        methodDecl.meta,
-                    ));
+                    const methodType = /** @type {FnType} */ (
+                        instantiateLoweringMethodType(
+                            typeCtx,
+                            methodDecl.type,
+                            receiver.ty,
+                            methodDecl.meta,
+                        )
+                    );
                     let receiverArg = receiver;
                     const receiverType = methodType.params[0];
                     if (receiverType?.kind === TypeKind.Ref) {
@@ -1555,7 +1739,9 @@ function lowerCall(ctx, call, typeCtx) {
                     }
                     const args = [
                         receiverArg,
-                        ...(call.args || []).map((/**@type{any}*/ arg) => lowerExpr(ctx, arg, typeCtx)),
+                        ...(call.args || []).map((/**@type{any}*/ arg) =>
+                            lowerExpr(ctx, arg, typeCtx),
+                        ),
                     ];
                     const callee = makeHVarExpr(
                         call.callee.span,
@@ -1578,15 +1764,21 @@ function lowerCall(ctx, call, typeCtx) {
         }
     }
 
-    if (call.callee?.kind === NodeKind.PathExpr && call.callee.segments?.length === 2) {
+    if (
+        call.callee?.kind === NodeKind.PathExpr &&
+        call.callee.segments?.length === 2
+    ) {
         const enumName = call.callee.segments[0];
         const variantName = call.callee.segments[1];
         const enumItem = ctx.lookupItem(enumName);
         if (enumItem && enumItem.kind === "enum") {
-            const loweredArgs = (call.args || []).map((/** @type {any} */ arg) =>
-                lowerExpr(ctx, arg, typeCtx),
+            const loweredArgs = (call.args || []).map(
+                (/** @type {any} */ arg) => lowerExpr(ctx, arg, typeCtx),
             );
-            const variantIndex = findEnumVariantIndex(enumItem.node, variantName);
+            const variantIndex = findEnumVariantIndex(
+                enumItem.node,
+                variantName,
+            );
             const enumNodeVariants = enumItem.node.variants || [];
             const variantNode = enumNodeVariants[variantIndex] || null;
             const enumGenericParams = (enumItem.node.generics || [])
@@ -1596,13 +1788,21 @@ function lowerCall(ctx, call, typeCtx) {
             const bindings = new Map();
 
             if (variantNode && variantNode.fields) {
-                const count = Math.min(variantNode.fields.length, loweredArgs.length);
+                const count = Math.min(
+                    variantNode.fields.length,
+                    loweredArgs.length,
+                );
                 for (let i = 0; i < count; i++) {
                     const field = variantNode.fields[i];
                     if (!field?.ty) continue;
                     const fieldType = resolveTypeFromAst(field.ty, typeCtx);
-                    if (!fieldType.ok || fieldType.type.kind !== TypeKind.Named) continue;
-                    if (!genericSet.has(fieldType.type.name) || fieldType.type.args) continue;
+                    if (!fieldType.ok || fieldType.type.kind !== TypeKind.Named)
+                        continue;
+                    if (
+                        !genericSet.has(fieldType.type.name) ||
+                        fieldType.type.args
+                    )
+                        continue;
                     bindings.set(fieldType.type.name, loweredArgs[i].ty);
                 }
             }
@@ -1611,17 +1811,22 @@ function lowerCall(ctx, call, typeCtx) {
                 kind: TypeKind.Enum,
                 name: enumName,
                 variants: enumNodeVariants.map((/** @type {any} */ variant) => {
-                    const fields = (variant.fields || []).map((/** @type {any} */ field) => {
-                        if (!field?.ty) return makeUnitType();
-                        const resolved = resolveTypeFromAst(field.ty, typeCtx);
-                        if (!resolved.ok) return makeUnitType();
-                        return substituteLoweringGenericType(
-                            typeCtx,
-                            resolved.type,
-                            genericSet,
-                            bindings,
-                        );
-                    });
+                    const fields = (variant.fields || []).map(
+                        (/** @type {any} */ field) => {
+                            if (!field?.ty) return makeUnitType();
+                            const resolved = resolveTypeFromAst(
+                                field.ty,
+                                typeCtx,
+                            );
+                            if (!resolved.ok) return makeUnitType();
+                            return substituteLoweringGenericType(
+                                typeCtx,
+                                resolved.type,
+                                genericSet,
+                                bindings,
+                            );
+                        },
+                    );
                     return { name: variant.name, fields };
                 }),
             };
@@ -1638,7 +1843,9 @@ function lowerCall(ctx, call, typeCtx) {
     }
 
     const callee = lowerExpr(ctx, call.callee, typeCtx);
-    const args = (call.args || []).map((/**@type{any}*/ arg) => lowerExpr(ctx, arg, typeCtx));
+    const args = (call.args || []).map((/**@type{any}*/ arg) =>
+        lowerExpr(ctx, arg, typeCtx),
+    );
 
     // Get return type from callee type
     let ty = makeUnitType();
@@ -1646,7 +1853,11 @@ function lowerCall(ctx, call, typeCtx) {
         ty = callee.ty.returnType;
     }
     const itemDecl = lookupLoweringCallItem(typeCtx, call.callee);
-    if (itemDecl && itemDecl.kind === "fn" && itemDecl.type?.kind === TypeKind.Fn) {
+    if (
+        itemDecl &&
+        itemDecl.kind === "fn" &&
+        itemDecl.type?.kind === TypeKind.Fn
+    ) {
         const genericNames = itemDecl.node?.generics || [];
         if (genericNames.length > 0) {
             const bindings = itemDecl.genericBindings || new Map();
@@ -1673,15 +1884,28 @@ function lowerCall(ctx, call, typeCtx) {
 function lowerMacro(ctx, macroExpr, typeCtx) {
     switch (macroExpr.name) {
         case "println":
-            return lowerPrintMacro(ctx, macroExpr, typeCtx, BUILTIN_PRINTLN_FMT_FN);
+            return lowerPrintMacro(
+                ctx,
+                macroExpr,
+                typeCtx,
+                BUILTIN_PRINTLN_FMT_FN,
+            );
         case "print":
-            return lowerPrintMacro(ctx, macroExpr, typeCtx, BUILTIN_PRINT_FMT_FN);
+            return lowerPrintMacro(
+                ctx,
+                macroExpr,
+                typeCtx,
+                BUILTIN_PRINT_FMT_FN,
+            );
         case "assert_eq":
             return lowerAssertEqMacro(ctx, macroExpr, typeCtx);
         case "vec":
             return lowerVecMacro(ctx, macroExpr, typeCtx);
         default:
-            ctx.addError(`Unsupported macro in lowering: ${macroExpr.name}!`, macroExpr.span);
+            ctx.addError(
+                `Unsupported macro in lowering: ${macroExpr.name}!`,
+                macroExpr.span,
+            );
             return makeHUnitExpr(macroExpr.span, makeUnitType());
     }
 }
@@ -1702,43 +1926,217 @@ function lowerAssertEqMacro(ctx, macroExpr, typeCtx) {
 
     const left = lowerExpr(ctx, args[0], typeCtx);
     const right = lowerExpr(ctx, args[1], typeCtx);
+    const optionLeftElement = optionElementTypeForType(typeCtx, left.ty);
+    const optionRightElement = optionElementTypeForType(typeCtx, right.ty);
+    const optionLeftEnumType = optionEnumTypeForType(typeCtx, left.ty);
+    const optionRightEnumType = optionEnumTypeForType(typeCtx, right.ty);
+    const unitType = makeUnitType(macroExpr.span);
+    const boolType = makeBoolType(macroExpr.span);
+
+    const failCallee = makeHVarExpr(
+        macroExpr.span,
+        BUILTIN_ASSERT_FAIL_FN,
+        -1,
+        makeFnType([], unitType, false, false, macroExpr.span),
+    );
+    const failCall = makeHCallExpr(macroExpr.span, failCallee, [], unitType);
+    const trueExpr = makeHLiteralExpr(
+        macroExpr.span,
+        HLiteralKind.Bool,
+        true,
+        boolType,
+    );
+    const falseExpr = makeHLiteralExpr(
+        macroExpr.span,
+        HLiteralKind.Bool,
+        false,
+        boolType,
+    );
+
+    if (optionLeftElement && optionRightElement) {
+        if (!isEqLowerableType(typeCtx, optionLeftElement)) {
+            ctx.addError(
+                `assert_eq! for Option<T> is only supported when T is int/float/bool; got ${typeToString(typeCtx.resolveType(optionLeftElement))}`,
+                macroExpr.span,
+            );
+            return makeHUnitExpr(macroExpr.span, unitType);
+        }
+
+        const leftOptionExpr = optionLeftEnumType
+            ? { ...left, ty: optionLeftEnumType }
+            : left;
+        const rightOptionExpr = optionRightEnumType
+            ? { ...right, ty: optionRightEnumType }
+            : right;
+        const leftPayloadVar = ctx.defineVar(
+            `__assert_eq_left_opt_${ctx.nextVarId}`,
+            optionLeftElement,
+            false,
+        );
+        const rightPayloadVar = ctx.defineVar(
+            `__assert_eq_right_opt_${ctx.nextVarId}`,
+            optionRightElement,
+            false,
+        );
+        const leftPayloadPat = makeHIdentPat(
+            macroExpr.span,
+            leftPayloadVar.name,
+            leftPayloadVar.id,
+            optionLeftElement,
+            false,
+            false,
+        );
+        const rightPayloadPat = makeHIdentPat(
+            macroExpr.span,
+            rightPayloadVar.name,
+            rightPayloadVar.id,
+            optionRightElement,
+            false,
+            false,
+        );
+        const leftSomePat = makeHStructPat(
+            macroExpr.span,
+            "Option::Some",
+            [{ name: "0", pat: leftPayloadPat }],
+            false,
+            leftOptionExpr.ty,
+        );
+        const leftNonePat = makeHStructPat(
+            macroExpr.span,
+            "Option::None",
+            [],
+            false,
+            leftOptionExpr.ty,
+        );
+        const rightSomePat = makeHStructPat(
+            macroExpr.span,
+            "Option::Some",
+            [{ name: "0", pat: rightPayloadPat }],
+            false,
+            rightOptionExpr.ty,
+        );
+        const rightNonePat = makeHStructPat(
+            macroExpr.span,
+            "Option::None",
+            [],
+            false,
+            rightOptionExpr.ty,
+        );
+        const rightWildcardPat = makeHWildcardPat(
+            macroExpr.span,
+            rightOptionExpr.ty,
+        );
+
+        const payloadEq = makeHBinaryExpr(
+            macroExpr.span,
+            BinaryOp.Eq,
+            makeHVarExpr(
+                macroExpr.span,
+                leftPayloadVar.name,
+                leftPayloadVar.id,
+                optionLeftElement,
+            ),
+            makeHVarExpr(
+                macroExpr.span,
+                rightPayloadVar.name,
+                rightPayloadVar.id,
+                optionRightElement,
+            ),
+            boolType,
+        );
+
+        const rightMatchInSome = makeHMatchExpr(
+            macroExpr.span,
+            rightOptionExpr,
+            [
+                makeHMatchArm(
+                    macroExpr.span,
+                    rightSomePat,
+                    null,
+                    makeHBlock(macroExpr.span, [], payloadEq, boolType),
+                ),
+                makeHMatchArm(
+                    macroExpr.span,
+                    rightWildcardPat,
+                    null,
+                    makeHBlock(macroExpr.span, [], falseExpr, boolType),
+                ),
+            ],
+            boolType,
+        );
+        const rightMatchInNone = makeHMatchExpr(
+            macroExpr.span,
+            rightOptionExpr,
+            [
+                makeHMatchArm(
+                    macroExpr.span,
+                    rightNonePat,
+                    null,
+                    makeHBlock(macroExpr.span, [], trueExpr, boolType),
+                ),
+                makeHMatchArm(
+                    macroExpr.span,
+                    rightWildcardPat,
+                    null,
+                    makeHBlock(macroExpr.span, [], falseExpr, boolType),
+                ),
+            ],
+            boolType,
+        );
+        const condition = makeHMatchExpr(
+            macroExpr.span,
+            leftOptionExpr,
+            [
+                makeHMatchArm(
+                    macroExpr.span,
+                    leftNonePat,
+                    null,
+                    makeHBlock(macroExpr.span, [], rightMatchInNone, boolType),
+                ),
+                makeHMatchArm(
+                    macroExpr.span,
+                    leftSomePat,
+                    null,
+                    makeHBlock(macroExpr.span, [], rightMatchInSome, boolType),
+                ),
+            ],
+            boolType,
+        );
+
+        return makeHIfExpr(
+            macroExpr.span,
+            condition,
+            makeHBlock(
+                macroExpr.span,
+                [],
+                makeHUnitExpr(macroExpr.span, unitType),
+                unitType,
+            ),
+            makeHBlock(macroExpr.span, [], failCall, unitType),
+            unitType,
+        );
+    }
+
     const condition = makeHBinaryExpr(
         macroExpr.span,
         BinaryOp.Eq,
         left,
         right,
-        makeBoolType(macroExpr.span),
-    );
-    const failCallee = makeHVarExpr(
-        macroExpr.span,
-        BUILTIN_ASSERT_FAIL_FN,
-        -1,
-        makeFnType([], makeUnitType(macroExpr.span), false, false, macroExpr.span),
-    );
-    const failCall = makeHCallExpr(
-        macroExpr.span,
-        failCallee,
-        [],
-        makeUnitType(macroExpr.span),
+        boolType,
     );
     const thenBranch = makeHBlock(
         macroExpr.span,
         [],
-        makeHUnitExpr(macroExpr.span, makeUnitType(macroExpr.span)),
-        makeUnitType(macroExpr.span),
+        makeHUnitExpr(macroExpr.span, unitType),
+        unitType,
     );
-    const elseBranch = makeHBlock(
-        macroExpr.span,
-        [],
-        failCall,
-        makeUnitType(macroExpr.span),
-    );
+    const elseBranch = makeHBlock(macroExpr.span, [], failCall, unitType);
     return makeHIfExpr(
         macroExpr.span,
         condition,
         thenBranch,
         elseBranch,
-        makeUnitType(macroExpr.span),
+        unitType,
     );
 }
 
@@ -1753,7 +2151,10 @@ function lowerAssertEqMacro(ctx, macroExpr, typeCtx) {
 function lowerPrintMacro(ctx, macroExpr, typeCtx, builtinName) {
     const args = macroExpr.args || [];
     if (args.length === 0) {
-        ctx.addError(`${macroExpr.name}! requires a format string argument`, macroExpr.span);
+        ctx.addError(
+            `${macroExpr.name}! requires a format string argument`,
+            macroExpr.span,
+        );
         return makeHUnitExpr(macroExpr.span, makeUnitType());
     }
 
@@ -1836,11 +2237,11 @@ function lowerPrintMacro(ctx, macroExpr, typeCtx, builtinName) {
  */
 function lowerVecMacro(ctx, macroExpr, typeCtx) {
     const args = macroExpr.args || [];
-    const loweredArgs = args.map((/** @type {any} */ arg) => lowerExpr(ctx, arg, typeCtx));
+    const loweredArgs = args.map((/** @type {any} */ arg) =>
+        lowerExpr(ctx, arg, typeCtx),
+    );
     const elementType =
-        loweredArgs.length > 0
-            ? loweredArgs[0].ty
-            : typeCtx.freshTypeVar();
+        loweredArgs.length > 0 ? loweredArgs[0].ty : typeCtx.freshTypeVar();
     const vecType = {
         kind: TypeKind.Named,
         name: "Vec",
@@ -1862,7 +2263,9 @@ function lowerVecMacro(ctx, macroExpr, typeCtx) {
     const newFnType = makeFnType([], vecType, false, false, macroExpr.span);
     const newCallee = makeHVarExpr(macroExpr.span, "Vec::new", -1, newFnType);
     const newCall = makeHCallExpr(macroExpr.span, newCallee, [], vecType);
-    ctx.queuePreludeStmt(makeHLetStmt(macroExpr.span, tempPat, vecType, newCall));
+    ctx.queuePreludeStmt(
+        makeHLetStmt(macroExpr.span, tempPat, vecType, newCall),
+    );
 
     for (const valueExpr of loweredArgs) {
         const receiverExpr = makeHVarExpr(
@@ -1916,9 +2319,16 @@ function lowerField(ctx, field, typeCtx) {
         typeof field.field === "string" ? field.field : field.field.name;
     let fieldBase = base;
     let baseType = base.ty;
-    if (baseType && (baseType.kind === TypeKind.Ref || baseType.kind === TypeKind.Ptr)) {
+    if (
+        baseType &&
+        (baseType.kind === TypeKind.Ref || baseType.kind === TypeKind.Ptr)
+    ) {
         baseType = baseType.inner;
-        fieldBase = makeHDerefExpr(field.span, base, baseType || makeUnitType());
+        fieldBase = makeHDerefExpr(
+            field.span,
+            base,
+            baseType || makeUnitType(),
+        );
     }
 
     // Get field index and type
@@ -1926,18 +2336,26 @@ function lowerField(ctx, field, typeCtx) {
     let ty = makeUnitType();
 
     if (baseType && baseType.kind === TypeKind.Struct) {
-        index = ctx.getFieldIndex(/** @type {any} */(baseType).name, fieldName);
-        const fieldDef = /** @type {any} */ (baseType).fields?.find((/** @type {any} */ f) => f.name === fieldName);
+        index = ctx.getFieldIndex(
+            /** @type {any} */ (baseType).name,
+            fieldName,
+        );
+        const fieldDef = /** @type {any} */ (baseType).fields?.find(
+            (/** @type {any} */ f) => f.name === fieldName,
+        );
         if (fieldDef) {
             ty = fieldDef.type;
         } else {
-            const item = typeCtx.lookupItem(/** @type {any} */(baseType).name);
+            const item = typeCtx.lookupItem(/** @type {any} */ (baseType).name);
             if (item && item.kind === "struct") {
                 const structField = item.node.fields?.find(
                     (/** @type {any} */ f) => f.name === fieldName,
                 );
                 if (structField?.ty) {
-                    const resolvedType = resolveTypeFromAst(structField.ty, typeCtx);
+                    const resolvedType = resolveTypeFromAst(
+                        structField.ty,
+                        typeCtx,
+                    );
                     if (resolvedType.ok) {
                         ty = resolvedType.type || makeUnitType();
                     }
@@ -1952,7 +2370,10 @@ function lowerField(ctx, field, typeCtx) {
                 (/** @type {any} */ f) => f.name === fieldName,
             );
             if (structField?.ty) {
-                const resolvedType = resolveTypeFromAst(structField.ty, typeCtx);
+                const resolvedType = resolveTypeFromAst(
+                    structField.ty,
+                    typeCtx,
+                );
                 if (resolvedType.ok) {
                     ty = resolvedType.type || makeUnitType();
                     const genericParams = item.node.generics || [];
@@ -1960,7 +2381,10 @@ function lowerField(ctx, field, typeCtx) {
                     if (genericParams.length > 0 && receiverArgs.length > 0) {
                         const genericSet = new Set();
                         const bindings = new Map();
-                        const count = Math.min(genericParams.length, receiverArgs.length);
+                        const count = Math.min(
+                            genericParams.length,
+                            receiverArgs.length,
+                        );
                         for (let i = 0; i < count; i++) {
                             const genericName = genericParams[i] || null;
                             if (!genericName) continue;
@@ -2016,9 +2440,9 @@ function lowerIndex(ctx, index, typeCtx) {
     } else {
         const vecElement = base.ty ? vecElementTypeForType(base.ty) : null;
         if (vecElement) {
-            const optionElement = substituteLoweringGenericType(
+            const elementType = substituteLoweringGenericType(
                 typeCtx,
-                makeOptionType(vecElement, index.span),
+                vecElement,
                 new Set(),
                 new Map(),
             );
@@ -2031,7 +2455,7 @@ function lowerIndex(ctx, index, typeCtx) {
             );
             const methodType = makeFnType(
                 [receiverRefType, idx.ty],
-                optionElement,
+                elementType,
                 false,
                 false,
                 index.span,
@@ -2042,7 +2466,12 @@ function lowerIndex(ctx, index, typeCtx) {
                 -1,
                 methodType,
             );
-            return makeHCallExpr(index.span, callee, [receiverArg, idx], optionElement);
+            return makeHCallExpr(
+                index.span,
+                callee,
+                [receiverArg, idx],
+                elementType,
+            );
         }
     }
 
@@ -2159,7 +2588,13 @@ function lowerClosure(ctx, closure, typeCtx) {
     const inferredType =
         closure.inferredType && closure.inferredType.kind === TypeKind.Fn
             ? closure.inferredType
-            : makeFnType([], makeUnitType(closure.span), false, false, closure.span);
+            : makeFnType(
+                  [],
+                  makeUnitType(closure.span),
+                  false,
+                  false,
+                  closure.span,
+              );
     const captures = closure.captureInfos || [];
     const helperName = `${ctx.currentFn || "closure"}::__closure_${ctx.nextClosureSymbolId()}`;
 
@@ -2203,10 +2638,10 @@ function lowerClosure(ctx, closure, typeCtx) {
         closure.body?.kind === NodeKind.BlockExpr
             ? closure.body
             : makeBlockExpr(
-                closure.body?.span || closure.span,
-                [],
-                closure.body || null,
-            );
+                  closure.body?.span || closure.span,
+                  [],
+                  closure.body || null,
+              );
 
     const syntheticFn = {
         kind: NodeKind.FnItem,
@@ -2226,7 +2661,12 @@ function lowerClosure(ctx, closure, typeCtx) {
         ctx.queueGeneratedItem(helperDecl);
     }
 
-    const closureValue = makeHVarExpr(closure.span, helperName, -1, inferredType);
+    const closureValue = makeHVarExpr(
+        closure.span,
+        helperName,
+        -1,
+        inferredType,
+    );
     closureValue.closureMeta = {
         helperName,
         helperType,
@@ -2341,9 +2781,9 @@ function lowerMatch(ctx, matchExpr, typeCtx) {
             arm.body.kind === NodeKind.BlockExpr
                 ? lowerBlock(ctx, arm.body, typeCtx)
                 : (() => {
-                    const expr = lowerExpr(ctx, arm.body, typeCtx);
-                    return makeHBlock(arm.body.span, [], expr, expr.ty);
-                })();
+                      const expr = lowerExpr(ctx, arm.body, typeCtx);
+                      return makeHBlock(arm.body.span, [], expr, expr.ty);
+                  })();
 
         ctx.popScope();
 
@@ -2492,7 +2932,7 @@ function lowerPath(ctx, pathExpr, typeCtx) {
     if (pathExpr.resolvedItemName) {
         return lowerIdentifier(
             ctx,
-            /** @type {any} */({
+            /** @type {any} */ ({
                 name: pathExpr.segments[pathExpr.segments.length - 1] || "",
                 resolvedItemName: pathExpr.resolvedItemName,
                 span: pathExpr.span,
@@ -2505,7 +2945,7 @@ function lowerPath(ctx, pathExpr, typeCtx) {
     if (pathExpr.segments.length === 1) {
         return lowerIdentifier(
             ctx,
-            /** @type {any} */({
+            /** @type {any} */ ({
                 name: pathExpr.segments[0],
                 resolvedItemName: pathExpr.resolvedItemName || null,
                 span: pathExpr.span,
@@ -2534,14 +2974,23 @@ function lowerPath(ctx, pathExpr, typeCtx) {
             const enumTy = {
                 kind: TypeKind.Enum,
                 name: itemName,
-                variants: (item.node.variants || []).map((/** @type {any} */ variant) => ({
-                    name: variant.name,
-                    fields: (variant.fields || []).map((/** @type {any} */ field) => {
-                        if (!field?.ty) return makeUnitType();
-                        const resolved = resolveTypeFromAst(field.ty, typeCtx);
-                        return resolved.ok ? resolved.type : makeUnitType();
+                variants: (item.node.variants || []).map(
+                    (/** @type {any} */ variant) => ({
+                        name: variant.name,
+                        fields: (variant.fields || []).map(
+                            (/** @type {any} */ field) => {
+                                if (!field?.ty) return makeUnitType();
+                                const resolved = resolveTypeFromAst(
+                                    field.ty,
+                                    typeCtx,
+                                );
+                                return resolved.ok
+                                    ? resolved.type
+                                    : makeUnitType();
+                            },
+                        ),
                     }),
-                })),
+                ),
             };
             const variantIndex = findEnumVariantIndex(item.node, variantName);
             return makeHEnumExpr(
@@ -2705,8 +3154,8 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
     const enumNode = enumItem?.kind === "enum" ? enumItem.node : null;
     const enumVariant = enumNode
         ? (enumNode.variants || []).find(
-            (/** @type {any} */ variant) => variant.name === enumVariantName,
-        )
+              (/** @type {any} */ variant) => variant.name === enumVariantName,
+          )
         : null;
     const enumGenericParams = (enumNode?.generics || [])
         .map((/** @type {string} */ name) => name || "")
@@ -2719,7 +3168,10 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
         expectedType.name === enumName &&
         expectedType.args
     ) {
-        const count = Math.min(enumGenericParams.length, expectedType.args.length);
+        const count = Math.min(
+            enumGenericParams.length,
+            expectedType.args.length,
+        );
         for (let i = 0; i < count; i++) {
             enumBindings.set(enumGenericParams[i], expectedType.args[i]);
         }
@@ -2729,8 +3181,9 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
         expectedType?.kind === TypeKind.Enum &&
         expectedType.name === enumName
             ? (expectedType.variants || []).find(
-                (/** @type {any} */ variant) => variant.name === enumVariantName,
-            )
+                  (/** @type {any} */ variant) =>
+                      variant.name === enumVariantName,
+              )
             : null;
 
     // Lower field patterns
@@ -2754,9 +3207,16 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
                 const tupleField = enumVariant.fields[tupleFieldIndex];
                 if (
                     tupleField?.ty &&
-                    !(expectedEnumVariant && expectedEnumVariant.fields && tupleFieldIndex < expectedEnumVariant.fields.length)
+                    !(
+                        expectedEnumVariant &&
+                        expectedEnumVariant.fields &&
+                        tupleFieldIndex < expectedEnumVariant.fields.length
+                    )
                 ) {
-                    const typeResult = resolveTypeFromAst(tupleField.ty, typeCtx);
+                    const typeResult = resolveTypeFromAst(
+                        tupleField.ty,
+                        typeCtx,
+                    );
                     if (typeResult.ok) {
                         fieldType = substituteLoweringGenericType(
                             typeCtx,
@@ -2804,19 +3264,21 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
  * @returns {import('./hir.js').HTuplePat}
  */
 function lowerTuplePat(ctx, pat, expectedType, typeCtx) {
-    const elements = (pat.elements || []).map((/**@type{any}*/ elem, /**@type{number}*/ i) => {
-        let elemType = makeUnitType();
-        if (
-            expectedType &&
-            expectedType.kind === TypeKind.Tuple &&
-            expectedType.elements
-        ) {
-            if (i < expectedType.elements.length) {
-                elemType = expectedType.elements[i];
+    const elements = (pat.elements || []).map(
+        (/**@type{any}*/ elem, /**@type{number}*/ i) => {
+            let elemType = makeUnitType();
+            if (
+                expectedType &&
+                expectedType.kind === TypeKind.Tuple &&
+                expectedType.elements
+            ) {
+                if (i < expectedType.elements.length) {
+                    elemType = expectedType.elements[i];
+                }
             }
-        }
-        return lowerPattern(ctx, elem, elemType, typeCtx);
-    });
+            return lowerPattern(ctx, elem, elemType, typeCtx);
+        },
+    );
 
     return makeHTuplePat(pat.span, elements, expectedType);
 }
@@ -2887,7 +3349,11 @@ function extractPlace(ctx, expr, typeCtx) {
 
             let base = extractedBase;
             let baseType = base.ty;
-            if (baseType && (baseType.kind === TypeKind.Ref || baseType.kind === TypeKind.Ptr)) {
+            if (
+                baseType &&
+                (baseType.kind === TypeKind.Ref ||
+                    baseType.kind === TypeKind.Ptr)
+            ) {
                 baseType = baseType.inner || makeUnitType();
                 base = makeHDerefPlace(expr.span, base, baseType);
             }
@@ -2897,8 +3363,14 @@ function extractPlace(ctx, expr, typeCtx) {
             let index = 0;
             let ty = makeUnitType();
 
-            if (baseType && /** @type {any} */ (baseType).kind === TypeKind.Struct) {
-                index = ctx.getFieldIndex(/** @type {any} */(baseType).name, fieldName);
+            if (
+                baseType &&
+                /** @type {any} */ (baseType).kind === TypeKind.Struct
+            ) {
+                index = ctx.getFieldIndex(
+                    /** @type {any} */ (baseType).name,
+                    fieldName,
+                );
                 const fieldDef = /** @type {any} */ (baseType).fields?.find(
                     (/** @type {any} */ f) => f.name === fieldName,
                 );
@@ -2913,17 +3385,27 @@ function extractPlace(ctx, expr, typeCtx) {
                         (/** @type {any} */ f) => f.name === fieldName,
                     );
                     if (structField?.ty) {
-                        const resolvedType = resolveTypeFromAst(structField.ty, typeCtx);
+                        const resolvedType = resolveTypeFromAst(
+                            structField.ty,
+                            typeCtx,
+                        );
                         if (resolvedType.ok) {
                             ty = resolvedType.type || makeUnitType();
                             const genericParams = item.node.generics || [];
                             const receiverArgs = baseType.args || [];
-                            if (genericParams.length > 0 && receiverArgs.length > 0) {
+                            if (
+                                genericParams.length > 0 &&
+                                receiverArgs.length > 0
+                            ) {
                                 const genericSet = new Set();
                                 const bindings = new Map();
-                                const count = Math.min(genericParams.length, receiverArgs.length);
+                                const count = Math.min(
+                                    genericParams.length,
+                                    receiverArgs.length,
+                                );
                                 for (let i = 0; i < count; i++) {
-                                    const genericName = genericParams[i] || null;
+                                    const genericName =
+                                        genericParams[i] || null;
                                     if (!genericName) continue;
                                     genericSet.add(genericName);
                                     bindings.set(genericName, receiverArgs[i]);
@@ -3049,7 +3531,10 @@ function resolveTypeFromAst(typeNode, typeCtx) {
                     const genericSet = new Set(genericNames);
                     const bindings = new Map();
                     if (args && args.length > 0) {
-                        const count = Math.min(genericNames.length, args.length);
+                        const count = Math.min(
+                            genericNames.length,
+                            args.length,
+                        );
                         for (let i = 0; i < count; i++) {
                             bindings.set(genericNames[i], args[i]);
                         }
@@ -3059,20 +3544,30 @@ function resolveTypeFromAst(typeNode, typeCtx) {
                         type: {
                             kind: TypeKind.Enum,
                             name: typeNode.name,
-                            variants: (item.node.variants || []).map((/** @type {any} */ variant) => ({
-                                name: variant.name,
-                                fields: (variant.fields || []).map((/** @type {any} */ field) => {
-                                    if (!field?.ty) return makeUnitType();
-                                    const fieldType = resolveTypeFromAst(field.ty, typeCtx);
-                                    if (!fieldType.ok) return makeUnitType();
-                                    return substituteLoweringGenericType(
-                                        typeCtx,
-                                        fieldType.type,
-                                        genericSet,
-                                        bindings,
-                                    );
+                            variants: (item.node.variants || []).map(
+                                (/** @type {any} */ variant) => ({
+                                    name: variant.name,
+                                    fields: (variant.fields || []).map(
+                                        (/** @type {any} */ field) => {
+                                            if (!field?.ty)
+                                                return makeUnitType();
+                                            const fieldType =
+                                                resolveTypeFromAst(
+                                                    field.ty,
+                                                    typeCtx,
+                                                );
+                                            if (!fieldType.ok)
+                                                return makeUnitType();
+                                            return substituteLoweringGenericType(
+                                                typeCtx,
+                                                fieldType.type,
+                                                genericSet,
+                                                bindings,
+                                            );
+                                        },
+                                    ),
                                 }),
-                            })),
+                            ),
                         },
                     };
                 }

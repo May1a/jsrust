@@ -13,10 +13,7 @@ fn main() {
     };
     println!("{}", got);
 
-    let indexed = match v[1] {
-        Option::None => -1,
-        _ => 2,
-    };
+    let indexed = v[1];
     println!("{}", indexed);
 
     let popped = match v.pop() {

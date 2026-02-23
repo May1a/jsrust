@@ -10,9 +10,9 @@ Implemented milestone scope:
   `__jsrust_alloc`, `__jsrust_realloc`, `__jsrust_dealloc`, `__jsrust_copy_nonoverlapping`, `__jsrust_panic_bounds_check`.
 - Frontend generic impl plumbing needed for `impl<T> Vec<T>` method resolution/lowering is in place.
 - Vec surface for this milestone is implemented:
-  `vec![a, b, c]` list form, `new`, `with_capacity`, `len`, `capacity`, `push`, `pop` (panic-on-empty), `get` by value, `[]` by value.
-- Negative frontend gates are implemented:
-  repeat form (`vec![x; n]`) emits deterministic unsupported diagnostic, and `get`/`[]`/`pop` now return built-in `Option<T>` (no Copy-gated by-value diagnostic path).
+  `vec![a, b, c]` list form, `new`, `with_capacity`, `len`, `capacity`, `push`, `pop` (`Option<T>`), `get` (`Option<T>`), `[]` by value with runtime bounds panic via `__jsrust_panic_bounds_check`.
+- Negative/frontend semantic gates are implemented:
+  repeat form (`vec![x; n]`) emits deterministic unsupported diagnostic; `get`/`pop` return built-in `Option<T>`; `assert_eq!` has Option-aware lowering for int/float/bool payloads; and bare prelude-style `Some`/`None` expressions are accepted as `Option` variant constructors/values.
 - Backend interpreter and wasm codegen both dispatch allocator/copy/panic builtins, with parity on Vec run fixtures.
 - Conformance/snapshot artifacts were regenerated (`examples/expected/*`, `tests/fixtures/backend_ir_v2/*`).
 
@@ -20,7 +20,7 @@ Deferred (unchanged for this milestone):
 
 - `std::vec::Vec` pathing (still prelude-only `Vec`).
 - By-reference indexing.
-- by-reference indexing semantics (currently `[]` is `Option<T>`).
+- by-reference indexing semantics (currently `[]` returns by value and panics on bounds failure).
 
 ## Overview
 
