@@ -66,7 +66,6 @@ import {
     makeModule,
     type Span,
     type Node,
-    BinaryOpValue,
 } from "./ast";
 
 type ParserState = { tokens: Token[]; pos: number; errors: ParseError[] };
@@ -618,7 +617,7 @@ function parsePathTypeNode(state: ParserState) {
     return makeNamedType(
         mergeSpans(spanFromToken(start), spanFromToken(endToken)),
         segments.join("::"),
-        args,
+        args!,
     );
 }
 
@@ -1367,7 +1366,7 @@ function parsePrefix(
     return parsePostfix(state, atom);
 }
 
-type BinaryOpInfo = { prec: number; op: BinaryOpValue; assoc: string };
+type BinaryOpInfo = { prec: number; op: BinaryOp; assoc: string };
 
 const binaryOps: Map<number, BinaryOpInfo> = new Map([
     [TokenType.PipePipe, { prec: 2, op: BinaryOp.Or, assoc: "left" }],
@@ -1388,8 +1387,7 @@ const binaryOps: Map<number, BinaryOpInfo> = new Map([
     [TokenType.Percent, { prec: 10, op: BinaryOp.Rem, assoc: "left" }],
 ]);
 
-/** @type {Map<number, BinaryOpValue>} */
-const compoundAssignOps: Map<number, BinaryOpValue> = new Map([
+const compoundAssignOps: Map<number, BinaryOp> = new Map([
     [TokenType.PlusEq, BinaryOp.Add],
     [TokenType.MinusEq, BinaryOp.Sub],
     [TokenType.StarEq, BinaryOp.Mul],
@@ -1679,7 +1677,7 @@ function parseParamList(
                 ? spanFromToken(startToken)
                 : currentSpan(state);
             params.push(
-                makeParam(span, name, ty, null, isReceiver, receiverKind),
+                makeParam(span, name!, ty, null, isReceiver, receiverKind),
             );
             paramIndex += 1;
             if (!matchToken(state, TokenType.Comma)) break;
