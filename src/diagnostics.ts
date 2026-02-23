@@ -248,7 +248,7 @@ function createCollector(): DiagnosticCollector {
 // Task 13.5: Result Type
 // ============================================================================
 
-type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
+export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
 
 /**
  * Create a successful result
@@ -267,7 +267,7 @@ function err$1<E>(error: E): Result<never, E> {
 /**
  * Check if a result is successful
  */
-function isOk<T, E>(
+export function isOk<T, E>(
     result: Result<T, E>,
 ): result is Result<T, never> & { value: T } {
     return result.ok;
@@ -276,7 +276,7 @@ function isOk<T, E>(
 /**
  * Check if a result is an error
  */
-function isErr<T, E>(
+export function isErr<T, E>(
     result: Result<T, E>,
 ): result is Result<never, E> & { error: E } {
     return !result.ok;
@@ -285,7 +285,7 @@ function isErr<T, E>(
 /**
  * Unwrap a result, throwing if it's an error
  */
-function unwrap<T, E>(result: Result<T, E>): T {
+export function unwrap<T, E>(result: Result<T, E>): T {
     if (result.ok) {
         return result.value;
     }
@@ -299,14 +299,17 @@ function unwrap<T, E>(result: Result<T, E>): T {
 /**
  * Unwrap a result, returning a default value if it's an error
  */
-function unwrapOr<T, E>(result: Result<T, E>, defaultValue: T): T {
+export function unwrapOr<T, E>(result: Result<T, E>, defaultValue: T): T {
     return result.ok ? result.value : defaultValue;
 }
 
 /**
  * Map a result's value if successful
  */
-function map<T, U, E>(result: Result<T, E>, fn: (value: T) => U): Result<U, E> {
+export function map<T, U, E>(
+    result: Result<T, E>,
+    fn: (value: T) => U,
+): Result<U, E> {
     if (result.ok) {
         return ok$1(fn(result.value));
     }
@@ -316,7 +319,7 @@ function map<T, U, E>(result: Result<T, E>, fn: (value: T) => U): Result<U, E> {
 /**
  * Map a result's error if it's an error
  */
-function mapErr<T, E, F>(
+export function mapErr<T, E, F>(
     result: Result<T, E>,
     fn: (error: E) => F,
 ): Result<T, F> {
@@ -329,7 +332,7 @@ function mapErr<T, E, F>(
 /**
  * Chain a result with another operation
  */
-function andThen<T, U, E>(
+export function andThen<T, U, E>(
     result: Result<T, E>,
     fn: (value: T) => Result<U, E>,
 ): Result<U, E> {
@@ -769,13 +772,6 @@ export {
     // Result Type
     ok$1 as ok,
     err$1 as err,
-    isOk,
-    isErr,
-    unwrap,
-    unwrapOr,
-    map,
-    mapErr,
-    andThen,
     combineResults$1 as combineResults,
     // Source Context
     SourceContext,
