@@ -56,17 +56,6 @@ type DeserializeError = {
 };
 
 /**
- * Create an error result
- */
-function error(
-    kind: DeserializeErrorKindValue,
-    message: string,
-    pos: number,
-): Result<never, DeserializeError> {
-    return err({ kind, message, pos });
-}
-
-/**
  * IR Deserializer - reads IR from binary format
  */
 class IRDeserializer {
