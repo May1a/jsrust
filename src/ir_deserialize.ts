@@ -1,11 +1,4 @@
-/** @typedef {import('./ir').IRModule} IRModule */
-/** @typedef {import('./ir').IRFunction} IRFunction */
-/** @typedef {import('./ir').IRBlock} IRBlock */
-/** @typedef {import('./ir').IRType} IRType */
-/**
- * @template T
- * @typedef {{ ok: true, value: T } | { ok: false, error: DeserializeError }} Result
- */
+import { Result, ok, err } from "./diagnostics";
 
 import {
     IRTypeKind,
@@ -30,6 +23,12 @@ import {
     addIRBlockParam,
     addIRInstruction,
     setIRTerminator,
+    IRModule,
+    IRType,
+    IRFunction,
+    IRBlock,
+    IRInst,
+    IRTerm,
 } from "./ir";
 
 import { MAGIC, VERSION } from "./ir_serialize";
@@ -48,88 +47,73 @@ const DeserializeErrorKind = {
     InvalidTerminatorTag: 7,
 };
 
-/**
- * @typedef {number} DeserializeErrorKindValue
- */
+type DeserializeErrorKindValue = number;
 
-/**
- * @typedef {{ kind: DeserializeErrorKindValue, message: string, pos?: number }} DeserializeError
- */
+type DeserializeError = {
+    kind: DeserializeErrorKindValue;
+    message: string;
+    pos?: number;
+};
 
 /**
  * Create an error result
- * @param {DeserializeErrorKindValue} kind
- * @param {string} message
- * @param {number} [pos]
- * @returns {{ ok: false, error: DeserializeError }}
  */
-function error(kind, message, pos) {
-    return { ok: false, error: { kind, message, pos } };
-}
-
-/**
- * Create a success result
- * @template T
- * @param {T} value
- * @returns {{ ok: true, value: T }}
- */
-function ok(value) {
-    return { ok: true, value };
+function error(
+    kind: DeserializeErrorKindValue,
+    message: string,
+    pos: number,
+): Result<never, DeserializeError> {
+    return err({ kind, message, pos });
 }
 
 /**
  * IR Deserializer - reads IR from binary format
  */
 class IRDeserializer {
-    /**
-     * @param {ArrayBuffer} buffer
-     * @param {number} [byteOffset]
-     * @param {number} [byteLength]
-     */
+    view: DataView;
+    pos: number;
+    strings: string[];
+    end: number;
     constructor(
-        buffer,
-        byteOffset = 0,
-        byteLength = buffer.byteLength - byteOffset,
+        buffer: ArrayBuffer,
+        byteOffset: number = 0,
+        byteLength: number = buffer.byteLength - byteOffset,
     ) {
-        /** @type {DataView} */
         this.view = new DataView(buffer, byteOffset, byteLength);
-        /** @type {number} */
         this.pos = 0;
-        /** @type {string[]} */
         this.strings = [];
-        /** @type {number} */
         this.end = byteLength;
     }
 
     /**
      * Deserialize a module from binary format
-     * @returns {Result<IRModule>}
      */
-    deserializeModule() {
+    deserializeModule(): Result<IRModule, DeserializeError> {
         // Read and validate header
         if (this.end < 32) {
-            return error(
-                DeserializeErrorKind.TruncatedData,
-                "Buffer too small for header",
-            );
+            return err({
+                kind: DeserializeErrorKind.TruncatedData,
+                message: "Buffer too small for header",
+                pos: this.pos,
+            });
         }
 
         const magic = this.readU32();
         if (magic !== MAGIC) {
-            return error(
-                DeserializeErrorKind.InvalidMagic,
-                `Invalid magic bytes: expected 0x${MAGIC.toString(16)}, got 0x${magic.toString(16)}`,
-            );
+            return err({
+                kind: DeserializeErrorKind.InvalidMagic,
+                message: `Invalid magic bytes: expected 0x${MAGIC.toString(16)}, got 0x${magic.toString(16)}`,
+                pos: this.pos,
+            });
         }
-
         const version = this.readU32();
         if (version !== VERSION) {
-            return error(
-                DeserializeErrorKind.InvalidVersion,
-                `Unsupported version: ${version}`,
-            );
+            return err({
+                kind: DeserializeErrorKind.InvalidVersion,
+                message: `Unsupported version: ${version}`,
+                pos: this.pos,
+            });
         }
-
         const flags = this.readU32();
         const stringTableOffset = this.readU32();
         const typesOffset = this.readU32();
@@ -166,116 +150,97 @@ class IRDeserializer {
         }
         module.stringLiterals = literalsResult.value;
         module.stringLiteralIds = new Map(
-            literalsResult.value.map((value, index) => [value, index]),
+            literalsResult.value.map((value: string, index: number) => [
+                value,
+                index,
+            ]),
         );
-
         // Read globals section
         this.pos = globalsOffset;
         const globalsResult = this.readGlobalsSection(module);
         if (!globalsResult.ok) {
             return globalsResult;
         }
-
         // Read functions section
         this.pos = functionsOffset;
         const functionsResult = this.readFunctionsSection(module);
         if (!functionsResult.ok) {
             return functionsResult;
         }
-
         return ok(module);
     }
 
     // ========================================================================
     // Primitive Readers
     // ========================================================================
-
     /**
      * Read an unsigned 8-bit integer
-     * @returns {number}
      */
-    readU8() {
+    readU8(): number {
         const value = this.view.getUint8(this.pos);
         this.pos += 1;
         return value;
     }
-
     /**
      * Read an unsigned 16-bit integer (little endian)
-     * @returns {number}
      */
-    readU16() {
+    readU16(): number {
         const value = this.view.getUint16(this.pos, true);
         this.pos += 2;
         return value;
     }
-
     /**
      * Read an unsigned 32-bit integer (little endian)
-     * @returns {number}
      */
-    readU32() {
+    readU32(): number {
         const value = this.view.getUint32(this.pos, true);
         this.pos += 4;
         return value;
     }
-
     /**
      * Read an unsigned 64-bit integer (little endian)
-     * @returns {bigint}
      */
-    readU64() {
+    readU64(): bigint {
         const value = this.view.getBigUint64(this.pos, true);
         this.pos += 8;
         return value;
     }
-
     /**
      * Read a signed 32-bit integer (little endian)
-     * @returns {number}
      */
-    readI32() {
+    readI32(): number {
         const value = this.view.getInt32(this.pos, true);
         this.pos += 4;
         return value;
     }
-
     /**
      * Read a signed 64-bit integer (little endian)
-     * @returns {bigint}
      */
-    readI64() {
+    readI64(): bigint {
         const value = this.view.getBigInt64(this.pos, true);
         this.pos += 8;
         return value;
     }
-
     /**
      * Read a 32-bit float (little endian)
-     * @returns {number}
      */
-    readF32() {
+    readF32(): number {
         const value = this.view.getFloat32(this.pos, true);
         this.pos += 4;
         return value;
     }
-
     /**
      * Read a 64-bit float (little endian)
-     * @returns {number}
      */
-    readF64() {
+    readF64(): number {
         const value = this.view.getFloat64(this.pos, true);
         this.pos += 8;
         return value;
     }
-
     /**
      * Read raw bytes
-     * @param {number} count
-     * @returns {Uint8Array}
      */
-    readBytes(count) {
+    readBytes(count: number): Uint8Array {
         const bytes = new Uint8Array(
             this.view.buffer,
             this.view.byteOffset + this.pos,
@@ -291,9 +256,8 @@ class IRDeserializer {
 
     /**
      * Read the string table
-     * @returns {Result<string[]>}
      */
-    readStringTable() {
+    readStringTable(): Result<string[], DeserializeError> {
         const count = this.readU32();
         const strings = [];
 
@@ -306,27 +270,23 @@ class IRDeserializer {
 
         return ok(strings);
     }
-
     /**
      * Get a string from the string table by ID
-     * @param {number} id
-     * @returns {Result<string>}
      */
-    getString(id) {
+    getString(id: number): Result<string, DeserializeError> {
         if (id < 0 || id >= this.strings.length) {
-            return error(
-                DeserializeErrorKind.OutOfBoundsReference,
-                `Invalid string ID: ${id}`,
-            );
+            return err({
+                kind: DeserializeErrorKind.OutOfBoundsReference,
+                message: `Invalid string ID: ${id}`,
+                pos: this.pos,
+            });
         }
         return ok(this.strings[id]);
     }
-
     /**
      * Read string literal section.
-     * @returns {Result<string[]>}
      */
-    readStringLiteralsSection() {
+    readStringLiteralsSection(): Result<string[], DeserializeError> {
         const count = this.readU32();
         const literals = [];
         for (let i = 0; i < count; i++) {
@@ -345,17 +305,21 @@ class IRDeserializer {
      * Read the types section
      * @returns {Result<{ structs: Map<string, any>, enums: Map<string, any> }>}
      */
-    readTypesSection() {
+    readTypesSection(): Result<
+        {
+            structs: Map<string, any>;
+            enums: Map<string, any>;
+        },
+        DeserializeError
+    > {
         const structs = new Map();
         const enums = new Map();
-
         // Read structs
         const structCount = this.readU32();
         for (let i = 0; i < structCount; i++) {
             const nameResult = this.getString(this.readU32());
             if (!nameResult.ok) return nameResult;
             const name = nameResult.value;
-
             const fieldCount = this.readU32();
             const fields = [];
             for (let j = 0; j < fieldCount; j++) {
@@ -363,17 +327,14 @@ class IRDeserializer {
                 if (!typeResult.ok) return typeResult;
                 fields.push({ ty: typeResult.value });
             }
-
             structs.set(name, { name, fields });
         }
-
         // Read enums
         const enumCount = this.readU32();
         for (let i = 0; i < enumCount; i++) {
             const nameResult = this.getString(this.readU32());
             if (!nameResult.ok) return nameResult;
             const name = nameResult.value;
-
             const variantCount = this.readU32();
             const variants = [];
             for (let j = 0; j < variantCount; j++) {
@@ -386,57 +347,46 @@ class IRDeserializer {
                 }
                 variants.push({ name: `variant_${j}`, fields });
             }
-
             enums.set(name, { name, variants });
         }
-
         return ok({ structs, enums });
     }
 
     /**
      * Read a type
-     * @returns {Result<IRType>}
      */
-    readType() {
+    readType(): Result<IRType, DeserializeError> {
         const tag = this.readU8();
 
         switch (tag) {
             case IRTypeKind.Int:
                 return ok(makeIRIntType(this.readU8()));
-
             case IRTypeKind.Float:
                 return ok(makeIRFloatType(this.readU8()));
-
             case IRTypeKind.Bool:
                 return ok(makeIRBoolType());
-
             case IRTypeKind.Ptr:
                 return ok(makeIRPtrType(null));
-
             case IRTypeKind.Unit:
                 return ok(makeIRUnitType());
-
             case IRTypeKind.Struct: {
                 const nameResult = this.getString(this.readU32());
                 if (!nameResult.ok) return nameResult;
                 // Return a reference type - the actual struct is in the module
                 return ok(makeIRStructType(nameResult.value, []));
             }
-
             case IRTypeKind.Enum: {
                 const nameResult = this.getString(this.readU32());
                 if (!nameResult.ok) return nameResult;
                 // Return a reference type - the actual enum is in the module
                 return ok(makeIREnumType(nameResult.value, []));
             }
-
             case IRTypeKind.Array: {
                 const length = this.readU32();
                 const elementResult = this.readType();
                 if (!elementResult.ok) return elementResult;
                 return ok(makeIRArrayType(elementResult.value, length));
             }
-
             case IRTypeKind.Fn: {
                 const paramCount = this.readU32();
                 const params = [];
@@ -451,10 +401,11 @@ class IRDeserializer {
             }
 
             default:
-                return error(
-                    DeserializeErrorKind.InvalidTypeTag,
-                    `Invalid type tag: ${tag}`,
-                );
+                return err({
+                    kind: DeserializeErrorKind.InvalidTypeTag,
+                    message: `Invalid type tag: ${tag}`,
+                    pos: this.pos,
+                });
         }
     }
 
@@ -464,10 +415,8 @@ class IRDeserializer {
 
     /**
      * Read the globals section
-     * @param {IRModule} module
-     * @returns {Result<void>}
      */
-    readGlobalsSection(module) {
+    readGlobalsSection(module: IRModule): Result<void, DeserializeError> {
         const count = this.readU32();
 
         for (let i = 0; i < count; i++) {
@@ -484,38 +433,32 @@ class IRDeserializer {
                 if (!constResult.ok) return constResult;
                 init = constResult.value;
             }
-
             module.globals.push({
                 name: nameResult.value,
                 ty: typeResult.value,
                 init,
             });
         }
-
         return ok(undefined);
     }
 
     /**
      * Read a constant value
-     * @param {IRType} ty
-     * @returns {Result<any>}
      */
-    readConstant(ty) {
+    readConstant(ty: IRType): Result<any, DeserializeError> {
         switch (ty.kind) {
             case IRTypeKind.Int:
                 return ok(this.readI64());
-
             case IRTypeKind.Float:
                 return ok(this.readF64());
-
             case IRTypeKind.Bool:
                 return ok(this.readU8() !== 0);
-
             default:
-                return error(
-                    DeserializeErrorKind.InvalidTypeTag,
-                    `Invalid constant type: ${ty.kind}`,
-                );
+                return err({
+                    kind: DeserializeErrorKind.InvalidTypeTag,
+                    message: `Invalid constant type: ${ty.kind}`,
+                    pos: this.pos,
+                });
         }
     }
 
@@ -525,10 +468,8 @@ class IRDeserializer {
 
     /**
      * Read the functions section
-     * @param {IRModule} module
-     * @returns {Result<void>}
      */
-    readFunctionsSection(module) {
+    readFunctionsSection(module: IRModule): Result<void, DeserializeError> {
         const count = this.readU32();
 
         for (let i = 0; i < count; i++) {
@@ -539,13 +480,10 @@ class IRDeserializer {
 
         return ok(undefined);
     }
-
     /**
      * Read a function
-     * @param {IRModule} module
-     * @returns {Result<IRFunction>}
      */
-    readFunction(module) {
+    readFunction(module: IRModule): Result<IRFunction, DeserializeError> {
         const nameResult = this.getString(this.readU32());
         if (!nameResult.ok) return nameResult;
 
@@ -597,13 +535,10 @@ class IRDeserializer {
 
     /**
      * Read a block
-     * @param {IRFunction} fn
-     * @returns {Result<IRBlock>}
      */
-    readBlock(fn) {
+    readBlock(fn: IRFunction): Result<IRBlock, DeserializeError> {
         const id = this.readU32();
         const block = makeIRBlock(id);
-
         // Read block parameters
         const paramCount = this.readU32();
         for (let i = 0; i < paramCount; i++) {
@@ -612,7 +547,6 @@ class IRDeserializer {
             const paramId = this.readU32();
             addIRBlockParam(block, paramId, typeResult.value);
         }
-
         // Read instructions
         const instCount = this.readU32();
         for (let i = 0; i < instCount; i++) {
@@ -620,7 +554,6 @@ class IRDeserializer {
             if (!instResult.ok) return instResult;
             addIRInstruction(block, instResult.value);
         }
-
         // Read terminator
         const termResult = this.readTerminator();
         if (!termResult.ok) return termResult;
@@ -628,32 +561,26 @@ class IRDeserializer {
 
         return ok(block);
     }
-
     // ========================================================================
     // Instruction Reading
     // ========================================================================
 
     /**
      * Read an instruction
-     * @returns {Result<any>}
      */
-    readInstruction() {
+    readInstruction(): Result<IRInst, DeserializeError> {
         const opcode = this.readU8();
-
         // Check if this instruction produces a value
         const hasResult = this.instHasResult(opcode);
         let id = null;
         if (hasResult) {
             id = this.readU32();
         }
-
         // Read type
         const typeResult = this.readType();
         if (!typeResult.ok) return typeResult;
         const ty = typeResult.value;
-
         let inst;
-
         switch (opcode) {
             case IRInstKind.Iconst: {
                 const value = this.readI64();
@@ -854,18 +781,17 @@ class IRDeserializer {
                 inst = { kind: opcode, id, ty, enum: enum_, variant, index };
                 break;
             }
-
             case IRInstKind.Sconst: {
                 const literalId = this.readU32();
                 inst = { kind: opcode, id, ty, literalId };
                 break;
             }
-
             default:
-                return error(
-                    DeserializeErrorKind.InvalidOpcode,
-                    `Invalid instruction opcode: ${opcode}`,
-                );
+                return err({
+                    kind: DeserializeErrorKind.InvalidOpcode,
+                    message: `Invalid instruction opcode: ${opcode}`,
+                    pos: this.pos,
+                });
         }
 
         return ok(inst);
@@ -873,10 +799,8 @@ class IRDeserializer {
 
     /**
      * Check if an instruction produces a result value
-     * @param {number} opcode
-     * @returns {boolean}
      */
-    instHasResult(opcode) {
+    instHasResult(opcode: number): boolean {
         switch (opcode) {
             case IRInstKind.Store:
             case IRInstKind.Memcpy:
@@ -892,9 +816,8 @@ class IRDeserializer {
 
     /**
      * Read a terminator
-     * @returns {Result<any>}
      */
-    readTerminator() {
+    readTerminator(): Result<IRTerm, DeserializeError> {
         const tag = this.readU8();
 
         switch (tag) {
@@ -974,10 +897,11 @@ class IRDeserializer {
                 return ok({ kind: tag });
 
             default:
-                return error(
-                    DeserializeErrorKind.InvalidTerminatorTag,
-                    `Invalid terminator tag: ${tag}`,
-                );
+                return err({
+                    kind: DeserializeErrorKind.InvalidTerminatorTag,
+                    message: `Invalid terminator tag: ${tag}`,
+                    pos: this.pos,
+                });
         }
     }
 
@@ -987,26 +911,24 @@ class IRDeserializer {
 
     /**
      * Decode UTF-8 bytes to a string
-     * @param {Uint8Array} bytes
-     * @returns {string}
      */
-    decodeUtf8(bytes) {
+    decodeUtf8(bytes: Uint8Array): string {
         return new TextDecoder().decode(bytes);
     }
 }
 
 /**
  * Deserialize a module from binary format
- * @param {Uint8Array} data
- * @returns {Result<IRModule>}
  */
-function deserializeModule(data) {
+function deserializeModule(
+    data: Uint8Array,
+): Result<IRModule, DeserializeError> {
     const deserializer = new IRDeserializer(
-        /** @type {ArrayBuffer} */ (data.buffer),
+        data.buffer as ArrayBuffer,
         data.byteOffset,
         data.byteLength,
     );
     return deserializer.deserializeModule();
 }
 
-export { IRDeserializer, deserializeModule, DeserializeErrorKind, error, ok };
+export { IRDeserializer, deserializeModule, DeserializeErrorKind };

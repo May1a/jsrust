@@ -1,9 +1,12 @@
-/** @typedef {import("./types").Type} Type */
-/** @typedef {import("./types").FnType} FnType */
-/** @typedef {import("./types").TypeVarType} TypeVarType */
-/** @typedef {import("./types").Span} Span */
-/** @typedef {import("./ast").Node} Node */
-/** @typedef {import("./type_context").TypeContext} TypeContextModel */
+import { Type, FnType, TypeVarType, StructType, TupleType, NamedType } from "./types";
+import { Span, Node } from "./ast";
+import { TypeContext } from "./type_context";
+
+
+
+
+
+
 
 import {
     TypeKind,
@@ -38,8 +41,6 @@ import {
     isCopyableType,
 } from "./types";
 
-import { TypeContext } from "./type_context";
-
 import {
     NodeKind,
     LiteralKind,
@@ -53,12 +54,23 @@ import {
 // Task 4.10: Error Reporting
 // ============================================================================
 
-/**
- * @typedef {object} TypeError
- * @property {string} message
- * @property {Span} [span]
- * @property {string[]} [notes]
- */
+
+export interface TypeError {
+    message: string;
+    span?: Span;
+    notes?: string[];
+}
+
+export type InferenceSuccess = { ok: true, type: Type };
+export type InferenceError = { ok: false, errors: TypeError[] };
+export type InferenceResult = InferenceSuccess | InferenceError;
+
+export type CombinedResult = { ok: true, types: Type[] } | { ok: false, errors: TypeError[] };
+export type UnifySuccess = { ok: true };
+export type UnifyError = { ok: false, error: TypeError };
+export type UnifyResult = UnifySuccess | UnifyError;
+export type CheckResult = { ok: true } | { ok: false, errors: TypeError[] };
+
 
 /**
  * Create a type error
@@ -67,20 +79,20 @@ import {
  * @param {string[]} [notes]
  * @returns {TypeError}
  */
-function makeTypeError(message, span, notes) {
+function makeTypeError(message: string, span?: Span, notes?: string[]): TypeError {
     return { message, span, notes };
 }
 
 /** @typedef {{ ok: true, type: Type }} InferenceSuccess */
 /** @typedef {{ ok: false, errors: TypeError[] }} InferenceError */
-/** @typedef {InferenceSuccess | InferenceError} InferenceResult */
+
 
 /**
  * Create a successful inference result
  * @param {Type} type
  * @returns {InferenceResult}
  */
-function ok(type) {
+function ok(type: Type): InferenceResult {
     return { ok: true, type };
 }
 
@@ -91,7 +103,7 @@ function ok(type) {
  * @param {string[]} [notes]
  * @returns {InferenceResult}
  */
-function err(message, span, notes) {
+function err(message: string, span?: Span, notes?: string[]): InferenceResult {
     return { ok: false, errors: [makeTypeError(message, span, notes)] };
 }
 
@@ -104,12 +116,12 @@ function err(message, span, notes) {
  * @param {InferenceResult[]} results
  * @returns {CombinedResult}
  */
-function combineResults(results) {
+function combineResults(results: InferenceResult[]): CombinedResult {
     const errors = [];
     const types = [];
     for (const result of results) {
         if (!result.ok) {
-            errors.push(...result.errors);
+            errors.push(...(result as InferenceError).errors);
         } else {
             types.push(result.type);
         }
@@ -206,7 +218,7 @@ function substituteGenericTypeBindings(
             if (!resolved.args) return resolved;
             return makeNamedType(
                 resolved.name,
-                resolved.args.map((/** @type {Type} */ t) =>
+                resolved.args.map(( t) =>
                     substituteGenericTypeBindings(
                         ctx,
                         t,
@@ -220,7 +232,7 @@ function substituteGenericTypeBindings(
         }
         case TypeKind.Tuple:
             return makeTupleType(
-                resolved.elements.map((/** @type {Type} */ t) =>
+                resolved.elements.map(( t) =>
                     substituteGenericTypeBindings(
                         ctx,
                         t,
@@ -280,7 +292,7 @@ function substituteGenericTypeBindings(
             );
         case TypeKind.Fn:
             return makeFnType(
-                resolved.params.map((/** @type {Type} */ t) =>
+                resolved.params.map(( t) =>
                     substituteGenericTypeBindings(
                         ctx,
                         t,
@@ -382,7 +394,7 @@ function inferGenericFunctionCall(ctx, call, itemDecl) {
         genericSet,
         bindings,
     );
-    const concreteParams = fnType.params.map((/** @type {Type} */ p) =>
+    const concreteParams = fnType.params.map(( p) =>
         substituteGenericTypeBindings(ctx, p, genericSet, bindings, false),
     );
     const concreteReturn = substituteGenericTypeBindings(
@@ -408,7 +420,7 @@ function inferGenericFunctionCall(ctx, call, itemDecl) {
 
 /** @typedef {{ ok: true }} UnifySuccess */
 /** @typedef {{ ok: false, error: TypeError }} UnifyError */
-/** @typedef {UnifySuccess | UnifyError} UnifyResult */
+
 
 /**
  * Unify two types, making them equal
@@ -850,7 +862,7 @@ function instantiateMethodTypeForReceiver(ctx, fnType, receiverType, meta) {
     if (bindings.size === 0) {
         return fnType;
     }
-    return /** @type {FnType} */ (
+    return  (
         substituteGenericTypeBindings(ctx, fnType, genericSet, bindings, false)
     );
 }
@@ -1165,13 +1177,13 @@ function gatherDeclaration(ctx, item) {
             const isTraitImpl = !!item.traitType;
             const implGenericNames = (item.genericParams || [])
                 .map((/** @type {{ name?: string }} */ p) => p.name || "")
-                .filter((/** @type {string} */ name) => name.length > 0);
+                .filter(( name) => name.length > 0);
             const targetGenericParamNames = extractTypeNodeGenericParamNames(
                 item.targetType,
             );
 
-            /** @type {Map<string, Node>} */
-            const implMethodsByName = new Map();
+            
+            const implMethodsByName = new Map<string, Node>();
             for (const method of item.methods || []) {
                 errors.push(
                     ...collectUnsupportedGenericConstraintErrors(method),
@@ -1188,8 +1200,8 @@ function gatherDeclaration(ctx, item) {
                 implMethodsByName.set(method.name, method);
             }
 
-            /** @type {Map<string, Node> | null} */
-            let traitMethodsByName = null;
+            
+            let traitMethodsByName: Map<string, Node> | null = null;
             let traitName = null;
             if (isTraitImpl) {
                 traitName = item.traitType?.name || null;
@@ -1212,7 +1224,7 @@ function gatherDeclaration(ctx, item) {
                     } else {
                         traitMethodsByName = new Map(
                             (traitDecl.node.methods || []).map(
-                                (/** @type {Node} */ m) => [m.name, m],
+                                ( m) => [m.name, m],
                             ),
                         );
                         const implRegisterResult = ctx.registerTraitImpl(
@@ -1237,7 +1249,7 @@ function gatherDeclaration(ctx, item) {
                 for (const [
                     traitMethodName,
                     traitMethod,
-                ] of traitMethodsByName.entries()) {
+                ] of Array.from(traitMethodsByName.entries())) {
                     const implMethod = implMethodsByName.get(traitMethodName);
                     if (!implMethod) {
                         errors.push(
@@ -1270,7 +1282,7 @@ function gatherDeclaration(ctx, item) {
                 for (const [
                     implMethodName,
                     implMethod,
-                ] of implMethodsByName.entries()) {
+                ] of Array.from(implMethodsByName.entries())) {
                     if (!traitMethodsByName.has(implMethodName)) {
                         errors.push(
                             makeTypeError(
@@ -1425,16 +1437,16 @@ function resolveTypeNode(ctx, typeNode) {
                     return ok(selfType);
                 }
             }
-            /** @type {Type[] | null} */
+            
             let args = null;
             if (typeNode.args && typeNode.args.args) {
                 const argsResult = combineResults(
-                    typeNode.args.args.map((/** @type {Node} */ a) =>
+                    typeNode.args.args.map(( a) =>
                         resolveTypeNode(ctx, a),
                     ),
                 );
                 if (!argsResult.ok) {
-                    return { ok: false, errors: argsResult.errors };
+                    return { ok: false, errors: (argsResult as InferenceError).errors };
                 }
                 args = argsResult.types;
             }
@@ -1477,12 +1489,12 @@ function resolveTypeNode(ctx, typeNode) {
 
         case NodeKind.TupleType: {
             const elementsResult = combineResults(
-                (typeNode.elements || []).map((/** @type {Node} */ e) =>
+                (typeNode.elements || []).map(( e) =>
                     resolveTypeNode(ctx, e),
                 ),
             );
             if (!elementsResult.ok) {
-                return { ok: false, errors: elementsResult.errors };
+                return { ok: false, errors: (elementsResult as InferenceError).errors };
             }
             return ok(makeTupleType(elementsResult.types, typeNode.span));
         }
@@ -1514,12 +1526,12 @@ function resolveTypeNode(ctx, typeNode) {
 
         case NodeKind.FnType: {
             const paramsResult = combineResults(
-                (typeNode.params || []).map((/** @type {Node} */ p) =>
+                (typeNode.params || []).map(( p) =>
                     resolveTypeNode(ctx, p),
                 ),
             );
             if (!paramsResult.ok) {
-                return { ok: false, errors: paramsResult.errors };
+                return { ok: false, errors: (paramsResult as InferenceError).errors };
             }
             let returnType = makeUnitType();
             if (typeNode.returnType) {
@@ -1605,7 +1617,7 @@ function resolveBuiltinType(name) {
  */
 function isCopyableInContext(ctx, ty, visiting = new Set()) {
     return isCopyableType(ty, {
-        resolveType: (/** @type {Type} */ t) => ctx.resolveType(t),
+        resolveType: ( t) => ctx.resolveType(t),
         hasNamedTypeCopy: (name) => {
             if (ctx.traitImpls && ctx.traitImpls.has(`Copy::${name}`)) {
                 return true;
@@ -1641,7 +1653,7 @@ function checkModuleItems(ctx, module) {
     return { ok: true };
 }
 
-/** @typedef {{ ok: true } | { ok: false, errors: TypeError[] }} CheckResult */
+
 
 /**
  * Check a single item
@@ -1667,7 +1679,7 @@ function checkItem(ctx, item) {
                 kind: NodeKind.Module,
                 span: item.span,
                 items: (item.methods || []).map(
-                    (/** @type {Node} */ method) => ({
+                    ( method) => ({
                         ...method,
                         kind: NodeKind.FnItem,
                         name: traitName
@@ -1722,7 +1734,7 @@ function checkFnItem(ctx, fnItem) {
         };
     }
 
-    const fnType = /** @type {FnType} */ (itemDecl.type);
+    const fnType =  (itemDecl.type);
     let pushedSelf = false;
     if (fnItem.implTargetName && !ctx.currentImplSelfType()) {
         const builtinSelf = resolveBuiltinType(fnItem.implTargetName);
@@ -1765,7 +1777,7 @@ function checkFnItem(ctx, fnItem) {
     }
 
     // Check function body
-    /** @type {TypeError[]} */
+    
     let errors = [];
     if (fnItem.body) {
         const bodyResult = inferExpr(ctx, fnItem.body);
@@ -2329,11 +2341,11 @@ function inferClosure(ctx, closure, expectedType = undefined) {
         );
     }
 
-    /** @type {TypeError[]} */
+    
     const errors = [];
-    /** @type {Type[]} */
+    
     const paramTypes = [];
-    /** @type {Type} */
+    
     let returnType = makeUnitType(closure.span);
 
     ctx.pushScope();
@@ -2341,7 +2353,7 @@ function inferClosure(ctx, closure, expectedType = undefined) {
     try {
         for (let i = 0; i < params.length; i++) {
             const param = params[i];
-            /** @type {Type} */
+            
             let paramType;
             if (param.ty) {
                 const paramTypeResult = resolveTypeNode(ctx, param.ty);
@@ -2377,7 +2389,7 @@ function inferClosure(ctx, closure, expectedType = undefined) {
             }
         }
 
-        /** @type {Type | undefined} */
+        
         let explicitReturnType = undefined;
         if (closure.returnType) {
             const returnTypeResult = resolveTypeNode(ctx, closure.returnType);
@@ -2443,7 +2455,7 @@ function inferClosure(ctx, closure, expectedType = undefined) {
     }
 
     const fnType = makeFnType(
-        paramTypes.map((/** @type {Type} */ t) => ctx.resolveType(t)),
+        paramTypes.map(( t) => ctx.resolveType(t)),
         ctx.resolveType(returnType),
         false,
         false, // closures aren't currently parsed with `const`
@@ -2504,7 +2516,7 @@ function inferField(ctx, field, preferMethod = false) {
 
     // Handle struct field access
     if (accessType.kind === TypeKind.Struct) {
-        const structType = /** @type {import("./types").StructType} */ (
+        const structType =  (
             accessType
         );
         if (preferMethod) {
@@ -2517,7 +2529,7 @@ function inferField(ctx, field, preferMethod = false) {
                 candidates.inherent.type?.kind === TypeKind.Fn
             ) {
                 return asBoundMethod(
-                    /** @type {FnType} */ (candidates.inherent.type),
+                     (candidates.inherent.type),
                     candidates.inherent.symbolName,
                     candidates.inherent.meta,
                 );
@@ -2527,14 +2539,14 @@ function inferField(ctx, field, preferMethod = false) {
                 candidates.traits[0].type?.kind === TypeKind.Fn
             ) {
                 return asBoundMethod(
-                    /** @type {FnType} */ (candidates.traits[0].type),
+                     (candidates.traits[0].type),
                     candidates.traits[0].symbolName,
                     candidates.traits[0].meta,
                 );
             }
         }
         const fieldDef = structType.fields.find(
-            (/** @type {any} */ f) => f.name === fieldName,
+            ( f) => f.name === fieldName,
         );
         if (fieldDef) {
             return ok(fieldDef.type);
@@ -2545,7 +2557,7 @@ function inferField(ctx, field, preferMethod = false) {
         const item = ctx.lookupItem(structType.name);
         if (item && item.kind === "struct") {
             const structField = item.node.fields?.find(
-                (/** @type {any} */ f) => f.name === fieldName,
+                ( f) => f.name === fieldName,
             );
             if (structField) {
                 if (structField.ty) {
@@ -2562,7 +2574,7 @@ function inferField(ctx, field, preferMethod = false) {
                 candidates.inherent.type?.kind === TypeKind.Fn
             ) {
                 return asBoundMethod(
-                    /** @type {FnType} */ (candidates.inherent.type),
+                     (candidates.inherent.type),
                     candidates.inherent.symbolName,
                     candidates.inherent.meta,
                 );
@@ -2572,7 +2584,7 @@ function inferField(ctx, field, preferMethod = false) {
                 candidates.traits[0].type?.kind === TypeKind.Fn
             ) {
                 return asBoundMethod(
-                    /** @type {FnType} */ (candidates.traits[0].type),
+                     (candidates.traits[0].type),
                     candidates.traits[0].symbolName,
                     candidates.traits[0].meta,
                 );
@@ -2596,7 +2608,7 @@ function inferField(ctx, field, preferMethod = false) {
 
     // Handle named type (unresolved struct)
     if (accessType.kind === TypeKind.Named) {
-        const namedType = /** @type {import("./types").NamedType} */ (
+        const namedType =  (
             accessType
         );
         const item = ctx.lookupItem(namedType.name);
@@ -2611,7 +2623,7 @@ function inferField(ctx, field, preferMethod = false) {
                     candidates.inherent.type?.kind === TypeKind.Fn
                 ) {
                     return asBoundMethod(
-                        /** @type {FnType} */ (candidates.inherent.type),
+                         (candidates.inherent.type),
                         candidates.inherent.symbolName,
                         candidates.inherent.meta,
                     );
@@ -2621,14 +2633,14 @@ function inferField(ctx, field, preferMethod = false) {
                     candidates.traits[0].type?.kind === TypeKind.Fn
                 ) {
                     return asBoundMethod(
-                        /** @type {FnType} */ (candidates.traits[0].type),
+                         (candidates.traits[0].type),
                         candidates.traits[0].symbolName,
                         candidates.traits[0].meta,
                     );
                 }
             }
             const structField = item.node.fields?.find(
-                (/** @type {any} */ f) => f.name === fieldName,
+                ( f) => f.name === fieldName,
             );
             if (!structField) {
                 const candidates = ctx.lookupMethodCandidates(
@@ -2640,7 +2652,7 @@ function inferField(ctx, field, preferMethod = false) {
                     candidates.inherent.type?.kind === TypeKind.Fn
                 ) {
                     return asBoundMethod(
-                        /** @type {FnType} */ (candidates.inherent.type),
+                         (candidates.inherent.type),
                         candidates.inherent.symbolName,
                         candidates.inherent.meta,
                     );
@@ -2650,7 +2662,7 @@ function inferField(ctx, field, preferMethod = false) {
                     candidates.traits[0].type?.kind === TypeKind.Fn
                 ) {
                     return asBoundMethod(
-                        /** @type {FnType} */ (candidates.traits[0].type),
+                         (candidates.traits[0].type),
                         candidates.traits[0].symbolName,
                         candidates.traits[0].meta,
                     );
@@ -2684,7 +2696,7 @@ function inferField(ctx, field, preferMethod = false) {
             candidates.inherent.type?.kind === TypeKind.Fn
         ) {
             return asBoundMethod(
-                /** @type {FnType} */ (candidates.inherent.type),
+                 (candidates.inherent.type),
                 candidates.inherent.symbolName,
                 candidates.inherent.meta,
             );
@@ -2694,7 +2706,7 @@ function inferField(ctx, field, preferMethod = false) {
             candidates.traits[0].type?.kind === TypeKind.Fn
         ) {
             return asBoundMethod(
-                /** @type {FnType} */ (candidates.traits[0].type),
+                 (candidates.traits[0].type),
                 candidates.traits[0].symbolName,
                 candidates.traits[0].meta,
             );
@@ -2712,7 +2724,7 @@ function inferField(ctx, field, preferMethod = false) {
 
     // Handle tuple field access (numeric index)
     if (accessType.kind === TypeKind.Tuple) {
-        const tupleType = /** @type {import("./types").TupleType} */ (
+        const tupleType =  (
             accessType
         );
         const index =
@@ -2887,9 +2899,9 @@ function inferMatch(ctx, matchExpr) {
         return ok(makeUnitType(matchExpr.span));
     }
 
-    /** @type {Type | null} */
+    
     let resultType = null;
-    /** @type {TypeError[]} */
+    
     const errors = [];
 
     for (const arm of matchExpr.arms) {
@@ -2946,17 +2958,17 @@ function inferMatch(ctx, matchExpr) {
 function inferBlock(ctx, block) {
     ctx.pushScope();
 
-    /** @type {TypeError[]} */
+    
     const errors = [];
     let diverges = false;
-    /** @type {Type | null} */
+    
     let neverType = null;
 
     // Check statements
     for (const stmt of block.stmts || []) {
         const result = checkStmt(ctx, stmt);
         if (!result.ok) {
-            errors.push(...result.errors);
+            errors.push(...(result as InferenceError).errors);
         } else if (result.type && result.type.kind === TypeKind.Never) {
             diverges = true;
             neverType = result.type;
@@ -3229,11 +3241,11 @@ function inferPath(ctx, pathExpr) {
         const variantName = pathExpr.segments[1];
         const enumNode = item.node;
         const enumGenericParams = (enumNode.generics || [])
-            .map((/** @type {string} */ name) => name || "")
-            .filter((/** @type {string} */ name) => name.length > 0);
+            .map(( name) => name || "")
+            .filter(( name) => name.length > 0);
         const enumGenericSet = new Set(enumGenericParams);
         const enumBindings = new Map(
-            enumGenericParams.map((/** @type {string} */ name) => [
+            enumGenericParams.map(( name) => [
                 name,
                 ctx.freshTypeVar(),
             ]),
@@ -3242,7 +3254,7 @@ function inferPath(ctx, pathExpr) {
         // Find the variant
         const variants = enumNode.variants || [];
         const variantIndex = variants.findIndex(
-            (/** @type {any} */ v) => v.name === variantName,
+            ( v) => v.name === variantName,
         );
         if (variantIndex === -1) {
             return err(`Unknown variant: ${variantName}`, pathExpr.span);
@@ -3255,7 +3267,7 @@ function inferPath(ctx, pathExpr) {
                 ? makeNamedType(
                       itemName,
                       enumGenericParams.map(
-                          (/** @type {string} */ name) =>
+                          ( name) =>
                               enumBindings.get(name) || ctx.freshTypeVar(),
                       ),
                       pathExpr.span,
@@ -3298,15 +3310,15 @@ function inferPath(ctx, pathExpr) {
 
     // Handle struct constructors: StructName::new or just StructName
     if (item.kind === "struct") {
-        /** @type {import("./types").StructType} */
+        
         const structType = {
             kind: TypeKind.Struct,
             name: itemName,
-            fields: (item.node.fields || []).map((/** @type {any} */ f) => ({
+            fields: (item.node.fields || []).map(( f) => ({
                 name: f.name,
                 type: f.ty
                     ? resolveTypeNode(ctx, f.ty).ok
-                        ? /** @type {InferenceSuccess} */ (
+                        ?  (
                               resolveTypeNode(ctx, f.ty)
                           ).type
                         : ctx.freshTypeVar()
@@ -3757,10 +3769,10 @@ function checkStmt(ctx, stmt) {
  * @returns {InferenceResult}
  */
 function checkLetStmt(ctx, letStmt) {
-    /** @type {TypeError[]} */
+    
     const errors = [];
 
-    /** @type {Type | undefined} */
+    
     let declaredType = undefined;
     if (letStmt.ty) {
         const typeResult = resolveTypeNode(ctx, letStmt.ty);
@@ -3916,12 +3928,12 @@ function inferPattern(ctx, pattern) {
 
         case NodeKind.TuplePat: {
             const elementsResult = combineResults(
-                pattern.elements.map((/** @type {Node} */ e) =>
+                pattern.elements.map(( e) =>
                     inferPattern(ctx, e),
                 ),
             );
             if (!elementsResult.ok) {
-                return { ok: false, errors: elementsResult.errors };
+                return { ok: false, errors: (elementsResult as InferenceError).errors };
             }
             return ok(makeTupleType(elementsResult.types, pattern.span));
         }
@@ -4134,7 +4146,7 @@ function checkPattern(ctx, pattern, expectedType) {
                 return { ok: true };
             }
 
-            const tupleType = /** @type {import("./types").TupleType} */ (
+            const tupleType =  (
                 expectedType
             );
 
@@ -4158,7 +4170,7 @@ function checkPattern(ctx, pattern, expectedType) {
                     tupleType.elements[i],
                 );
                 if (!result.ok) {
-                    errors.push(...result.errors);
+                    errors.push(...(result as InferenceError).errors);
                 }
             }
 
@@ -4190,11 +4202,11 @@ function checkPattern(ctx, pattern, expectedType) {
                     };
                 }
 
-                /** @type {Type} */
+                
                 let enumPatternType = makeEnumType(enumName, [], pattern.span);
                 const enumGenericParams = (enumItem.node.generics || [])
-                    .map((/** @type {string} */ name) => name || "")
-                    .filter((/** @type {string} */ name) => name.length > 0);
+                    .map(( name) => name || "")
+                    .filter(( name) => name.length > 0);
                 if (enumGenericParams.length > 0) {
                     const expectedResolved = ctx.resolveType(expectedType);
                     let args = null;
@@ -4218,7 +4230,7 @@ function checkPattern(ctx, pattern, expectedType) {
                 }
 
                 const variant = (enumItem.node.variants || []).find(
-                    (/** @type {any} */ v) => v.name === variantName,
+                    ( v) => v.name === variantName,
                 );
                 if (!variant) {
                     return {
@@ -4328,7 +4340,7 @@ function checkPattern(ctx, pattern, expectedType) {
             for (const field of pattern.fields || []) {
                 seenFields.add(field.name);
                 const fieldDef = structDef.node.fields?.find(
-                    (/** @type {any} */ f) => f.name === field.name,
+                    ( f) => f.name === field.name,
                 );
                 if (!fieldDef) {
                     errors.push(
