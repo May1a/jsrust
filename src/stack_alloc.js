@@ -4,12 +4,12 @@
  * Allocates stack slots for local variables in functions.
  */
 
-/** @typedef {import('./ir.js').IRFunction} IRFunction */
-/** @typedef {import('./ir.js').IRLocal} IRLocal */
-/** @typedef {import('./ir.js').LocalId} LocalId */
-/** @typedef {import('./memory_layout.js').TypeLayout} TypeLayout */
+/** @typedef {import('./ir').IRFunction} IRFunction */
+/** @typedef {import('./ir').IRLocal} IRLocal */
+/** @typedef {import('./ir').LocalId} LocalId */
+/** @typedef {import('./memory_layout').TypeLayout} TypeLayout */
 
-import { LayoutCache } from "./memory_layout.js";
+import { LayoutCache } from "./memory_layout";
 
 // ============================================================================
 // Task 10.10: Frame Layout
@@ -52,7 +52,7 @@ class StackAllocator {
 
     /**
      * Allocate a slot for a local variable
-     * @param {import('./ir.js').IRLocal} local
+     * @param {import('./ir').IRLocal} local
      * @param {LayoutCache} layoutCache
      * @returns {number} Frame-relative offset (negative)
      */

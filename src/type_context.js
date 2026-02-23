@@ -1,10 +1,10 @@
-import { TypeKind, makeTypeVar } from "./types.js";
+import { TypeKind, makeTypeVar } from "./types";
 
-/** @typedef {import("./types.js").Type} Type */
-/** @typedef {import("./types.js").TypeVarType} TypeVarType */
-/** @typedef {import("./types.js").FnType} FnType */
-/** @typedef {import("./types.js").NamedType} NamedType */
-/** @typedef {import("./ast.js").Node} Node */
+/** @typedef {import("./types").Type} Type */
+/** @typedef {import("./types").TypeVarType} TypeVarType */
+/** @typedef {import("./types").FnType} FnType */
+/** @typedef {import("./types").NamedType} NamedType */
+/** @typedef {import("./ast").Node} Node */
 
 /**
  * @typedef {object} VarBinding

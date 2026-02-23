@@ -1,11 +1,11 @@
-/** @typedef {import('./ir.js').IRModule} IRModule */
-/** @typedef {import('./ir.js').IRFunction} IRFunction */
-/** @typedef {import('./ir.js').IRBlock} IRBlock */
-/** @typedef {import('./ir.js').IRType} IRType */
-/** @typedef {import('./ir.js').IRInstKindValue} IRInstKindValue */
-/** @typedef {import('./ir.js').IRTermKindValue} IRTermKindValue */
+/** @typedef {import('./ir').IRModule} IRModule */
+/** @typedef {import('./ir').IRFunction} IRFunction */
+/** @typedef {import('./ir').IRBlock} IRBlock */
+/** @typedef {import('./ir').IRType} IRType */
+/** @typedef {import('./ir').IRInstKindValue} IRInstKindValue */
+/** @typedef {import('./ir').IRTermKindValue} IRTermKindValue */
 
-import { IRTypeKind, IRInstKind, IRTermKind } from "./ir.js";
+import { IRTypeKind, IRInstKind, IRTermKind } from "./ir";
 
 // Magic bytes: "JSRS" (0x4A 0x53 0x52 0x53)
 const MAGIC = 0x52534a53; // "JSRS" in little-endian

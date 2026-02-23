@@ -1,9 +1,9 @@
-import { tokenize, TokenType } from "./tokenizer.js";
-/** @typedef {import('./tokenizer.js').Token} Token */
-/** @typedef {import('./tokenizer.js').TokenTypeValue} TokenTypeValue */
-/** @typedef {import('./ast.js').Span} Span */
-/** @typedef {import('./ast.js').Node} Node */
-/** @typedef {import('./ast.js').BinaryOpValue} BinaryOpValue */
+import { tokenize, TokenType } from "./tokenizer";
+/** @typedef {import('./tokenizer').Token} Token */
+/** @typedef {import('./tokenizer').TokenTypeValue} TokenTypeValue */
+/** @typedef {import('./ast').Span} Span */
+/** @typedef {import('./ast').Node} Node */
+/** @typedef {import('./ast').BinaryOpValue} BinaryOpValue */
 import {
     NodeKind,
     LiteralKind,
@@ -67,7 +67,7 @@ import {
     makeFnType,
     makeGenericArgs,
     makeModule,
-} from "./ast.js";
+} from "./ast";
 
 const tokenNames = Object.fromEntries(
     Object.entries(TokenType).map(([k, v]) => [v, k]),

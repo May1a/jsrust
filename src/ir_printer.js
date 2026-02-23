@@ -1,14 +1,14 @@
-/** @typedef {import('./ir.js').IRType} IRType */
-/** @typedef {import('./ir.js').IRInst} IRInst */
-/** @typedef {import('./ir.js').IRTerm} IRTerm */
-/** @typedef {import('./ir.js').IRBlock} IRBlock */
-/** @typedef {import('./ir.js').IRFunction} IRFunction */
-/** @typedef {import('./ir.js').IRModule} IRModule */
-/** @typedef {import('./ir.js').ValueId} ValueId */
-/** @typedef {import('./ir.js').BlockId} BlockId */
-/** @typedef {import('./ir.js').LocalId} LocalId */
-/** @typedef {import('./ir.js').IcmpOpValue} IcmpOpValue */
-/** @typedef {import('./ir.js').FcmpOpValue} FcmpOpValue */
+/** @typedef {import('./ir').IRType} IRType */
+/** @typedef {import('./ir').IRInst} IRInst */
+/** @typedef {import('./ir').IRTerm} IRTerm */
+/** @typedef {import('./ir').IRBlock} IRBlock */
+/** @typedef {import('./ir').IRFunction} IRFunction */
+/** @typedef {import('./ir').IRModule} IRModule */
+/** @typedef {import('./ir').ValueId} ValueId */
+/** @typedef {import('./ir').BlockId} BlockId */
+/** @typedef {import('./ir').LocalId} LocalId */
+/** @typedef {import('./ir').IcmpOpValue} IcmpOpValue */
+/** @typedef {import('./ir').FcmpOpValue} FcmpOpValue */
 
 import {
     IRTypeKind,
@@ -19,9 +19,8 @@ import {
     irTypeToString,
     intWidthToString,
     floatWidthToString,
-} from "./ir.js";
+} from "./ir";
 
-import { IntWidth } from "./types.js";
 
 // ============================================================================
 // Value Naming Context
@@ -242,7 +241,7 @@ function printInstruction(inst, ctx) {
             return `${resultPrefix}fcmp ${fcmpOpToString(inst.op)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
 
         case IRInstKind.Alloca:
-            return `${resultPrefix}alloca ${printType(/** @type {import('./ir.js').IRType} */(inst.ty.inner))} ; ${ctx.getLocalName(inst.localId)}`;
+            return `${resultPrefix}alloca ${printType(/** @type {import('./ir').IRType} */(inst.ty.inner))} ; ${ctx.getLocalName(inst.localId)}`;
 
         case IRInstKind.Load:
             return `${resultPrefix}load ${printType(inst.ty)}, ${ctx.getValueName(inst.ptr)}`;

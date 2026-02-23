@@ -85,7 +85,7 @@
  * }} IRModule
  */
 
-import { IntWidth, FloatWidth } from "./types.js";
+import { IntWidth, FloatWidth } from "./types";
 
 const IRTypeKind = {
     Int: 0,

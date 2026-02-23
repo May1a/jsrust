@@ -11,7 +11,7 @@ import {
     makeStructExpr,
     makeBlockExpr,
     makeImplItem,
-} from "./ast.js";
+} from "./ast";
 
 /**
  * @typedef {{ message: string, span?: { line: number, column: number, start?: number, end?: number }, kind?: string }} DeriveError

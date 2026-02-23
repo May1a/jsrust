@@ -1,4 +1,4 @@
-import { tokenize, TokenType } from './tokenizer.js';
+import { tokenize, TokenType } from './tokenizer';
 
 const source = 'match c { Color::Red => 1, Color::Green => 2, Color::Blue => 3 }';
 const tokens = tokenize(source);

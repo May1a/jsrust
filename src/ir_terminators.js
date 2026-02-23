@@ -1,10 +1,10 @@
-/** @typedef {import('./ir.js').ValueId} ValueId */
-/** @typedef {import('./ir.js').BlockId} BlockId */
-/** @typedef {import('./ir.js').IRType} IRType */
-/** @typedef {import('./ir.js').IRTerm} IRTerm */
-/** @typedef {import('./ir.js').IRTermKindValue} IRTermKindValue */
+/** @typedef {import('./ir').ValueId} ValueId */
+/** @typedef {import('./ir').BlockId} BlockId */
+/** @typedef {import('./ir').IRType} IRType */
+/** @typedef {import('./ir').IRTerm} IRTerm */
+/** @typedef {import('./ir').IRTermKindValue} IRTermKindValue */
 
-import { IRTermKind } from "./ir.js";
+import { IRTermKind } from "./ir";
 
 /**
  * @param {ValueId | null} value

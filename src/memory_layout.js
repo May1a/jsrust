@@ -4,13 +4,13 @@
  * Computes size, alignment, and field offsets for IR types.
  */
 
-/** @typedef {import('./ir.js').IRType} IRType */
-/** @typedef {import('./ir.js').IRTypeKindValue} IRTypeKindValue */
-/** @typedef {import('./types.js').IntWidthValue} IntWidthValue */
-/** @typedef {import('./types.js').FloatWidthValue} FloatWidthValue */
+/** @typedef {import('./ir').IRType} IRType */
+/** @typedef {import('./ir').IRTypeKindValue} IRTypeKindValue */
+/** @typedef {import('./types').IntWidthValue} IntWidthValue */
+/** @typedef {import('./types').FloatWidthValue} FloatWidthValue */
 
-import { IntWidth, FloatWidth } from "./types.js";
-import { IRTypeKind } from "./ir.js";
+import { IntWidth, FloatWidth } from "./types";
+import { IRTypeKind } from "./ir";
 
 // ============================================================================
 // Task 10.1: Layout Structure
@@ -395,9 +395,9 @@ class LayoutCache {
     computeLayout(type) {
         switch (type.kind) {
             case IRTypeKind.Int:
-                return layoutInt(/** @type {import('./ir.js').IntWidthValue} */(type.width));
+                return layoutInt(/** @type {import('./ir').IntWidthValue} */(type.width));
             case IRTypeKind.Float:
-                return layoutFloat(/** @type {import('./ir.js').FloatWidthValue} */(type.width));
+                return layoutFloat(/** @type {import('./ir').FloatWidthValue} */(type.width));
             case IRTypeKind.Bool:
                 return layoutBool();
             case IRTypeKind.Ptr:

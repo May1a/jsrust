@@ -2,7 +2,7 @@
 // Diagnostics and Error Reporting
 // ============================================================================
 
-/** @typedef {import("./types.js").Span} Span */
+/** @typedef {import("./types").Span} Span */
 
 // ============================================================================
 // Task 13.1: Source Location

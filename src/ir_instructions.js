@@ -1,14 +1,14 @@
-/** @typedef {import('./ir.js').ValueId} ValueId */
-/** @typedef {import('./ir.js').LocalId} LocalId */
-/** @typedef {import('./ir.js').IRType} IRType */
-/** @typedef {import('./ir.js').IRInst} IRInst */
-/** @typedef {import('./ir.js').IcmpOpValue} IcmpOpValue */
-/** @typedef {import('./ir.js').FcmpOpValue} FcmpOpValue */
-/** @typedef {import('./ir.js').IRInstKindValue} IRInstKindValue */
-/** @typedef {import('./ir.js').IntWidthValue} IntWidthValue */
-/** @typedef {import('./ir.js').FloatWidthValue} FloatWidthValue */
+/** @typedef {import('./ir').ValueId} ValueId */
+/** @typedef {import('./ir').LocalId} LocalId */
+/** @typedef {import('./ir').IRType} IRType */
+/** @typedef {import('./ir').IRInst} IRInst */
+/** @typedef {import('./ir').IcmpOpValue} IcmpOpValue */
+/** @typedef {import('./ir').FcmpOpValue} FcmpOpValue */
+/** @typedef {import('./ir').IRInstKindValue} IRInstKindValue */
+/** @typedef {import('./ir').IntWidthValue} IntWidthValue */
+/** @typedef {import('./ir').FloatWidthValue} FloatWidthValue */
 
-import { IRInstKind, freshValueId, makeIRPtrType } from "./ir.js";
+import { IRInstKind, freshValueId, makeIRPtrType } from "./ir";
 
 /**
  * @param {IRInstKindValue} kind

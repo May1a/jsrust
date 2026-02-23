@@ -1,4 +1,4 @@
-import { NodeKind } from "./ast.js";
+import { NodeKind } from "./ast";
 
 /**
  * @typedef {{ kind: "param", name?: string } | { kind: "local", name?: string, depth: number } | { kind: "temporary" }} RefOrigin
@@ -87,7 +87,7 @@ function lookupBinding(env, name) {
 }
 
 /**
- * @param {import("./ast.js").Node} pat
+ * @param {import("./ast").Node} pat
  * @param {string[]} out
  */
 function collectPatternBindings(pat, out) {
@@ -123,7 +123,7 @@ function collectPatternBindings(pat, out) {
 }
 
 /**
- * @param {import("./ast.js").Node | null} expr
+ * @param {import("./ast").Node | null} expr
  * @param {FnEnv} env
  * @returns {RefOrigin | null}
  */
@@ -165,7 +165,7 @@ function getRefOrigin(expr, env) {
 }
 
 /**
- * @param {import("./ast.js").Node | null} place
+ * @param {import("./ast").Node | null} place
  * @param {FnEnv} env
  * @returns {RefOrigin | null}
  */
@@ -229,7 +229,7 @@ function isEscapingStore(origin, target) {
 }
 
 /**
- * @param {import("./ast.js").Node} expr
+ * @param {import("./ast").Node} expr
  * @param {FnEnv} env
  */
 function checkExpr(expr, env) {
@@ -400,7 +400,7 @@ function checkExpr(expr, env) {
 }
 
 /**
- * @param {import("./ast.js").Node} stmt
+ * @param {import("./ast").Node} stmt
  * @param {FnEnv} env
  */
 function checkStmt(stmt, env) {
@@ -444,7 +444,7 @@ function checkStmt(stmt, env) {
 }
 
 /**
- * @param {import("./ast.js").Node} block
+ * @param {import("./ast").Node} block
  * @param {FnEnv} env
  * @param {boolean} checkTailAsReturn
  */
@@ -471,7 +471,7 @@ function checkBlock(block, env, checkTailAsReturn) {
 }
 
 /**
- * @param {import("./ast.js").Node} fnItem
+ * @param {import("./ast").Node} fnItem
  * @returns {BorrowLiteError[]}
  */
 function checkFnItem(fnItem) {
@@ -497,7 +497,7 @@ function checkFnItem(fnItem) {
 }
 
 /**
- * @param {import("./ast.js").Node} item
+ * @param {import("./ast").Node} item
  * @param {BorrowLiteError[]} errors
  */
 function checkItem(item, errors) {
@@ -521,8 +521,8 @@ function checkItem(item, errors) {
 
 /**
  * Run relaxed borrow-lite checks. Only obvious dangling-reference escapes are rejected.
- * @param {import("./ast.js").Node} moduleAst
- * @param {import("./type_context.js").TypeContext} _typeCtx
+ * @param {import("./ast").Node} moduleAst
+ * @param {import("./type_context").TypeContext} _typeCtx
  * @returns {{ ok: boolean, errors?: BorrowLiteError[] }}
  */
 function checkBorrowLite(moduleAst, _typeCtx) {

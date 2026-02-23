@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 
-const REPO_ROOT = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const BACKEND_DIR = path.join(REPO_ROOT, "backend");
 const DEFAULT_BACKEND_WASM = path.join(
     BACKEND_DIR,

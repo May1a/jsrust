@@ -1,8 +1,8 @@
-/** @typedef {import('./types.js').Type} Type */
-/** @typedef {import('./types.js').FnType} FnType */
-/** @typedef {import('./types.js').Span} Span */
-/** @typedef {import('./ast.js').Node} Node */
-/** @typedef {import('./type_context.js').TypeContext} TypeContext */
+/** @typedef {import('./types').Type} Type */
+/** @typedef {import('./types').FnType} FnType */
+/** @typedef {import('./types').Span} Span */
+/** @typedef {import('./ast').Node} Node */
+/** @typedef {import('./type_context').TypeContext} TypeContext */
 
 import {
     NodeKind,
@@ -11,7 +11,7 @@ import {
     BinaryOp,
     Mutability,
     makeBlockExpr,
-} from "./ast.js";
+} from "./ast";
 
 import {
     HPlaceKind,
@@ -55,7 +55,7 @@ import {
     makeHTuplePat,
     makeHOrPat,
     makeHMatchArm,
-} from "./hir.js";
+} from "./hir";
 
 import {
     TypeKind,
@@ -67,14 +67,14 @@ import {
     makeFnType,
     makeUnitType,
     typeToString,
-} from "./types.js";
+} from "./types";
 import {
     FORMAT_TAG_STRING,
     FORMAT_TAG_INT,
     FORMAT_TAG_FLOAT,
     FORMAT_TAG_BOOL,
     FORMAT_TAG_CHAR,
-} from "./format_tags.js";
+} from "./format_tags";
 
 const BUILTIN_PRINTLN_FMT_FN = "__jsrust_builtin_println_fmt";
 const BUILTIN_PRINT_FMT_FN = "__jsrust_builtin_print_fmt";
@@ -210,10 +210,10 @@ class LoweringCtx {
         /** @type {Map<string, number>} */
         this.structFieldIndices = new Map();
 
-        /** @type {import('./hir.js').HItem[]} */
+        /** @type {import('./hir').HItem[]} */
         this.generatedItems = [];
 
-        /** @type {import('./hir.js').HStmt[]} */
+        /** @type {import('./hir').HStmt[]} */
         this.pendingPreludeStmts = [];
 
         /** @type {Map<number, { helperName: string, helperType: Type, captures: { mode: "value" | "ref", name: string, varId: number, type: Type, mutable: boolean }[] }>} */
@@ -323,14 +323,14 @@ class LoweringCtx {
     }
 
     /**
-     * @param {import('./hir.js').HItem} item
+     * @param {import('./hir').HItem} item
      */
     queueGeneratedItem(item) {
         this.generatedItems.push(item);
     }
 
     /**
-     * @returns {import('./hir.js').HItem[]}
+     * @returns {import('./hir').HItem[]}
      */
     consumeGeneratedItems() {
         if (this.generatedItems.length === 0) return [];
@@ -340,14 +340,14 @@ class LoweringCtx {
     }
 
     /**
-     * @param {import('./hir.js').HStmt} stmt
+     * @param {import('./hir').HStmt} stmt
      */
     queuePreludeStmt(stmt) {
         this.pendingPreludeStmts.push(stmt);
     }
 
     /**
-     * @returns {import('./hir.js').HStmt[]}
+     * @returns {import('./hir').HStmt[]}
      */
     consumePreludeStmts() {
         if (this.pendingPreludeStmts.length === 0) return [];
@@ -403,7 +403,7 @@ class LoweringCtx {
  * Lower an AST module to HIR
  * @param {Node} ast
  * @param {TypeContext} typeCtx
- * @returns {{ module: import('./hir.js').HModule | null, errors: LoweringError[] }}
+ * @returns {{ module: import('./hir').HModule | null, errors: LoweringError[] }}
  */
 function lowerModule(ast, typeCtx) {
     const ctx = new LoweringCtx();
@@ -414,7 +414,7 @@ function lowerModule(ast, typeCtx) {
     }
 
     // Second pass: lower all items
-    const /** @type {import("./hir.js").HItem[]} */ items = [];
+    const /** @type {import("./hir").HItem[]} */ items = [];
     for (const item of ast.items) {
         lowerItemIntoList(ctx, item, typeCtx, items);
     }
@@ -435,7 +435,7 @@ function lowerModule(ast, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} item
  * @param {TypeContext} typeCtx
- * @param {import('./hir.js').HItem[]} output
+ * @param {import('./hir').HItem[]} output
  */
 function lowerItemIntoList(ctx, item, typeCtx, output) {
     if (item.kind === NodeKind.ModItem) {
@@ -540,7 +540,7 @@ function registerItem(ctx, item, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} item
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HItem | null}
+ * @returns {import('./hir').HItem | null}
  */
 function lowerItem(ctx, item, typeCtx) {
     switch (item.kind) {
@@ -566,7 +566,7 @@ function lowerItem(ctx, item, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} fn
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HFnDecl | null}
+ * @returns {import('./hir').HFnDecl | null}
  */
 function lowerFnItem(ctx, fn, typeCtx) {
     const previousFn = ctx.currentFn;
@@ -657,7 +657,7 @@ function lowerFnItem(ctx, fn, typeCtx) {
  * @param {Node} param
  * @param {Type} type
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HParam}
+ * @returns {import('./hir').HParam}
  */
 function lowerParam(ctx, param, type, typeCtx) {
     let pat = null;
@@ -685,7 +685,7 @@ function lowerParam(ctx, param, type, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} struct
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HStructDecl}
+ * @returns {import('./hir').HStructDecl}
  */
 function lowerStructItem(ctx, struct, typeCtx) {
     const fields = [];
@@ -728,7 +728,7 @@ function lowerStructItem(ctx, struct, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} enum_
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HEnumDecl}
+ * @returns {import('./hir').HEnumDecl}
  */
 function lowerEnumItem(ctx, enum_, typeCtx) {
     const variants = [];
@@ -769,7 +769,7 @@ function lowerEnumItem(ctx, enum_, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} stmt
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HStmt}
+ * @returns {import('./hir').HStmt}
  */
 function lowerStmt(ctx, stmt, typeCtx) {
     switch (stmt.kind) {
@@ -799,7 +799,7 @@ function lowerStmt(ctx, stmt, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} letStmt
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HLetStmt}
+ * @returns {import('./hir').HLetStmt}
  */
 function lowerLetStmt(ctx, letStmt, typeCtx) {
     // Get type from annotation or initializer
@@ -908,7 +908,7 @@ function lowerLetStmt(ctx, letStmt, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} exprStmt
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HStmt}
+ * @returns {import('./hir').HStmt}
  */
 function lowerExprStmt(ctx, exprStmt, typeCtx) {
     if (exprStmt.expr.kind === NodeKind.AssignExpr) {
@@ -940,7 +940,7 @@ function lowerExprStmt(ctx, exprStmt, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} expr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HExpr}
+ * @returns {import('./hir').HExpr}
  */
 function lowerExpr(ctx, expr, typeCtx) {
     switch (expr.kind) {
@@ -1027,7 +1027,7 @@ function lowerExpr(ctx, expr, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} lit
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HLiteralExpr}
+ * @returns {import('./hir').HLiteralExpr}
  */
 function lowerLiteral(ctx, lit, typeCtx) {
     const hirLitKind = convertLiteralKind(lit.literalKind);
@@ -1084,7 +1084,7 @@ function inferLiteralType(literalKind) {
  * @param {LoweringCtx} ctx
  * @param {Node} ident
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HExpr}
+ * @returns {import('./hir').HExpr}
  */
 function lowerIdentifier(ctx, ident, typeCtx) {
     if (ident.name === "Self" && ctx.currentImplTargetName) {
@@ -1176,13 +1176,13 @@ function lowerIdentifier(ctx, ident, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} binary
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HBinaryExpr}
+ * @returns {import('./hir').HBinaryExpr}
  */
 function lowerBinary(ctx, binary, typeCtx) {
     /**
-     * @param {import('./hir.js').HExpr} expr
+     * @param {import('./hir').HExpr} expr
      * @param {Span} span
-     * @returns {import('./hir.js').HExpr}
+     * @returns {import('./hir').HExpr}
      */
     function autoDeref(expr, span) {
         let out = expr;
@@ -1237,7 +1237,7 @@ function lowerBinary(ctx, binary, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} unary
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HUnaryExpr}
+ * @returns {import('./hir').HUnaryExpr}
  */
 function lowerUnary(ctx, unary, typeCtx) {
     const operand = lowerExpr(ctx, unary.operand, typeCtx);
@@ -1266,13 +1266,13 @@ function substituteLoweringGenericType(typeCtx, type, genericNames, bindings) {
         }
         const substitutedArgs = resolved.args
             ? resolved.args.map((/** @type {Type} */ t) =>
-                  substituteLoweringGenericType(
-                      typeCtx,
-                      t,
-                      genericNames,
-                      bindings,
-                  ),
-              )
+                substituteLoweringGenericType(
+                    typeCtx,
+                    t,
+                    genericNames,
+                    bindings,
+                ),
+            )
             : null;
         const item = typeCtx.lookupItem(resolved.name);
         if (item && item.kind === "enum") {
@@ -1571,7 +1571,7 @@ function lookupLoweringCallItem(typeCtx, callee) {
  * @param {LoweringCtx} ctx
  * @param {Node} call
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HExpr}
+ * @returns {import('./hir').HExpr}
  */
 function lowerCall(ctx, call, typeCtx) {
     if (call.callee?.kind === NodeKind.IdentifierExpr) {
@@ -1879,7 +1879,7 @@ function lowerCall(ctx, call, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} macroExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HExpr}
+ * @returns {import('./hir').HExpr}
  */
 function lowerMacro(ctx, macroExpr, typeCtx) {
     switch (macroExpr.name) {
@@ -1915,7 +1915,7 @@ function lowerMacro(ctx, macroExpr, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} macroExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HExpr}
+ * @returns {import('./hir').HExpr}
  */
 function lowerAssertEqMacro(ctx, macroExpr, typeCtx) {
     const args = macroExpr.args || [];
@@ -2146,7 +2146,7 @@ function lowerAssertEqMacro(ctx, macroExpr, typeCtx) {
  * @param {Node} macroExpr
  * @param {TypeContext} typeCtx
  * @param {string} builtinName
- * @returns {import('./hir.js').HExpr}
+ * @returns {import('./hir').HExpr}
  */
 function lowerPrintMacro(ctx, macroExpr, typeCtx, builtinName) {
     const args = macroExpr.args || [];
@@ -2233,7 +2233,7 @@ function lowerPrintMacro(ctx, macroExpr, typeCtx, builtinName) {
  * @param {LoweringCtx} ctx
  * @param {Node} macroExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HExpr}
+ * @returns {import('./hir').HExpr}
  */
 function lowerVecMacro(ctx, macroExpr, typeCtx) {
     const args = macroExpr.args || [];
@@ -2311,7 +2311,7 @@ function lowerVecMacro(ctx, macroExpr, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} field
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HFieldExpr}
+ * @returns {import('./hir').HFieldExpr}
  */
 function lowerField(ctx, field, typeCtx) {
     const base = lowerExpr(ctx, field.receiver, typeCtx);
@@ -2337,7 +2337,7 @@ function lowerField(ctx, field, typeCtx) {
 
     if (baseType && baseType.kind === TypeKind.Struct) {
         index = ctx.getFieldIndex(
-            /** @type {any} */ (baseType).name,
+            /** @type {any} */(baseType).name,
             fieldName,
         );
         const fieldDef = /** @type {any} */ (baseType).fields?.find(
@@ -2346,7 +2346,7 @@ function lowerField(ctx, field, typeCtx) {
         if (fieldDef) {
             ty = fieldDef.type;
         } else {
-            const item = typeCtx.lookupItem(/** @type {any} */ (baseType).name);
+            const item = typeCtx.lookupItem(/** @type {any} */(baseType).name);
             if (item && item.kind === "struct") {
                 const structField = item.node.fields?.find(
                     (/** @type {any} */ f) => f.name === fieldName,
@@ -2423,7 +2423,7 @@ function lowerField(ctx, field, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} index
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HExpr}
+ * @returns {import('./hir').HExpr}
  */
 function lowerIndex(ctx, index, typeCtx) {
     const base = lowerExpr(ctx, index.receiver, typeCtx);
@@ -2483,7 +2483,7 @@ function lowerIndex(ctx, index, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} assign
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HUnitExpr}
+ * @returns {import('./hir').HUnitExpr}
  */
 function lowerAssign(ctx, assign, typeCtx) {
     const value = lowerExpr(ctx, assign.value, typeCtx);
@@ -2505,7 +2505,7 @@ function lowerAssign(ctx, assign, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} structExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HStructExpr}
+ * @returns {import('./hir').HStructExpr}
  */
 function lowerStructExpr(ctx, structExpr, typeCtx) {
     const path = lowerExpr(ctx, structExpr.path, typeCtx);
@@ -2542,7 +2542,7 @@ function lowerStructExpr(ctx, structExpr, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} ref
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HRefExpr}
+ * @returns {import('./hir').HRefExpr}
  */
 function lowerRef(ctx, ref, typeCtx) {
     const operand = lowerExpr(ctx, ref.operand, typeCtx);
@@ -2562,7 +2562,7 @@ function lowerRef(ctx, ref, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} deref
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HDerefExpr}
+ * @returns {import('./hir').HDerefExpr}
  */
 function lowerDeref(ctx, deref, typeCtx) {
     const operand = lowerExpr(ctx, deref.operand, typeCtx);
@@ -2582,19 +2582,19 @@ function lowerDeref(ctx, deref, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} closure
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HExpr}
+ * @returns {import('./hir').HExpr}
  */
 function lowerClosure(ctx, closure, typeCtx) {
     const inferredType =
         closure.inferredType && closure.inferredType.kind === TypeKind.Fn
             ? closure.inferredType
             : makeFnType(
-                  [],
-                  makeUnitType(closure.span),
-                  false,
-                  false,
-                  closure.span,
-              );
+                [],
+                makeUnitType(closure.span),
+                false,
+                false,
+                closure.span,
+            );
     const captures = closure.captureInfos || [];
     const helperName = `${ctx.currentFn || "closure"}::__closure_${ctx.nextClosureSymbolId()}`;
 
@@ -2638,10 +2638,10 @@ function lowerClosure(ctx, closure, typeCtx) {
         closure.body?.kind === NodeKind.BlockExpr
             ? closure.body
             : makeBlockExpr(
-                  closure.body?.span || closure.span,
-                  [],
-                  closure.body || null,
-              );
+                closure.body?.span || closure.span,
+                [],
+                closure.body || null,
+            );
 
     const syntheticFn = {
         kind: NodeKind.FnItem,
@@ -2689,12 +2689,12 @@ function lowerClosure(ctx, closure, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} block
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HBlock}
+ * @returns {import('./hir').HBlock}
  */
 function lowerBlock(ctx, block, typeCtx) {
     ctx.pushScope();
 
-    /** @type {import('./hir.js').HStmt[]} */
+    /** @type {import('./hir').HStmt[]} */
     const stmts = [];
     for (const stmt of block.stmts || []) {
         const lowered = lowerStmt(ctx, stmt, typeCtx);
@@ -2723,7 +2723,7 @@ function lowerBlock(ctx, block, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} ifExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HIfExpr}
+ * @returns {import('./hir').HIfExpr}
  */
 function lowerIf(ctx, ifExpr, typeCtx) {
     const condition = lowerExpr(ctx, ifExpr.condition, typeCtx);
@@ -2762,7 +2762,7 @@ function lowerIf(ctx, ifExpr, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} matchExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HMatchExpr}
+ * @returns {import('./hir').HMatchExpr}
  */
 function lowerMatch(ctx, matchExpr, typeCtx) {
     const scrutinee = lowerExpr(ctx, matchExpr.scrutinee, typeCtx);
@@ -2781,9 +2781,9 @@ function lowerMatch(ctx, matchExpr, typeCtx) {
             arm.body.kind === NodeKind.BlockExpr
                 ? lowerBlock(ctx, arm.body, typeCtx)
                 : (() => {
-                      const expr = lowerExpr(ctx, arm.body, typeCtx);
-                      return makeHBlock(arm.body.span, [], expr, expr.ty);
-                  })();
+                    const expr = lowerExpr(ctx, arm.body, typeCtx);
+                    return makeHBlock(arm.body.span, [], expr, expr.ty);
+                })();
 
         ctx.popScope();
 
@@ -2804,7 +2804,7 @@ function lowerMatch(ctx, matchExpr, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} loopExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HLoopExpr}
+ * @returns {import('./hir').HLoopExpr}
  */
 function lowerLoop(ctx, loopExpr, typeCtx) {
     ctx.pushScope();
@@ -2822,7 +2822,7 @@ function lowerLoop(ctx, loopExpr, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} whileExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HWhileExpr}
+ * @returns {import('./hir').HWhileExpr}
  */
 function lowerWhile(ctx, whileExpr, typeCtx) {
     const condition = lowerExpr(ctx, whileExpr.condition, typeCtx);
@@ -2842,7 +2842,7 @@ function lowerWhile(ctx, whileExpr, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} forExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HExpr}
+ * @returns {import('./hir').HExpr}
  */
 function lowerFor(ctx, forExpr, typeCtx) {
     // Desugar for loop to while loop with iterator
@@ -2881,7 +2881,7 @@ function lowerFor(ctx, forExpr, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} returnExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HUnitExpr}
+ * @returns {import('./hir').HUnitExpr}
  */
 function lowerReturn(ctx, returnExpr, typeCtx) {
     // Return is a statement in HIR
@@ -2894,7 +2894,7 @@ function lowerReturn(ctx, returnExpr, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} breakExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HUnitExpr}
+ * @returns {import('./hir').HUnitExpr}
  */
 function lowerBreak(ctx, breakExpr, typeCtx) {
     return makeHUnitExpr(breakExpr.span, { kind: TypeKind.Never });
@@ -2905,7 +2905,7 @@ function lowerBreak(ctx, breakExpr, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} continueExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HUnitExpr}
+ * @returns {import('./hir').HUnitExpr}
  */
 function lowerContinue(ctx, continueExpr, typeCtx) {
     return makeHUnitExpr(continueExpr.span, { kind: TypeKind.Never });
@@ -2916,7 +2916,7 @@ function lowerContinue(ctx, continueExpr, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} pathExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HExpr}
+ * @returns {import('./hir').HExpr}
  */
 function lowerPath(ctx, pathExpr, typeCtx) {
     if (!pathExpr.segments || pathExpr.segments.length === 0) {
@@ -2932,7 +2932,7 @@ function lowerPath(ctx, pathExpr, typeCtx) {
     if (pathExpr.resolvedItemName) {
         return lowerIdentifier(
             ctx,
-            /** @type {any} */ ({
+            /** @type {any} */({
                 name: pathExpr.segments[pathExpr.segments.length - 1] || "",
                 resolvedItemName: pathExpr.resolvedItemName,
                 span: pathExpr.span,
@@ -2945,7 +2945,7 @@ function lowerPath(ctx, pathExpr, typeCtx) {
     if (pathExpr.segments.length === 1) {
         return lowerIdentifier(
             ctx,
-            /** @type {any} */ ({
+            /** @type {any} */({
                 name: pathExpr.segments[0],
                 resolvedItemName: pathExpr.resolvedItemName || null,
                 span: pathExpr.span,
@@ -3032,7 +3032,7 @@ function findEnumVariantIndex(enumNode, variantName) {
  * @param {LoweringCtx} ctx
  * @param {Node} rangeExpr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HExpr}
+ * @returns {import('./hir').HExpr}
  */
 function lowerRange(ctx, rangeExpr, typeCtx) {
     // For now, ranges are not fully implemented
@@ -3051,7 +3051,7 @@ function lowerRange(ctx, rangeExpr, typeCtx) {
  * @param {Node} pat
  * @param {Type} expectedType
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HPat}
+ * @returns {import('./hir').HPat}
  */
 function lowerPattern(ctx, pat, expectedType, typeCtx) {
     switch (pat.kind) {
@@ -3102,7 +3102,7 @@ function lowerPattern(ctx, pat, expectedType, typeCtx) {
  * @param {Node} pat
  * @param {Type} expectedType
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HIdentPat}
+ * @returns {import('./hir').HIdentPat}
  */
 function lowerIdentPat(ctx, pat, expectedType, typeCtx) {
     const mutable = pat.mutability === Mutability.Mutable;
@@ -3129,7 +3129,7 @@ function lowerIdentPat(ctx, pat, expectedType, typeCtx) {
  * @param {Node} pat
  * @param {Type} expectedType
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HStructPat}
+ * @returns {import('./hir').HStructPat}
  */
 function lowerStructPat(ctx, pat, expectedType, typeCtx) {
     // Get struct/enum-variant name from path.
@@ -3154,8 +3154,8 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
     const enumNode = enumItem?.kind === "enum" ? enumItem.node : null;
     const enumVariant = enumNode
         ? (enumNode.variants || []).find(
-              (/** @type {any} */ variant) => variant.name === enumVariantName,
-          )
+            (/** @type {any} */ variant) => variant.name === enumVariantName,
+        )
         : null;
     const enumGenericParams = (enumNode?.generics || [])
         .map((/** @type {string} */ name) => name || "")
@@ -3178,12 +3178,12 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
     }
     const expectedEnumVariant =
         enumName &&
-        expectedType?.kind === TypeKind.Enum &&
-        expectedType.name === enumName
+            expectedType?.kind === TypeKind.Enum &&
+            expectedType.name === enumName
             ? (expectedType.variants || []).find(
-                  (/** @type {any} */ variant) =>
-                      variant.name === enumVariantName,
-              )
+                (/** @type {any} */ variant) =>
+                    variant.name === enumVariantName,
+            )
             : null;
 
     // Lower field patterns
@@ -3261,7 +3261,7 @@ function lowerStructPat(ctx, pat, expectedType, typeCtx) {
  * @param {Node} pat
  * @param {Type} expectedType
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HTuplePat}
+ * @returns {import('./hir').HTuplePat}
  */
 function lowerTuplePat(ctx, pat, expectedType, typeCtx) {
     const elements = (pat.elements || []).map(
@@ -3289,7 +3289,7 @@ function lowerTuplePat(ctx, pat, expectedType, typeCtx) {
  * @param {Node} pat
  * @param {Type} expectedType
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HOrPat}
+ * @returns {import('./hir').HOrPat}
  */
 function lowerOrPat(ctx, pat, expectedType, typeCtx) {
     const alternatives = (pat.alternatives || []).map((/**@type{any}*/ alt) =>
@@ -3308,7 +3308,7 @@ function lowerOrPat(ctx, pat, expectedType, typeCtx) {
  * @param {LoweringCtx} ctx
  * @param {Node} expr
  * @param {TypeContext} typeCtx
- * @returns {import('./hir.js').HPlace | null}
+ * @returns {import('./hir').HPlace | null}
  */
 function extractPlace(ctx, expr, typeCtx) {
     switch (expr.kind) {
@@ -3368,7 +3368,7 @@ function extractPlace(ctx, expr, typeCtx) {
                 /** @type {any} */ (baseType).kind === TypeKind.Struct
             ) {
                 index = ctx.getFieldIndex(
-                    /** @type {any} */ (baseType).name,
+                    /** @type {any} */(baseType).name,
                     fieldName,
                 );
                 const fieldDef = /** @type {any} */ (baseType).fields?.find(

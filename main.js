@@ -2,20 +2,20 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { parseModule } from "./parser.js";
-import { TypeContext } from "./type_context.js";
-import { inferModule } from "./inference.js";
-import { checkBorrowLite } from "./borrow_lite.js";
-import { lowerModule } from "./lowering.js";
-import { resolveModuleTree } from "./module_resolver.js";
-import { expandDerives } from "./derive_expand.js";
-import { lowerHirToSsa } from "./hir_to_ssa.js";
-import { printModule as printIRModule } from "./ir_printer.js";
-import { makeIRModule, addIRFunction, resetIRIds } from "./ir.js";
-import { HItemKind } from "./hir.js";
-import { validateFunction as validateIRFunction } from "./ir_validate.js";
-import { serializeModule } from "./ir_serialize.js";
-import { runBackendCodegenWasm, runBackendWasm } from "./backend_runner.js";
+import { parseModule } from "./src/parser.js";
+import { TypeContext } from "./src/type_context.js";
+import { inferModule } from "./src/inference.js";
+import { checkBorrowLite } from "./src/borrow.js";
+import { lowerModule } from "./src/lowering.js";
+import { resolveModuleTree } from "./src/module_resolver.js";
+import { expandDerives } from "./src/derive_expand.js";
+import { lowerHirToSsa } from "./src/hir_to_ssa.js";
+import { printModule as printIRModule } from "./src/ir_printer.js";
+import { makeIRModule, addIRFunction, resetIRIds } from "./src/ir.js";
+import { HItemKind } from "./src/hir.js";
+import { validateFunction as validateIRFunction } from "./src/ir_validate.js";
+import { serializeModule } from "./src/ir_serialize.js";
+import { runBackendCodegenWasm, runBackendWasm } from "./src/backend_runner.js";
 
 const STDLIB_VEC_CORE_PATH = path.resolve(process.cwd(), "stdlib/vec_core.rs");
 const STDLIB_BUILTIN_SOURCE = `pub enum Option<T> {
@@ -45,7 +45,7 @@ const STDLIB_BUILTIN_SOURCE = `pub enum Option<T> {
  * @property {string} [ir]
  * @property {object} [ast]
  * @property {object} [hir]
- * @property {import('./ir.js').IRModule} [module]
+ * @property {import('./src/ir.js').IRModule} [module]
  */
 
 /**
@@ -180,7 +180,7 @@ function compileToIRModule(source, options = {}) {
             }
             try {
                 const irFn = lowerHirToSsa(
-                    /** @type {import('./hir.js').HFnDecl} */ (item),
+                    /** @type {import('./src/hir.js').HFnDecl} */(item),
                     { irModule },
                 );
 
@@ -227,7 +227,7 @@ function compileToIRModule(source, options = {}) {
 
 /**
  * Parse and prepend compiler-managed stdlib items.
- * @param {import("./ast.js").Node} ast
+ * @param {import("./src/ast.js").Node} ast
  * @returns {{ ok: true } | { ok: false, errors: CompileDiagnostic[] }}
  */
 function injectStdlibItems(ast) {
@@ -564,7 +564,7 @@ function writeFileAtomic(outputPath, bytes) {
             if (fs.existsSync(tempPath)) {
                 fs.unlinkSync(tempPath);
             }
-        } catch {}
+        } catch { }
         return {
             ok: false,
             message: `failed to write file: ${resolved}: ${e instanceof Error ? e.message : String(e)}`,
@@ -866,7 +866,7 @@ function runTestCli(args) {
             }
             try {
                 const irFn = lowerHirToSsa(
-                    /** @type {import('./hir.js').HFnDecl} */ (item),
+                    /** @type {import('./src/hir.js').HFnDecl} */(item),
                     { irModule },
                 );
                 if (validate) {
@@ -1056,13 +1056,13 @@ function runBackendCli(args) {
 
     const runResult = options.codegenWasm
         ? runBackendCodegenWasm(binaryResult.bytes, {
-              entry: options.entry,
-              trace: options.trace,
-          })
+            entry: options.entry,
+            trace: options.trace,
+        })
         : runBackendWasm(binaryResult.bytes, {
-              entry: options.entry,
-              trace: options.trace,
-          });
+            entry: options.entry,
+            trace: options.trace,
+        });
 
     if (!runResult.ok) {
         printBackendStatusLine(runResult.label, runResult.message);

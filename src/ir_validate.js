@@ -1,12 +1,12 @@
-/** @typedef {import('./ir.js').ValueId} ValueId */
-/** @typedef {import('./ir.js').BlockId} BlockId */
-/** @typedef {import('./ir.js').FunctionId} FunctionId */
-/** @typedef {import('./ir.js').IRType} IRType */
-/** @typedef {import('./ir.js').IRModule} IRModule */
-/** @typedef {import('./ir.js').IRFunction} IRFunction */
-/** @typedef {import('./ir.js').IRBlock} IRBlock */
-/** @typedef {import('./ir.js').IRInst} IRInst */
-/** @typedef {import('./ir.js').IRTerm} IRTerminator */
+/** @typedef {import('./ir').ValueId} ValueId */
+/** @typedef {import('./ir').BlockId} BlockId */
+/** @typedef {import('./ir').FunctionId} FunctionId */
+/** @typedef {import('./ir').IRType} IRType */
+/** @typedef {import('./ir').IRModule} IRModule */
+/** @typedef {import('./ir').IRFunction} IRFunction */
+/** @typedef {import('./ir').IRBlock} IRBlock */
+/** @typedef {import('./ir').IRInst} IRInst */
+/** @typedef {import('./ir').IRTerm} IRTerminator */
 
 import {
     IRTypeKind,
@@ -14,7 +14,7 @@ import {
     IRTermKind,
     irTypeEquals,
     irTypeToString,
-} from "./ir.js";
+} from "./ir";
 
 // ============================================================================
 // Task 12.1: Validation Error Types
@@ -275,7 +275,7 @@ function validateFunction(fn, ctx = makeValidationCtx()) {
 
     // Register function parameters
     for (const param of fn.params) {
-        defineValue(ctx, param.id, param.ty, /** @type {import('./ir.js').IRBlock} */(fn.entry).id);
+        defineValue(ctx, param.id, param.ty, /** @type {import('./ir').IRBlock} */(fn.entry).id);
     }
 
     // Validate all blocks

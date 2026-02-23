@@ -1,7 +1,7 @@
-/** @typedef {import('./ir.js').IRModule} IRModule */
-/** @typedef {import('./ir.js').IRFunction} IRFunction */
-/** @typedef {import('./ir.js').IRBlock} IRBlock */
-/** @typedef {import('./ir.js').IRType} IRType */
+/** @typedef {import('./ir').IRModule} IRModule */
+/** @typedef {import('./ir').IRFunction} IRFunction */
+/** @typedef {import('./ir').IRBlock} IRBlock */
+/** @typedef {import('./ir').IRType} IRType */
 /**
  * @template T
  * @typedef {{ ok: true, value: T } | { ok: false, error: DeserializeError }} Result
@@ -30,9 +30,9 @@ import {
     addIRBlockParam,
     addIRInstruction,
     setIRTerminator,
-} from "./ir.js";
+} from "./ir";
 
-import { MAGIC, VERSION } from "./ir_serialize.js";
+import { MAGIC, VERSION } from "./ir_serialize";
 
 /**
  * Deserialize error types

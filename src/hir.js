@@ -7,7 +7,7 @@
 /** @typedef {number} HLiteralKindValue */
 
 /** @typedef {{ line: number, column: number, start: number, end: number }} Span */
-/** @typedef {import('./types.js').Type} Type */
+/** @typedef {import('./types').Type} Type */
 /** @typedef {Record<string, any>} HAnyNode */
 
 // ============================================================================
@@ -1238,8 +1238,8 @@ function isHItem(node) {
     );
 }
 
-// Import typeToString from types.js for use in hirToString
-import { typeToString } from "./types.js";
+// Import typeToString from types for use in hirToString
+import { typeToString } from "./types";
 
 export {
     // Kinds

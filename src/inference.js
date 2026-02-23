@@ -1,9 +1,9 @@
-/** @typedef {import("./types.js").Type} Type */
-/** @typedef {import("./types.js").FnType} FnType */
-/** @typedef {import("./types.js").TypeVarType} TypeVarType */
-/** @typedef {import("./types.js").Span} Span */
-/** @typedef {import("./ast.js").Node} Node */
-/** @typedef {import("./type_context.js").TypeContext} TypeContextModel */
+/** @typedef {import("./types").Type} Type */
+/** @typedef {import("./types").FnType} FnType */
+/** @typedef {import("./types").TypeVarType} TypeVarType */
+/** @typedef {import("./types").Span} Span */
+/** @typedef {import("./ast").Node} Node */
+/** @typedef {import("./type_context").TypeContext} TypeContextModel */
 
 import {
     TypeKind,
@@ -36,9 +36,9 @@ import {
     isNeverType,
     isTypeVar,
     isCopyableType,
-} from "./types.js";
+} from "./types";
 
-import { TypeContext } from "./type_context.js";
+import { TypeContext } from "./type_context";
 
 import {
     NodeKind,
@@ -47,7 +47,7 @@ import {
     BinaryOp,
     Mutability,
     BuiltinType,
-} from "./ast.js";
+} from "./ast";
 
 // ============================================================================
 // Task 4.10: Error Reporting
@@ -152,7 +152,7 @@ function collectUnsupportedGenericConstraintErrors(fnItem) {
 /**
  * @param {TypeContext} ctx
  * @param {Node} callee
- * @returns {import('./type_context.js').ItemDecl | null}
+ * @returns {import('./type_context').ItemDecl | null}
  */
 function lookupDirectFunctionItemForCall(ctx, callee) {
     if (callee.kind === NodeKind.IdentifierExpr) {
@@ -308,7 +308,7 @@ function substituteGenericTypeBindings(
 /**
  * @param {TypeContext} ctx
  * @param {Node} call
- * @param {import('./type_context.js').ItemDecl} itemDecl
+ * @param {import('./type_context').ItemDecl} itemDecl
  * @returns {InferenceResult}
  */
 function inferGenericFunctionCall(ctx, call, itemDecl) {
@@ -2434,7 +2434,7 @@ function inferField(ctx, field, preferMethod = false) {
 
     // Handle struct field access
     if (accessType.kind === TypeKind.Struct) {
-        const structType = /** @type {import("./types.js").StructType} */ (accessType);
+        const structType = /** @type {import("./types").StructType} */ (accessType);
         if (preferMethod) {
             const candidates = ctx.lookupMethodCandidates(structType.name, fieldName);
             if (candidates.inherent && candidates.inherent.type?.kind === TypeKind.Fn) {
@@ -2502,7 +2502,7 @@ function inferField(ctx, field, preferMethod = false) {
 
     // Handle named type (unresolved struct)
     if (accessType.kind === TypeKind.Named) {
-        const namedType = /** @type {import("./types.js").NamedType} */ (accessType);
+        const namedType = /** @type {import("./types").NamedType} */ (accessType);
         const item = ctx.lookupItem(namedType.name);
         if (item && item.kind === "struct") {
             if (preferMethod) {
@@ -2588,7 +2588,7 @@ function inferField(ctx, field, preferMethod = false) {
 
     // Handle tuple field access (numeric index)
     if (accessType.kind === TypeKind.Tuple) {
-        const tupleType = /** @type {import("./types.js").TupleType} */ (accessType);
+        const tupleType = /** @type {import("./types").TupleType} */ (accessType);
         const index =
             typeof field.field === "number"
                 ? field.field
@@ -3168,7 +3168,7 @@ function inferPath(ctx, pathExpr) {
 
     // Handle struct constructors: StructName::new or just StructName
     if (item.kind === "struct") {
-        /** @type {import("./types.js").StructType} */
+        /** @type {import("./types").StructType} */
         const structType = {
             kind: TypeKind.Struct,
             name: itemName,
@@ -3991,7 +3991,7 @@ function checkPattern(ctx, pattern, expectedType) {
                 return { ok: true };
             }
 
-            const tupleType = /** @type {import("./types.js").TupleType} */ (expectedType);
+            const tupleType = /** @type {import("./types").TupleType} */ (expectedType);
 
             if (pattern.elements.length !== tupleType.elements.length) {
                 return {
@@ -4100,8 +4100,8 @@ function checkPattern(ctx, pattern, expectedType) {
                 const expectedResolved = ctx.resolveType(expectedType);
                 const expectedArgs =
                     expectedResolved.kind === TypeKind.Named &&
-                    expectedResolved.name === enumName &&
-                    expectedResolved.args
+                        expectedResolved.name === enumName &&
+                        expectedResolved.args
                         ? expectedResolved.args
                         : null;
                 const bindings = new Map();

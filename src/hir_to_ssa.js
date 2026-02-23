@@ -1,15 +1,15 @@
-/** @typedef {import('./hir.js').HFnDecl} HFnDecl */
-/** @typedef {import('./hir.js').HBlock} HBlock */
-/** @typedef {import('./hir.js').HStmt} HStmt */
-/** @typedef {import('./hir.js').HExpr} HExpr */
-/** @typedef {import('./hir.js').HPlace} HPlace */
-/** @typedef {import('./hir.js').HPat} HPat */
-/** @typedef {import('./hir.js').HMatchArm} HMatchArm */
-/** @typedef {import('./ir.js').IRFunction} IRFunction */
-/** @typedef {import('./ir.js').IRType} IRType */
-/** @typedef {import('./ir.js').ValueId} ValueId */
-/** @typedef {import('./ir.js').BlockId} BlockId */
-/** @typedef {import('./types.js').Type} Type */
+/** @typedef {import('./hir').HFnDecl} HFnDecl */
+/** @typedef {import('./hir').HBlock} HBlock */
+/** @typedef {import('./hir').HStmt} HStmt */
+/** @typedef {import('./hir').HExpr} HExpr */
+/** @typedef {import('./hir').HPlace} HPlace */
+/** @typedef {import('./hir').HPat} HPat */
+/** @typedef {import('./hir').HMatchArm} HMatchArm */
+/** @typedef {import('./ir').IRFunction} IRFunction */
+/** @typedef {import('./ir').IRType} IRType */
+/** @typedef {import('./ir').ValueId} ValueId */
+/** @typedef {import('./ir').BlockId} BlockId */
+/** @typedef {import('./types').Type} Type */
 
 import {
     HItemKind,
@@ -18,8 +18,8 @@ import {
     HExprKind,
     HPatKind,
     HLiteralKind,
-} from "./hir.js";
-import { IRBuilder } from "./ir_builder.js";
+} from "./hir";
+import { IRBuilder } from "./ir_builder";
 import {
     IRTypeKind,
     IcmpOp,
@@ -38,9 +38,9 @@ import {
     makeIRModule,
     addIRFunction,
     internIRStringLiteral,
-} from "./ir.js";
-import { IntWidth, FloatWidth, TypeKind } from "./types.js";
-import { BinaryOp, UnaryOp } from "./ast.js";
+} from "./ir";
+import { IntWidth, FloatWidth, TypeKind } from "./types";
+import { BinaryOp, UnaryOp } from "./ast";
 
 // ============================================================================
 // Task 9.1: Lowering Context
@@ -51,16 +51,16 @@ import { BinaryOp, UnaryOp } from "./ast.js";
  */
 export class HirToSsaCtx {
     /**
-     * @param {{ irModule?: import('./ir.js').IRModule }} [options]
+     * @param {{ irModule?: import('./ir').IRModule }} [options]
      */
     constructor(options = {}) {
         /** @type {IRBuilder} */
         this.builder = new IRBuilder();
-        /** @type {import('./ir.js').IRModule | null} */
+        /** @type {import('./ir').IRModule | null} */
         this.irModule = options.irModule || null;
-        /** @type {import('./ir.js').IRModule} */
+        /** @type {import('./ir').IRModule} */
         this.internalLiteralModule =
-            this.irModule || /** @type {import('./ir.js').IRModule} */ (/** @type {any} */ ({
+            this.irModule || /** @type {import('./ir').IRModule} */ (/** @type {any} */ ({
                 stringLiterals: [],
                 stringLiteralIds: new Map(),
             }));
@@ -145,7 +145,7 @@ export class HirToSsaCtx {
         // Declare parameters as variables
         for (let i = 0; i < fnDecl.params.length; i++) {
             const param = fnDecl.params[i];
-            const paramValue = /** @type {import('./ir.js').IRFunction} */ (this.builder.currentFunction).params[i];
+            const paramValue = /** @type {import('./ir').IRFunction} */ (this.builder.currentFunction).params[i];
 
             if (param.name) {
                 // Store parameter value in variable map
@@ -172,7 +172,7 @@ export class HirToSsaCtx {
             const result = this.lowerBlock(fnDecl.body);
 
             // Add implicit return if needed
-            if (!(/** @type {import('./ir.js').IRBlock} */ (this.builder.currentBlock)).terminator) {
+            if (!(/** @type {import('./ir').IRBlock} */ (this.builder.currentBlock)).terminator) {
                 if (this.returnType?.kind === IRTypeKind.Unit) {
                     this.builder.ret(null);
                 } else if (result !== null) {
@@ -206,7 +206,7 @@ export class HirToSsaCtx {
             this.lowerStmt(stmt);
 
             // If block is terminated, stop
-            if ((/** @type {import('./ir.js').IRBlock} */ (this.builder.currentBlock)).terminator) {
+            if ((/** @type {import('./ir').IRBlock} */ (this.builder.currentBlock)).terminator) {
                 return null;
             }
         }
@@ -255,7 +255,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a let statement
-     * @param {import('./hir.js').HLetStmt} stmt
+     * @param {import('./hir').HLetStmt} stmt
      */
     lowerLetStmt(stmt) {
         // Lower initializer
@@ -355,7 +355,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower an assignment statement
-     * @param {import('./hir.js').HAssignStmt} stmt
+     * @param {import('./hir').HAssignStmt} stmt
      */
     lowerAssignStmt(stmt) {
         const value = this.lowerExpr(stmt.value);
@@ -377,13 +377,13 @@ export class HirToSsaCtx {
         const ty = this.translateType(stmt.value.ty);
         this.builder.store(ptr, value, ty);
         if (stmt.place.kind === HPlaceKind.Var) {
-            this.varValues.set(/** @type {ValueId} */ (stmt.place.id), value);
+            this.varValues.set(/** @type {ValueId} */(stmt.place.id), value);
         }
     }
 
     /**
      * Lower an expression statement
-     * @param {import('./hir.js').HExprStmt} stmt
+     * @param {import('./hir').HExprStmt} stmt
      */
     lowerExprStmt(stmt) {
         this.lowerExpr(stmt.expr);
@@ -391,7 +391,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a return statement
-     * @param {import('./hir.js').HReturnStmt} stmt
+     * @param {import('./hir').HReturnStmt} stmt
      */
     lowerReturnStmt(stmt) {
         let value = null;
@@ -403,7 +403,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a break statement
-     * @param {import('./hir.js').HBreakStmt} stmt
+     * @param {import('./hir').HBreakStmt} stmt
      */
     lowerBreakStmt(stmt) {
         const targetBlock = this.breakStack[this.breakStack.length - 1];
@@ -421,7 +421,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a continue statement
-     * @param {import('./hir.js').HContinueStmt} stmt
+     * @param {import('./hir').HContinueStmt} stmt
      */
     lowerContinueStmt(stmt) {
         const targetBlock = this.continueStack[this.continueStack.length - 1];
@@ -482,7 +482,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a unit expression
-     * @param {import('./hir.js').HUnitExpr} expr
+     * @param {import('./hir').HUnitExpr} expr
      * @returns {ValueId}
      */
     lowerUnit(expr) {
@@ -493,7 +493,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a literal expression
-     * @param {import('./hir.js').HLiteralExpr} expr
+     * @param {import('./hir').HLiteralExpr} expr
      * @returns {ValueId}
      */
     lowerLiteral(expr) {
@@ -535,18 +535,18 @@ export class HirToSsaCtx {
 
     /**
      * Lower a variable expression
-     * @param {import('./hir.js').HVarExpr} expr
+     * @param {import('./hir').HVarExpr} expr
      * @returns {ValueId}
      */
     lowerVar(expr) {
-        const byIdAlloca = this.varAllocas.get(/** @type {ValueId} */ (expr.id));
+        const byIdAlloca = this.varAllocas.get(/** @type {ValueId} */(expr.id));
         if (byIdAlloca !== undefined) {
             const ty = this.translateType(expr.ty);
             const loadInst = this.builder.load(byIdAlloca, ty);
             return /** @type {ValueId} */ (/** @type {ValueId} */ (loadInst.id));
         }
 
-        const byIdValue = this.varValues.get(/** @type {ValueId} */ (expr.id));
+        const byIdValue = this.varValues.get(/** @type {ValueId} */(expr.id));
         if (byIdValue !== undefined) {
             return byIdValue;
         }
@@ -555,7 +555,7 @@ export class HirToSsaCtx {
         const varInfo = this.varNames.get(expr.name);
         if (varInfo) {
             const byNameAlloca = this.varAllocas.get(
-                /** @type {ValueId} */ (varInfo.id),
+                /** @type {ValueId} */(varInfo.id),
             );
             if (byNameAlloca !== undefined) {
                 const ty = this.translateType(expr.ty);
@@ -576,7 +576,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a binary expression
-     * @param {import('./hir.js').HBinaryExpr} expr
+     * @param {import('./hir').HBinaryExpr} expr
      * @returns {ValueId}
      */
     lowerBinary(expr) {
@@ -783,7 +783,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a unary expression
-     * @param {import('./hir.js').HUnaryExpr} expr
+     * @param {import('./hir').HUnaryExpr} expr
      * @returns {ValueId}
      */
     lowerUnary(expr) {
@@ -845,7 +845,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a call expression
-     * @param {import('./hir.js').HCallExpr} expr
+     * @param {import('./hir').HCallExpr} expr
      * @returns {ValueId}
      */
     lowerCall(expr) {
@@ -871,7 +871,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a field access expression
-     * @param {import('./hir.js').HFieldExpr} expr
+     * @param {import('./hir').HFieldExpr} expr
      * @returns {ValueId}
      */
     lowerField(expr) {
@@ -885,7 +885,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower an index expression
-     * @param {import('./hir.js').HIndexExpr} expr
+     * @param {import('./hir').HIndexExpr} expr
      * @returns {ValueId}
      */
     lowerIndex(expr) {
@@ -895,7 +895,7 @@ export class HirToSsaCtx {
 
         const ptrInst = this.builder.gep(base, [index], elemTy);
         const loadInst = this.builder.load(
-            /** @type {ValueId} */ (/** @type {ValueId} */ (ptrInst.id)),
+            /** @type {ValueId} */(/** @type {ValueId} */ (ptrInst.id)),
             elemTy,
         );
         return /** @type {ValueId} */ (/** @type {ValueId} */ (loadInst.id));
@@ -903,7 +903,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a reference expression
-     * @param {import('./hir.js').HRefExpr} expr
+     * @param {import('./hir').HRefExpr} expr
      * @returns {ValueId}
      */
     lowerRef(expr) {
@@ -914,7 +914,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a dereference expression
-     * @param {import('./hir.js').HDerefExpr} expr
+     * @param {import('./hir').HDerefExpr} expr
      * @returns {ValueId}
      */
     lowerDeref(expr) {
@@ -926,7 +926,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a struct construction expression
-     * @param {import('./hir.js').HStructExpr} expr
+     * @param {import('./hir').HStructExpr} expr
      * @returns {ValueId}
      */
     lowerStruct(expr) {
@@ -939,7 +939,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower an enum construction expression
-     * @param {import('./hir.js').HEnumExpr} expr
+     * @param {import('./hir').HEnumExpr} expr
      * @returns {ValueId}
      */
     lowerEnum(expr) {
@@ -977,7 +977,7 @@ export class HirToSsaCtx {
             const varInfo = this.varNames.get(place.name);
             if (varInfo) {
                 return this.ensureVarAlloca(
-                    /** @type {ValueId} */ (varInfo.id),
+                    /** @type {ValueId} */(varInfo.id),
                     varInfo.ty,
                 );
             }
@@ -1022,7 +1022,7 @@ export class HirToSsaCtx {
         switch (place.kind) {
             case HPlaceKind.Var: {
                 return this.ensureVarAlloca(
-                    /** @type {ValueId} */ (place.id),
+                    /** @type {ValueId} */(place.id),
                     this.translateType(place.ty),
                 );
             }
@@ -1086,7 +1086,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower an if expression
-     * @param {import('./hir.js').HIfExpr} expr
+     * @param {import('./hir').HIfExpr} expr
      * @returns {ValueId}
      */
     lowerIf(expr) {
@@ -1116,7 +1116,7 @@ export class HirToSsaCtx {
         // Lower then branch
         this.builder.switchToBlock(thenId);
         const thenResult = this.lowerBlock(expr.thenBranch);
-        if (!(/** @type {import("./ir.js").IRBlock} */ (this.builder.currentBlock)).terminator) {
+        if (!(/** @type {import("./ir").IRBlock} */ (this.builder.currentBlock)).terminator) {
             if (hasResult) {
                 if (thenResult === null) {
                     throw new Error("If then branch is missing result value");
@@ -1133,7 +1133,7 @@ export class HirToSsaCtx {
         if (elseId && expr.elseBranch) {
             this.builder.switchToBlock(elseId);
             elseResult = this.lowerBlock(expr.elseBranch);
-            if (!(/** @type {import("./ir.js").IRBlock} */ (this.builder.currentBlock)).terminator) {
+            if (!(/** @type {import("./ir").IRBlock} */ (this.builder.currentBlock)).terminator) {
                 if (hasResult) {
                     if (elseResult === null) {
                         throw new Error(
@@ -1169,7 +1169,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a match expression
-     * @param {import('./hir.js').HMatchExpr} expr
+     * @param {import('./hir').HMatchExpr} expr
      * @returns {ValueId}
      */
     lowerMatch(expr) {
@@ -1291,7 +1291,7 @@ export class HirToSsaCtx {
             }
 
             const armResult = this.lowerBlock(arms[i].body);
-            if (!(/** @type {import("./ir.js").IRBlock} */ (this.builder.currentBlock)).terminator) {
+            if (!(/** @type {import("./ir").IRBlock} */ (this.builder.currentBlock)).terminator) {
                 this.builder.br(
                     mergeId,
                     [],
@@ -1383,7 +1383,7 @@ export class HirToSsaCtx {
             );
 
             const armResult = this.lowerBlock(arms[i].body);
-            if (!(/** @type {import("./ir.js").IRBlock} */ (this.builder.currentBlock)).terminator) {
+            if (!(/** @type {import("./ir").IRBlock} */ (this.builder.currentBlock)).terminator) {
                 const branchArgs =
                     hasResult && armResult !== null
                         ? [armResult]
@@ -1400,7 +1400,7 @@ export class HirToSsaCtx {
         this.builder.sealBlock(mergeId);
 
         if (hasResult) {
-            const mergeParam = /** @type {import("./ir.js").IRBlock} */ (this.builder.currentBlock).params[0];
+            const mergeParam = /** @type {import("./ir").IRBlock} */ (this.builder.currentBlock).params[0];
             if (mergeParam) {
                 return /** @type {ValueId} */ (mergeParam.id);
             }
@@ -1477,7 +1477,7 @@ export class HirToSsaCtx {
 
             // Lower arm body
             const armResult = this.lowerBlock(arm.body);
-            if (!(/** @type {import("./ir.js").IRBlock} */ (this.builder.currentBlock)).terminator) {
+            if (!(/** @type {import("./ir").IRBlock} */ (this.builder.currentBlock)).terminator) {
                 this.builder.br(
                     mergeId,
                     [],
@@ -1627,7 +1627,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a loop expression
-     * @param {import('./hir.js').HLoopExpr} expr
+     * @param {import('./hir').HLoopExpr} expr
      * @returns {ValueId}
      */
     lowerLoop(expr) {
@@ -1654,7 +1654,7 @@ export class HirToSsaCtx {
         this.continueStack.pop();
 
         // Loop back
-        if (!(/** @type {import("./ir.js").IRBlock} */ (this.builder.currentBlock)).terminator) {
+        if (!(/** @type {import("./ir").IRBlock} */ (this.builder.currentBlock)).terminator) {
             this.builder.br(headerId);
         }
         this.builder.sealBlock(bodyId);
@@ -1673,7 +1673,7 @@ export class HirToSsaCtx {
 
     /**
      * Lower a while expression
-     * @param {import('./hir.js').HWhileExpr} expr
+     * @param {import('./hir').HWhileExpr} expr
      * @returns {ValueId}
      */
     lowerWhile(expr) {
@@ -1701,7 +1701,7 @@ export class HirToSsaCtx {
         this.continueStack.pop();
 
         // Loop back
-        if (!(/** @type {import("./ir.js").IRBlock} */ (this.builder.currentBlock)).terminator) {
+        if (!(/** @type {import("./ir").IRBlock} */ (this.builder.currentBlock)).terminator) {
             this.builder.br(headerId);
         }
         this.builder.sealBlock(bodyId);
@@ -1943,9 +1943,9 @@ export class HirToSsaCtx {
 
 /**
  * Lower a HIR function to SSA IR
- * @param {import('./hir.js').HFnDecl} fnDecl
- * @param {{ irModule?: import('./ir.js').IRModule }} [options]
- * @returns {import('./ir.js').IRFunction}
+ * @param {import('./hir').HFnDecl} fnDecl
+ * @param {{ irModule?: import('./ir').IRModule }} [options]
+ * @returns {import('./ir').IRFunction}
  */
 export function lowerHirToSsa(fnDecl, options = {}) {
     const ctx = new HirToSsaCtx(options);
@@ -1954,8 +1954,8 @@ export function lowerHirToSsa(fnDecl, options = {}) {
 
 /**
  * Lower a HIR module to SSA IR module
- * @param {import('./hir.js').HModule} hirModule
- * @returns {import('./ir.js').IRModule}
+ * @param {import('./hir').HModule} hirModule
+ * @returns {import('./ir').IRModule}
  */
 export function lowerModuleToSsa(hirModule) {
     const irModule = makeIRModule(hirModule.name);
@@ -1963,7 +1963,7 @@ export function lowerModuleToSsa(hirModule) {
     for (const item of hirModule.items) {
         if (item.kind === HItemKind.Fn) {
             const ctx = new HirToSsaCtx({ irModule });
-            const irFn = ctx.lowerFunction(/** @type {import('./hir.js').HFnDecl} */(item));
+            const irFn = ctx.lowerFunction(/** @type {import('./hir').HFnDecl} */(item));
             addIRFunction(irModule, irFn);
         }
     }

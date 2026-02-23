@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
-import { parseModule } from "./parser.js";
-import { NodeKind } from "./ast.js";
+import { parseModule } from "./parser";
+import { NodeKind } from "./ast";
 
 /**
  * @typedef {{ message: string, span?: { line: number, column: number, start?: number, end?: number }, kind?: string }} ResolverError
