@@ -256,212 +256,379 @@ fn Vec::get(arg0: *Vec, arg1: i32) -> Option {
 
 }
 
-fn Vec::index(arg0: *Vec, arg1: i32) -> Option {
+fn Vec::index(arg0: *Vec, arg1: i32) -> T {
 
     block0:
-        v141 = load Vec, v139
-        v142 = struct_get v141, 1
-        v143 = icmp sge v140, v142
-        br_if v143, then: block1(), else: block2()
+        v141 = iconst i32 0
+        v142 = icmp slt v140, v141
+        br_if v142, then: block1(), else: block2()
 
     block1:
-        v144 = enum_create Option, variant 0
-        br block3(v144)
+        v143 = load Vec, v139
+        v144 = struct_get v143, 1
+        v145 = call 839352(v140, v144)
+        v146 = load Vec, v139
+        v147 = struct_get v146, 0
+        v148 = iconst i32 0
+        v149 = gep v147, [v148]
+        v150 = load T, v149
+        br block3(v150)
 
     block2:
-        v145 = load Vec, v139
-        v146 = struct_get v145, 0
-        v147 = gep v146, [v140]
-        v148 = load T, v147
-        v149 = enum_create Option, variant 1 [v148]
-        br block3(v149)
+        v151 = load Vec, v139
+        v152 = struct_get v151, 1
+        v153 = icmp sge v140, v152
+        br_if v153, then: block4(), else: block5()
 
-    block3(v150: Option):
-        ret v150
+    block3(v154: T):
+        ret v154
+
+    block4:
+        v155 = load Vec, v139
+        v156 = struct_get v155, 1
+        v157 = call 839352(v140, v156)
+        v158 = load Vec, v139
+        v159 = struct_get v158, 0
+        v160 = iconst i32 0
+        v161 = gep v159, [v160]
+        v162 = load T, v161
+        br block6(v162)
+
+    block5:
+        v163 = load Vec, v139
+        v164 = struct_get v163, 0
+        v165 = gep v164, [v140]
+        v166 = load T, v165
+        br block6(v166)
+
+    block6(v167: T):
+        br block3(v167)
 
 }
 
 fn test_vec() -> () {
 
     block0:
-        v151 = call 79020()
-        v152 = alloca Vec ; loc0
-        store Vec, v152, v151
-        v153 = iconst i32 1
-        v154 = call 17586(v152, v153)
-        v155 = iconst i32 2
-        v156 = call 17586(v152, v155)
-        v157 = iconst i32 3
-        v158 = call 17586(v152, v157)
-        v159 = load Vec, v152
-        v160 = alloca Vec ; loc0
-        store Vec, v160, v159
-        v161 = call 77089(v160)
-        v162 = iconst i32 3
-        v163 = icmp eq v161, v162
-        br_if v163, then: block1(), else: block2()
+        v168 = call 79020()
+        v169 = alloca Vec ; loc0
+        store Vec, v169, v168
+        v170 = iconst i32 1
+        v171 = call 17586(v169, v170)
+        v172 = iconst i32 2
+        v173 = call 17586(v169, v172)
+        v174 = iconst i32 3
+        v175 = call 17586(v169, v174)
+        v176 = load Vec, v169
+        v177 = alloca Vec ; loc0
+        store Vec, v177, v176
+        v178 = call 77089(v177)
+        v179 = iconst i32 3
+        v180 = icmp eq v178, v179
+        br_if v180, then: block1(), else: block2()
 
     block1:
-        v164 = iconst i8 0
+        v181 = iconst i8 0
         br block3
 
     block2:
-        v165 = call 632151()
+        v182 = call 632151()
         br block3
 
     block3:
-        v166 = iconst i8 0
-        v167 = call 777106(v160)
-        v168 = iconst i32 4
-        v169 = icmp eq v167, v168
-        br_if v169, then: block4(), else: block5()
+        v183 = iconst i8 0
+        v184 = call 777106(v177)
+        v185 = iconst i32 4
+        v186 = icmp eq v184, v185
+        br_if v186, then: block4(), else: block5()
 
     block4:
-        v170 = iconst i8 0
+        v187 = iconst i8 0
         br block6
 
     block5:
-        v171 = call 632151()
+        v188 = call 632151()
         br block6
 
     block6:
-        v172 = iconst i8 0
-        v173 = iconst i32 4
-        v174 = call 17586(v160, v173)
-        v175 = call 77089(v160)
-        v176 = iconst i32 4
-        v177 = icmp eq v175, v176
-        br_if v177, then: block7(), else: block8()
+        v189 = iconst i8 0
+        v190 = iconst i32 4
+        v191 = call 17586(v177, v190)
+        v192 = call 77089(v177)
+        v193 = iconst i32 4
+        v194 = icmp eq v192, v193
+        br_if v194, then: block7(), else: block8()
 
     block7:
-        v178 = iconst i8 0
+        v195 = iconst i8 0
         br block9
 
     block8:
-        v179 = call 632151()
+        v196 = call 632151()
         br block9
 
     block9:
-        v180 = iconst i8 0
-        v181 = call 777106(v160)
-        v182 = iconst i32 4
-        v183 = icmp eq v181, v182
-        br_if v183, then: block10(), else: block11()
+        v197 = iconst i8 0
+        v198 = call 777106(v177)
+        v199 = iconst i32 4
+        v200 = icmp eq v198, v199
+        br_if v200, then: block10(), else: block11()
 
     block10:
-        v184 = iconst i8 0
+        v201 = iconst i8 0
         br block12
 
     block11:
-        v185 = call 632151()
+        v202 = call 632151()
         br block12
 
     block12:
-        v186 = iconst i8 0
-        v187 = iconst i32 2
-        v188 = call 72290(v160, v187)
-        v189 = enum_get_tag v188
-        v190 = iconst i32 0
-        switch v189 { v190 => block14(), default: block15() }
+        v203 = iconst i8 0
+        v204 = iconst i32 2
+        v205 = call 72290(v177, v204)
+        v206 = enum_get_tag v205
+        v207 = bconst false
+        switch v206 { v208 => block17(), v0 => block18(), default: block16(v207) }
 
-    block13(v191: i32):
-        v192 = iconst i32 3
-        v193 = icmp eq v191, v192
-        br_if v193, then: block16(), else: block17()
+    block13:
+        v209 = iconst i8 0
+        br block15
 
     block14:
-        v194 = iconst i32 1
-        v195 = ineg v194
-        br block13(v195)
+        v210 = call 632151()
+        br block15
 
     block15:
-        v196 = iconst i32 3
-        br block13(v196)
+        v211 = iconst i8 0
+        v212 = iconst i32 3
+        v213 = enum_create Option, variant 1 [v212]
+        v214 = enum_get_tag v213
+        v215 = bconst false
+        switch v214 { v208 => block29(), v0 => block30(), default: block28(v215) }
 
-    block16:
-        v197 = iconst i8 0
-        br block18
+    block16(v216: bool):
+        br_if v216, then: block13(), else: block14()
 
     block17:
-        v198 = call 632151()
-        br block18
+        v217 = iconst i32 3
+        v218 = enum_create Option, variant 1 [v217]
+        v219 = enum_get_tag v218
+        switch v219 { v208 => block20(), default: block21() }
 
     block18:
-        v199 = iconst i8 0
-        v200 = iconst i32 1
-        v201 = call 407518(v160, v200)
-        v202 = enum_get_tag v201
-        v203 = iconst i32 0
-        switch v202 { v203 => block20(), default: block21() }
+        v220 = enum_get_data v205, variant 1, index 0
+        v221 = iconst i32 3
+        v222 = enum_create Option, variant 1 [v221]
+        v223 = enum_get_tag v222
+        switch v223 { v0 => block23(), default: block24() }
 
-    block19(v204: i32):
-        v205 = iconst i32 2
-        v206 = icmp eq v204, v205
-        br_if v206, then: block22(), else: block23()
+    block19(v224: bool):
+        br block16(v224)
 
     block20:
-        v207 = iconst i32 1
-        v208 = ineg v207
-        br block19(v208)
+        v225 = bconst true
+        br block19(v225)
 
     block21:
-        v209 = iconst i32 2
-        br block19(v209)
+        v226 = bconst false
+        br block19(v226)
 
-    block22:
-        v210 = iconst i8 0
-        br block24
+    block22(v227: bool):
+        br block16(v227)
 
     block23:
-        v211 = call 632151()
-        br block24
+        v228 = enum_get_data v222, variant 1, index 0
+        v229 = icmp eq v220, v228
+        br block22(v229)
 
     block24:
-        v212 = iconst i8 0
-        v213 = call 81245(v160)
-        v214 = enum_get_tag v213
-        v215 = iconst i32 0
-        switch v214 { v215 => block26(), default: block27() }
+        v230 = bconst false
+        br block22(v230)
 
-    block25(v216: i32):
-        v217 = iconst i32 4
-        v218 = icmp eq v216, v217
-        br_if v218, then: block28(), else: block29()
+    block25:
+        v231 = iconst i8 0
+        br block27
 
     block26:
-        v219 = iconst i32 1
-        v220 = ineg v219
-        br block25(v220)
+        v232 = call 632151()
+        br block27
 
     block27:
-        v221 = iconst i32 4
-        br block25(v221)
+        v233 = iconst i8 0
+        v234 = enum_create Option, variant 0
+        v235 = enum_create Option, variant 0
+        v236 = enum_get_tag v234
+        v237 = bconst false
+        switch v236 { v208 => block41(), v0 => block42(), default: block40(v237) }
 
-    block28:
-        v222 = iconst i8 0
-        br block30
+    block28(v238: bool):
+        br_if v238, then: block25(), else: block26()
 
     block29:
-        v223 = call 632151()
-        br block30
+        v239 = iconst i32 3
+        v240 = enum_create Option, variant 1 [v239]
+        v241 = enum_get_tag v240
+        switch v241 { v208 => block32(), default: block33() }
 
     block30:
-        v224 = iconst i8 0
-        v225 = call 77089(v160)
-        v226 = iconst i32 3
-        v227 = icmp eq v225, v226
-        br_if v227, then: block31(), else: block32()
+        v242 = enum_get_data v213, variant 1, index 0
+        v243 = iconst i32 3
+        v244 = enum_create Option, variant 1 [v243]
+        v245 = enum_get_tag v244
+        switch v245 { v0 => block35(), default: block36() }
 
-    block31:
-        v228 = iconst i8 0
-        br block33
+    block31(v246: bool):
+        br block28(v246)
 
     block32:
-        v229 = call 632151()
-        br block33
+        v247 = bconst true
+        br block31(v247)
 
     block33:
-        v230 = iconst i8 0
+        v248 = bconst false
+        br block31(v248)
+
+    block34(v249: bool):
+        br block28(v249)
+
+    block35:
+        v250 = enum_get_data v244, variant 1, index 0
+        v251 = icmp eq v242, v250
+        br block34(v251)
+
+    block36:
+        v252 = bconst false
+        br block34(v252)
+
+    block37:
+        v253 = iconst i8 0
+        br block39
+
+    block38:
+        v254 = call 632151()
+        br block39
+
+    block39:
+        v255 = iconst i8 0
+        v256 = iconst i32 1
+        v257 = call 407518(v177, v256)
+        v258 = iconst i32 2
+        v259 = icmp eq v257, v258
+        br_if v259, then: block49(), else: block50()
+
+    block40(v260: bool):
+        br_if v260, then: block37(), else: block38()
+
+    block41:
+        v261 = enum_get_tag v235
+        switch v261 { v208 => block44(), default: block45() }
+
+    block42:
+        v262 = enum_get_data v234, variant 1, index 0
+        v263 = enum_get_tag v235
+        switch v263 { v0 => block47(), default: block48() }
+
+    block43(v264: bool):
+        br block40(v264)
+
+    block44:
+        v265 = bconst true
+        br block43(v265)
+
+    block45:
+        v266 = bconst false
+        br block43(v266)
+
+    block46(v267: bool):
+        br block40(v267)
+
+    block47:
+        v268 = enum_get_data v235, variant 1, index 0
+        v269 = icmp eq v262, v268
+        br block46(v269)
+
+    block48:
+        v270 = bconst false
+        br block46(v270)
+
+    block49:
+        v271 = iconst i8 0
+        br block51
+
+    block50:
+        v272 = call 632151()
+        br block51
+
+    block51:
+        v273 = iconst i8 0
+        v274 = call 81245(v177)
+        v275 = enum_get_tag v274
+        v276 = bconst false
+        switch v275 { v208 => block56(), v0 => block57(), default: block55(v276) }
+
+    block52:
+        v277 = iconst i8 0
+        br block54
+
+    block53:
+        v278 = call 632151()
+        br block54
+
+    block54:
+        v279 = iconst i8 0
+        v280 = call 77089(v177)
+        v281 = iconst i32 3
+        v282 = icmp eq v280, v281
+        br_if v282, then: block64(), else: block65()
+
+    block55(v283: bool):
+        br_if v283, then: block52(), else: block53()
+
+    block56:
+        v284 = iconst i32 4
+        v285 = enum_create Option, variant 1 [v284]
+        v286 = enum_get_tag v285
+        switch v286 { v208 => block59(), default: block60() }
+
+    block57:
+        v287 = enum_get_data v274, variant 1, index 0
+        v288 = iconst i32 4
+        v289 = enum_create Option, variant 1 [v288]
+        v290 = enum_get_tag v289
+        switch v290 { v0 => block62(), default: block63() }
+
+    block58(v291: bool):
+        br block55(v291)
+
+    block59:
+        v292 = bconst true
+        br block58(v292)
+
+    block60:
+        v293 = bconst false
+        br block58(v293)
+
+    block61(v294: bool):
+        br block55(v294)
+
+    block62:
+        v295 = enum_get_data v289, variant 1, index 0
+        v296 = icmp eq v287, v295
+        br block61(v296)
+
+    block63:
+        v297 = bconst false
+        br block61(v297)
+
+    block64:
+        v298 = iconst i8 0
+        br block66
+
+    block65:
+        v299 = call 632151()
+        br block66
+
+    block66:
+        v300 = iconst i8 0
         ret
 
 }

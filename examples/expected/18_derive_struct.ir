@@ -259,46 +259,71 @@ fn Vec::get(arg0: *Vec, arg1: i32) -> Option {
 
 }
 
-fn Vec::index(arg0: *Vec, arg1: i32) -> Option {
+fn Vec::index(arg0: *Vec, arg1: i32) -> T {
 
     block0:
-        v141 = load Vec, v139
-        v142 = struct_get v141, 1
-        v143 = icmp sge v140, v142
-        br_if v143, then: block1(), else: block2()
+        v141 = iconst i32 0
+        v142 = icmp slt v140, v141
+        br_if v142, then: block1(), else: block2()
 
     block1:
-        v144 = enum_create Option, variant 0
-        br block3(v144)
+        v143 = load Vec, v139
+        v144 = struct_get v143, 1
+        v145 = call 839352(v140, v144)
+        v146 = load Vec, v139
+        v147 = struct_get v146, 0
+        v148 = iconst i32 0
+        v149 = gep v147, [v148]
+        v150 = load T, v149
+        br block3(v150)
 
     block2:
-        v145 = load Vec, v139
-        v146 = struct_get v145, 0
-        v147 = gep v146, [v140]
-        v148 = load T, v147
-        v149 = enum_create Option, variant 1 [v148]
-        br block3(v149)
+        v151 = load Vec, v139
+        v152 = struct_get v151, 1
+        v153 = icmp sge v140, v152
+        br_if v153, then: block4(), else: block5()
 
-    block3(v150: Option):
-        ret v150
+    block3(v154: T):
+        ret v154
+
+    block4:
+        v155 = load Vec, v139
+        v156 = struct_get v155, 1
+        v157 = call 839352(v140, v156)
+        v158 = load Vec, v139
+        v159 = struct_get v158, 0
+        v160 = iconst i32 0
+        v161 = gep v159, [v160]
+        v162 = load T, v161
+        br block6(v162)
+
+    block5:
+        v163 = load Vec, v139
+        v164 = struct_get v163, 0
+        v165 = gep v164, [v140]
+        v166 = load T, v165
+        br block6(v166)
+
+    block6(v167: T):
+        br block3(v167)
 
 }
 
 fn test_example() -> () {
 
     block0:
-        v151 = iconst i32 4
-        v152 = iconst i32 5
-        v153 = struct_create Pair { v151, v152 }
-        v154 = alloca Pair ; loc0
-        store Pair, v154, v153
-        v155 = call 8166(v154)
-        v156 = sconst lit0
-        v157 = iconst i32 1
-        v158 = struct_get v155, 0
-        v159 = iconst i32 1
-        v160 = struct_get v155, 1
-        v161 = call 862609(v156, v157, v158, v159, v160)
+        v168 = iconst i32 4
+        v169 = iconst i32 5
+        v170 = struct_create Pair { v168, v169 }
+        v171 = alloca Pair ; loc0
+        store Pair, v171, v170
+        v172 = call 8166(v171)
+        v173 = sconst lit0
+        v174 = iconst i32 1
+        v175 = struct_get v172, 0
+        v176 = iconst i32 1
+        v177 = struct_get v172, 1
+        v178 = call 862609(v173, v174, v175, v176, v177)
         ret
 
 }
@@ -306,11 +331,11 @@ fn test_example() -> () {
 fn Pair::<Clone>::clone(arg0: *Pair) -> Pair {
 
     block0:
-        v163 = load Pair, v162
-        v164 = struct_get v163, 0
-        v165 = load Pair, v162
-        v166 = struct_get v165, 1
-        v167 = struct_create Pair { v164, v166 }
-        ret v167
+        v180 = load Pair, v179
+        v181 = struct_get v180, 0
+        v182 = load Pair, v179
+        v183 = struct_get v182, 1
+        v184 = struct_create Pair { v181, v183 }
+        ret v184
 
 }

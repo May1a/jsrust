@@ -79,6 +79,34 @@ function createTestLoweringCtx() {
     return new LoweringCtx();
 }
 
+/**
+ * @param {any} node
+ * @returns {boolean}
+ */
+function hasAssertFailBuiltinCall(node) {
+    if (!node || typeof node !== "object") return false;
+    if (
+        node.kind === HExprKind.Call &&
+        node.callee &&
+        node.callee.kind === HExprKind.Var &&
+        node.callee.name === "__jsrust_builtin_assert_fail"
+    ) {
+        return true;
+    }
+    for (const value of Object.values(node)) {
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                if (hasAssertFailBuiltinCall(item)) return true;
+            }
+            continue;
+        }
+        if (value && typeof value === "object") {
+            if (hasAssertFailBuiltinCall(value)) return true;
+        }
+    }
+    return false;
+}
+
 // ============================================================================
 // Literal Tests
 // ============================================================================
@@ -541,6 +569,30 @@ function testLowerCapturingClosureRewritesDirectCallWithCaptureArgs() {
     );
 }
 
+function testLowerAssertEqOptionSomeMismatchIncludesAssertFail() {
+    const module = lowerSource(
+        "enum Option<T> { None, Some(T) } fn main() { assert_eq!(Some(1), Some(2)); }",
+    );
+    const mainFn = module.items.find((item) => item.kind === HItemKind.Fn && item.name === "main");
+    assertTrue(!!mainFn, "Expected main function");
+    assertTrue(
+        hasAssertFailBuiltinCall(mainFn.body),
+        "Option::Some mismatch assert_eq! should lower to assert-fail builtin path",
+    );
+}
+
+function testLowerAssertEqOptionNoneMismatchIncludesAssertFail() {
+    const module = lowerSource(
+        "enum Option<T> { None, Some(T) } fn main() { let a: Option<i32> = None; let b: Option<i32> = Some(1); assert_eq!(a, b); }",
+    );
+    const mainFn = module.items.find((item) => item.kind === HItemKind.Fn && item.name === "main");
+    assertTrue(!!mainFn, "Expected main function");
+    assertTrue(
+        hasAssertFailBuiltinCall(mainFn.body),
+        "Option::None/Option::Some assert_eq! should lower to assert-fail builtin path",
+    );
+}
+
 // ============================================================================
 // Run Tests
 // ============================================================================
@@ -567,6 +619,8 @@ export function runTests() {
         ["Lower static method path", testLowerStaticMethodPath],
         ["Lower closure helper synthesis", testLowerClosureSynthesizesHelperFn],
         ["Lower capturing closure direct call rewrite", testLowerCapturingClosureRewritesDirectCallWithCaptureArgs],
+        ["Lower assert_eq Some mismatch", testLowerAssertEqOptionSomeMismatchIncludesAssertFail],
+        ["Lower assert_eq None mismatch", testLowerAssertEqOptionNoneMismatchIncludesAssertFail],
     ];
 
     for (const [name, fn] of tests) {

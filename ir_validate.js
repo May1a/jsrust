@@ -806,8 +806,14 @@ function validateSwitch(term, blockId, ctx) {
 
     // Check each case
     for (const c of term.cases) {
-        if (!isValueDefined(ctx, c.value)) {
-            addError(ctx, errUndefinedValue(c.value, "switch case value"));
+        const isIntLiteral =
+            typeof c.value === "bigint" ||
+            (typeof c.value === "number" && Number.isInteger(c.value));
+        if (!isIntLiteral) {
+            addError(
+                ctx,
+                errTypeMismatch("integer literal", typeof c.value, "switch case value"),
+            );
         }
 
         const target = getBlock(ctx, c.target);
@@ -824,11 +830,25 @@ function validateSwitch(term, blockId, ctx) {
                     ),
                 );
             }
-            for (const arg of c.args) {
+            for (let i = 0; i < c.args.length; i++) {
+                const arg = c.args[i];
                 if (!isValueDefined(ctx, arg)) {
                     addError(
                         ctx,
                         errUndefinedValue(arg, "switch case argument"),
+                    );
+                    continue;
+                }
+                const argTy = getValueType(ctx, arg);
+                const param = target.params[i];
+                if (argTy && param?.ty && !irTypeEquals(argTy, param.ty)) {
+                    addError(
+                        ctx,
+                        errTypeMismatch(
+                            irTypeToString(param.ty),
+                            irTypeToString(argTy),
+                            "switch case argument",
+                        ),
                     );
                 }
             }
@@ -850,11 +870,25 @@ function validateSwitch(term, blockId, ctx) {
                 ),
             );
         }
-        for (const arg of term.defaultArgs) {
+        for (let i = 0; i < term.defaultArgs.length; i++) {
+            const arg = term.defaultArgs[i];
             if (!isValueDefined(ctx, arg)) {
                 addError(
                     ctx,
                     errUndefinedValue(arg, "switch default argument"),
+                );
+                continue;
+            }
+            const argTy = getValueType(ctx, arg);
+            const param = defaultBlock.params[i];
+            if (argTy && param?.ty && !irTypeEquals(argTy, param.ty)) {
+                addError(
+                    ctx,
+                    errTypeMismatch(
+                        irTypeToString(param.ty),
+                        irTypeToString(argTy),
+                        "switch default argument",
+                    ),
                 );
             }
         }

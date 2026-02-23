@@ -4,9 +4,6 @@ struct S {
 
 fn main() {
     let v = vec![S { x: 1 }];
-    let x = match v[0] {
-        Option::None => 0,
-        _ => 1,
-    };
+    let x = v[0].x;
     println!("{}", x);
 }

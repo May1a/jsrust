@@ -96,11 +96,15 @@ impl<T> Vec<T> {
         }
     }
 
-    pub fn index(&self, index: i32) -> Option<T> {
-        if index >= self.len {
-            Option::None
+    pub fn index(&self, index: i32) -> T {
+        if index < 0 {
+            __jsrust_panic_bounds_check(index, self.len);
+            self.ptr[0]
+        } else if index >= self.len {
+            __jsrust_panic_bounds_check(index, self.len);
+            self.ptr[0]
         } else {
-            Option::Some(self.ptr[index])
+            self.ptr[index]
         }
     }
 }
