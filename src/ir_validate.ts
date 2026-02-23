@@ -1,19 +1,17 @@
-/** @typedef {import('./ir').ValueId} ValueId */
-/** @typedef {import('./ir').BlockId} BlockId */
-/** @typedef {import('./ir').FunctionId} FunctionId */
-/** @typedef {import('./ir').IRType} IRType */
-/** @typedef {import('./ir').IRModule} IRModule */
-/** @typedef {import('./ir').IRFunction} IRFunction */
-/** @typedef {import('./ir').IRBlock} IRBlock */
-/** @typedef {import('./ir').IRInst} IRInst */
-/** @typedef {import('./ir').IRTerm} IRTerminator */
-
 import {
     IRTypeKind,
     IRInstKind,
     IRTermKind,
     irTypeEquals,
     irTypeToString,
+    type ValueId,
+    type BlockId,
+    type IRType,
+    type IRInst,
+    type IRTerm,
+    type IRBlock,
+    type IRFunction,
+    type IRModule,
 } from "./ir";
 
 // ============================================================================
@@ -32,23 +30,31 @@ const ValidationErrorKind = {
     DominanceViolation: 8,
     InvalidOperand: 9,
     MissingReturn: 10,
-};
+} as const;
 
-/**
- * @param {number} kind
- * @param {string} message
- * @param {object} [loc]
- * @param {number} [loc.blockId]
- * @param {number} [loc.valueId]
- * @param {number} [loc.fnId]
- * @returns {{ kind: number, message: string, loc?: object }}
- */
-function makeValidationError(kind, message, loc) {
+type ValidationErrorKindValue = (typeof ValidationErrorKind)[keyof typeof ValidationErrorKind];
+
+interface ValidationErrorLoc {
+    blockId?: BlockId;
+    valueId?: ValueId;
+    fnId?: number;
+}
+
+interface ValidationError {
+    kind: ValidationErrorKindValue;
+    message: string;
+    loc?: ValidationErrorLoc;
+}
+
+function makeValidationError(
+    kind: ValidationErrorKindValue,
+    message: string,
+    loc: ValidationErrorLoc,
+): ValidationError {
     return { kind, message, loc };
 }
 
-/** @param {ValueId} valueId @param {string} context @returns {{ kind: number, message: string, loc?: object }} */
-function errUndefinedValue(valueId, context) {
+function errUndefinedValue(valueId: ValueId, context: string): ValidationError {
     return makeValidationError(
         ValidationErrorKind.UndefinedValue,
         `Undefined value %${valueId} in ${context}`,
@@ -56,8 +62,7 @@ function errUndefinedValue(valueId, context) {
     );
 }
 
-/** @param {string} expected @param {string} actual @param {string} context @returns {{ kind: number, message: string, loc?: object }} */
-function errTypeMismatch(expected, actual, context) {
+function errTypeMismatch(expected: string, actual: string, context: string): ValidationError {
     return makeValidationError(
         ValidationErrorKind.TypeMismatch,
         `Type mismatch in ${context}: expected ${expected}, got ${actual}`,
@@ -65,8 +70,7 @@ function errTypeMismatch(expected, actual, context) {
     );
 }
 
-/** @param {BlockId} blockId @returns {{ kind: number, message: string, loc?: object }} */
-function errMissingTerminator(blockId) {
+function errMissingTerminator(blockId: BlockId): ValidationError {
     return makeValidationError(
         ValidationErrorKind.MissingTerminator,
         `Block %${blockId} has no terminator`,
@@ -74,8 +78,7 @@ function errMissingTerminator(blockId) {
     );
 }
 
-/** @param {BlockId} blockId @param {number} expected @param {number} actual @returns {{ kind: number, message: string, loc?: object }} */
-function errInvalidBlockArg(blockId, expected, actual) {
+function errInvalidBlockArg(blockId: BlockId, expected: number, actual: number): ValidationError {
     return makeValidationError(
         ValidationErrorKind.InvalidBlockArg,
         `Block %${blockId} expects ${expected} args, got ${actual}`,
@@ -83,8 +86,7 @@ function errInvalidBlockArg(blockId, expected, actual) {
     );
 }
 
-/** @param {BlockId} blockId @returns {{ kind: number, message: string, loc?: object }} */
-function errUndefinedBlock(blockId) {
+function errUndefinedBlock(blockId: BlockId): ValidationError {
     return makeValidationError(
         ValidationErrorKind.UndefinedBlock,
         `Undefined block %${blockId}`,
@@ -92,8 +94,7 @@ function errUndefinedBlock(blockId) {
     );
 }
 
-/** @param {string} name @returns {{ kind: number, message: string, loc?: object }} */
-function errUndefinedFunction(name) {
+function errUndefinedFunction(name: string): ValidationError {
     return makeValidationError(
         ValidationErrorKind.UndefinedFunction,
         `Undefined function ${name}`,
@@ -101,8 +102,7 @@ function errUndefinedFunction(name) {
     );
 }
 
-/** @param {string} name @param {string} kind @returns {{ kind: number, message: string, loc?: object }} */
-function errDuplicateDefinition(name, kind) {
+function errDuplicateDefinition(name: string, kind: string): ValidationError {
     return makeValidationError(
         ValidationErrorKind.DuplicateDefinition,
         `Duplicate ${kind} definition: ${name}`,
@@ -110,8 +110,7 @@ function errDuplicateDefinition(name, kind) {
     );
 }
 
-/** @param {BlockId} blockId @returns {{ kind: number, message: string, loc?: object }} */
-function errUnreachableBlock(blockId) {
+function errUnreachableBlock(blockId: BlockId): ValidationError {
     return makeValidationError(
         ValidationErrorKind.UnreachableBlock,
         `Block %${blockId} is unreachable from entry`,
@@ -119,8 +118,7 @@ function errUnreachableBlock(blockId) {
     );
 }
 
-/** @param {ValueId} valueId @param {BlockId} useBlock @param {BlockId} defBlock @returns {{ kind: number, message: string, loc?: object }} */
-function errDominanceViolation(valueId, useBlock, defBlock) {
+function errDominanceViolation(valueId: ValueId, useBlock: BlockId, defBlock: BlockId): ValidationError {
     return makeValidationError(
         ValidationErrorKind.DominanceViolation,
         `Value %${valueId} used in block %${useBlock} but defined in block %${defBlock} which does not dominate`,
@@ -128,16 +126,11 @@ function errDominanceViolation(valueId, useBlock, defBlock) {
     );
 }
 
-/** @param {string} message @returns {{ kind: number, message: string, loc?: object }} */
-function errInvalidOperand(message) {
+function errInvalidOperand(message: string): ValidationError {
     return makeValidationError(ValidationErrorKind.InvalidOperand, message, {});
 }
 
-/**
- * @param {string} fnName
- * @returns {{ kind: number, message: string, loc?: object }}
- */
-function errMissingReturn(fnName) {
+function errMissingReturn(fnName: string): ValidationError {
     return makeValidationError(
         ValidationErrorKind.MissingReturn,
         `Function ${fnName} is missing return statement`,
@@ -149,18 +142,16 @@ function errMissingReturn(fnName) {
 // Task 12.2: Validation Context
 // ============================================================================
 
-/**
- * @typedef {object} ValidationCtx
- * @property {IRFunction|null} fn
- * @property {Set<ValueId>} definedValues
- * @property {Map<ValueId, IRType>} valueTypes
- * @property {Map<BlockId, IRBlock>} blocks
- * @property {Map<ValueId, BlockId>} valueDefBlock
- * @property {{ kind: number, message: string, loc?: object }[]} errors
- */
+interface ValidationCtx {
+    fn: IRFunction | null;
+    definedValues: Set<ValueId>;
+    valueTypes: Map<ValueId, IRType>;
+    blocks: Map<BlockId, IRBlock>;
+    valueDefBlock: Map<ValueId, BlockId>;
+    errors: ValidationError[];
+}
 
-/** @returns {ValidationCtx} */
-function makeValidationCtx() {
+function makeValidationCtx(): ValidationCtx {
     return {
         fn: null,
         definedValues: new Set(),
@@ -171,8 +162,7 @@ function makeValidationCtx() {
     };
 }
 
-/** @param {IRFunction} fn @param {ValidationCtx} ctx */
-function setFunction(ctx, fn) {
+function setFunction(ctx: ValidationCtx, fn: IRFunction): void {
     ctx.fn = fn;
     ctx.definedValues.clear();
     ctx.valueTypes.clear();
@@ -185,30 +175,25 @@ function setFunction(ctx, fn) {
     }
 }
 
-/** @param {ValueId} id @param {IRType} ty @param {BlockId} blockId @param {ValidationCtx} ctx */
-function defineValue(ctx, id, ty, blockId) {
+function defineValue(ctx: ValidationCtx, id: ValueId, ty: IRType, blockId: BlockId): void {
     ctx.definedValues.add(id);
     ctx.valueTypes.set(id, ty);
     ctx.valueDefBlock.set(id, blockId);
 }
 
-/** @param {ValueId} id @param {ValidationCtx} ctx @returns {boolean} */
-function isValueDefined(ctx, id) {
+function isValueDefined(ctx: ValidationCtx, id: ValueId): boolean {
     return ctx.definedValues.has(id);
 }
 
-/** @param {ValueId} id @param {ValidationCtx} ctx @returns {IRType|undefined} */
-function getValueType(ctx, id) {
+function getValueType(ctx: ValidationCtx, id: ValueId): IRType | undefined {
     return ctx.valueTypes.get(id);
 }
 
-/** @param {BlockId} id @param {ValidationCtx} ctx @returns {IRBlock|undefined} */
-function getBlock(ctx, id) {
+function getBlock(ctx: ValidationCtx, id: BlockId): IRBlock | undefined {
     return ctx.blocks.get(id);
 }
 
-/** @param {{ kind: number, message: string, loc?: object }} error @param {ValidationCtx} ctx */
-function addError(ctx, error) {
+function addError(ctx: ValidationCtx, error: ValidationError): void {
     ctx.errors.push(error);
 }
 
@@ -216,15 +201,16 @@ function addError(ctx, error) {
 // Task 12.3: Module Validation
 // ============================================================================
 
-/**
- * @param {IRModule} module
- * @returns {{ ok: boolean, errors: { kind: number, message: string, loc?: object }[] }}
- */
-function validateModule(module) {
+interface ValidationResult {
+    ok: boolean;
+    errors: ValidationError[];
+}
+
+function validateModule(module: IRModule): ValidationResult {
     const ctx = makeValidationCtx();
 
     // Check for duplicate function names
-    const fnNames = new Set();
+    const fnNames = new Set<string>();
     for (const fn of module.functions) {
         if (fnNames.has(fn.name)) {
             addError(ctx, errDuplicateDefinition(fn.name, "function"));
@@ -233,7 +219,7 @@ function validateModule(module) {
     }
 
     // Check for duplicate global names
-    const globalNames = new Set();
+    const globalNames = new Set<string>();
     for (const global of module.globals) {
         if (globalNames.has(global.name)) {
             addError(ctx, errDuplicateDefinition(global.name, "global"));
@@ -256,14 +242,7 @@ function validateModule(module) {
 // Task 12.4: Function Validation
 // ============================================================================
 
-/**
- * Validate a single function.
- * Supports both internal shared-context use and standalone calls.
- * @param {IRFunction} fn
- * @param {ValidationCtx} [ctx]
- * @returns {{ ok: boolean, errors: { kind: number, message: string, loc?: object }[] }}
- */
-function validateFunction(fn, ctx = makeValidationCtx()) {
+function validateFunction(fn: IRFunction, ctx: ValidationCtx = makeValidationCtx()): ValidationResult {
     const startErrorCount = ctx.errors.length;
     setFunction(ctx, fn);
 
@@ -274,13 +253,10 @@ function validateFunction(fn, ctx = makeValidationCtx()) {
     }
 
     // Register function parameters
-    for (const param of fn.params) {
-        defineValue(
-            ctx,
-            param.id,
-            param.ty,
-            /** @type {import('./ir').IRBlock} */ (fn.entry).id,
-        );
+    if (fn.entry) {
+        for (const param of fn.params) {
+            defineValue(ctx, param.id, param.ty, fn.entry.id);
+        }
     }
 
     // Validate all blocks
@@ -307,11 +283,7 @@ function validateFunction(fn, ctx = makeValidationCtx()) {
 // Task 12.5: Block Validation
 // ============================================================================
 
-/**
- * @param {IRBlock} block
- * @param {ValidationCtx} ctx
- */
-function validateBlock(block, ctx) {
+function validateBlock(block: IRBlock, ctx: ValidationCtx): void {
     // Register block parameters
     for (const param of block.params) {
         defineValue(ctx, param.id, param.ty, block.id);
@@ -319,7 +291,7 @@ function validateBlock(block, ctx) {
 
     // Validate each instruction
     for (const inst of block.instructions) {
-        validateInstruction(inst, block.id, ctx);
+        validateInstruction(inst, ctx);
         // Register the defined value
         if (inst.id !== null) {
             defineValue(ctx, inst.id, inst.ty, block.id);
@@ -330,7 +302,7 @@ function validateBlock(block, ctx) {
     if (!block.terminator) {
         addError(ctx, errMissingTerminator(block.id));
     } else {
-        validateTerminator(block.terminator, block.id, ctx);
+        validateTerminator(block.terminator, ctx);
     }
 }
 
@@ -338,18 +310,15 @@ function validateBlock(block, ctx) {
 // Task 12.6: Instruction Validation
 // ============================================================================
 
-/**
- * @param {IRInst} inst
- * @param {BlockId} blockId
- * @param {ValidationCtx} ctx
- */
-function validateInstruction(inst, blockId, ctx) {
+function validateInstruction(inst: IRInst, ctx: ValidationCtx): void {
     switch (inst.kind) {
         case IRInstKind.Iconst:
         case IRInstKind.Fconst:
         case IRInstKind.Bconst:
         case IRInstKind.Null:
-            // Constants have no operands to validate
+        case IRInstKind.Alloca:
+        case IRInstKind.Sconst:
+            // Constants and alloca have no operands to validate
             break;
 
         case IRInstKind.Iadd:
@@ -366,42 +335,37 @@ function validateInstruction(inst, blockId, ctx) {
         case IRInstKind.Ixor:
         case IRInstKind.Ishl:
         case IRInstKind.Ishr:
-            validateBinaryOp(inst, blockId, ctx);
+            validateBinaryOp(inst, ctx);
             break;
 
         case IRInstKind.Ineg:
         case IRInstKind.Fneg:
-            validateUnaryOp(inst, blockId, ctx);
+            validateUnaryOp(inst, ctx);
             break;
 
         case IRInstKind.Icmp:
         case IRInstKind.Fcmp:
-            validateComparison(inst, blockId, ctx);
-            break;
-
-        case IRInstKind.Alloca:
-        case IRInstKind.Sconst:
-            // Alloca has no value operands
+            validateComparison(inst, ctx);
             break;
 
         case IRInstKind.Load:
-            validateLoad(inst, blockId, ctx);
+            validateLoad(inst, ctx);
             break;
 
         case IRInstKind.Store:
-            validateStore(inst, blockId, ctx);
+            validateStore(inst, ctx);
             break;
 
         case IRInstKind.Memcpy:
-            validateMemcpy(inst, blockId, ctx);
+            validateMemcpy(inst, ctx);
             break;
 
         case IRInstKind.Gep:
-            validateGep(inst, blockId, ctx);
+            validateGep(inst, ctx);
             break;
 
         case IRInstKind.Ptradd:
-            validatePtradd(inst, blockId, ctx);
+            validatePtradd(inst, ctx);
             break;
 
         case IRInstKind.Trunc:
@@ -412,47 +376,43 @@ function validateInstruction(inst, blockId, ctx) {
         case IRInstKind.Uitofp:
         case IRInstKind.Sitofp:
         case IRInstKind.Bitcast:
-            validateConversion(inst, blockId, ctx);
+            validateConversion(inst, ctx);
             break;
 
         case IRInstKind.Call:
-            validateCall(inst, blockId, ctx);
+            validateCall(inst, ctx);
             break;
 
         case IRInstKind.CallDyn:
-            validateCallDyn(inst, blockId, ctx);
+            validateCallDyn(inst, ctx);
             break;
 
         case IRInstKind.StructCreate:
-            validateStructCreate(inst, blockId, ctx);
+            validateStructCreate(inst, ctx);
             break;
 
         case IRInstKind.StructGet:
-            validateStructGet(inst, blockId, ctx);
+            validateStructGet(inst, ctx);
             break;
 
         case IRInstKind.EnumCreate:
-            validateEnumCreate(inst, blockId, ctx);
+            validateEnumCreate(inst, ctx);
             break;
 
         case IRInstKind.EnumGetTag:
-            validateEnumGetTag(inst, blockId, ctx);
+            validateEnumGetTag(inst, ctx);
             break;
 
         case IRInstKind.EnumGetData:
-            validateEnumGetData(inst, blockId, ctx);
+            validateEnumGetData(inst, ctx);
             break;
 
         default:
-            addError(
-                ctx,
-                errInvalidOperand(`Unknown instruction kind: ${inst.kind}`),
-            );
+            addError(ctx, errInvalidOperand(`Unknown instruction kind: ${inst.kind}`));
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateBinaryOp(inst, blockId, ctx) {
+function validateBinaryOp(inst: IRInst, ctx: ValidationCtx): void {
     // Check operands are defined
     if (!isValueDefined(ctx, inst.a)) {
         addError(ctx, errUndefinedValue(inst.a, "binary operation"));
@@ -476,15 +436,13 @@ function validateBinaryOp(inst, blockId, ctx) {
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateUnaryOp(inst, blockId, ctx) {
+function validateUnaryOp(inst: IRInst, ctx: ValidationCtx): void {
     if (!isValueDefined(ctx, inst.a)) {
         addError(ctx, errUndefinedValue(inst.a, "unary operation"));
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateComparison(inst, blockId, ctx) {
+function validateComparison(inst: IRInst, ctx: ValidationCtx): void {
     if (!isValueDefined(ctx, inst.a)) {
         addError(ctx, errUndefinedValue(inst.a, "comparison"));
     }
@@ -507,8 +465,7 @@ function validateComparison(inst, blockId, ctx) {
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateLoad(inst, blockId, ctx) {
+function validateLoad(inst: IRInst, ctx: ValidationCtx): void {
     if (!isValueDefined(ctx, inst.ptr)) {
         addError(ctx, errUndefinedValue(inst.ptr, "load"));
     }
@@ -516,15 +473,11 @@ function validateLoad(inst, blockId, ctx) {
     // Check ptr is a pointer type
     const ptrTy = getValueType(ctx, inst.ptr);
     if (ptrTy && ptrTy.kind !== IRTypeKind.Ptr) {
-        addError(
-            ctx,
-            errTypeMismatch("pointer", irTypeToString(ptrTy), "load operand"),
-        );
+        addError(ctx, errTypeMismatch("pointer", irTypeToString(ptrTy), "load operand"));
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateStore(inst, blockId, ctx) {
+function validateStore(inst: IRInst, ctx: ValidationCtx): void {
     if (!isValueDefined(ctx, inst.ptr)) {
         addError(ctx, errUndefinedValue(inst.ptr, "store"));
     }
@@ -535,15 +488,11 @@ function validateStore(inst, blockId, ctx) {
     // Check ptr is a pointer type
     const ptrTy = getValueType(ctx, inst.ptr);
     if (ptrTy && ptrTy.kind !== IRTypeKind.Ptr) {
-        addError(
-            ctx,
-            errTypeMismatch("pointer", irTypeToString(ptrTy), "store operand"),
-        );
+        addError(ctx, errTypeMismatch("pointer", irTypeToString(ptrTy), "store operand"));
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateMemcpy(inst, blockId, ctx) {
+function validateMemcpy(inst: IRInst, ctx: ValidationCtx): void {
     if (!isValueDefined(ctx, inst.dest)) {
         addError(ctx, errUndefinedValue(inst.dest, "memcpy dest"));
     }
@@ -555,21 +504,19 @@ function validateMemcpy(inst, blockId, ctx) {
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateGep(inst, blockId, ctx) {
+function validateGep(inst: IRInst, ctx: ValidationCtx): void {
     if (!isValueDefined(ctx, inst.ptr)) {
         addError(ctx, errUndefinedValue(inst.ptr, "gep"));
     }
 
-    for (let i = 0; i < inst.indices.length; i++) {
-        if (!isValueDefined(ctx, inst.indices[i])) {
-            addError(ctx, errUndefinedValue(inst.indices[i], "gep index"));
+    for (const index of inst.indices) {
+        if (!isValueDefined(ctx, index)) {
+            addError(ctx, errUndefinedValue(index, "gep index"));
         }
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validatePtradd(inst, blockId, ctx) {
+function validatePtradd(inst: IRInst, ctx: ValidationCtx): void {
     if (!isValueDefined(ctx, inst.ptr)) {
         addError(ctx, errUndefinedValue(inst.ptr, "ptradd"));
     }
@@ -578,66 +525,58 @@ function validatePtradd(inst, blockId, ctx) {
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateConversion(inst, blockId, ctx) {
+function validateConversion(inst: IRInst, ctx: ValidationCtx): void {
     if (!isValueDefined(ctx, inst.val)) {
         addError(ctx, errUndefinedValue(inst.val, "conversion"));
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateCall(inst, blockId, ctx) {
-    for (let i = 0; i < inst.args.length; i++) {
-        if (!isValueDefined(ctx, inst.args[i])) {
-            addError(ctx, errUndefinedValue(inst.args[i], "call argument"));
+function validateCall(inst: IRInst, ctx: ValidationCtx): void {
+    for (const arg of inst.args) {
+        if (!isValueDefined(ctx, arg)) {
+            addError(ctx, errUndefinedValue(arg, "call argument"));
         }
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateCallDyn(inst, blockId, ctx) {
+function validateCallDyn(inst: IRInst, ctx: ValidationCtx): void {
     if (!isValueDefined(ctx, inst.fn)) {
         addError(ctx, errUndefinedValue(inst.fn, "call_dyn callee"));
     }
-    for (let i = 0; i < inst.args.length; i++) {
-        if (!isValueDefined(ctx, inst.args[i])) {
-            addError(ctx, errUndefinedValue(inst.args[i], "call_dyn argument"));
+    for (const arg of inst.args) {
+        if (!isValueDefined(ctx, arg)) {
+            addError(ctx, errUndefinedValue(arg, "call_dyn argument"));
         }
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateStructCreate(inst, blockId, ctx) {
-    for (let i = 0; i < inst.fields.length; i++) {
-        if (!isValueDefined(ctx, inst.fields[i])) {
-            addError(ctx, errUndefinedValue(inst.fields[i], "struct field"));
+function validateStructCreate(inst: IRInst, ctx: ValidationCtx): void {
+    for (const field of inst.fields) {
+        if (!isValueDefined(ctx, field)) {
+            addError(ctx, errUndefinedValue(field, "struct field"));
         }
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateStructGet(inst, blockId, ctx) {
+function validateStructGet(inst: IRInst, ctx: ValidationCtx): void {
     if (!isValueDefined(ctx, inst.struct)) {
         addError(ctx, errUndefinedValue(inst.struct, "struct_get"));
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateEnumCreate(inst, blockId, ctx) {
+function validateEnumCreate(inst: IRInst, ctx: ValidationCtx): void {
     if (inst.data !== null && !isValueDefined(ctx, inst.data)) {
         addError(ctx, errUndefinedValue(inst.data, "enum_create data"));
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateEnumGetTag(inst, blockId, ctx) {
+function validateEnumGetTag(inst: IRInst, ctx: ValidationCtx): void {
     if (!isValueDefined(ctx, inst.enum)) {
         addError(ctx, errUndefinedValue(inst.enum, "enum_get_tag"));
     }
 }
 
-/** @param {IRInst} inst @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateEnumGetData(inst, blockId, ctx) {
+function validateEnumGetData(inst: IRInst, ctx: ValidationCtx): void {
     if (!isValueDefined(ctx, inst.enum)) {
         addError(ctx, errUndefinedValue(inst.enum, "enum_get_data"));
     }
@@ -647,27 +586,22 @@ function validateEnumGetData(inst, blockId, ctx) {
 // Task 12.7: Terminator Validation
 // ============================================================================
 
-/**
- * @param {IRTerminator} term
- * @param {BlockId} blockId
- * @param {ValidationCtx} ctx
- */
-function validateTerminator(term, blockId, ctx) {
+function validateTerminator(term: IRTerm, ctx: ValidationCtx): void {
     switch (term.kind) {
         case IRTermKind.Ret:
-            validateRet(term, blockId, ctx);
+            validateRet(term, ctx);
             break;
 
         case IRTermKind.Br:
-            validateBr(term, blockId, ctx);
+            validateBr(term, ctx);
             break;
 
         case IRTermKind.BrIf:
-            validateBrIf(term, blockId, ctx);
+            validateBrIf(term, ctx);
             break;
 
         case IRTermKind.Switch:
-            validateSwitch(term, blockId, ctx);
+            validateSwitch(term, ctx);
             break;
 
         case IRTermKind.Unreachable:
@@ -675,15 +609,11 @@ function validateTerminator(term, blockId, ctx) {
             break;
 
         default:
-            addError(
-                ctx,
-                errInvalidOperand(`Unknown terminator kind: ${term.kind}`),
-            );
+            addError(ctx, errInvalidOperand(`Unknown terminator kind: ${term.kind}`));
     }
 }
 
-/** @param {IRTerminator} term @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateRet(term, blockId, ctx) {
+function validateRet(term: IRTerm, ctx: ValidationCtx): void {
     if (term.value !== null && !isValueDefined(ctx, term.value)) {
         addError(ctx, errUndefinedValue(term.value, "return"));
     }
@@ -704,8 +634,7 @@ function validateRet(term, blockId, ctx) {
     }
 }
 
-/** @param {IRTerminator} term @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateBr(term, blockId, ctx) {
+function validateBr(term: IRTerm, ctx: ValidationCtx): void {
     const target = getBlock(ctx, term.target);
     if (!target) {
         addError(ctx, errUndefinedBlock(term.target));
@@ -716,11 +645,7 @@ function validateBr(term, blockId, ctx) {
     if (term.args.length !== target.params.length) {
         addError(
             ctx,
-            errInvalidBlockArg(
-                term.target,
-                target.params.length,
-                term.args.length,
-            ),
+            errInvalidBlockArg(term.target, target.params.length, term.args.length),
         );
     }
 
@@ -732,8 +657,7 @@ function validateBr(term, blockId, ctx) {
     }
 }
 
-/** @param {IRTerminator} term @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateBrIf(term, blockId, ctx) {
+function validateBrIf(term: IRTerm, ctx: ValidationCtx): void {
     // Check condition
     if (!isValueDefined(ctx, term.cond)) {
         addError(ctx, errUndefinedValue(term.cond, "br_if condition"));
@@ -742,10 +666,7 @@ function validateBrIf(term, blockId, ctx) {
     // Check condition is bool
     const condTy = getValueType(ctx, term.cond);
     if (condTy && condTy.kind !== IRTypeKind.Bool) {
-        addError(
-            ctx,
-            errTypeMismatch("bool", irTypeToString(condTy), "br_if condition"),
-        );
+        addError(ctx, errTypeMismatch("bool", irTypeToString(condTy), "br_if condition"));
     }
 
     // Check then block
@@ -756,11 +677,7 @@ function validateBrIf(term, blockId, ctx) {
         if (term.thenArgs.length !== thenBlock.params.length) {
             addError(
                 ctx,
-                errInvalidBlockArg(
-                    term.thenBlock,
-                    thenBlock.params.length,
-                    term.thenArgs.length,
-                ),
+                errInvalidBlockArg(term.thenBlock, thenBlock.params.length, term.thenArgs.length),
             );
         }
         for (const arg of term.thenArgs) {
@@ -778,11 +695,7 @@ function validateBrIf(term, blockId, ctx) {
         if (term.elseArgs.length !== elseBlock.params.length) {
             addError(
                 ctx,
-                errInvalidBlockArg(
-                    term.elseBlock,
-                    elseBlock.params.length,
-                    term.elseArgs.length,
-                ),
+                errInvalidBlockArg(term.elseBlock, elseBlock.params.length, term.elseArgs.length),
             );
         }
         for (const arg of term.elseArgs) {
@@ -793,8 +706,7 @@ function validateBrIf(term, blockId, ctx) {
     }
 }
 
-/** @param {IRTerminator} term @param {BlockId} blockId @param {ValidationCtx} ctx */
-function validateSwitch(term, blockId, ctx) {
+function validateSwitch(term: IRTerm, ctx: ValidationCtx): void {
     // Check switch value
     if (!isValueDefined(ctx, term.value)) {
         addError(ctx, errUndefinedValue(term.value, "switch value"));
@@ -803,10 +715,7 @@ function validateSwitch(term, blockId, ctx) {
     // Check switch value is integer
     const valTy = getValueType(ctx, term.value);
     if (valTy && valTy.kind !== IRTypeKind.Int) {
-        addError(
-            ctx,
-            errTypeMismatch("integer", irTypeToString(valTy), "switch value"),
-        );
+        addError(ctx, errTypeMismatch("integer", irTypeToString(valTy), "switch value"));
     }
 
     // Check each case
@@ -815,14 +724,7 @@ function validateSwitch(term, blockId, ctx) {
             typeof c.value === "bigint" ||
             (typeof c.value === "number" && Number.isInteger(c.value));
         if (!isIntLiteral) {
-            addError(
-                ctx,
-                errTypeMismatch(
-                    "integer literal",
-                    typeof c.value,
-                    "switch case value",
-                ),
-            );
+            addError(ctx, errTypeMismatch("integer literal", typeof c.value, "switch case value"));
         }
 
         const target = getBlock(ctx, c.target);
@@ -830,22 +732,12 @@ function validateSwitch(term, blockId, ctx) {
             addError(ctx, errUndefinedBlock(c.target));
         } else {
             if (c.args.length !== target.params.length) {
-                addError(
-                    ctx,
-                    errInvalidBlockArg(
-                        c.target,
-                        target.params.length,
-                        c.args.length,
-                    ),
-                );
+                addError(ctx, errInvalidBlockArg(c.target, target.params.length, c.args.length));
             }
             for (let i = 0; i < c.args.length; i++) {
                 const arg = c.args[i];
                 if (!isValueDefined(ctx, arg)) {
-                    addError(
-                        ctx,
-                        errUndefinedValue(arg, "switch case argument"),
-                    );
+                    addError(ctx, errUndefinedValue(arg, "switch case argument"));
                     continue;
                 }
                 const argTy = getValueType(ctx, arg);
@@ -882,10 +774,7 @@ function validateSwitch(term, blockId, ctx) {
         for (let i = 0; i < term.defaultArgs.length; i++) {
             const arg = term.defaultArgs[i];
             if (!isValueDefined(ctx, arg)) {
-                addError(
-                    ctx,
-                    errUndefinedValue(arg, "switch default argument"),
-                );
+                addError(ctx, errUndefinedValue(arg, "switch default argument"));
                 continue;
             }
             const argTy = getValueType(ctx, arg);
@@ -908,18 +797,13 @@ function validateSwitch(term, blockId, ctx) {
 // Task 12.8: Dominance Check
 // ============================================================================
 
-/**
- * Compute dominators for each block
- * @param {IRFunction} fn
- * @returns {Map<BlockId, Set<BlockId>>}
- */
-function computeDominators(fn) {
-    const dominators = new Map();
+function computeDominators(fn: IRFunction): Map<BlockId, Set<BlockId>> {
+    const dominators = new Map<BlockId, Set<BlockId>>();
     const blockIds = fn.blocks.map((b) => b.id);
 
     // Initialize: entry block dominates only itself
     // All other blocks are dominated by all blocks initially
-    const allBlocks = new Set(blockIds);
+    const allBlocks = new Set<BlockId>(blockIds);
 
     for (const block of fn.blocks) {
         if (fn.entry && block.id === fn.entry.id) {
@@ -938,14 +822,17 @@ function computeDominators(fn) {
             if (fn.entry && block.id === fn.entry.id) continue;
 
             const dom = dominators.get(block.id);
+            if (!dom) continue;
             const oldSize = dom.size;
 
             // Intersect with dominators of all predecessors
             for (const predId of block.predecessors) {
                 const predDom = dominators.get(predId);
-                for (const d of dom) {
-                    if (!predDom.has(d) && d !== block.id) {
-                        dom.delete(d);
+                if (predDom) {
+                    for (const d of dom) {
+                        if (!predDom.has(d) && d !== block.id) {
+                            dom.delete(d);
+                        }
                     }
                 }
             }
@@ -962,43 +849,23 @@ function computeDominators(fn) {
     return dominators;
 }
 
-/**
- * Check if block a dominates block b
- * @param {BlockId} a
- * @param {BlockId} b
- * @param {Map<BlockId, Set<BlockId>>} dominators
- * @returns {boolean}
- */
-function dominates(a, b, dominators) {
+function dominates(a: BlockId, b: BlockId, dominators: Map<BlockId, Set<BlockId>>): boolean {
     const bDom = dominators.get(b);
     return bDom ? bDom.has(a) : false;
 }
 
-/**
- * @param {IRFunction} fn
- * @param {ValidationCtx} ctx
- */
-function validateDominance(fn, ctx) {
+function validateDominance(fn: IRFunction, ctx: ValidationCtx): void {
     const dominators = computeDominators(fn);
 
     // For each use of a value, check that the definition dominates the use
     for (const block of fn.blocks) {
-        // Check block arguments are dominated by their defining blocks (predecessors)
-        // Block arguments are defined by predecessor branches, so they're valid
-
         // Check instruction operands
         for (const inst of block.instructions) {
             const operands = getInstructionOperands(inst);
             for (const opId of operands) {
                 const defBlock = ctx.valueDefBlock.get(opId);
-                if (
-                    defBlock !== undefined &&
-                    !dominates(defBlock, block.id, dominators)
-                ) {
-                    addError(
-                        ctx,
-                        errDominanceViolation(opId, block.id, defBlock),
-                    );
+                if (defBlock !== undefined && !dominates(defBlock, block.id, dominators)) {
+                    addError(ctx, errDominanceViolation(opId, block.id, defBlock));
                 }
             }
         }
@@ -1008,26 +875,15 @@ function validateDominance(fn, ctx) {
             const termOperands = getTerminatorOperands(block.terminator);
             for (const opId of termOperands) {
                 const defBlock = ctx.valueDefBlock.get(opId);
-                if (
-                    defBlock !== undefined &&
-                    !dominates(defBlock, block.id, dominators)
-                ) {
-                    addError(
-                        ctx,
-                        errDominanceViolation(opId, block.id, defBlock),
-                    );
+                if (defBlock !== undefined && !dominates(defBlock, block.id, dominators)) {
+                    addError(ctx, errDominanceViolation(opId, block.id, defBlock));
                 }
             }
         }
     }
 }
 
-/**
- * Get all value operands from an instruction
- * @param {IRInst} inst
- * @returns {ValueId[]}
- */
-function getInstructionOperands(inst) {
+function getInstructionOperands(inst: IRInst): ValueId[] {
     switch (inst.kind) {
         case IRInstKind.Iconst:
         case IRInstKind.Fconst:
@@ -1110,12 +966,7 @@ function getInstructionOperands(inst) {
     }
 }
 
-/**
- * Get all value operands from a terminator
- * @param {IRTerminator} term
- * @returns {ValueId[]}
- */
-function getTerminatorOperands(term) {
+function getTerminatorOperands(term: IRTerm): ValueId[] {
     switch (term.kind) {
         case IRTermKind.Ret:
             return term.value !== null ? [term.value] : [];
@@ -1127,7 +978,7 @@ function getTerminatorOperands(term) {
             return [term.cond, ...term.thenArgs, ...term.elseArgs];
 
         case IRTermKind.Switch: {
-            const ops = [term.value];
+            const ops: ValueId[] = [term.value];
             for (const c of term.cases) {
                 ops.push(c.value, ...c.args);
             }
@@ -1147,21 +998,16 @@ function getTerminatorOperands(term) {
 // Task 12.10: Control Flow Check
 // ============================================================================
 
-/**
- * Validate that all blocks are reachable from entry
- * @param {IRBlock} entry
- * @param {ValidationCtx} ctx
- */
-function validateReachability(entry, ctx) {
-    const visited = new Set();
-    const worklist = [entry.id];
+function validateReachability(entry: IRBlock, ctx: ValidationCtx): void {
+    const visited = new Set<BlockId>();
+    const worklist: BlockId[] = [entry.id];
 
     while (worklist.length > 0) {
         const blockId = worklist.pop();
-        if (visited.has(blockId)) continue;
+        if (blockId === undefined || visited.has(blockId)) continue;
         visited.add(blockId);
 
-        const block = getBlock(ctx, /** @type {BlockId} */ (blockId));
+        const block = getBlock(ctx, blockId);
         if (!block || !block.terminator) continue;
 
         // Add successors to worklist
@@ -1174,19 +1020,14 @@ function validateReachability(entry, ctx) {
     }
 
     // Check for unreachable blocks
-    for (const [blockId] of ctx.blocks) {
+    for (const blockId of ctx.blocks.keys()) {
         if (!visited.has(blockId)) {
             addError(ctx, errUnreachableBlock(blockId));
         }
     }
 }
 
-/**
- * Get successor block IDs from a terminator
- * @param {IRTerminator} term
- * @returns {BlockId[]}
- */
-function getSuccessorBlocks(term) {
+function getSuccessorBlocks(term: IRTerm): BlockId[] {
     switch (term.kind) {
         case IRTermKind.Ret:
         case IRTermKind.Unreachable:
@@ -1199,7 +1040,7 @@ function getSuccessorBlocks(term) {
             return [term.thenBlock, term.elseBlock];
 
         case IRTermKind.Switch: {
-            const blocks = [term.defaultBlock];
+            const blocks: BlockId[] = [term.defaultBlock];
             for (const c of term.cases) {
                 blocks.push(c.target);
             }
@@ -1215,13 +1056,8 @@ function getSuccessorBlocks(term) {
 // Task 12.11: SSA Form Check
 // ============================================================================
 
-/**
- * Validate SSA form
- * @param {IRFunction} fn
- * @param {ValidationCtx} ctx
- */
-function validateSSAForm(fn, ctx) {
-    const defined = new Set();
+function validateSSAForm(fn: IRFunction, ctx: ValidationCtx): void {
+    const defined = new Set<ValueId>();
 
     // Check each value is defined exactly once
     for (const param of fn.params) {
@@ -1242,10 +1078,7 @@ function validateSSAForm(fn, ctx) {
         for (const inst of block.instructions) {
             if (inst.id !== null) {
                 if (defined.has(inst.id)) {
-                    addError(
-                        ctx,
-                        errDuplicateDefinition(`%${inst.id}`, "value"),
-                    );
+                    addError(ctx, errDuplicateDefinition(`%${inst.id}`, "value"));
                 }
                 defined.add(inst.id);
             }
@@ -1287,4 +1120,12 @@ export {
     getInstructionOperands,
     getTerminatorOperands,
     getSuccessorBlocks,
+};
+
+export type {
+    ValidationErrorKindValue,
+    ValidationErrorLoc,
+    ValidationError,
+    ValidationCtx,
+    ValidationResult,
 };

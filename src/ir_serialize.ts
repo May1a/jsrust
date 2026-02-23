@@ -1,50 +1,43 @@
-/** @typedef {import('./ir').IRModule} IRModule */
-/** @typedef {import('./ir').IRFunction} IRFunction */
-/** @typedef {import('./ir').IRBlock} IRBlock */
-/** @typedef {import('./ir').IRType} IRType */
-/** @typedef {import('./ir').IRInstKindValue} IRInstKindValue */
-/** @typedef {import('./ir').IRTermKindValue} IRTermKindValue */
-
 import { IRTypeKind, IRInstKind, IRTermKind } from "./ir";
+import type { IRModule, IRFunction, IRBlock, IRType } from "./ir";
 
 // Magic bytes: "JSRS" (0x4A 0x53 0x52 0x53)
-const MAGIC = 0x52534a53; // "JSRS" in little-endian
+export const MAGIC = 0x52534a53; // "JSRS" in little-endian
 
 // Current version
-const VERSION = 2;
+export const VERSION = 2;
 
 // Flags
-const FLAGS = 0;
+export const FLAGS = 0;
 
 // Section IDs
-const SectionId = {
+export const SectionId = {
     StringTable: 0,
     Types: 1,
     StringLiterals: 2,
     Globals: 3,
     Functions: 4,
-};
+} as const;
 
 // Special value for "no value" in terminators
-const NO_VALUE = 0xffffffff;
+export const NO_VALUE = 0xffffffff;
 
 /**
  * String table for deduplicating strings during serialization
  */
-class StringTable {
+export class StringTable {
+    private stringToId: Map<string, number>;
+    private strings: string[];
+
     constructor() {
-        /** @type {Map<string, number>} */
         this.stringToId = new Map();
-        /** @type {string[]} */
         this.strings = [];
     }
 
     /**
      * Add a string to the table and return its ID
-     * @param {string} str
-     * @returns {number}
      */
-    addString(str) {
+    addString(str: string): number {
         const existing = this.stringToId.get(str);
         if (existing !== undefined) {
             return existing;
@@ -57,9 +50,8 @@ class StringTable {
 
     /**
      * Get all strings in order
-     * @returns {string[]}
      */
-    getStrings() {
+    getStrings(): string[] {
         return this.strings;
     }
 }
@@ -67,22 +59,21 @@ class StringTable {
 /**
  * IR Serializer - writes IR to binary format
  */
-class IRSerializer {
+export class IRSerializer {
+    private view: DataView;
+    private pos: number;
+    private strings: StringTable;
+
     constructor() {
-        /** @type {DataView} */
         this.view = new DataView(new ArrayBuffer(0));
-        /** @type {number} */
         this.pos = 0;
-        /** @type {StringTable} */
         this.strings = new StringTable();
     }
 
     /**
      * Serialize a module to binary format
-     * @param {IRModule} module
-     * @returns {Uint8Array}
      */
-    serializeModule(module) {
+    serializeModule(module: IRModule): Uint8Array {
         // First pass: collect all strings
         this.collectStrings(module);
 
@@ -133,9 +124,8 @@ class IRSerializer {
 
     /**
      * Collect all strings from a module
-     * @param {IRModule} module
      */
-    collectStrings(module) {
+    private collectStrings(module: IRModule): void {
         // Module name
         if (module.name) {
             this.strings.addString(module.name);
@@ -202,9 +192,8 @@ class IRSerializer {
 
     /**
      * Collect string names referenced by a type recursively
-     * @param {IRType | null | undefined} type
      */
-    collectTypeStrings(type) {
+    private collectTypeStrings(type?: IRType | null): void {
         if (!type) {
             return;
         }
@@ -234,9 +223,8 @@ class IRSerializer {
 
     /**
      * Calculate the size of the string table section
-     * @returns {number}
      */
-    calculateStringTableSize() {
+    private calculateStringTableSize(): number {
         const strings = this.strings.getStrings();
         let size = 4; // count
         for (const str of strings) {
@@ -248,12 +236,10 @@ class IRSerializer {
 
     /**
      * Calculate the size of the types section
-     * @param {IRModule} module
-     * @returns {number}
      */
-    calculateTypesSize(module) {
+    private calculateTypesSize(module: IRModule): number {
         let size = 4; // struct count
-        for (const [name, struct] of module.structs) {
+        for (const [, struct] of module.structs) {
             size += 4; // name string id
             size += 4; // field count
             for (const field of struct.fields) {
@@ -263,7 +249,7 @@ class IRSerializer {
             }
         }
         size += 4; // enum count
-        for (const [name, enum_] of module.enums) {
+        for (const [, enum_] of module.enums) {
             size += 4; // name string id
             size += 4; // variant count
             for (const variant of enum_.variants) {
@@ -278,10 +264,8 @@ class IRSerializer {
 
     /**
      * Calculate the size of the string literal section.
-     * @param {IRModule} module
-     * @returns {number}
      */
-    calculateStringLiteralsSize(module) {
+    private calculateStringLiteralsSize(module: IRModule): number {
         const literals = module.stringLiterals || [];
         let size = 4; // count
         for (const literal of literals) {
@@ -293,10 +277,8 @@ class IRSerializer {
 
     /**
      * Calculate the encoded size of a type
-     * @param {IRType} type
-     * @returns {number}
      */
-    calculateTypeSize(type) {
+    private calculateTypeSize(type: IRType): number {
         switch (type.kind) {
             case IRTypeKind.Int:
             case IRTypeKind.Float:
@@ -309,18 +291,13 @@ class IRSerializer {
             case IRTypeKind.Enum:
                 return 5; // tag + name string id
             case IRTypeKind.Array:
-                return (
-                    5 +
-                    this.calculateTypeSize(/** @type {IRType} */ (type.element))
-                ); // tag + length + element
+                return 5 + this.calculateTypeSize(type.element as IRType); // tag + length + element
             case IRTypeKind.Fn: {
                 let size = 5; // tag + param count
                 for (const param of type.params ?? []) {
                     size += this.calculateTypeSize(param);
                 }
-                size += this.calculateTypeSize(
-                    /** @type {IRType} */ (type.returnType),
-                );
+                size += this.calculateTypeSize(type.returnType as IRType);
                 return size;
             }
             default:
@@ -330,10 +307,8 @@ class IRSerializer {
 
     /**
      * Calculate the size of the globals section
-     * @param {IRModule} module
-     * @returns {number}
      */
-    calculateGlobalsSize(module) {
+    private calculateGlobalsSize(module: IRModule): number {
         let size = 4; // count
         for (const global of module.globals) {
             size += 4; // name string id
@@ -350,10 +325,8 @@ class IRSerializer {
 
     /**
      * Calculate the encoded size of a constant value
-     * @param {any} value
-     * @returns {number}
      */
-    calculateConstantSize(value) {
+    private calculateConstantSize(value: any): number {
         if (typeof value === "bigint") {
             return 8;
         } else if (typeof value === "number") {
@@ -366,10 +339,8 @@ class IRSerializer {
 
     /**
      * Calculate the size of the functions section
-     * @param {IRModule} module
-     * @returns {number}
      */
-    calculateFunctionsSize(module) {
+    private calculateFunctionsSize(module: IRModule): number {
         let size = 4; // count
         for (const fn of module.functions) {
             size += 4; // name string id
@@ -394,10 +365,8 @@ class IRSerializer {
 
     /**
      * Calculate the encoded size of a block
-     * @param {IRBlock} block
-     * @returns {number}
      */
-    calculateBlockSize(block) {
+    private calculateBlockSize(block: IRBlock): number {
         let size = 4; // block id
         size += 4; // param count
         for (const param of block.params) {
@@ -414,10 +383,8 @@ class IRSerializer {
 
     /**
      * Calculate the encoded size of an instruction
-     * @param {any} inst
-     * @returns {number}
      */
-    calculateInstructionSize(inst) {
+    private calculateInstructionSize(inst: any): number {
         let size = 1; // opcode
         if (inst.id !== null) {
             size += 4; // dest value id
@@ -536,10 +503,8 @@ class IRSerializer {
 
     /**
      * Calculate the encoded size of a terminator
-     * @param {any} term
-     * @returns {number}
      */
-    calculateTerminatorSize(term) {
+    private calculateTerminatorSize(term: any): number {
         if (!term) return 1; // just tag (unreachable)
 
         let size = 1; // tag
@@ -590,83 +555,47 @@ class IRSerializer {
     // Primitive Writers
     // ========================================================================
 
-    /**
-     * Write an unsigned 8-bit integer
-     * @param {number} value
-     */
-    writeU8(value) {
+    private writeU8(value: number): void {
         this.view.setUint8(this.pos, value);
         this.pos += 1;
     }
 
-    /**
-     * Write an unsigned 16-bit integer (little endian)
-     * @param {number} value
-     */
-    writeU16(value) {
+    private writeU16(value: number): void {
         this.view.setUint16(this.pos, value, true);
         this.pos += 2;
     }
 
-    /**
-     * Write an unsigned 32-bit integer (little endian)
-     * @param {number} value
-     */
-    writeU32(value) {
+    private writeU32(value: number): void {
         this.view.setUint32(this.pos, value, true);
         this.pos += 4;
     }
 
-    /**
-     * Write an unsigned 64-bit integer (little endian)
-     * @param {bigint} value
-     */
-    writeU64(value) {
+    private writeU64(value: bigint): void {
         this.view.setBigUint64(this.pos, value, true);
         this.pos += 8;
     }
 
-    /**
-     * Write a signed 32-bit integer (little endian)
-     * @param {number} value
-     */
-    writeI32(value) {
+    private writeI32(value: number): void {
         this.view.setInt32(this.pos, value, true);
         this.pos += 4;
     }
 
-    /**
-     * Write a signed 64-bit integer (little endian)
-     * @param {bigint} value
-     */
-    writeI64(value) {
+    private writeI64(value: bigint): void {
         this.view.setBigInt64(this.pos, value, true);
         this.pos += 8;
     }
 
-    /**
-     * Write a 32-bit float (little endian)
-     * @param {number} value
-     */
-    writeF32(value) {
+    private writeF32(value: number): void {
         this.view.setFloat32(this.pos, value, true);
         this.pos += 4;
     }
 
-    /**
-     * Write a 64-bit float (little endian)
-     * @param {number} value
-     */
-    writeF64(value) {
+    private writeF64(value: number): void {
         this.view.setFloat64(this.pos, value, true);
         this.pos += 8;
     }
 
-    /**
-     * Write raw bytes
-     * @param {Uint8Array} data
-     */
-    writeBytes(data) {
+    private writeBytes(data: Uint8Array): void {
         const view = new Uint8Array(this.view.buffer);
         view.set(data, this.pos);
         this.pos += data.length;
@@ -676,10 +605,7 @@ class IRSerializer {
     // Section Writers
     // ========================================================================
 
-    /**
-     * Write the string table section
-     */
-    writeStringTableSection() {
+    private writeStringTableSection(): void {
         const strings = this.strings.getStrings();
         this.writeU32(strings.length);
         for (const str of strings) {
@@ -689,11 +615,7 @@ class IRSerializer {
         }
     }
 
-    /**
-     * Write the types section
-     * @param {IRModule} module
-     */
-    writeTypesSection(module) {
+    private writeTypesSection(module: IRModule): void {
         // Write structs
         this.writeU32(module.structs.size);
         for (const [name, struct] of module.structs) {
@@ -719,11 +641,7 @@ class IRSerializer {
         }
     }
 
-    /**
-     * Write the string literal section.
-     * @param {IRModule} module
-     */
-    writeStringLiteralsSection(module) {
+    private writeStringLiteralsSection(module: IRModule): void {
         const literals = module.stringLiterals || [];
         this.writeU32(literals.length);
         for (const literal of literals) {
@@ -733,11 +651,7 @@ class IRSerializer {
         }
     }
 
-    /**
-     * Write the globals section
-     * @param {IRModule} module
-     */
-    writeGlobalsSection(module) {
+    private writeGlobalsSection(module: IRModule): void {
         this.writeU32(module.globals.length);
         for (const global of module.globals) {
             this.writeU32(this.strings.addString(global.name));
@@ -751,11 +665,7 @@ class IRSerializer {
         }
     }
 
-    /**
-     * Write the functions section
-     * @param {IRModule} module
-     */
-    writeFunctionsSection(module) {
+    private writeFunctionsSection(module: IRModule): void {
         this.writeU32(module.functions.length);
         for (const fn of module.functions) {
             this.writeFunction(fn);
@@ -766,18 +676,14 @@ class IRSerializer {
     // Type Encoding
     // ========================================================================
 
-    /**
-     * Write a type
-     * @param {IRType} type
-     */
-    writeType(type) {
+    private writeType(type: IRType): void {
         this.writeU8(type.kind);
         switch (type.kind) {
             case IRTypeKind.Int:
-                this.writeU8(/** @type {number} */ (type.width));
+                this.writeU8(type.width as number);
                 break;
             case IRTypeKind.Float:
-                this.writeU8(/** @type {number} */ (type.width));
+                this.writeU8(type.width as number);
                 break;
             case IRTypeKind.Bool:
             case IRTypeKind.Ptr:
@@ -785,25 +691,21 @@ class IRSerializer {
                 // No additional data
                 break;
             case IRTypeKind.Struct:
-                this.writeU32(
-                    this.strings.addString(/** @type {string} */ (type.name)),
-                );
+                this.writeU32(this.strings.addString(type.name as string));
                 break;
             case IRTypeKind.Enum:
-                this.writeU32(
-                    this.strings.addString(/** @type {string} */ (type.name)),
-                );
+                this.writeU32(this.strings.addString(type.name as string));
                 break;
             case IRTypeKind.Array:
-                this.writeU32(/** @type {number} */ (type.length));
-                this.writeType(/** @type {IRType} */ (type.element));
+                this.writeU32(type.length as number);
+                this.writeType(type.element as IRType);
                 break;
             case IRTypeKind.Fn:
                 this.writeU32((type.params ?? []).length);
                 for (const param of type.params ?? []) {
                     this.writeType(param);
                 }
-                this.writeType(/** @type {IRType} */ (type.returnType));
+                this.writeType(type.returnType as IRType);
                 break;
         }
     }
@@ -812,12 +714,7 @@ class IRSerializer {
     // Constant Encoding
     // ========================================================================
 
-    /**
-     * Write a constant value
-     * @param {any} value
-     * @param {IRType} ty
-     */
-    writeConstant(value, ty) {
+    private writeConstant(value: any, ty: IRType): void {
         switch (ty.kind) {
             case IRTypeKind.Int:
                 if (typeof value === "bigint") {
@@ -839,11 +736,7 @@ class IRSerializer {
     // Function Encoding
     // ========================================================================
 
-    /**
-     * Write a function
-     * @param {IRFunction} fn
-     */
-    writeFunction(fn) {
+    private writeFunction(fn: IRFunction): void {
         this.writeU32(this.strings.addString(fn.name));
 
         // Parameters
@@ -874,11 +767,7 @@ class IRSerializer {
     // Block Encoding
     // ========================================================================
 
-    /**
-     * Write a block
-     * @param {IRBlock} block
-     */
-    writeBlock(block) {
+    private writeBlock(block: IRBlock): void {
         this.writeU32(block.id);
 
         // Block parameters
@@ -902,11 +791,7 @@ class IRSerializer {
     // Instruction Encoding
     // ========================================================================
 
-    /**
-     * Write an instruction
-     * @param {any} inst
-     */
-    writeInstruction(inst) {
+    private writeInstruction(inst: any): void {
         this.writeU8(inst.kind);
 
         // Destination value (if present)
@@ -1072,11 +957,7 @@ class IRSerializer {
     // Terminator Encoding
     // ========================================================================
 
-    /**
-     * Write a terminator
-     * @param {any} term
-     */
-    writeTerminator(term) {
+    private writeTerminator(term: any): void {
         if (!term) {
             this.writeU8(IRTermKind.Unreachable);
             return;
@@ -1148,42 +1029,19 @@ class IRSerializer {
     // Utility Methods
     // ========================================================================
 
-    /**
-     * Encode a string to UTF-8 bytes
-     * @param {string} str
-     * @returns {Uint8Array}
-     */
-    encodeUtf8(str) {
+    private encodeUtf8(str: string): Uint8Array {
         return new TextEncoder().encode(str);
     }
 
-    /**
-     * Calculate the UTF-8 byte length of a string
-     * @param {string} str
-     * @returns {number}
-     */
-    utf8ByteLength(str) {
+    private utf8ByteLength(str: string): number {
         return new TextEncoder().encode(str).length;
     }
 }
 
 /**
  * Serialize an IR module to binary format
- * @param {IRModule} module
- * @returns {Uint8Array}
  */
-function serializeModule(module) {
+export function serializeModule(module: IRModule): Uint8Array {
     const serializer = new IRSerializer();
     return serializer.serializeModule(module);
 }
-
-export {
-    IRSerializer,
-    StringTable,
-    serializeModule,
-    MAGIC,
-    VERSION,
-    FLAGS,
-    SectionId,
-    NO_VALUE,
-};

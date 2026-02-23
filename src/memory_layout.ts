@@ -4,10 +4,7 @@
  * Computes size, alignment, and field offsets for IR types.
  */
 
-/** @typedef {import('./ir').IRType} IRType */
-/** @typedef {import('./ir').IRTypeKindValue} IRTypeKindValue */
-/** @typedef {import('./types').IntWidthValue} IntWidthValue */
-/** @typedef {import('./types').FloatWidthValue} FloatWidthValue */
+import type { IRType, IntWidthValue, FloatWidthValue } from "./ir";
 
 import { IntWidth, FloatWidth } from "./types";
 import { IRTypeKind } from "./ir";
@@ -16,22 +13,18 @@ import { IRTypeKind } from "./ir";
 // Task 10.1: Layout Structure
 // ============================================================================
 
-/**
- * @typedef {object} TypeLayout
- * @property {number} size - Size in bytes
- * @property {number} align - Alignment requirement in bytes
- * @property {number[] | null} [fieldOffsets] - Field offsets for structs (optional)
- */
+type TypeLayout = {
+    size: number;
+    align: number;
+    fieldOffsets: number[] | null;
+};
 
-/**
- * Create a TypeLayout
- * @param {number} size
- * @param {number} align
- * @param {number[] | null} [fieldOffsets]
- * @returns {TypeLayout}
- */
-function makeTypeLayout(size, align, fieldOffsets) {
-    return { size, align, fieldOffsets: fieldOffsets ?? null };
+function makeTypeLayout(
+    size: number,
+    align: number,
+    fieldOffsets: number[] | null = null,
+): TypeLayout {
+    return { size, align, fieldOffsets: fieldOffsets };
 }
 
 // ============================================================================
@@ -40,90 +33,78 @@ function makeTypeLayout(size, align, fieldOffsets) {
 
 /**
  * Layout for i8: size 1, align 1
- * @returns {TypeLayout}
  */
-function layoutI8() {
+function layoutI8(): TypeLayout {
     return makeTypeLayout(1, 1);
 }
 
 /**
  * Layout for i16: size 2, align 2
- * @returns {TypeLayout}
  */
-function layoutI16() {
+function layoutI16(): TypeLayout {
     return makeTypeLayout(2, 2);
 }
 
 /**
  * Layout for i32: size 4, align 4
- * @returns {TypeLayout}
  */
-function layoutI32() {
+function layoutI32(): TypeLayout {
     return makeTypeLayout(4, 4);
 }
 
 /**
  * Layout for i64: size 8, align 8
- * @returns {TypeLayout}
  */
-function layoutI64() {
+function layoutI64(): TypeLayout {
     return makeTypeLayout(8, 8);
 }
 
 /**
  * Layout for i128: size 16, align 16
- * @returns {TypeLayout}
  */
-function layoutI128() {
+function layoutI128(): TypeLayout {
     return makeTypeLayout(16, 16);
 }
 
 /**
  * Layout for f32: size 4, align 4
- * @returns {TypeLayout}
  */
-function layoutF32() {
+function layoutF32(): TypeLayout {
     return makeTypeLayout(4, 4);
 }
 
 /**
  * Layout for f64: size 8, align 8
- * @returns {TypeLayout}
  */
-function layoutF64() {
+function layoutF64(): TypeLayout {
     return makeTypeLayout(8, 8);
 }
 
 /**
  * Layout for bool: size 1, align 1
- * @returns {TypeLayout}
  */
-function layoutBool() {
+function layoutBool(): TypeLayout {
     return makeTypeLayout(1, 1);
 }
 
 /**
  * Layout for pointer: size 8, align 8 (64-bit)
- * @returns {TypeLayout}
  */
-function layoutPtr() {
+function layoutPtr(): TypeLayout {
     return makeTypeLayout(8, 8);
 }
 
 /**
  * Layout for unit: size 0, align 1
- * @returns {TypeLayout}
  */
-function layoutUnit() {
+function layoutUnit(): TypeLayout {
     return makeTypeLayout(0, 1);
 }
 
 /**
  * Get layout for integer type by width
- * @param {IntWidthValue} width
- * @returns {TypeLayout}
  */
-function layoutInt(width) {
+function layoutInt(width: IntWidthValue): TypeLayout {
     switch (width) {
         case IntWidth.I8:
         case IntWidth.U8:
@@ -151,17 +132,15 @@ function layoutInt(width) {
 
 /**
  * Get layout for float type by width
- * @param {FloatWidthValue} width
- * @returns {TypeLayout}
  */
-function layoutFloat(width) {
+function layoutFloat(width: FloatWidthValue): TypeLayout {
     switch (width) {
         case FloatWidth.F32:
             return layoutF32();
         case FloatWidth.F64:
             return layoutF64();
         default:
-            return layoutF64();
+            throw "unreachable";
     }
 }
 
@@ -171,11 +150,8 @@ function layoutFloat(width) {
 
 /**
  * Align offset up to the next alignment boundary
- * @param {number} offset
- * @param {number} alignment
- * @returns {number}
  */
-function alignTo(offset, alignment) {
+function alignTo(offset: number, alignment: number): number {
     if (alignment <= 1) return offset;
     const remainder = offset % alignment;
     if (remainder === 0) return offset;
@@ -188,11 +164,8 @@ function alignTo(offset, alignment) {
 
 /**
  * Layout for struct types
- * @param {IRType[]} fields
- * @param {LayoutCache} layoutCache
- * @returns {TypeLayout}
  */
-function layoutStruct(fields, layoutCache) {
+function layoutStruct(fields: IRType[], layoutCache: LayoutCache): TypeLayout {
     if (fields.length === 0) {
         return makeTypeLayout(0, 1, []);
     }
@@ -210,20 +183,15 @@ function layoutStruct(fields, layoutCache) {
         fieldOffsets.push(currentOffset);
         currentOffset += fieldLayout.size;
     }
-
     // Apply tail padding (struct size must be multiple of alignment)
     const size = alignTo(currentOffset, maxAlign);
-
     return makeTypeLayout(size, maxAlign, fieldOffsets);
 }
 
 /**
  * Layout for tuple types (same as struct)
- * @param {IRType[]} elements
- * @param {LayoutCache} layoutCache
- * @returns {TypeLayout}
  */
-function layoutTuple(elements, layoutCache) {
+function layoutTuple(elements: IRType[], layoutCache: LayoutCache): TypeLayout {
     return layoutStruct(elements, layoutCache);
 }
 
@@ -233,21 +201,19 @@ function layoutTuple(elements, layoutCache) {
 
 /**
  * Layout for array types
- * @param {IRType} element
- * @param {number} count
- * @param {LayoutCache} layoutCache
- * @returns {TypeLayout}
  */
-function layoutArray(element, count, layoutCache) {
+function layoutArray(
+    element: IRType,
+    count: number,
+    layoutCache: LayoutCache,
+): TypeLayout {
     if (count === 0) {
         return makeTypeLayout(0, 1);
     }
-
     const elementLayout = layoutCache.getLayout(element);
     const size = elementLayout.size * count;
     // Array alignment is the element's alignment
     const align = elementLayout.align;
-
     return makeTypeLayout(size, align);
 }
 
@@ -257,10 +223,8 @@ function layoutArray(element, count, layoutCache) {
 
 /**
  * Calculate the minimum tag size needed for a number of variants
- * @param {number} variantCount
- * @returns {number} Tag size in bytes
  */
-function calculateTagSize(variantCount) {
+function calculateTagSize(variantCount: number): number {
     if (variantCount <= 0) return 0;
     if (variantCount <= 256) return 1; // u8
     if (variantCount <= 65536) return 2; // u16
@@ -274,12 +238,11 @@ function calculateTagSize(variantCount) {
  * Enum layout:
  * - Tag field (discriminant) at offset 0
  * - Largest variant data after the tag (aligned)
- *
- * @param {IRType[][]} variants - Array of variant field types
- * @param {LayoutCache} layoutCache
- * @returns {TypeLayout}
  */
-function layoutEnum(variants, layoutCache) {
+function layoutEnum(
+    variants: IRType[][],
+    layoutCache: LayoutCache,
+): TypeLayout {
     if (variants.length === 0) {
         // Empty enum (never type equivalent)
         return makeTypeLayout(0, 1);
@@ -310,20 +273,15 @@ function layoutEnum(variants, layoutCache) {
         maxVariantSize = Math.max(maxVariantSize, variantLayout.size);
         maxVariantAlign = Math.max(maxVariantAlign, variantLayout.align);
     }
-
     // Enum alignment is max of tag align and variant align
     const enumAlign = Math.max(tagAlign, maxVariantAlign);
-
     // Tag at offset 0
     // Variant data starts after tag, aligned to variant alignment
     const dataOffset = alignTo(tagSize, maxVariantAlign);
-
     // Total size = dataOffset + maxVariantSize, aligned to enum alignment
     const totalSize = alignTo(dataOffset + maxVariantSize, enumAlign);
-
     // Store field offsets: [tagOffset, dataOffset]
     const fieldOffsets = [0, dataOffset];
-
     return makeTypeLayout(totalSize, enumAlign, fieldOffsets);
 }
 
@@ -335,17 +293,15 @@ function layoutEnum(variants, layoutCache) {
  * Cache for computed type layouts
  */
 class LayoutCache {
+    cache: Map<string, TypeLayout>;
     constructor() {
-        /** @type {Map<string, TypeLayout>} */
         this.cache = new Map();
     }
 
     /**
      * Get layout for a type (computes and caches if not present)
-     * @param {IRType} type
-     * @returns {TypeLayout}
      */
-    getLayout(type) {
+    getLayout(type: IRType): TypeLayout {
         const key = this.typeKey(type);
         const cached = this.cache.get(key);
         if (cached) {
@@ -356,13 +312,10 @@ class LayoutCache {
         this.cache.set(key, layout);
         return layout;
     }
-
     /**
      * Generate a unique key for a type
-     * @param {IRType} type
-     * @returns {string}
      */
-    typeKey(type) {
+    typeKey(type: IRType): string {
         switch (type.kind) {
             case IRTypeKind.Int:
                 return `int_${type.width}`;
@@ -379,9 +332,9 @@ class LayoutCache {
             case IRTypeKind.Enum:
                 return `enum_${type.name}`;
             case IRTypeKind.Array:
-                return `array_${this.typeKey(/** @type {IRType} */ (type.element))}_${type.length}`;
+                return `array_${this.typeKey(/** @type {IRType} */ type.element!)}_${type.length}`;
             case IRTypeKind.Fn:
-                return `fn_${(type.params ?? []).map((p) => this.typeKey(/** @type {IRType} */ (p))).join("_")}_${this.typeKey(/** @type {IRType} */ (type.returnType))}`;
+                return `fn_${(type.params ?? []).map((p) => this.typeKey(/** @type {IRType} */ p)).join("_")}_${this.typeKey(/** @type {IRType} */ type.returnType!)}`;
             default:
                 return `unknown_${type.kind}`;
         }
@@ -392,16 +345,12 @@ class LayoutCache {
      * @param {IRType} type
      * @returns {TypeLayout}
      */
-    computeLayout(type) {
+    computeLayout(type: IRType): TypeLayout {
         switch (type.kind) {
             case IRTypeKind.Int:
-                return layoutInt(
-                    /** @type {import('./ir').IntWidthValue} */ (type.width),
-                );
+                return layoutInt(type.width as IntWidthValue);
             case IRTypeKind.Float:
-                return layoutFloat(
-                    /** @type {import('./ir').FloatWidthValue} */ (type.width),
-                );
+                return layoutFloat(type.width as FloatWidthValue);
             case IRTypeKind.Bool:
                 return layoutBool();
             case IRTypeKind.Ptr:
@@ -409,21 +358,11 @@ class LayoutCache {
             case IRTypeKind.Unit:
                 return layoutUnit();
             case IRTypeKind.Struct:
-                return layoutStruct(
-                    /** @type {IRType[]} */ (type.fields),
-                    this,
-                );
+                return layoutStruct(type.fields as IRType[], this);
             case IRTypeKind.Enum:
-                return layoutEnum(
-                    /** @type {IRType[][]} */ (type.variants),
-                    this,
-                );
+                return layoutEnum(type.variants as IRType[][], this);
             case IRTypeKind.Array:
-                return layoutArray(
-                    /** @type {IRType} */ (type.element),
-                    /** @type {number} */ (type.length),
-                    this,
-                );
+                return layoutArray(type.element as IRType, type.length!, this);
             case IRTypeKind.Fn:
                 // Function types don't have a runtime layout
                 // Return pointer size as a function pointer
@@ -432,7 +371,6 @@ class LayoutCache {
                 return layoutUnit();
         }
     }
-
     /**
      * Clear the cache
      */

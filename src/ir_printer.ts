@@ -1,15 +1,3 @@
-/** @typedef {import('./ir').IRType} IRType */
-/** @typedef {import('./ir').IRInst} IRInst */
-/** @typedef {import('./ir').IRTerm} IRTerm */
-/** @typedef {import('./ir').IRBlock} IRBlock */
-/** @typedef {import('./ir').IRFunction} IRFunction */
-/** @typedef {import('./ir').IRModule} IRModule */
-/** @typedef {import('./ir').ValueId} ValueId */
-/** @typedef {import('./ir').BlockId} BlockId */
-/** @typedef {import('./ir').LocalId} LocalId */
-/** @typedef {import('./ir').IcmpOpValue} IcmpOpValue */
-/** @typedef {import('./ir').FcmpOpValue} FcmpOpValue */
-
 import {
     IRTypeKind,
     IRInstKind,
@@ -20,6 +8,19 @@ import {
     intWidthToString,
     floatWidthToString,
 } from "./ir";
+import type {
+    IRType,
+    IRInst,
+    IRTerm,
+    IRBlock,
+    IRFunction,
+    IRModule,
+    ValueId,
+    BlockId,
+    LocalId,
+    IcmpOpValue,
+    FcmpOpValue,
+} from "./ir";
 
 // ============================================================================
 // Value Naming Context
@@ -28,13 +29,17 @@ import {
 /**
  * Context for tracking value names during printing
  */
-class PrintContext {
+export class PrintContext {
+    private valueNames: Map<ValueId, string>;
+    private blockNames: Map<BlockId, string>;
+    private localNames: Map<LocalId, string>;
+    private valueCounter: number;
+    private blockCounter: number;
+    private localCounter: number;
+
     constructor() {
-        /** @type {Map<ValueId, string>} */
         this.valueNames = new Map();
-        /** @type {Map<BlockId, string>} */
         this.blockNames = new Map();
-        /** @type {Map<LocalId, string>} */
         this.localNames = new Map();
         this.valueCounter = 0;
         this.blockCounter = 0;
@@ -43,47 +48,39 @@ class PrintContext {
 
     /**
      * Get or create a name for a value
-     * @param {ValueId} id
-     * @returns {string}
      */
-    getValueName(id) {
+    getValueName(id: ValueId): string {
         if (!this.valueNames.has(id)) {
             this.valueNames.set(id, `v${this.valueCounter++}`);
         }
-        return /** @type {string} */ (this.valueNames.get(id));
+        return this.valueNames.get(id) as string;
     }
 
     /**
      * Check if a value has a name
-     * @param {ValueId} id
-     * @returns {boolean}
      */
-    hasValueName(id) {
+    hasValueName(id: ValueId): boolean {
         return this.valueNames.has(id);
     }
 
     /**
      * Get or create a name for a block
-     * @param {BlockId} id
-     * @returns {string}
      */
-    getBlockName(id) {
+    getBlockName(id: BlockId): string {
         if (!this.blockNames.has(id)) {
             this.blockNames.set(id, `block${this.blockCounter++}`);
         }
-        return /** @type {string} */ (this.blockNames.get(id));
+        return this.blockNames.get(id) as string;
     }
 
     /**
      * Get or create a name for a local
-     * @param {LocalId} id
-     * @returns {string}
      */
-    getLocalName(id) {
+    getLocalName(id: LocalId): string {
         if (!this.localNames.has(id)) {
             this.localNames.set(id, `loc${this.localCounter++}`);
         }
-        return /** @type {string} */ (this.localNames.get(id));
+        return this.localNames.get(id) as string;
     }
 }
 
@@ -93,10 +90,8 @@ class PrintContext {
 
 /**
  * Print an IR type to a string
- * @param {IRType} type
- * @returns {string}
  */
-function printType(type) {
+export function printType(type: IRType): string {
     return irTypeToString(type);
 }
 
@@ -106,10 +101,8 @@ function printType(type) {
 
 /**
  * Get the string representation of an IcmpOp
- * @param {IcmpOpValue} op
- * @returns {string}
  */
-function icmpOpToString(op) {
+export function icmpOpToString(op: IcmpOpValue): string {
     switch (op) {
         case IcmpOp.Eq:
             return "eq";
@@ -138,10 +131,8 @@ function icmpOpToString(op) {
 
 /**
  * Get the string representation of an FcmpOp
- * @param {FcmpOpValue} op
- * @returns {string}
  */
-function fcmpOpToString(op) {
+export function fcmpOpToString(op: FcmpOpValue): string {
     switch (op) {
         case FcmpOp.Oeq:
             return "oeq";
@@ -162,11 +153,8 @@ function fcmpOpToString(op) {
 
 /**
  * Print an instruction to a string
- * @param {IRInst} inst
- * @param {PrintContext} [ctx]
- * @returns {string}
  */
-function printInstruction(inst, ctx) {
+export function printInstruction(inst: IRInst, ctx?: PrintContext): string {
     ctx = ctx ?? new PrintContext();
 
     const resultPrefix =
@@ -174,10 +162,10 @@ function printInstruction(inst, ctx) {
 
     switch (inst.kind) {
         case IRInstKind.Iconst:
-            return `${resultPrefix}iconst ${intWidthToString(/** @type {number} */ (inst.ty.width))} ${inst.value}`;
+            return `${resultPrefix}iconst ${intWidthToString(inst.ty.width as number)} ${inst.value}`;
 
         case IRInstKind.Fconst:
-            return `${resultPrefix}fconst ${floatWidthToString(/** @type {number} */ (inst.ty.width))} ${inst.value}`;
+            return `${resultPrefix}fconst ${floatWidthToString(inst.ty.width as number)} ${inst.value}`;
 
         case IRInstKind.Bconst:
             return `${resultPrefix}bconst ${inst.value}`;
@@ -234,26 +222,26 @@ function printInstruction(inst, ctx) {
             return `${resultPrefix}ishr ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
 
         case IRInstKind.Icmp:
-            return `${resultPrefix}icmp ${icmpOpToString(inst.op)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
+            return `${resultPrefix}icmp ${icmpOpToString(inst.op as IcmpOpValue)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
 
         case IRInstKind.Fcmp:
-            return `${resultPrefix}fcmp ${fcmpOpToString(inst.op)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
+            return `${resultPrefix}fcmp ${fcmpOpToString(inst.op as FcmpOpValue)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
 
         case IRInstKind.Alloca:
-            return `${resultPrefix}alloca ${printType(/** @type {import('./ir').IRType} */ (inst.ty.inner))} ; ${ctx.getLocalName(inst.localId)}`;
+            return `${resultPrefix}alloca ${printType(inst.ty.inner as IRType)} ; ${ctx.getLocalName(inst.localId)}`;
 
         case IRInstKind.Load:
             return `${resultPrefix}load ${printType(inst.ty)}, ${ctx.getValueName(inst.ptr)}`;
 
         case IRInstKind.Store:
-            return `store ${printType(inst.valueType)}, ${ctx.getValueName(inst.ptr)}, ${ctx.getValueName(inst.value)}`;
+            return `store ${printType(inst.valueType as IRType)}, ${ctx.getValueName(inst.ptr)}, ${ctx.getValueName(inst.value)}`;
 
         case IRInstKind.Memcpy:
             return `memcpy ${ctx.getValueName(inst.dest)}, ${ctx.getValueName(inst.src)}, ${inst.size}`;
 
         case IRInstKind.Gep: {
             const indices = inst.indices
-                .map((/** @type {any} */ i) => ctx.getValueName(i))
+                .map((i: any) => ctx!.getValueName(i))
                 .join(", ");
             return `${resultPrefix}gep ${ctx.getValueName(inst.ptr)}, [${indices}]`;
         }
@@ -262,13 +250,13 @@ function printInstruction(inst, ctx) {
             return `${resultPrefix}ptradd ${ctx.getValueName(inst.ptr)}, ${inst.offset}`;
 
         case IRInstKind.Trunc:
-            return `${resultPrefix}trunc ${printType(inst.fromTy)} -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
+            return `${resultPrefix}trunc ${printType(inst.fromTy as IRType)} -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
 
         case IRInstKind.Sext:
-            return `${resultPrefix}sext ${printType(inst.fromTy)} -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
+            return `${resultPrefix}sext ${printType(inst.fromTy as IRType)} -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
 
         case IRInstKind.Zext:
-            return `${resultPrefix}zext ${printType(inst.fromTy)} -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
+            return `${resultPrefix}zext ${printType(inst.fromTy as IRType)} -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
 
         case IRInstKind.Fptoui:
             return `${resultPrefix}fptoui -> ${printType(inst.ty)}, ${ctx.getValueName(inst.val)}`;
@@ -287,21 +275,21 @@ function printInstruction(inst, ctx) {
 
         case IRInstKind.Call: {
             const args = inst.args
-                .map((/**@type{any}*/ a) => ctx.getValueName(a))
+                .map((a: any) => ctx!.getValueName(a))
                 .join(", ");
             return `${resultPrefix}call ${inst.fn}(${args})`;
         }
 
         case IRInstKind.CallDyn: {
             const args = inst.args
-                .map((/**@type{any}*/ a) => ctx.getValueName(a))
+                .map((a: any) => ctx!.getValueName(a))
                 .join(", ");
             return `${resultPrefix}call_dyn ${ctx.getValueName(inst.fn)}(${args})`;
         }
 
         case IRInstKind.StructCreate: {
             const fields = inst.fields
-                .map((/** @type {any} */ f) => ctx.getValueName(f))
+                .map((f: any) => ctx!.getValueName(f))
                 .join(", ");
             return `${resultPrefix}struct_create ${printType(inst.ty)} { ${fields} }`;
         }
@@ -311,7 +299,7 @@ function printInstruction(inst, ctx) {
 
         case IRInstKind.EnumCreate: {
             const data =
-                inst.data !== null ? ` [${ctx.getValueName(inst.data)}]` : "";
+                inst.data !== null && inst.data !== undefined ? ` [${ctx.getValueName(inst.data)}]` : "";
             return `${resultPrefix}enum_create ${printType(inst.ty)}, variant ${inst.variant}${data}`;
         }
 
@@ -335,11 +323,8 @@ function printInstruction(inst, ctx) {
 
 /**
  * Print a terminator to a string
- * @param {IRTerm} term
- * @param {PrintContext} [ctx]
- * @returns {string}
  */
-function printTerminator(term, ctx) {
+export function printTerminator(term: IRTerm, ctx?: PrintContext): string {
     ctx = ctx ?? new PrintContext();
 
     switch (term.kind) {
@@ -351,32 +336,32 @@ function printTerminator(term, ctx) {
 
         case IRTermKind.Br: {
             const args = term.args
-                .map((/**@type{any}*/ a) => ctx.getValueName(a))
+                .map((a: any) => ctx!.getValueName(a))
                 .join(", ");
             return `br ${ctx.getBlockName(term.target)}${args ? `(${args})` : ""}`;
         }
 
         case IRTermKind.BrIf: {
             const thenArgs = term.thenArgs
-                .map((/**@type{any}*/ a) => ctx.getValueName(a))
+                .map((a: any) => ctx!.getValueName(a))
                 .join(", ");
             const elseArgs = term.elseArgs
-                .map((/**@type{any}*/ a) => ctx.getValueName(a))
+                .map((a: any) => ctx!.getValueName(a))
                 .join(", ");
             return `br_if ${ctx.getValueName(term.cond)}, then: ${ctx.getBlockName(term.thenBlock)}(${thenArgs}), else: ${ctx.getBlockName(term.elseBlock)}(${elseArgs})`;
         }
 
         case IRTermKind.Switch: {
             const cases = term.cases
-                .map((/**@type{any}*/ c) => {
+                .map((c: any) => {
                     const args = c.args
-                        .map((/**@type{any}*/ a) => ctx.getValueName(a))
+                        .map((a: any) => ctx!.getValueName(a))
                         .join(", ");
-                    return `${ctx.getValueName(c.value)} => ${ctx.getBlockName(c.target)}(${args})`;
+                    return `${ctx!.getValueName(c.value)} => ${ctx!.getBlockName(c.target)}(${args})`;
                 })
                 .join(", ");
             const defaultArgs = term.defaultArgs
-                .map((/**@type{any}*/ a) => ctx.getValueName(a))
+                .map((a: any) => ctx!.getValueName(a))
                 .join(", ");
             return `switch ${ctx.getValueName(term.value)} { ${cases}, default: ${ctx.getBlockName(term.defaultBlock)}(${defaultArgs}) }`;
         }
@@ -395,22 +380,19 @@ function printTerminator(term, ctx) {
 
 /**
  * Print a block to a string
- * @param {IRBlock} block
- * @param {PrintContext} [ctx]
- * @returns {string}
  */
-function printBlock(block, ctx) {
+export function printBlock(block: IRBlock, ctx?: PrintContext): string {
     ctx = ctx ?? new PrintContext();
 
-    const lines = [];
+    const lines: string[] = [];
 
     // Block label with parameters
     const blockName = ctx.getBlockName(block.id);
     if (block.params.length > 0) {
         const params = block.params
             .map((p) => {
-                ctx.getValueName(p.id); // Register the param value name
-                return `${ctx.getValueName(p.id)}: ${printType(p.ty)}`;
+                ctx!.getValueName(p.id); // Register the param value name
+                return `${ctx!.getValueName(p.id)}: ${printType(p.ty)}`;
             })
             .join(", ");
         lines.push(`${blockName}(${params}):`);
@@ -441,19 +423,16 @@ function printBlock(block, ctx) {
 
 /**
  * Print a function to a string
- * @param {IRFunction} fn
- * @param {PrintContext} [ctx]
- * @returns {string}
  */
-function printFunction(fn, ctx) {
+export function printFunction(fn: IRFunction, ctx?: PrintContext): string {
     ctx = ctx ?? new PrintContext();
 
-    const lines = [];
+    const lines: string[] = [];
 
     // Function signature
     const params = fn.params
         .map((p) => {
-            ctx.getValueName(p.id); // Register param name
+            ctx!.getValueName(p.id); // Register param name
             return `${p.name}: ${printType(p.ty)}`;
         })
         .join(", ");
@@ -497,12 +476,10 @@ function printFunction(fn, ctx) {
 
 /**
  * Print a module to a string
- * @param {IRModule} module
- * @returns {string}
  */
-function printModule(module) {
+export function printModule(module: IRModule): string {
     const ctx = new PrintContext();
-    const lines = [];
+    const lines: string[] = [];
     const literals = module.stringLiterals || [];
 
     lines.push(`; Module: ${module.name}`);
@@ -521,10 +498,7 @@ function printModule(module) {
         lines.push("; Structs:");
         for (const [name, struct] of module.structs) {
             const fields = struct.fields
-                .map(
-                    (/**@type{any}*/ f, /**@type{number}*/ i) =>
-                        `${i}: ${printType(f)}`,
-                )
+                .map((f: any, i: number) => `${i}: ${printType(f)}`)
                 .join(", ");
             lines.push(`;   struct ${name} { ${fields} }`);
         }
@@ -535,12 +509,12 @@ function printModule(module) {
         lines.push("; Enums:");
         for (const [name, enum_] of module.enums) {
             const variants = enum_.variants
-                .map((/**@type{any}*/ v, /**@type{number}*/ i) => {
+                .map((v: any, i: number) => {
                     if (v.length === 0) {
                         return `${i}`;
                     }
                     const fields = v
-                        .map((/**@type{any}*/ t) => printType(t))
+                        .map((t: any) => printType(t))
                         .join(", ");
                     return `${i}(${fields})`;
                 })
@@ -575,21 +549,7 @@ function printModule(module) {
 
 /**
  * Create a new print context
- * @returns {PrintContext}
  */
-function createPrintContext() {
+export function createPrintContext(): PrintContext {
     return new PrintContext();
 }
-
-export {
-    PrintContext,
-    createPrintContext,
-    printType,
-    printInstruction,
-    printTerminator,
-    printBlock,
-    printFunction,
-    printModule,
-    icmpOpToString,
-    fcmpOpToString,
-};

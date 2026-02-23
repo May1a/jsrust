@@ -402,12 +402,10 @@ function readOperatorOrDelimiter(state: LexerState): Token | null {
             startColumn,
         );
     }
-
     if (singleCharTokens[ch]) {
         advance(state);
         return makeToken(singleCharTokens[ch], ch, startLine, startColumn);
     }
-
     return null;
 }
 

@@ -1,5 +1,5 @@
 import { tokenize, TokenType } from "./tokenizer";
-import type { Token } from "./tokenizer";
+import type { Token, TokenTypeValue } from "./tokenizer";
 
 import {
     NodeKind,
@@ -65,6 +65,7 @@ import {
     makeGenericArgs,
     makeModule,
     type Span,
+    type Node,
     BinaryOpValue,
 } from "./ast";
 
@@ -121,6 +122,10 @@ function mergeSpans(a: Span, b: Span): Span {
     return makeSpan(a.line, a.column, a.start, b.end);
 }
 
+function getToken(tkval: TokenTypeValue): keyof typeof TokenType | undefined {
+    return Object.keys(TokenType)[tkval] as keyof typeof TokenType | undefined;
+}
+
 function addError(
     state: ParserState,
     message: string,
@@ -132,7 +137,7 @@ function addError(
         message,
         span,
         expected,
-        found: token ? (tokenNames[token.type] ?? null) : null,
+        found: token ? (getToken(token.type) ?? null) : null,
     });
 }
 
@@ -143,11 +148,15 @@ function matchToken(state: ParserState, type: number): Token | null {
     return null;
 }
 
-function expectToken(state: ParserState, type: number, message: string) {
+function expectToken(
+    state: ParserState,
+    type: TokenTypeValue,
+    message: string,
+) {
     if (check(state, type)) {
         return advance(state);
     }
-    addError(state, message, peek(state), [tokenNames[type]]);
+    addError(state, message, peek(state), [getToken(type)!]);
     return null;
 }
 
@@ -210,6 +219,7 @@ function matchInvalidSymbol(state: ParserState, symbol: string): Token | null {
     return null;
 }
 
+// FIXME: clean this up
 function parseOuterAttributes(state: ParserState): {
     derives: string[];
     isTest: boolean;
@@ -480,7 +490,8 @@ function decodeEscapes(value: string): string {
 
 function parseStringToken(token: Token): string {
     const raw = token.value;
-    const inner = raw.length >= 2 ? raw.slice(1, -1) : "";
+    if (raw.length >= 2) return "";
+    const inner = raw.slice(1, -1);
     return decodeEscapes(inner);
 }
 
@@ -1031,7 +1042,7 @@ function parseMacroArgs(state: ParserState): Node[] {
     const args: Node[] = [];
 
     // Determine the delimiter
-    let endToken = TokenType.CloseParen;
+    let endToken: TokenTypeValue = TokenType.CloseParen;
     if (check(state, TokenType.OpenSquare)) {
         endToken = TokenType.CloseSquare;
     } else if (check(state, TokenType.OpenCurly)) {
@@ -1081,11 +1092,6 @@ function parseMacroArgs(state: ParserState): Node[] {
     return args;
 }
 
-/**
- * @param {ParserState} state
- * @param {Node} expr
- * @returns {Node | null}
- */
 function parsePostfix(state: ParserState, expr: Node): Node | null {
     let result = expr;
     /** @type {Node[] | null} */
@@ -1683,14 +1689,6 @@ function parseParamList(
     return params;
 }
 
-/**
- * @param {ParserState} state
- * @param {boolean} isUnsafe
- * @param {boolean} isPub
- * @param {boolean} [isConst=false]
- * @param {boolean} [allowReceiver=false]
- * @returns {Node}
- */
 function parseFnItem(
     state: ParserState,
     isUnsafe: boolean,
@@ -1709,9 +1707,7 @@ function parseFnItem(
         ? genericList.ignoredLifetimeParams
         : [];
     const generics = genericParams
-        ? genericParams.map(
-              (/** @type {{ name: string }} */ p: { name: string }) => p.name,
-          )
+        ? genericParams.map((p: { name: string }) => p.name)
         : null;
     const params = parseParamList(state, { allowReceiver });
     let returnType = null;
@@ -1731,28 +1727,23 @@ function parseFnItem(
     const span = mergeSpans(spanFromToken(start), endSpan);
     return makeFnItem(
         span,
-        nameToken.value ?? "",
+        nameToken.value,
         generics,
         params,
         returnType,
         body,
-        false, // isAsync
+        false,
         isUnsafe,
         isConst,
         isPub,
         genericParams,
         whereClause,
         ignoredLifetimeParams,
-        false, // isTest
-        null, // expectedOutput
+        false,
+        null,
     );
 }
-
-/**
- * @param {ParserState} state
- * @param {boolean} isPub
- * @returns {Node}
- */
+// FIXME: cleanup (this is a mess)
 function parseStructItem(state: ParserState, isPub: boolean): Node {
     const start =
         expectToken(state, TokenType.Struct, "Expected struct") ?? peek(state);
@@ -1760,15 +1751,9 @@ function parseStructItem(state: ParserState, isPub: boolean): Node {
         expectToken(state, TokenType.Identifier, "Expected struct name") ??
         peek(state);
     const genericList = parseGenericParamList(state);
-    const genericParams = genericList ? genericList.genericParams : null;
-    const ignoredLifetimeParams = genericList
-        ? genericList.ignoredLifetimeParams
-        : [];
-    const generics = genericParams
-        ? genericParams.map(
-              (/** @type {{ name: string }} */ p: { name: string }) => p.name,
-          )
-        : null;
+    const genericParams = genericList?.genericParams;
+    const ignoredLifetimeParams = genericList?.ignoredLifetimeParams ?? [];
+    const generics = genericParams?.map((p) => p.name);
     const fields = [];
     let isTuple = false;
     if (matchToken(state, TokenType.OpenCurly)) {
@@ -1780,20 +1765,20 @@ function parseStructItem(state: ParserState, isPub: boolean): Node {
                     TokenType.Identifier,
                     "Expected field name",
                 ) ?? peek(state);
-            let ty = null;
-            let defaultValue = null;
+            let ty: Node | undefined;
+            let defaultValue: Node | undefined;
             if (matchToken(state, TokenType.Colon)) {
                 ty = parseType(state);
             }
             if (matchToken(state, TokenType.Eq)) {
-                defaultValue = parseExpr(state, 0);
+                defaultValue = parseExpr(state, 0) ?? undefined;
             }
             fields.push(
                 makeStructField(
                     spanFromToken(fieldNameToken),
                     fieldNameToken.value ?? "",
-                    ty,
-                    defaultValue,
+                    ty!,
+                    defaultValue!,
                     fieldIsPub,
                 ),
             );
@@ -1830,21 +1815,15 @@ function parseStructItem(state: ParserState, isPub: boolean): Node {
     const span = mergeSpans(spanFromToken(start), endSpan);
     return makeStructItem(
         span,
-        nameToken.value ?? "",
-        generics,
+        nameToken.value,
+        generics ?? null,
         fields,
         isTuple,
         isPub,
         ignoredLifetimeParams,
     );
 }
-
-/**
- * @param {ParserState} state
- * @param {boolean} isUnsafe
- * @param {boolean} isPub
- * @returns {Node}
- */
+// TODO: cleanup (this is SUCH a mess)
 function parseTraitItem(
     state: ParserState,
     isUnsafe: boolean,
@@ -1903,11 +1882,6 @@ function parseTraitItem(
     return makeTraitItem(span, nameToken.value ?? "", methods, isUnsafe, isPub);
 }
 
-/**
- * @param {ParserState} state
- * @param {boolean} isUnsafe
- * @returns {Node}
- */
 function parseImplItem(state: ParserState, isUnsafe: boolean): Node {
     const start =
         expectToken(state, TokenType.Impl, "Expected impl") ?? peek(state);
@@ -1917,19 +1891,17 @@ function parseImplItem(state: ParserState, isUnsafe: boolean): Node {
         ? genericList.ignoredLifetimeParams
         : [];
     const firstType = parseType(state);
-    /** @type {Node | null} */
-    let traitType: Node | null = null;
-    /** @type {Node | null} */
-    let targetType: Node | null = firstType;
+    let traitType: Node | undefined;
+    let targetType: Node = firstType;
     if (matchToken(state, TokenType.For)) {
         traitType = firstType;
         targetType = parseType(state);
     }
-    const methods = [];
+    const methods = []; // FIXME: typesafety
     expectToken(state, TokenType.OpenCurly, "Expected { after impl target");
     while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
         parseOuterAttributes(state);
-        let methodIsPub = false;
+        let methodIsPub = false; // FIXME: code smell (to many bools)
         let methodIsUnsafe = false;
         let methodIsConst = false;
         if (parseOptionalVisibility(state)) methodIsPub = true;
@@ -1970,19 +1942,14 @@ function parseImplItem(state: ParserState, isUnsafe: boolean): Node {
     return makeImplItem(
         span,
         targetType ?? makeNamedType(spanFromToken(start), "unknown", null),
-        traitType,
+        traitType ?? null,
         methods,
         isUnsafe,
         genericParams,
         ignoredLifetimeParams,
     );
 }
-
-/**
- * @param {ParserState} state
- * @param {boolean} isPub
- * @returns {Node}
- */
+// FIXME: cleanup (huge mess)
 function parseEnumItem(state: ParserState, isPub: boolean): Node {
     const start =
         expectToken(state, TokenType.Enum, "Expected enum") ?? peek(state);

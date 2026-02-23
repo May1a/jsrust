@@ -2,7 +2,7 @@ type TypeVarId = number;
 
 export type Span = { line: number; column: number; start: number; end: number };
 
-const TypeKind = {
+export const TypeKind = {
     // Primitive types
     Int: 0,
     Float: 1,
@@ -33,61 +33,75 @@ const TypeKind = {
     Named: 16,
 } as const satisfies Record<string, number>;
 
+export type TypeKindValue = (typeof TypeKind)[keyof typeof TypeKind];
+
 /**
  * Structural type model used throughout the compiler.
  */
-type IntType = { kind: typeof TypeKind.Int; width: IntWidthValue; span: Span };
-type FloatType = {
+export type IntType = {
+    kind: typeof TypeKind.Int;
+    width: IntWidthValue;
+    span: Span;
+};
+export type FloatType = {
     kind: typeof TypeKind.Float;
     width: FloatWidthValue;
     span: Span;
 };
-type BoolType = { kind: typeof TypeKind.Bool; span: Span };
-type CharType = { kind: typeof TypeKind.Char; span: Span };
-type StringType = { kind: typeof TypeKind.String; span: Span };
-type UnitType = { kind: typeof TypeKind.Unit; span: Span };
-type NeverType = { kind: typeof TypeKind.Never; span: Span };
-type TupleType = { kind: typeof TypeKind.Tuple; elements: Type[]; span: Span };
-type ArrayType = {
+export type BoolType = { kind: typeof TypeKind.Bool; span: Span };
+export type CharType = { kind: typeof TypeKind.Char; span: Span };
+export type StringType = { kind: typeof TypeKind.String; span: Span };
+export type UnitType = { kind: typeof TypeKind.Unit; span: Span };
+export type NeverType = { kind: typeof TypeKind.Never; span: Span };
+export type TupleType = {
+    kind: typeof TypeKind.Tuple;
+    elements: Type[];
+    span: Span;
+};
+export type ArrayType = {
     kind: typeof TypeKind.Array;
     element: Type;
     length: number;
     span: Span;
 };
-type SliceType = { kind: typeof TypeKind.Slice; element: Type; span: Span };
+export type SliceType = {
+    kind: typeof TypeKind.Slice;
+    element: Type;
+    span: Span;
+};
 
-type StructField = {
+export type StructField = {
     name: string;
     type: Type;
 };
 
-type StructType = {
+export type StructType = {
     kind: typeof TypeKind.Struct;
     name: string;
     fields: StructField[];
     span: Span;
 };
 
-type EnumVariant = {
+export type EnumVariant = {
     name: string;
     fields: Type[];
 };
 
-type EnumType = {
+export type EnumType = {
     kind: typeof TypeKind.Enum;
     name: string;
     variants: EnumVariant[];
     span: Span;
 };
 
-type RefType = {
+export type RefType = {
     kind: typeof TypeKind.Ref;
     inner: Type;
     mutable: boolean;
     span: Span;
 };
 
-type PtrType = {
+export type PtrType = {
     kind: typeof TypeKind.Ptr;
     inner: Type;
     mutable: boolean;
@@ -95,7 +109,7 @@ type PtrType = {
 };
 
 // TODO: have separate fn types of const and unsafe functions
-type FnType = {
+export type FnType = {
     kind: typeof TypeKind.Fn;
     params: Type[];
     returnType: Type;
@@ -104,14 +118,14 @@ type FnType = {
     span: Span;
 };
 
-type TypeVarType = {
+export type TypeVarType = {
     kind: typeof TypeKind.TypeVar;
     id: number;
     bound: Type | null;
     span: Span;
 };
 
-type NamedType = {
+export type NamedType = {
     kind: typeof TypeKind.Named;
     name: string;
     args: Type[] | null;
@@ -137,7 +151,7 @@ export type Type =
     | TypeVarType
     | NamedType;
 
-const IntWidth = {
+export const IntWidth = {
     I8: 0,
     I16: 1,
     I32: 2,
@@ -150,13 +164,13 @@ const IntWidth = {
     U64: 9,
     U128: 10,
     Usize: 11,
-};
-type IntWidthValue = (typeof IntWidth)[keyof typeof IntWidth];
-const FloatWidth = {
+} as const;
+export type IntWidthValue = (typeof IntWidth)[keyof typeof IntWidth];
+export const FloatWidth = {
     F32: 0,
     F64: 1,
-};
-type FloatWidthValue = (typeof FloatWidth)[keyof typeof FloatWidth];
+} as const;
+export type FloatWidthValue = (typeof FloatWidth)[keyof typeof FloatWidth];
 
 // ============================================================================
 // Task 3.1: Type Representation - Primitive Types
@@ -644,9 +658,6 @@ function isSignedInt(width: IntWidthValue): boolean {
 }
 
 export {
-    TypeKind,
-    IntWidth,
-    FloatWidth,
     // Primitive types
     makeIntType,
     makeFloatType,

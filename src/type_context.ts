@@ -1,7 +1,6 @@
-import { TypeVarType } from "./inference";
-import { Span, Type, TypeKind, makeTypeVar } from "./types";
+import { Span, Type, TypeKind, TypeVarType, makeTypeVar } from "./types";
 
-type VarBinding = {
+export type VarBinding = {
     name: string;
     type: Type;
     mutable: boolean;
@@ -17,10 +16,20 @@ type VarBinding = {
     } | null;
 };
 
-type ItemDecl = {
+export type Result<T, E> =
+    | {
+          ok: true;
+          result: T;
+      }
+    | {
+          ok: false;
+          err: E;
+      };
+
+export type ItemDecl = {
     name: string;
     kind: "fn" | "struct" | "enum" | "mod" | "type" | "trait";
-    node: Node;
+    node: unknown; // Node type from ast.js
     type?: Type;
     genericBindings?: Map<string, Type>;
 };
@@ -30,21 +39,38 @@ type Scope = {
     parent: Scope | null;
 };
 
-/**
- * @typedef {object} LoopContext
- * @property {boolean} allowsBreakValue
- * @property {Type | null} breakType
- * @property {boolean} hasBreak
- */
+type LoopContext = {
+    allowsBreakValue: boolean;
+    breakType: Type | null;
+    hasBreak: boolean;
+};
 
 // ============================================================================
 // Task 3.6: Type Context
 // ============================================================================
 
+type Method = {
+    structName: string;
+    methodName: string;
+    symbolName: string;
+    decl: unknown;
+    type: Type;
+    meta: unknown;
+};
+
+type TraitMethod = {
+    typeName: string;
+    traitName: string;
+    methodName: string;
+    symbolName: string;
+    decl: unknown;
+    type: Type;
+    meta: unknown;
+};
 /**
  * Type context for tracking scopes, bindings, and item declarations
  */
-class TypeContext {
+export class TypeContext {
     currentScope: Scope;
     items: Map<string, ItemDecl>;
     typeAliases: Map<string, Type>;
@@ -52,48 +78,49 @@ class TypeContext {
     currentReturnType: Type | null;
     typeVars: Map<number, TypeVarType>;
     internedTypes: Map<string, Type>;
+    loopStack: LoopContext[];
+    methods: Map<string, Method>;
+    traitMethods: Map<string, TraitMethod[]>;
+    traits: Map<string, { name: string; node: unknown }>;
+    traitImpls: Set<string>;
+    methodsBySymbol: Map<
+        string,
+        { symbolName: string; type: Type; decl: unknown; meta: unknown }
+    >;
+    implSelfTypeStack: Type[];
+    implGenericBindingStack: Map<string, Type>[];
+    closureCaptureTrackers: {
+        closureDepth: number;
+        captures: Map<
+            string,
+            {
+                name: string;
+                type: Type;
+                mutable: boolean;
+                span?: Span;
+                closureInfo?: unknown;
+            }
+        >;
+    }[];
+    allowCapturingClosureValueDepth: number;
+
     constructor() {
         this.currentScope = { bindings: new Map(), parent: null };
         this.items = new Map();
-
-        /** @type {Map<string, Type>} */
         this.typeAliases = new Map();
-
-        /** @type {Type | null} */
         this.currentFn = null;
-
-        /** @type {Type | null} */
         this.currentReturnType = null;
-
-        /** @type {Map<number, TypeVarType>} */
         this.typeVars = new Map();
-
-        /** @type {Map<string, Type>} - Interned types for deduplication */
         this.internedTypes = new Map();
-
-        /** @type {LoopContext[]} */
         this.loopStack = [];
-
-        /** @type {Map<string, { structName: string, methodName: string, symbolName: string, decl: Node, type: Type, meta: any }>} */
         this.methods = new Map();
-        /** @type {Map<string, { typeName: string, traitName: string, methodName: string, symbolName: string, decl: Node, type: Type, meta: any }[]>} */
         this.traitMethods = new Map();
-        /** @type {Map<string, { name: string, node: Node }>} */
         this.traits = new Map();
-        /** @type {Set<string>} */
         this.traitImpls = new Set();
-        /** @type {Map<string, { symbolName: string, type: Type, decl: Node, meta: any }>} */
         this.methodsBySymbol = new Map();
-
-        /** @type {Type[]} */
         this.implSelfTypeStack = [];
-        /** @type {Map<string, Type>[]} */
         this.implGenericBindingStack = [];
-
-        /** @type {{ closureDepth: number, captures: Map<string, { name: string, type: Type, mutable: boolean, span?: Span, closureInfo?: any }> }[]} */
         this.closureCaptureTrackers = [];
-
-        /** @type {number} */
         this.allowCapturingClosureValueDepth = 0;
     }
 
@@ -101,22 +128,14 @@ class TypeContext {
     // Task 3.7: Scope Management
     // ========================================================================
 
-    /**
-     * Enter a new scope
-     * @returns {void}
-     */
-    pushScope() {
+    pushScope(): void {
         this.currentScope = {
             bindings: new Map(),
             parent: this.currentScope,
         };
     }
 
-    /**
-     * Exit current scope
-     * @returns {{ ok: boolean, error?: string }}
-     */
-    popScope() {
+    popScope(): { ok: boolean; error?: string } {
         if (!this.currentScope.parent) {
             return { ok: false, error: "Cannot pop root scope" };
         }
@@ -124,43 +143,36 @@ class TypeContext {
         return { ok: true };
     }
 
-    /**
-     * Define a variable in current scope
-     * @param {string} name
-     * @param {Type} type
-     * @param {boolean} [mutable=false]
-     * @param {Span} [span]
-     * @returns {{ ok: boolean, error?: string }}
-     */
-    defineVar(name, type, mutable = false, span) {
+    defineVar(
+        name: string,
+        type: Type,
+        mutable: boolean = false,
+        span: Span,
+    ): { ok: boolean; error?: string } {
         if (this.currentScope.bindings.has(name)) {
             return {
                 ok: false,
                 error: `Variable '${name}' already defined in this scope`,
             };
         }
-        this.currentScope.bindings.set(name, { name, type, mutable, span });
+        this.currentScope.bindings.set(name, {
+            name,
+            type,
+            mutable,
+            span: span,
+        });
         return { ok: true };
     }
 
-    /**
-     * Look up a variable in the scope chain
-     * @param {string} name
-     * @returns {VarBinding | null}
-     */
-    lookupVar(name) {
+    lookupVar(name: string): VarBinding | null {
         const found = this.lookupVarWithDepth(name);
         return found ? found.binding : null;
     }
 
-    /**
-     * Look up a variable and include lexical depth.
-     * @param {string} name
-     * @returns {{ binding: VarBinding, depth: number } | null}
-     */
-    lookupVarWithDepth(name) {
-        /** @type {Scope | null} */
-        let scope = this.currentScope;
+    lookupVarWithDepth(
+        name: string,
+    ): { binding: VarBinding; depth: number } | null {
+        let scope: Scope | null = this.currentScope;
         let depth = this.currentScopeDepth();
         while (scope) {
             const binding = scope.bindings.get(name);
@@ -173,30 +185,17 @@ class TypeContext {
         return null;
     }
 
-    /**
-     * Check if a variable exists in current scope only
-     * @param {string} name
-     * @returns {boolean}
-     */
-    varInCurrentScope(name) {
+    varInCurrentScope(name: string): boolean {
         return this.currentScope.bindings.has(name);
     }
 
-    /**
-     * Get all variable bindings in current scope
-     * @returns {VarBinding[]}
-     */
-    getCurrentScopeBindings() {
+    getCurrentScopeBindings(): VarBinding[] {
         return Array.from(this.currentScope.bindings.values());
     }
 
-    /**
-     * Get lexical depth of the current scope (root is 0).
-     * @returns {number}
-     */
-    currentScopeDepth() {
+    currentScopeDepth(): number {
         let depth = 0;
-        let scope = this.currentScope;
+        let scope: Scope = this.currentScope;
         while (scope.parent) {
             depth += 1;
             scope = scope.parent;
@@ -208,13 +207,10 @@ class TypeContext {
     // Task 3.8: Item Registry
     // ========================================================================
 
-    /**
-     * Register a struct declaration
-     * @param {string} name
-     * @param {Node} decl
-     * @returns {{ ok: boolean, error?: string }}
-     */
-    registerStruct(name, decl) {
+    registerStruct(
+        name: string,
+        decl: unknown,
+    ): { ok: boolean; error?: string } {
         if (this.items.has(name)) {
             return { ok: false, error: `Item '${name}' already defined` };
         }
@@ -222,13 +218,7 @@ class TypeContext {
         return { ok: true };
     }
 
-    /**
-     * Register an enum declaration
-     * @param {string} name
-     * @param {Node} decl
-     * @returns {{ ok: boolean, error?: string }}
-     */
-    registerEnum(name, decl) {
+    registerEnum(name: string, decl: unknown): { ok: boolean; error?: string } {
         if (this.items.has(name)) {
             return { ok: false, error: `Item '${name}' already defined` };
         }
@@ -236,14 +226,11 @@ class TypeContext {
         return { ok: true };
     }
 
-    /**
-     * Register a function declaration
-     * @param {string} name
-     * @param {Node} decl
-     * @param {Type} [type]
-     * @returns {{ ok: boolean, error?: string }}
-     */
-    registerFn(name, decl, type) {
+    registerFn(
+        name: string,
+        decl: unknown,
+        type?: Type,
+    ): { ok: boolean; error?: string } {
         if (this.items.has(name)) {
             return { ok: false, error: `Item '${name}' already defined` };
         }
@@ -257,13 +244,7 @@ class TypeContext {
         return { ok: true };
     }
 
-    /**
-     * Register a module declaration
-     * @param {string} name
-     * @param {Node} decl
-     * @returns {{ ok: boolean, error?: string }}
-     */
-    registerMod(name, decl) {
+    registerMod(name: string, decl: unknown): { ok: boolean; error?: string } {
         if (this.items.has(name)) {
             return { ok: false, error: `Item '${name}' already defined` };
         }
@@ -271,14 +252,11 @@ class TypeContext {
         return { ok: true };
     }
 
-    /**
-     * Register a type alias
-     * @param {string} name
-     * @param {Node} decl
-     * @param {Type} type
-     * @returns {{ ok: boolean, error?: string }}
-     */
-    registerTypeAlias(name, decl, type) {
+    registerTypeAlias(
+        name: string,
+        decl: unknown,
+        type: Type,
+    ): { ok: boolean; error?: string } {
         if (this.items.has(name)) {
             return { ok: false, error: `Item '${name}' already defined` };
         }
@@ -287,54 +265,32 @@ class TypeContext {
         return { ok: true };
     }
 
-    /**
-     * Look up an item by name
-     * @param {string} name
-     * @returns {ItemDecl | null}
-     */
-    lookupItem(name) {
+    lookupItem(name: string): ItemDecl | null {
         return this.items.get(name) || null;
     }
 
-    /**
-     * Look up a type alias by name
-     * @param {string} name
-     * @returns {Type | null}
-     */
-    lookupTypeAlias(name) {
+    lookupTypeAlias(name: string): Type | null {
         return this.typeAliases.get(name) || null;
     }
 
-    /**
-     * Check if an item exists
-     * @param {string} name
-     * @returns {boolean}
-     */
-    hasItem(name) {
+    hasItem(name: string): boolean {
         return this.items.has(name);
     }
 
-    /**
-     * Get all registered items
-     * @returns {ItemDecl[]}
-     */
-    getAllItems() {
+    getAllItems(): ItemDecl[] {
         return Array.from(this.items.values());
     }
 
-    /**
-     * Register an inherent impl method
-     * @param {string} structName
-     * @param {string} methodName
-     * @param {Node} decl
-     * @param {Type} fnType
-     * @param {any} [meta]
-     * @returns {{ ok: boolean, error?: string }}
-     */
-    registerMethod(structName, methodName, decl, fnType, meta = null) {
+    registerMethod(
+        structName: string,
+        methodName: string,
+        decl: unknown,
+        fnType: Type,
+        meta: unknown = null,
+    ): Result<undefined, string> {
         const key = `${structName}::${methodName}`;
         if (this.methods.has(key)) {
-            return { ok: false, error: `Method '${key}' already defined` };
+            return { ok: false, err: `Method '${key}' already defined` };
         }
         const entry = {
             structName,
@@ -351,85 +307,55 @@ class TypeContext {
             decl,
             meta,
         });
-        return { ok: true };
+        return { ok: true, result: undefined };
     }
 
-    /**
-     * Look up an inherent impl method by struct and method name.
-     * @param {string} structName
-     * @param {string} methodName
-     * @returns {{ structName: string, methodName: string, symbolName: string, decl: Node, type: Type, meta: any } | null}
-     */
-    lookupMethod(structName, methodName) {
+    lookupMethod(structName: string, methodName: string): Method | null {
         return this.methods.get(`${structName}::${methodName}`) || null;
     }
 
-    /**
-     * Register a trait declaration.
-     * @param {string} traitName
-     * @param {Node} decl
-     * @returns {{ ok: boolean, error?: string }}
-     */
-    registerTrait(traitName, decl) {
+    registerTrait(traitName: string, decl: unknown): Result<undefined, string> {
         if (this.traits.has(traitName)) {
-            return { ok: false, error: `Trait '${traitName}' already defined` };
+            return { ok: false, err: `Trait '${traitName}' already defined` };
         }
         this.traits.set(traitName, { name: traitName, node: decl });
-        return { ok: true };
+        return { ok: true, result: undefined };
     }
 
-    /**
-     * Look up a trait declaration.
-     * @param {string} traitName
-     * @returns {{ name: string, node: Node } | null}
-     */
-    lookupTrait(traitName) {
+    lookupTrait(traitName: string): { name: string; node: unknown } | null {
         return this.traits.get(traitName) || null;
     }
 
-    /**
-     * Register a (Trait, Type) impl pair and reject duplicates.
-     * @param {string} traitName
-     * @param {string} typeName
-     * @returns {{ ok: boolean, error?: string }}
-     */
-    registerTraitImpl(traitName, typeName) {
+    registerTraitImpl(
+        traitName: string,
+        typeName: string,
+    ): Result<undefined, string> {
         const key = `${traitName}::${typeName}`;
         if (this.traitImpls.has(key)) {
             return {
                 ok: false,
-                error: `Trait impl already defined for (${traitName}, ${typeName})`,
+                err: `Trait impl already defined for (${traitName}, ${typeName})`,
             };
         }
         this.traitImpls.add(key);
-        return { ok: true };
+        return { ok: true, result: undefined };
     }
 
-    /**
-     * Register a trait-provided method for receiver lookup.
-     * @param {string} typeName
-     * @param {string} traitName
-     * @param {string} methodName
-     * @param {Node} decl
-     * @param {Type} fnType
-     * @param {any} [meta]
-     * @returns {{ ok: boolean, error?: string, symbolName?: string }}
-     */
     registerTraitMethod(
-        typeName,
-        traitName,
-        methodName,
-        decl,
-        fnType,
-        meta = null,
-    ) {
+        typeName: string,
+        traitName: string,
+        methodName: string,
+        decl: unknown,
+        fnType: Type,
+        meta: unknown = null,
+    ): Result<string, string> {
         const symbolName = `${typeName}::<${traitName}>::${methodName}`;
         const key = `${typeName}::${methodName}`;
         const list = this.traitMethods.get(key) || [];
         if (list.some((entry) => entry.traitName === traitName)) {
             return {
                 ok: false,
-                error: `Trait method already defined for (${typeName}, ${traitName}, ${methodName})`,
+                err: `Trait method already defined for (${typeName}, ${traitName}, ${methodName})`,
             };
         }
         list.push({
@@ -448,135 +374,119 @@ class TypeContext {
             decl,
             meta,
         });
-        return { ok: true, symbolName };
+        return { ok: true, result: symbolName };
     }
 
-    /**
-     * Look up inherent+trait method candidates for a receiver type key.
-     * Inherent methods always win over trait methods.
-     * @param {string} typeName
-     * @param {string} methodName
-     * @returns {{ inherent: { structName: string, methodName: string, symbolName: string, decl: Node, type: Type, meta: any } | null, traits: { typeName: string, traitName: string, methodName: string, symbolName: string, decl: Node, type: Type, meta: any }[] }}
-     */
-    lookupMethodCandidates(typeName, methodName) {
+    lookupMethodCandidates(
+        typeName: string,
+        methodName: string,
+    ): {
+        inherent: {
+            structName: string;
+            methodName: string;
+            symbolName: string;
+            decl: unknown;
+            type: Type;
+            meta: unknown;
+        } | null;
+        traits: {
+            typeName: string;
+            traitName: string;
+            methodName: string;
+            symbolName: string;
+            decl: unknown;
+            type: Type;
+            meta: unknown;
+        }[];
+    } {
         return {
             inherent: this.lookupMethod(typeName, methodName),
             traits: this.traitMethods.get(`${typeName}::${methodName}`) || [],
         };
     }
 
-    /**
-     * Look up method metadata by resolved symbol.
-     * @param {string} symbolName
-     * @returns {{ symbolName: string, type: Type, decl: Node, meta: any } | null}
-     */
-    lookupMethodBySymbol(symbolName) {
+    lookupMethodBySymbol(
+        symbolName: string,
+    ): { symbolName: string; type: Type; decl: unknown; meta: unknown } | null {
         return this.methodsBySymbol.get(symbolName) || null;
     }
 
-    /**
-     * Push impl Self context.
-     * @param {Type} selfType
-     * @returns {void}
-     */
-    pushImplSelfType(selfType) {
+    pushImplSelfType(selfType: Type): void {
         this.implSelfTypeStack.push(selfType);
     }
 
-    /**
-     * Pop impl Self context.
-     * @returns {Type | null}
-     */
-    popImplSelfType() {
+    popImplSelfType(): Type | null {
         return this.implSelfTypeStack.pop() || null;
     }
 
-    /**
-     * Get current impl Self type, if any.
-     * @returns {Type | null}
-     */
-    currentImplSelfType() {
+    currentImplSelfType(): Type | null {
         if (this.implSelfTypeStack.length === 0) return null;
         return this.implSelfTypeStack[this.implSelfTypeStack.length - 1];
     }
 
-    /**
-     * Push impl generic bindings.
-     * @param {Map<string, Type>} bindings
-     * @returns {void}
-     */
-    pushImplGenericBindings(bindings) {
+    pushImplGenericBindings(bindings: Map<string, Type>): void {
         this.implGenericBindingStack.push(bindings);
     }
 
-    /**
-     * Pop impl generic bindings.
-     * @returns {Map<string, Type> | null}
-     */
-    popImplGenericBindings() {
+    popImplGenericBindings(): Map<string, Type> | null {
         return this.implGenericBindingStack.pop() || null;
     }
 
-    /**
-     * Get the current impl generic binding map.
-     * @returns {Map<string, Type> | null}
-     */
-    currentImplGenericBindings() {
+    currentImplGenericBindings(): Map<string, Type> | null {
         if (this.implGenericBindingStack.length === 0) return null;
         return this.implGenericBindingStack[
             this.implGenericBindingStack.length - 1
         ];
     }
 
-    /**
-     * Begin capture tracking for a closure body.
-     * @param {number} closureDepth
-     * @returns {void}
-     */
-    pushClosureCaptureTracker(closureDepth) {
+    pushClosureCaptureTracker(closureDepth: number): void {
         this.closureCaptureTrackers.push({
             closureDepth,
             captures: new Map(),
         });
     }
 
-    /**
-     * End capture tracking for a closure body.
-     * @returns {Map<string, { name: string, type: Type, mutable: boolean, span?: Span, closureInfo?: any }> | null}
-     */
-    popClosureCaptureTracker() {
+    popClosureCaptureTracker(): Map<
+        string,
+        {
+            name: string;
+            type: Type;
+            mutable: boolean;
+            span?: Span;
+            closureInfo?: unknown;
+        }
+    > | null {
         const tracker = this.closureCaptureTrackers.pop();
         return tracker ? tracker.captures : null;
     }
 
-    /**
-     * @returns {{ closureDepth: number, captures: Map<string, { name: string, type: Type, mutable: boolean, span?: Span, closureInfo?: any }> }[]}
-     */
-    getClosureCaptureTrackers() {
+    getClosureCaptureTrackers(): {
+        closureDepth: number;
+        captures: Map<
+            string,
+            {
+                name: string;
+                type: Type;
+                mutable: boolean;
+                span?: Span;
+                closureInfo?: unknown;
+            }
+        >;
+    }[] {
         return this.closureCaptureTrackers;
     }
 
-    /**
-     * Allow capturing closures to be used as call callees for the current expression.
-     * @returns {void}
-     */
-    enterAllowCapturingClosureValue() {
+    enterAllowCapturingClosureValue(): void {
         this.allowCapturingClosureValueDepth += 1;
     }
 
-    /**
-     * @returns {void}
-     */
-    exitAllowCapturingClosureValue() {
+    exitAllowCapturingClosureValue(): void {
         if (this.allowCapturingClosureValueDepth > 0) {
             this.allowCapturingClosureValueDepth -= 1;
         }
     }
 
-    /**
-     * @returns {boolean}
-     */
-    canUseCapturingClosureValue() {
+    canUseCapturingClosureValue(): boolean {
         return this.allowCapturingClosureValueDepth > 0;
     }
 
@@ -584,29 +494,17 @@ class TypeContext {
     // Function Tracking
     // ========================================================================
 
-    /**
-     * Set the current function context
-     * @param {Type | null} fnType
-     * @param {Type | null} returnType
-     */
-    setCurrentFn(fnType, returnType) {
+    setCurrentFn(fnType: Type | null, returnType: Type | null): void {
         this.currentFn = fnType;
         this.currentReturnType = returnType;
     }
 
-    /**
-     * Clear the current function context
-     */
-    clearCurrentFn() {
+    clearCurrentFn(): void {
         this.currentFn = null;
         this.currentReturnType = null;
     }
 
-    /**
-     * Get the current function's return type
-     * @returns {Type | null}
-     */
-    getCurrentReturnType() {
+    getCurrentReturnType(): Type | null {
         return this.currentReturnType;
     }
 
@@ -614,13 +512,7 @@ class TypeContext {
     // Loop Tracking
     // ========================================================================
 
-    /**
-     * Enter a loop context
-     * @param {boolean} allowsBreakValue
-     * @param {Type | null} [breakType=null]
-     * @returns {void}
-     */
-    enterLoop(allowsBreakValue, breakType = null) {
+    enterLoop(allowsBreakValue: boolean, breakType: Type | null = null): void {
         this.loopStack.push({
             allowsBreakValue,
             breakType,
@@ -628,19 +520,11 @@ class TypeContext {
         });
     }
 
-    /**
-     * Exit the current loop context
-     * @returns {LoopContext | null}
-     */
-    exitLoop() {
+    exitLoop(): LoopContext | null {
         return this.loopStack.pop() || null;
     }
 
-    /**
-     * Get current loop context
-     * @returns {LoopContext | null}
-     */
-    currentLoop() {
+    currentLoop(): LoopContext | null {
         if (this.loopStack.length === 0) {
             return null;
         }
@@ -651,51 +535,37 @@ class TypeContext {
     // Type Variable Management
     // ========================================================================
 
-    /**
-     * Create a fresh type variable
-     * @returns {Type}
-     */
-    freshTypeVar() {
-        const tv = /** @type {TypeVarType} */ makeTypeVar();
+    freshTypeVar(span: Span): Type {
+        const tv = makeTypeVar(span);
+        if (tv.kind !== TypeKind.TypeVar) throw "unreachable";
         this.typeVars.set(tv.id, tv);
         return tv;
     }
 
-    /**
-     * Bind a type variable to a type
-     * @param {number} id
-     * @param {Type} type
-     * @returns {{ ok: boolean, error?: string }}
-     */
-    bindTypeVar(id, type) {
+    bindTypeVar(id: number, type: Type): Result<undefined, string> {
         const tv = this.typeVars.get(id);
         if (!tv) {
-            return { ok: false, error: `Type variable ${id} not found` };
+            return { ok: false, err: `Type variable ${id} not found` };
         }
         if (tv.bound !== null) {
-            return { ok: false, error: `Type variable ${id} is already bound` };
+            return { ok: false, err: `Type variable ${id} is already bound` };
         }
         // Check for occurs check (prevent infinite types)
         if (this.occursIn(id, type)) {
             return {
                 ok: false,
-                error: `Occurs check failed: type variable ${id} occurs in type`,
+                err: `Occurs check failed: type variable ${id} occurs in type`,
             };
         }
         tv.bound = type;
-        return { ok: true };
+        return { ok: true, result: undefined };
     }
 
-    /**
-     * Check if a type variable occurs in a type (occurs check)
-     * @param {number} id
-     * @param {Type} type
-     * @returns {boolean}
-     */
-    occursIn(id, type) {
+    occursIn(id: number, type: Type): boolean {
         if (type.kind === TypeKind.TypeVar) {
-            if (type.id === id) return true;
-            if (type.bound) return this.occursIn(id, type.bound);
+            if ((type as TypeVarType).id === id) return true;
+            if ((type as TypeVarType).bound)
+                return this.occursIn(id, (type as TypeVarType).bound!);
             return false;
         }
         // Recursively check composite types
@@ -722,14 +592,9 @@ class TypeContext {
         }
     }
 
-    /**
-     * Get the resolved type (follow type variable bindings)
-     * @param {Type} type
-     * @returns {Type}
-     */
-    resolveType(type) {
-        if (type.kind === TypeKind.TypeVar && type.bound) {
-            return this.resolveType(type.bound);
+    resolveType(type: Type): Type {
+        if (type.kind === TypeKind.TypeVar && (type as TypeVarType).bound) {
+            return this.resolveType((type as TypeVarType).bound!);
         }
         return type;
     }
@@ -738,12 +603,7 @@ class TypeContext {
     // Type Interning
     // ========================================================================
 
-    /**
-     * Get or create an interned type
-     * @param {Type} type
-     * @returns {Type}
-     */
-    internType(type) {
+    internType(type: Type): Type {
         const key = this.typeToKey(type);
         const existing = this.internedTypes.get(key);
         if (existing) {
@@ -753,12 +613,7 @@ class TypeContext {
         return type;
     }
 
-    /**
-     * Convert a type to a string key for interning
-     * @param {Type} type
-     * @returns {string}
-     */
-    typeToKey(type) {
+    typeToKey(type: Type): string {
         switch (type.kind) {
             case TypeKind.Int:
                 return `Int(${type.width})`;
@@ -791,13 +646,11 @@ class TypeContext {
             case TypeKind.Fn:
                 return `Fn(${type.params.map((t) => this.typeToKey(t)).join(",")})->${this.typeToKey(type.returnType)}`;
             case TypeKind.TypeVar:
-                return `TypeVar(${type.id})`;
+                return `TypeVar(${(type as TypeVarType).id})`;
             case TypeKind.Named:
                 return `Named(${type.name}${type.args ? `<${type.args.map((t) => this.typeToKey(t)).join(",")}>` : ""})`;
             default:
-                return `Unknown(${/** @type {any} */ type.kind})`;
+                return `Unknown(${(type as { kind: number }).kind})`;
         }
     }
 }
-
-export { TypeContext };
