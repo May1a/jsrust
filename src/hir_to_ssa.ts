@@ -1,15 +1,47 @@
-/** @typedef {import('./hir').HFnDecl} HFnDecl */
-/** @typedef {import('./hir').HBlock} HBlock */
-/** @typedef {import('./hir').HStmt} HStmt */
-/** @typedef {import('./hir').HExpr} HExpr */
-/** @typedef {import('./hir').HPlace} HPlace */
-/** @typedef {import('./hir').HPat} HPat */
-/** @typedef {import('./hir').HMatchArm} HMatchArm */
-/** @typedef {import('./ir').IRFunction} IRFunction */
-/** @typedef {import('./ir').IRType} IRType */
-/** @typedef {import('./ir').ValueId} ValueId */
-/** @typedef {import('./ir').BlockId} BlockId */
-/** @typedef {import('./types').Type} Type */
+import { Type, TypeKind, IntWidthValue, FloatWidthValue } from "./types";
+import { Result, ok, err } from "./diagnostics";
+import {
+    HModule,
+    HFnDecl,
+    HBlock,
+    HStmt,
+    HExpr,
+    HPlace,
+    HPat,
+    HMatchArm,
+    HLetStmt,
+    HAssignStmt,
+    HExprStmt,
+    HReturnStmt,
+    HBreakStmt,
+    HContinueStmt,
+    HUnitExpr,
+    HLiteralExpr,
+    HVarExpr,
+    HBinaryExpr,
+    HUnaryExpr,
+    HCallExpr,
+    HFieldExpr,
+    HIndexExpr,
+    HRefExpr,
+    HDerefExpr,
+    HStructExpr,
+    HEnumExpr,
+    HIfExpr,
+    HMatchExpr,
+    HLoopExpr,
+    HWhileExpr,
+} from "./hir";
+// @ts-ignore
+// @ts-ignore
+import {
+    IRType,
+    ValueId,
+    BlockId,
+    IRModule,
+    IRFunction,
+    IRTypeKind,
+} from "./ir";
 
 import {
     HItemKind,
@@ -19,12 +51,12 @@ import {
     HPatKind,
     HLiteralKind,
 } from "./hir";
+// @ts-ignore
 import { IRBuilder } from "./ir_builder";
+// @ts-ignore
 import {
-    IRTypeKind,
     IcmpOp,
     FcmpOp,
-    freshValueId,
     makeIRUnitType,
     makeIRIntType,
     makeIRFloatType,
@@ -34,12 +66,12 @@ import {
     makeIREnumType,
     makeIRArrayType,
     makeIRFnType,
-    addIRInstruction,
     makeIRModule,
     addIRFunction,
+    // @ts-ignore
     internIRStringLiteral,
 } from "./ir";
-import { IntWidth, FloatWidth, TypeKind } from "./types";
+import { IntWidth, FloatWidth } from "./types";
 import { BinaryOp, UnaryOp } from "./ast";
 
 // ============================================================================
@@ -49,24 +81,64 @@ import { BinaryOp, UnaryOp } from "./ast";
 /**
  * Context for HIR -> SSA lowering
  */
+
+/**
+ * Lowering error types
+ */
+export const LoweringErrorKind = {
+    UnknownStatement: 0,
+    UnknownExpression: 1,
+    UnknownLiteral: 2,
+    InvalidType: 3,
+    UnknownVariable: 4,
+    UnknownOperator: 5,
+    MissingResult: 6,
+    BreakOutsideLoop: 7,
+    ContinueOutsideLoop: 8,
+};
+
+export type LoweringErrorKindValue = number;
+
+export type LoweringError = {
+    kind: LoweringErrorKindValue;
+    message: string;
+    span?: import("./types").Span;
+};
+
+/**
+ * Create an error result
+ */
+function error<T>(
+    kind: LoweringErrorKindValue,
+    message: string,
+    span?: import("./types").Span,
+): Result<T, LoweringError> {
+    return err({ kind, message, span });
+}
 export class HirToSsaCtx {
+    builder: IRBuilder;
+    irModule: IRModule | null;
+    internalLiteralModule: IRModule;
+    breakStack: BlockId[];
+    continueStack: BlockId[];
+    returnBlock: BlockId | null;
+    returnType: IRType | null;
+    varAllocas: Map<number, ValueId>;
+    varValues: Map<number, ValueId>;
+    varNames: Map<string, { id: number; ty: IRType }>;
+    mutableVarIds: Set<number>;
+
     /**
-     * @param {{ irModule?: import('./ir').IRModule }} [options]
+     * @param {{ irModule?: IRModule }} [options]
      */
-    constructor(options = {}) {
-        /** @type {IRBuilder} */
+    constructor(options: { irModule?: IRModule } = {}) {
         this.builder = new IRBuilder();
-        /** @type {import('./ir').IRModule | null} */
+
         this.irModule = options.irModule || null;
-        /** @type {import('./ir').IRModule} */
+
         this.internalLiteralModule =
             this.irModule ||
-            /** @type {import('./ir').IRModule} */ (
-                /** @type {any} */ ({
-                    stringLiterals: [],
-                    stringLiteralIds: new Map(),
-                })
-            );
+            ({ stringLiterals: [], stringLiteralIds: new Map() } as any);
 
         /** @type {BlockId[]} Stack of block IDs for break targets */
         this.breakStack = [];
@@ -99,13 +171,13 @@ export class HirToSsaCtx {
      * @param {IRType} ty
      * @returns {ValueId}
      */
-    ensureVarAlloca(varId, ty) {
+    ensureVarAlloca(varId: number, ty: IRType) {
         const existing = this.varAllocas.get(varId);
         if (existing !== undefined) {
             return existing;
         }
         const alloca = this.builder.alloca(ty);
-        const allocaId = /** @type {ValueId} */ (alloca.id);
+        const allocaId = alloca.id as number;
         this.varAllocas.set(varId, allocaId);
         const current = this.varValues.get(varId);
         if (current !== undefined) {
@@ -123,7 +195,7 @@ export class HirToSsaCtx {
      * @param {HFnDecl} fnDecl
      * @returns {IRFunction}
      */
-    lowerFunction(fnDecl) {
+    lowerFunction(fnDecl: HFnDecl): Result<IRFunction, LoweringError> {
         // Reset state for new function
         this.varAllocas.clear();
         this.varValues.clear();
@@ -148,20 +220,18 @@ export class HirToSsaCtx {
         // Declare parameters as variables
         for (let i = 0; i < fnDecl.params.length; i++) {
             const param = fnDecl.params[i];
-            const paramValue = /** @type {import('./ir').IRFunction} */ (
-                this.builder.currentFunction
-            ).params[i];
+            const paramValue = this.builder.currentFunction!.params[i];
 
             if (param.name) {
                 // Store parameter value in variable map
                 if (param.pat && param.pat.kind === HPatKind.Ident) {
                     const pat = param.pat;
                     this.varValues.set(
-                        /** @type {ValueId} */ (pat.id),
-                        /** @type {ValueId} */ (paramValue.id),
+                        pat.id as number,
+                        paramValue.id as number,
                     );
                     this.varNames.set(param.name, {
-                        id: /** @type {ValueId} */ (pat.id),
+                        id: pat.id as number,
                         ty: paramTypes[i],
                     });
                 } else {
@@ -170,26 +240,19 @@ export class HirToSsaCtx {
                         id: -i - 1,
                         ty: paramTypes[i],
                     });
-                    this.varValues.set(
-                        -i - 1,
-                        /** @type {ValueId} */ (paramValue.id),
-                    );
+                    this.varValues.set(-i - 1, paramValue.id as number);
                 }
             }
         }
 
         // Lower function body
         if (fnDecl.body) {
-            const result = this.lowerBlock(fnDecl.body);
+            const resultResult = this.lowerBlock(fnDecl.body);
+            if (!resultResult.ok) return resultResult;
+            const result = resultResult.value;
 
             // Add implicit return if needed
-            if (
-                !(
-                    /** @type {import('./ir').IRBlock} */ (
-                        this.builder.currentBlock
-                    ).terminator
-                )
-            ) {
+            if (!this.builder.currentBlock!.terminator) {
                 if (this.returnType?.kind === IRTypeKind.Unit) {
                     this.builder.ret(null);
                 } else if (result !== null) {
@@ -203,7 +266,7 @@ export class HirToSsaCtx {
             this.builder.ret(null);
         }
 
-        return this.builder.build();
+        return ok(this.builder.build());
     }
 
     // ============================================================================
@@ -215,29 +278,28 @@ export class HirToSsaCtx {
      * @param {HBlock} block
      * @returns {ValueId | null}
      */
-    lowerBlock(block) {
+    lowerBlock(block: HBlock): Result<ValueId | null, LoweringError> {
         let finalValue = null;
 
         // Lower each statement
         for (const stmt of block.stmts) {
-            this.lowerStmt(stmt);
+            const res_ipereoc = this.lowerStmt(stmt);
+            if (!res_ipereoc.ok) return res_ipereoc;
 
             // If block is terminated, stop
-            if (
-                /** @type {import('./ir').IRBlock} */ (
-                    this.builder.currentBlock
-                ).terminator
-            ) {
-                return null;
+            if (this.builder.currentBlock!.terminator) {
+                return ok(null);
             }
         }
 
         // Lower final expression
         if (block.expr) {
-            finalValue = this.lowerExpr(block.expr);
+            const res = this.lowerExpr(block.expr);
+            if (!res.ok) return res;
+            finalValue = res.value;
         }
 
-        return finalValue;
+        return ok(finalValue);
     }
 
     // ============================================================================
@@ -248,45 +310,60 @@ export class HirToSsaCtx {
      * Lower a statement
      * @param {HStmt} stmt
      */
-    lowerStmt(stmt) {
-        const s = /** @type {any} */ (stmt);
+    lowerStmt(stmt: HStmt): Result<void, LoweringError> {
+        const s = stmt;
         switch (stmt.kind) {
             case HStmtKind.Let:
-                this.lowerLetStmt(s);
+                const res_hz9q3 = this.lowerLetStmt(s as HLetStmt);
+                if (!res_hz9q3.ok) return res_hz9q3;
                 break;
             case HStmtKind.Assign:
-                this.lowerAssignStmt(s);
+                const res_q36t6f = this.lowerAssignStmt(s as HAssignStmt);
+                if (!res_q36t6f.ok) return res_q36t6f;
                 break;
             case HStmtKind.Expr:
-                this.lowerExprStmt(s);
+                const res_5l0bbb2 = this.lowerExprStmt(s as HExprStmt);
+                if (!res_5l0bbb2.ok) return res_5l0bbb2;
                 break;
             case HStmtKind.Return:
-                this.lowerReturnStmt(s);
+                const res_xqt7m = this.lowerReturnStmt(s as HReturnStmt);
+                if (!res_xqt7m.ok) return res_xqt7m;
                 break;
             case HStmtKind.Break:
-                this.lowerBreakStmt(s);
+                const res_rdsyje = this.lowerBreakStmt(s as HBreakStmt);
+                if (!res_rdsyje.ok) return res_rdsyje;
                 break;
             case HStmtKind.Continue:
-                this.lowerContinueStmt(s);
+                const res_rxlgpt = this.lowerContinueStmt(s as HContinueStmt);
+                if (!res_rxlgpt.ok) return res_rxlgpt;
                 break;
             default:
-                throw new Error(`Unknown statement kind: ${stmt.kind}`);
+                return error(
+                    LoweringErrorKind.UnknownStatement,
+                    `Unknown statement kind`,
+                    (stmt as HStmt).span,
+                );
         }
+        return ok(undefined);
     }
 
     /**
      * Lower a let statement
      * @param {import('./hir').HLetStmt} stmt
      */
-    lowerLetStmt(stmt) {
+    lowerLetStmt(stmt: HLetStmt): Result<void, LoweringError> {
         // Lower initializer
         let initValue = null;
         if (stmt.init) {
-            initValue = this.lowerExpr(stmt.init);
+            const res = this.lowerExpr(stmt.init);
+            if (!res.ok) return res;
+            initValue = res.value;
         }
 
         // Bind pattern
-        this.bindPattern(stmt.pat, initValue, stmt.ty);
+        const res_qyedci = this.bindPattern(stmt.pat, initValue, stmt.ty);
+        if (!res_qyedci.ok) return res_qyedci;
+        return ok(undefined);
     }
 
     /**
@@ -295,11 +372,15 @@ export class HirToSsaCtx {
      * @param {ValueId | null} value
      * @param {Type} ty
      */
-    bindPattern(pat, value, ty) {
+    bindPattern(
+        pat: HPat,
+        value: ValueId | null,
+        ty: Type,
+    ): Result<void, LoweringError> {
         switch (pat.kind) {
             case HPatKind.Ident: {
                 // Identifier pattern - bind variable
-                const varId = /** @type {ValueId} */ (pat.id);
+                const varId = pat.id as number;
                 if (pat.mutable) {
                     this.mutableVarIds.add(varId);
                 }
@@ -330,7 +411,6 @@ export class HirToSsaCtx {
             case HPatKind.Struct: {
                 // Struct pattern - bind each field
                 if (value !== null && pat.fields) {
-                    const structTy = this.translateType(ty);
                     for (let i = 0; i < pat.fields.length; i++) {
                         const field = pat.fields[i];
                         const fieldTy = this.getFieldType(ty, field.name);
@@ -339,13 +419,12 @@ export class HirToSsaCtx {
                             i,
                             this.translateType(fieldTy),
                         );
-                        this.bindPattern(
+                        const res_3enn1j = this.bindPattern(
                             field.pat,
-                            /** @type {ValueId} */ (
-                                /** @type {ValueId} */ (fieldValue.id)
-                            ),
+                            fieldValue.id as number,
                             fieldTy,
                         );
+                        if (!res_3enn1j.ok) return res_3enn1j;
                     }
                 }
                 break;
@@ -365,11 +444,12 @@ export class HirToSsaCtx {
                             i,
                             this.translateType(elemTy),
                         );
-                        this.bindPattern(
+                        const res_79gddj = this.bindPattern(
                             elemPat,
-                            /** @type {ValueId} */ (elemValue.id),
+                            elemValue.id as number,
                             elemTy,
                         );
+                        if (!res_79gddj.ok) return res_79gddj;
                     }
                 }
                 break;
@@ -377,89 +457,114 @@ export class HirToSsaCtx {
             case HPatKind.Or: {
                 // Or pattern - bind first alternative (they should all bind the same vars)
                 if (pat.alternatives && pat.alternatives.length > 0) {
-                    this.bindPattern(pat.alternatives[0], value, ty);
+                    const res_ai5lub = this.bindPattern(
+                        pat.alternatives[0],
+                        value,
+                        ty,
+                    );
+                    if (!res_ai5lub.ok) return res_ai5lub;
                 }
                 break;
             }
         }
+        return ok(undefined);
     }
 
     /**
      * Lower an assignment statement
      * @param {import('./hir').HAssignStmt} stmt
      */
-    lowerAssignStmt(stmt) {
-        const value = this.lowerExpr(stmt.value);
+    lowerAssignStmt(stmt: HAssignStmt): Result<void, LoweringError> {
+        const valueResult = this.lowerExpr(stmt.value);
+        if (!valueResult.ok) return valueResult;
+        const value = valueResult.value;
         if (stmt.place.kind === HPlaceKind.Var) {
-            const varId = /** @type {ValueId} */ (stmt.place.id);
+            const varId = stmt.place.id as number;
             if (this.mutableVarIds.has(varId)) {
                 const ty = this.translateType(stmt.value.ty);
                 const ptr = this.ensureVarAlloca(varId, ty);
-                this.builder.store(ptr, value, ty);
+                this.builder.store(ptr, value as number, ty);
                 this.varValues.set(varId, value);
-                return;
+                return ok(undefined);
             }
             if (!this.varAllocas.has(varId)) {
                 this.varValues.set(varId, value);
-                return;
+                return ok(undefined);
             }
         }
-        const ptr = this.lowerPlaceToRef(stmt.place);
+        const ptrResult = this.lowerPlaceToRef(stmt.place);
+        if (!ptrResult.ok) return ptrResult;
+        const ptr = ptrResult.value;
         const ty = this.translateType(stmt.value.ty);
-        this.builder.store(ptr, value, ty);
+        this.builder.store(ptr, value as number, ty);
         if (stmt.place.kind === HPlaceKind.Var) {
-            this.varValues.set(/** @type {ValueId} */ (stmt.place.id), value);
+            this.varValues.set(stmt.place.id as number, value);
         }
+        return ok(undefined);
     }
 
     /**
      * Lower an expression statement
      * @param {import('./hir').HExprStmt} stmt
      */
-    lowerExprStmt(stmt) {
-        this.lowerExpr(stmt.expr);
+    lowerExprStmt(stmt: HExprStmt): Result<void, LoweringError> {
+        const res_8dxk6k = this.lowerExpr(stmt.expr);
+        if (!res_8dxk6k.ok) return res_8dxk6k;
+        return ok(undefined);
     }
 
     /**
      * Lower a return statement
      * @param {import('./hir').HReturnStmt} stmt
      */
-    lowerReturnStmt(stmt) {
+    lowerReturnStmt(stmt: HReturnStmt): Result<void, LoweringError> {
         let value = null;
         if (stmt.value) {
-            value = this.lowerExpr(stmt.value);
+            const res = this.lowerExpr(stmt.value);
+            if (!res.ok) return res;
+            value = res.value;
         }
         this.builder.ret(value);
+        return ok(undefined);
     }
 
     /**
      * Lower a break statement
      * @param {import('./hir').HBreakStmt} stmt
      */
-    lowerBreakStmt(stmt) {
+    lowerBreakStmt(stmt: HBreakStmt): Result<void, LoweringError> {
         const targetBlock = this.breakStack[this.breakStack.length - 1];
         if (targetBlock === undefined) {
-            throw new Error("Break outside of loop");
+            return error(
+                LoweringErrorKind.BreakOutsideLoop,
+                `Break outside loop`,
+            );
         }
 
         let value = null;
         if (stmt.value) {
-            value = this.lowerExpr(stmt.value);
+            const res = this.lowerExpr(stmt.value);
+            if (!res.ok) return res;
+            value = res.value;
         }
 
         this.builder.br(targetBlock, value !== null ? [value] : []);
+        return ok(undefined);
     }
 
     /**
      * Lower a continue statement
      * @param {import('./hir').HContinueStmt} stmt
-     */
-    lowerContinueStmt(stmt) {
+     */ lowerContinueStmt(_stmt: HContinueStmt): Result<void, LoweringError> {
         const targetBlock = this.continueStack[this.continueStack.length - 1];
         if (targetBlock === undefined) {
-            throw new Error("Continue outside of loop");
+            return error(
+                LoweringErrorKind.ContinueOutsideLoop,
+                `Continue outside loop`,
+            );
         }
         this.builder.br(targetBlock);
+        return ok(undefined);
     }
 
     // ============================================================================
@@ -471,43 +576,47 @@ export class HirToSsaCtx {
      * @param {HExpr} expr
      * @returns {ValueId}
      */
-    lowerExpr(expr) {
-        const e = /** @type {any} */ (expr);
+    lowerExpr(expr: HExpr): Result<ValueId, LoweringError> {
+        const e = expr;
         switch (expr.kind) {
             case HExprKind.Unit:
-                return this.lowerUnit(e);
+                return this.lowerUnit(e as HUnitExpr);
             case HExprKind.Literal:
-                return this.lowerLiteral(e);
+                return this.lowerLiteral(e as HLiteralExpr);
             case HExprKind.Var:
-                return this.lowerVar(e);
+                return this.lowerVar(e as HVarExpr);
             case HExprKind.Binary:
-                return this.lowerBinary(e);
+                return this.lowerBinary(e as HBinaryExpr);
             case HExprKind.Unary:
-                return this.lowerUnary(e);
+                return this.lowerUnary(e as HUnaryExpr);
             case HExprKind.Call:
-                return this.lowerCall(e);
+                return this.lowerCall(e as HCallExpr);
             case HExprKind.Field:
-                return this.lowerField(e);
+                return this.lowerField(e as HFieldExpr);
             case HExprKind.Index:
-                return this.lowerIndex(e);
+                return this.lowerIndex(e as HIndexExpr);
             case HExprKind.Ref:
-                return this.lowerRef(e);
+                return this.lowerRef(e as HRefExpr);
             case HExprKind.Deref:
-                return this.lowerDeref(e);
+                return this.lowerDeref(e as HDerefExpr);
             case HExprKind.Struct:
-                return this.lowerStruct(e);
+                return this.lowerStruct(e as HStructExpr);
             case HExprKind.Enum:
-                return this.lowerEnum(e);
+                return this.lowerEnum(e as HEnumExpr);
             case HExprKind.If:
-                return this.lowerIf(e);
+                return this.lowerIf(e as HIfExpr);
             case HExprKind.Match:
-                return this.lowerMatch(e);
+                return this.lowerMatch(e as HMatchExpr);
             case HExprKind.Loop:
-                return this.lowerLoop(e);
+                return this.lowerLoop(e as HLoopExpr);
             case HExprKind.While:
-                return this.lowerWhile(e);
+                return this.lowerWhile(e as HWhileExpr);
             default:
-                throw new Error(`Unknown expression kind: ${expr.kind}`);
+                return error(
+                    LoweringErrorKind.UnknownExpression,
+                    `Unknown expression kind`,
+                    (expr as HExpr).span,
+                );
         }
     }
 
@@ -515,11 +624,10 @@ export class HirToSsaCtx {
      * Lower a unit expression
      * @param {import('./hir').HUnitExpr} expr
      * @returns {ValueId}
-     */
-    lowerUnit(expr) {
+     */ lowerUnit(_expr: HUnitExpr): Result<ValueId, LoweringError> {
         // Unit is represented as a null/void value
         const inst = this.builder.iconst(0, IntWidth.I8);
-        return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
+        return ok(inst.id as number);
     }
 
     /**
@@ -527,35 +635,21 @@ export class HirToSsaCtx {
      * @param {import('./hir').HLiteralExpr} expr
      * @returns {ValueId}
      */
-    lowerLiteral(expr) {
+    lowerLiteral(expr: HLiteralExpr): Result<ValueId, LoweringError> {
         switch (expr.literalKind) {
             case HLiteralKind.Int: {
                 const width = this.getIntWidth(expr.ty);
-                const inst = this.builder.iconst(
-                    /** @type {number} */ (expr.value),
-                    width,
-                );
-                return /** @type {ValueId} */ (
-                    /** @type {ValueId} */ (inst.id)
-                );
+                const inst = this.builder.iconst(expr.value as number, width);
+                return ok(inst.id as number);
             }
             case HLiteralKind.Float: {
                 const width = this.getFloatWidth(expr.ty);
-                const inst = this.builder.fconst(
-                    /** @type {number} */ (expr.value),
-                    width,
-                );
-                return /** @type {ValueId} */ (
-                    /** @type {ValueId} */ (inst.id)
-                );
+                const inst = this.builder.fconst(expr.value as number, width);
+                return ok(inst.id as number);
             }
             case HLiteralKind.Bool: {
-                const inst = this.builder.bconst(
-                    /** @type {boolean} */ (expr.value),
-                );
-                return /** @type {ValueId} */ (
-                    /** @type {ValueId} */ (inst.id)
-                );
+                const inst = this.builder.bconst(expr.value as any);
+                return ok(inst.id as number);
             }
             case HLiteralKind.String: {
                 const literalId = internIRStringLiteral(
@@ -563,9 +657,7 @@ export class HirToSsaCtx {
                     String(expr.value),
                 );
                 const inst = this.builder.sconst(literalId);
-                return /** @type {ValueId} */ (
-                    /** @type {ValueId} */ (inst.id)
-                );
+                return ok(inst.id as number);
             }
             case HLiteralKind.Char: {
                 const codePoint =
@@ -573,12 +665,14 @@ export class HirToSsaCtx {
                         ? (expr.value.codePointAt(0) ?? 0)
                         : Number(expr.value);
                 const inst = this.builder.iconst(codePoint, IntWidth.U32);
-                return /** @type {ValueId} */ (
-                    /** @type {ValueId} */ (inst.id)
-                );
+                return ok(inst.id as number);
             }
             default:
-                throw new Error(`Unknown literal kind: ${expr.literalKind}`);
+                return error(
+                    LoweringErrorKind.UnknownLiteral,
+                    `Unknown literal kind`,
+                    (expr as HExpr).span,
+                );
         }
     }
 
@@ -587,48 +681,38 @@ export class HirToSsaCtx {
      * @param {import('./hir').HVarExpr} expr
      * @returns {ValueId}
      */
-    lowerVar(expr) {
-        const byIdAlloca = this.varAllocas.get(
-            /** @type {ValueId} */ (expr.id),
-        );
+    lowerVar(expr: HVarExpr): Result<ValueId, LoweringError> {
+        const byIdAlloca = this.varAllocas.get(expr.id as number);
         if (byIdAlloca !== undefined) {
             const ty = this.translateType(expr.ty);
             const loadInst = this.builder.load(byIdAlloca, ty);
-            return /** @type {ValueId} */ (
-                /** @type {ValueId} */ (loadInst.id)
-            );
+            return ok(loadInst.id as number);
         }
 
-        const byIdValue = this.varValues.get(/** @type {ValueId} */ (expr.id));
+        const byIdValue = this.varValues.get(expr.id as number);
         if (byIdValue !== undefined) {
-            return byIdValue;
+            return ok(byIdValue);
         }
 
         // Look up by name
         const varInfo = this.varNames.get(expr.name);
         if (varInfo) {
-            const byNameAlloca = this.varAllocas.get(
-                /** @type {ValueId} */ (varInfo.id),
-            );
+            const byNameAlloca = this.varAllocas.get(varInfo.id as number);
             if (byNameAlloca !== undefined) {
                 const ty = this.translateType(expr.ty);
                 const loadInst = this.builder.load(byNameAlloca, ty);
-                return /** @type {ValueId} */ (
-                    /** @type {ValueId} */ (loadInst.id)
-                );
+                return ok(loadInst.id as number);
             }
-            const byNameValue = this.varValues.get(
-                /** @type {ValueId} */ (varInfo.id),
-            );
+            const byNameValue = this.varValues.get(varInfo.id as number);
             if (byNameValue !== undefined) {
-                return byNameValue;
+                return ok(byNameValue);
             }
         }
 
         // Function reference - return a placeholder
         const fnId = this.resolveFunctionId(expr.name);
         const inst = this.builder.iconst(fnId, IntWidth.I64);
-        return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
+        return ok(inst.id as number);
     }
 
     /**
@@ -636,13 +720,14 @@ export class HirToSsaCtx {
      * @param {import('./hir').HBinaryExpr} expr
      * @returns {ValueId}
      */
-    lowerBinary(expr) {
-        const left = this.lowerExpr(expr.left);
-        const right = this.lowerExpr(expr.right);
-        const ty = expr.ty;
-        const irTy = this.translateType(ty);
-
-        // For comparison operators, we need the operand type, not the result type
+    lowerBinary(expr: HBinaryExpr): Result<ValueId, LoweringError> {
+        const leftResult = this.lowerExpr(expr.left);
+        if (!leftResult.ok) return leftResult;
+        const left = leftResult.value;
+        const rightResult = this.lowerExpr(expr.right);
+        if (!rightResult.ok) return rightResult;
+        const right = rightResult.value;
+        const ty = expr.ty; // For comparison operators, we need the operand type, not the result type
         const operandTy = expr.left.ty;
 
         let inst;
@@ -651,7 +736,11 @@ export class HirToSsaCtx {
             // Arithmetic
             case BinaryOp.Add: {
                 if (ty.kind === TypeKind.Int) {
-                    inst = this.builder.iadd(left, right, this.getIntWidth(ty));
+                    inst = this.builder.iadd(
+                        left as number,
+                        right as number,
+                        this.getIntWidth(ty),
+                    );
                 } else if (ty.kind === TypeKind.Float) {
                     inst = this.builder.fadd(
                         left,
@@ -659,13 +748,21 @@ export class HirToSsaCtx {
                         this.getFloatWidth(ty),
                     );
                 } else {
-                    throw new Error("Invalid type for add");
+                    return error(
+                        LoweringErrorKind.InvalidType,
+                        `Invalid type`,
+                        (expr as HExpr).span,
+                    );
                 }
                 break;
             }
             case BinaryOp.Sub: {
                 if (ty.kind === TypeKind.Int) {
-                    inst = this.builder.isub(left, right, this.getIntWidth(ty));
+                    inst = this.builder.isub(
+                        left as number,
+                        right as number,
+                        this.getIntWidth(ty),
+                    );
                 } else if (ty.kind === TypeKind.Float) {
                     inst = this.builder.fsub(
                         left,
@@ -673,13 +770,21 @@ export class HirToSsaCtx {
                         this.getFloatWidth(ty),
                     );
                 } else {
-                    throw new Error("Invalid type for sub");
+                    return error(
+                        LoweringErrorKind.InvalidType,
+                        `Invalid type`,
+                        (expr as HExpr).span,
+                    );
                 }
                 break;
             }
             case BinaryOp.Mul: {
                 if (ty.kind === TypeKind.Int) {
-                    inst = this.builder.imul(left, right, this.getIntWidth(ty));
+                    inst = this.builder.imul(
+                        left as number,
+                        right as number,
+                        this.getIntWidth(ty),
+                    );
                 } else if (ty.kind === TypeKind.Float) {
                     inst = this.builder.fmul(
                         left,
@@ -687,13 +792,21 @@ export class HirToSsaCtx {
                         this.getFloatWidth(ty),
                     );
                 } else {
-                    throw new Error("Invalid type for mul");
+                    return error(
+                        LoweringErrorKind.InvalidType,
+                        `Invalid type`,
+                        (expr as HExpr).span,
+                    );
                 }
                 break;
             }
             case BinaryOp.Div: {
                 if (ty.kind === TypeKind.Int) {
-                    inst = this.builder.idiv(left, right, this.getIntWidth(ty));
+                    inst = this.builder.idiv(
+                        left as number,
+                        right as number,
+                        this.getIntWidth(ty),
+                    );
                 } else if (ty.kind === TypeKind.Float) {
                     inst = this.builder.fdiv(
                         left,
@@ -701,37 +814,77 @@ export class HirToSsaCtx {
                         this.getFloatWidth(ty),
                     );
                 } else {
-                    throw new Error("Invalid type for div");
+                    return error(
+                        LoweringErrorKind.InvalidType,
+                        `Invalid type`,
+                        (expr as HExpr).span,
+                    );
                 }
                 break;
             }
             case BinaryOp.Rem: {
-                inst = this.builder.imod(left, right, this.getIntWidth(ty));
+                inst = this.builder.imod(
+                    left as number,
+                    right as number,
+                    this.getIntWidth(ty),
+                );
                 break;
             }
 
             // Comparison - use operand type, not result type (which is bool)
             case BinaryOp.Eq: {
                 if (operandTy.kind === TypeKind.Int) {
-                    inst = this.builder.icmp(IcmpOp.Eq, left, right);
+                    inst = this.builder.icmp(
+                        IcmpOp.Eq,
+                        left as number,
+                        right as number,
+                    );
                 } else if (operandTy.kind === TypeKind.Float) {
-                    inst = this.builder.fcmp(FcmpOp.Oeq, left, right);
+                    inst = this.builder.fcmp(
+                        FcmpOp.Oeq,
+                        left as number,
+                        right as number,
+                    );
                 } else if (operandTy.kind === TypeKind.Bool) {
-                    inst = this.builder.icmp(IcmpOp.Eq, left, right);
+                    inst = this.builder.icmp(
+                        IcmpOp.Eq,
+                        left as number,
+                        right as number,
+                    );
                 } else {
-                    throw new Error("Invalid type for eq");
+                    return error(
+                        LoweringErrorKind.InvalidType,
+                        `Invalid type`,
+                        (expr as HExpr).span,
+                    );
                 }
                 break;
             }
             case BinaryOp.Ne: {
                 if (operandTy.kind === TypeKind.Int) {
-                    inst = this.builder.icmp(IcmpOp.Ne, left, right);
+                    inst = this.builder.icmp(
+                        IcmpOp.Ne,
+                        left as number,
+                        right as number,
+                    );
                 } else if (operandTy.kind === TypeKind.Float) {
-                    inst = this.builder.fcmp(FcmpOp.One, left, right);
+                    inst = this.builder.fcmp(
+                        FcmpOp.One,
+                        left as number,
+                        right as number,
+                    );
                 } else if (operandTy.kind === TypeKind.Bool) {
-                    inst = this.builder.icmp(IcmpOp.Ne, left, right);
+                    inst = this.builder.icmp(
+                        IcmpOp.Ne,
+                        left as number,
+                        right as number,
+                    );
                 } else {
-                    throw new Error("Invalid type for ne");
+                    return error(
+                        LoweringErrorKind.InvalidType,
+                        `Invalid type`,
+                        (expr as HExpr).span,
+                    );
                 }
                 break;
             }
@@ -744,9 +897,17 @@ export class HirToSsaCtx {
                         right,
                     );
                 } else if (operandTy.kind === TypeKind.Float) {
-                    inst = this.builder.fcmp(FcmpOp.Olt, left, right);
+                    inst = this.builder.fcmp(
+                        FcmpOp.Olt,
+                        left as number,
+                        right as number,
+                    );
                 } else {
-                    throw new Error("Invalid type for lt");
+                    return error(
+                        LoweringErrorKind.InvalidType,
+                        `Invalid type`,
+                        (expr as HExpr).span,
+                    );
                 }
                 break;
             }
@@ -759,9 +920,17 @@ export class HirToSsaCtx {
                         right,
                     );
                 } else if (operandTy.kind === TypeKind.Float) {
-                    inst = this.builder.fcmp(FcmpOp.Ole, left, right);
+                    inst = this.builder.fcmp(
+                        FcmpOp.Ole,
+                        left as number,
+                        right as number,
+                    );
                 } else {
-                    throw new Error("Invalid type for le");
+                    return error(
+                        LoweringErrorKind.InvalidType,
+                        `Invalid type`,
+                        (expr as HExpr).span,
+                    );
                 }
                 break;
             }
@@ -774,9 +943,17 @@ export class HirToSsaCtx {
                         right,
                     );
                 } else if (operandTy.kind === TypeKind.Float) {
-                    inst = this.builder.fcmp(FcmpOp.Ogt, left, right);
+                    inst = this.builder.fcmp(
+                        FcmpOp.Ogt,
+                        left as number,
+                        right as number,
+                    );
                 } else {
-                    throw new Error("Invalid type for gt");
+                    return error(
+                        LoweringErrorKind.InvalidType,
+                        `Invalid type`,
+                        (expr as HExpr).span,
+                    );
                 }
                 break;
             }
@@ -789,9 +966,17 @@ export class HirToSsaCtx {
                         right,
                     );
                 } else if (operandTy.kind === TypeKind.Float) {
-                    inst = this.builder.fcmp(FcmpOp.Oge, left, right);
+                    inst = this.builder.fcmp(
+                        FcmpOp.Oge,
+                        left as number,
+                        right as number,
+                    );
                 } else {
-                    throw new Error("Invalid type for ge");
+                    return error(
+                        LoweringErrorKind.InvalidType,
+                        `Invalid type`,
+                        (expr as HExpr).span,
+                    );
                 }
                 break;
             }
@@ -800,42 +985,74 @@ export class HirToSsaCtx {
             case BinaryOp.And: {
                 // Short-circuit and is handled separately
                 // Here we do bitwise and for bools
-                inst = this.builder.iand(left, right, IntWidth.I8);
+                inst = this.builder.iand(
+                    left as number,
+                    right as number,
+                    IntWidth.I8,
+                );
                 break;
             }
             case BinaryOp.Or: {
                 // Short-circuit or is handled separately
                 // Here we do bitwise or for bools
-                inst = this.builder.ior(left, right, IntWidth.I8);
+                inst = this.builder.ior(
+                    left as number,
+                    right as number,
+                    IntWidth.I8,
+                );
                 break;
             }
 
             // Bitwise
             case BinaryOp.BitXor: {
-                inst = this.builder.ixor(left, right, this.getIntWidth(ty));
+                inst = this.builder.ixor(
+                    left as number,
+                    right as number,
+                    this.getIntWidth(ty),
+                );
                 break;
             }
             case BinaryOp.BitAnd: {
-                inst = this.builder.iand(left, right, this.getIntWidth(ty));
+                inst = this.builder.iand(
+                    left as number,
+                    right as number,
+                    this.getIntWidth(ty),
+                );
                 break;
             }
             case BinaryOp.BitOr: {
-                inst = this.builder.ior(left, right, this.getIntWidth(ty));
+                inst = this.builder.ior(
+                    left as number,
+                    right as number,
+                    this.getIntWidth(ty),
+                );
                 break;
             }
             case BinaryOp.Shl: {
-                inst = this.builder.ishl(left, right, this.getIntWidth(ty));
+                inst = this.builder.ishl(
+                    left as number,
+                    right as number,
+                    this.getIntWidth(ty),
+                );
                 break;
             }
             case BinaryOp.Shr: {
-                inst = this.builder.ishr(left, right, this.getIntWidth(ty));
+                inst = this.builder.ishr(
+                    left as number,
+                    right as number,
+                    this.getIntWidth(ty),
+                );
                 break;
             }
             default:
-                throw new Error(`Unknown binary operator: ${expr.op}`);
+                return error(
+                    LoweringErrorKind.UnknownOperator,
+                    `Unknown operator`,
+                    (expr as HExpr).span,
+                );
         }
 
-        return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
+        return ok(inst.id as number);
     }
 
     /**
@@ -843,8 +1060,10 @@ export class HirToSsaCtx {
      * @param {import('./hir').HUnaryExpr} expr
      * @returns {ValueId}
      */
-    lowerUnary(expr) {
-        const operand = this.lowerExpr(expr.operand);
+    lowerUnary(expr: HUnaryExpr): Result<ValueId, LoweringError> {
+        const operandResult = this.lowerExpr(expr.operand);
+        if (!operandResult.ok) return operandResult;
+        const operand = operandResult.value;
         const ty = expr.ty;
 
         let inst;
@@ -856,7 +1075,11 @@ export class HirToSsaCtx {
                 } else if (ty.kind === TypeKind.Float) {
                     inst = this.builder.fneg(operand, this.getFloatWidth(ty));
                 } else {
-                    throw new Error("Invalid type for neg");
+                    return error(
+                        LoweringErrorKind.InvalidType,
+                        `Invalid type`,
+                        (expr as HExpr).span,
+                    );
                 }
                 break;
             }
@@ -866,9 +1089,7 @@ export class HirToSsaCtx {
                     const one = this.builder.bconst(true);
                     inst = this.builder.ixor(
                         operand,
-                        /** @type {ValueId} */ (
-                            /** @type {ValueId} */ (one.id)
-                        ),
+                        one.id as number,
                         IntWidth.I8,
                     );
                 } else if (ty.kind === TypeKind.Int) {
@@ -879,13 +1100,15 @@ export class HirToSsaCtx {
                     );
                     inst = this.builder.ixor(
                         operand,
-                        /** @type {ValueId} */ (
-                            /** @type {ValueId} */ (allOnes.id)
-                        ),
+                        allOnes.id as number,
                         this.getIntWidth(ty),
                     );
                 } else {
-                    throw new Error("Invalid type for not");
+                    return error(
+                        LoweringErrorKind.InvalidType,
+                        `Invalid type`,
+                        (expr as HExpr).span,
+                    );
                 }
                 break;
             }
@@ -902,10 +1125,14 @@ export class HirToSsaCtx {
                 break;
             }
             default:
-                throw new Error(`Unknown unary operator: ${expr.op}`);
+                return error(
+                    LoweringErrorKind.UnknownOperator,
+                    `Unknown operator`,
+                    (expr as HExpr).span,
+                );
         }
 
-        return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
+        return ok(inst.id as number);
     }
 
     /**
@@ -913,7 +1140,7 @@ export class HirToSsaCtx {
      * @param {import('./hir').HCallExpr} expr
      * @returns {ValueId}
      */
-    lowerCall(expr) {
+    lowerCall(expr: HCallExpr): Result<ValueId, LoweringError> {
         // Get callee - could be a function name or a function pointer
         let fnId;
         let isDynamic = true;
@@ -922,16 +1149,22 @@ export class HirToSsaCtx {
             isDynamic = false;
         } else {
             // Dynamic callee - evaluate to a runtime function id/hash value.
-            fnId = this.lowerExpr(expr.callee);
+            const calleeRes = this.lowerExpr(expr.callee);
+            if (!calleeRes.ok) return calleeRes;
+            fnId = calleeRes.value;
         }
 
-        const args = expr.args.map((arg) => this.lowerExpr(arg));
+        const args = expr.args.map((arg) => {
+            const argRes = this.lowerExpr(arg);
+            if (!argRes.ok) throw argRes;
+            return argRes.value;
+        });
         const returnType = this.translateType(expr.ty);
 
         const inst = isDynamic
             ? this.builder.callDyn(fnId, args, returnType)
             : this.builder.call(fnId, args, returnType);
-        return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
+        return ok(inst.id as number);
     }
 
     /**
@@ -939,13 +1172,19 @@ export class HirToSsaCtx {
      * @param {import('./hir').HFieldExpr} expr
      * @returns {ValueId}
      */
-    lowerField(expr) {
-        const base = this.lowerExpr(expr.base);
+    lowerField(expr: HFieldExpr): Result<ValueId, LoweringError> {
+        const baseResult = this.lowerExpr(expr.base);
+        if (!baseResult.ok) return baseResult;
+        const base = baseResult.value;
         const fieldIndex = expr.index;
         const fieldTy = this.translateType(expr.ty);
 
-        const inst = this.builder.structGet(base, fieldIndex, fieldTy);
-        return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
+        const inst = this.builder.structGet(
+            base as number,
+            fieldIndex,
+            fieldTy,
+        );
+        return ok(inst.id as number);
     }
 
     /**
@@ -953,17 +1192,18 @@ export class HirToSsaCtx {
      * @param {import('./hir').HIndexExpr} expr
      * @returns {ValueId}
      */
-    lowerIndex(expr) {
-        const base = this.lowerExpr(expr.base);
-        const index = this.lowerExpr(expr.index);
+    lowerIndex(expr: HIndexExpr): Result<ValueId, LoweringError> {
+        const baseResult = this.lowerExpr(expr.base);
+        if (!baseResult.ok) return baseResult;
+        const base = baseResult.value;
+        const indexResult = this.lowerExpr(expr.index);
+        if (!indexResult.ok) return indexResult;
+        const index = indexResult.value;
         const elemTy = this.translateType(expr.ty);
 
-        const ptrInst = this.builder.gep(base, [index], elemTy);
-        const loadInst = this.builder.load(
-            /** @type {ValueId} */ (/** @type {ValueId} */ (ptrInst.id)),
-            elemTy,
-        );
-        return /** @type {ValueId} */ (/** @type {ValueId} */ (loadInst.id));
+        const ptrInst = this.builder.gep(base, [index as number], elemTy);
+        const loadInst = this.builder.load(ptrInst.id as number, elemTy);
+        return ok(loadInst.id as number);
     }
 
     /**
@@ -971,10 +1211,12 @@ export class HirToSsaCtx {
      * @param {import('./hir').HRefExpr} expr
      * @returns {ValueId}
      */
-    lowerRef(expr) {
+    lowerRef(expr: HRefExpr): Result<ValueId, LoweringError> {
         // Get a pointer to the operand
-        const ptr = this.lowerPlaceToRef(expr.operand);
-        return ptr;
+        const ptrResult = this.lowerPlaceToRef(expr.operand);
+        if (!ptrResult.ok) return ptrResult;
+        const ptr = ptrResult.value;
+        return ok(ptr);
     }
 
     /**
@@ -982,11 +1224,13 @@ export class HirToSsaCtx {
      * @param {import('./hir').HDerefExpr} expr
      * @returns {ValueId}
      */
-    lowerDeref(expr) {
-        const ptr = this.lowerExpr(expr.operand);
+    lowerDeref(expr: HDerefExpr): Result<ValueId, LoweringError> {
+        const ptrResult = this.lowerExpr(expr.operand);
+        if (!ptrResult.ok) return ptrResult;
+        const ptr = ptrResult.value;
         const ty = this.translateType(expr.ty);
-        const inst = this.builder.load(ptr, ty);
-        return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
+        const inst = this.builder.load(ptr as number, ty);
+        return ok(inst.id as number);
     }
 
     /**
@@ -994,12 +1238,17 @@ export class HirToSsaCtx {
      * @param {import('./hir').HStructExpr} expr
      * @returns {ValueId}
      */
-    lowerStruct(expr) {
-        const fields = expr.fields.map((f) => this.lowerExpr(f.value));
+    lowerStruct(expr: HStructExpr): Result<ValueId, LoweringError> {
+        const fields = [];
+        for (const f of expr.fields) {
+            const res = this.lowerExpr(f.value);
+            if (!res.ok) return res;
+            fields.push(res.value);
+        }
         const structTy = this.translateType(expr.ty);
 
         const inst = this.builder.structCreate(fields, structTy);
-        return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
+        return ok(inst.id as number);
     }
 
     /**
@@ -1007,24 +1256,39 @@ export class HirToSsaCtx {
      * @param {import('./hir').HEnumExpr} expr
      * @returns {ValueId}
      */
-    lowerEnum(expr) {
+    lowerEnum(expr: HEnumExpr): Result<ValueId, LoweringError> {
         const variant = expr.variantIndex;
-        const data =
-            expr.fields.length > 0
-                ? expr.fields.length === 1
-                    ? this.lowerExpr(expr.fields[0])
-                    : this.builder.structCreate(
-                          expr.fields.map((f) => this.lowerExpr(f)),
-                          makeIRStructType(
-                              "",
-                              expr.fields.map((f) => this.translateType(f.ty)),
-                          ),
-                      ).id
-                : null;
+        let data: ValueId | null = null;
+        
+        if (expr.fields.length > 0) {
+            if (expr.fields.length === 1) {
+                const fieldResult = this.lowerExpr(expr.fields[0]);
+                if (!fieldResult.ok) return fieldResult;
+                data = fieldResult.value;
+            } else {
+                const fieldValues: ValueId[] = [];
+                for (const f of expr.fields) {
+                    const res = this.lowerExpr(f);
+                    if (!res.ok) return res;
+                    fieldValues.push(res.value);
+                }
+                const structInst = this.builder.structCreate(
+                    fieldValues,
+                    makeIRStructType(
+                        "",
+                        expr.fields.map((f: import("./hir").HExpr) =>
+                            this.translateType(f.ty),
+                        ),
+                    ),
+                );
+                data = structInst.id as number;
+            }
+        }
+        
         const enumTy = this.translateType(expr.ty);
 
         const inst = this.builder.enumCreate(variant, data, enumTy);
-        return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
+        return ok(inst.id as number);
     }
 
     // ============================================================================
@@ -1036,52 +1300,59 @@ export class HirToSsaCtx {
      * @param {HPlace | HExpr} place
      * @returns {ValueId}
      */
-    lowerPlaceToRef(place) {
+    lowerPlaceToRef(place: HPlace | HExpr): Result<ValueId, LoweringError> {
         // Handle expressions that are places
         if (place.kind === HExprKind.Var && typeof place.name === "string") {
             const varInfo = this.varNames.get(place.name);
             if (varInfo) {
-                return this.ensureVarAlloca(
-                    /** @type {ValueId} */ (varInfo.id),
-                    varInfo.ty,
+                return ok(
+                    this.ensureVarAlloca(varInfo.id as number, varInfo.ty),
                 );
             }
-            throw new Error(`Unknown variable: ${place.name}`);
+            return error(
+                LoweringErrorKind.UnknownVariable,
+                `Unknown variable`,
+                place.span,
+            );
         }
 
         if (place.kind === HExprKind.Field) {
             // Field access - need pointer to field
-            const basePtr =
+            const basePtrRes =
                 place.base.ty && place.base.ty.kind === TypeKind.Ptr
                     ? this.lowerExpr(place.base)
                     : this.lowerPlaceToRef(place.base);
+            if (!basePtrRes.ok) return basePtrRes;
+            const basePtr = basePtrRes.value;
+
             const fieldIndex = place.index;
             const fieldTy = this.translateType(place.ty);
             const inst = this.builder.gep(
                 basePtr,
                 [
-                    /** @type {ValueId} */ (
-                        this.builder.iconst(0, IntWidth.I32).id
-                    ),
-                    /** @type {ValueId} */ (
-                        this.builder.iconst(fieldIndex, IntWidth.I32).id
-                    ),
+                    this.builder.iconst(0, IntWidth.I32).id as number,
+                    this.builder.iconst(fieldIndex, IntWidth.I32).id as number,
                 ],
                 fieldTy,
             );
-            return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
+            return ok(inst.id as number);
         }
 
         if (place.kind === HExprKind.Index) {
             // Index access - need pointer to element
-            const basePtr =
+            const basePtrRes =
                 place.base.ty && place.base.ty.kind === TypeKind.Ptr
                     ? this.lowerExpr(place.base)
                     : this.lowerPlaceToRef(place.base);
-            const index = this.lowerExpr(place.index);
+            if (!basePtrRes.ok) return basePtrRes;
+            const basePtr = basePtrRes.value;
+
+            const indexResult = this.lowerExpr(place.index);
+            if (!indexResult.ok) return indexResult;
+            const index = indexResult.value;
             const elemTy = this.translateType(place.ty);
-            const inst = this.builder.gep(basePtr, [index], elemTy);
-            return /** @type {ValueId} */ (/** @type {ValueId} */ (inst.id));
+            const inst = this.builder.gep(basePtr, [index as number], elemTy);
+            return ok(inst.id as number);
         }
 
         if (place.kind === HExprKind.Deref) {
@@ -1092,89 +1363,94 @@ export class HirToSsaCtx {
         // Handle HPlace types
         switch (place.kind) {
             case HPlaceKind.Var: {
-                return this.ensureVarAlloca(
-                    /** @type {ValueId} */ (place.id),
-                    this.translateType(place.ty),
+                return ok(
+                    this.ensureVarAlloca(
+                        place.id as number,
+                        this.translateType(place.ty),
+                    ),
                 );
             }
             case HPlaceKind.Field: {
-                let basePtr;
+                let basePtr: ValueId;
                 if (place.base.ty && place.base.ty.kind === TypeKind.Ptr) {
                     if (place.base.kind === HPlaceKind.Deref) {
-                        basePtr = this.lowerPlaceToRef(place.base);
+                        const basePtrResult = this.lowerPlaceToRef(place.base);
+                        if (!basePtrResult.ok) return basePtrResult;
+                        basePtr = basePtrResult.value;
                     } else {
-                        const baseAddr = this.lowerPlaceToRef(place.base);
+                        const baseAddrResult = this.lowerPlaceToRef(place.base);
+                        if (!baseAddrResult.ok) return baseAddrResult;
+                        const baseAddr = baseAddrResult.value;
                         const ptrTy = this.translateType(place.base.ty);
-                        basePtr = /** @type {ValueId} */ (
-                            this.builder.load(baseAddr, ptrTy).id
-                        );
+                        basePtr = this.builder.load(baseAddr, ptrTy).id as number;
                     }
                 } else {
-                    basePtr = this.lowerPlaceToRef(place.base);
+                    const basePtrResult = this.lowerPlaceToRef(place.base);
+                    if (!basePtrResult.ok) return basePtrResult;
+                    basePtr = basePtrResult.value;
                 }
                 const fieldIndex = place.index;
                 const fieldTy = this.translateType(place.ty);
                 const inst = this.builder.gep(
                     basePtr,
                     [
-                        /** @type {ValueId} */ (
-                            this.builder.iconst(0, IntWidth.I32).id
-                        ),
-                        /** @type {ValueId} */ (
-                            this.builder.iconst(fieldIndex, IntWidth.I32).id
-                        ),
+                        this.builder.iconst(0, IntWidth.I32).id as number,
+                        this.builder.iconst(fieldIndex, IntWidth.I32).id as number,
                     ],
                     fieldTy,
                 );
-                return /** @type {ValueId} */ (
-                    /** @type {ValueId} */ (inst.id)
-                );
+                return ok(inst.id as number);
             }
             case HPlaceKind.Index: {
-                let basePtr;
+                let basePtr: ValueId;
                 if (place.base.ty && place.base.ty.kind === TypeKind.Ptr) {
                     if (place.base.kind === HPlaceKind.Deref) {
-                        basePtr = this.lowerPlaceToRef(place.base);
+                        const basePtrResult = this.lowerPlaceToRef(place.base);
+                        if (!basePtrResult.ok) return basePtrResult;
+                        basePtr = basePtrResult.value;
                     } else {
-                        const baseAddr = this.lowerPlaceToRef(place.base);
+                        const baseAddrResult = this.lowerPlaceToRef(place.base);
+                        if (!baseAddrResult.ok) return baseAddrResult;
+                        const baseAddr = baseAddrResult.value;
                         const ptrTy = this.translateType(place.base.ty);
-                        basePtr = /** @type {ValueId} */ (
-                            this.builder.load(baseAddr, ptrTy).id
-                        );
+                        basePtr = this.builder.load(baseAddr, ptrTy).id as number;
                     }
                 } else {
-                    basePtr = this.lowerPlaceToRef(place.base);
+                    const basePtrResult = this.lowerPlaceToRef(place.base);
+                    if (!basePtrResult.ok) return basePtrResult;
+                    basePtr = basePtrResult.value;
                 }
-                const index = this.lowerExpr(place.index);
+                const indexResult = this.lowerExpr(place.index);
+                if (!indexResult.ok) return indexResult;
+                const index = indexResult.value;
                 const elemTy = this.translateType(place.ty);
-                const inst = this.builder.gep(basePtr, [index], elemTy);
-                return /** @type {ValueId} */ (
-                    /** @type {ValueId} */ (inst.id)
+                const inst = this.builder.gep(
+                    basePtr,
+                    [index as number],
+                    elemTy,
                 );
+                return ok(inst.id as number);
             }
             case HPlaceKind.Deref: {
-                const basePtr = this.lowerPlaceToRef(place.base);
+                const basePtrResult = this.lowerPlaceToRef(place.base);
+                if (!basePtrResult.ok) return basePtrResult;
+                const basePtr = basePtrResult.value;
                 const ptrTy = this.translateType(place.base.ty);
-                const inst = this.builder.load(basePtr, ptrTy);
-                return /** @type {ValueId} */ (
-                    /** @type {ValueId} */ (inst.id)
-                );
+                const inst = this.builder.load(basePtr as number, ptrTy);
+                return ok(inst.id as number);
             }
             default:
-                throw new Error(`Unknown place kind: ${place.kind}`);
+                return error(
+                    LoweringErrorKind.UnknownVariable,
+                    `Unknown variable`,
+                    place.span,
+                );
         }
     }
-
     // ============================================================================
     // Task 9.7: If Expression Lowering
     // ============================================================================
-
-    /**
-     * Lower an if expression
-     * @param {import('./hir').HIfExpr} expr
-     * @returns {ValueId}
-     */
-    lowerIf(expr) {
+    lowerIf(expr: HIfExpr): Result<ValueId, LoweringError> {
         const hasResult = expr.ty.kind !== TypeKind.Unit;
         const resultTy = this.translateType(expr.ty);
 
@@ -1189,7 +1465,9 @@ export class HirToSsaCtx {
         );
 
         // Evaluate condition
-        const cond = this.lowerExpr(expr.condition);
+        const condResult = this.lowerExpr(expr.condition);
+        if (!condResult.ok) return condResult;
+        const cond = condResult.value;
 
         // Branch to then/else
         if (elseId) {
@@ -1200,17 +1478,17 @@ export class HirToSsaCtx {
 
         // Lower then branch
         this.builder.switchToBlock(thenId);
-        const thenResult = this.lowerBlock(expr.thenBranch);
-        if (
-            !(
-                /** @type {import("./ir").IRBlock} */ (
-                    this.builder.currentBlock
-                ).terminator
-            )
-        ) {
+        const thenResultResult = this.lowerBlock(expr.thenBranch);
+        if (!thenResultResult.ok) return thenResultResult;
+        const thenResult = thenResultResult.value;
+        if (!this.builder.currentBlock!.terminator) {
             if (hasResult) {
                 if (thenResult === null) {
-                    throw new Error("If then branch is missing result value");
+                    return error(
+                        LoweringErrorKind.MissingResult,
+                        `Missing result`,
+                        (expr as HExpr).span,
+                    );
                 }
                 this.builder.br(mergeId, [thenResult]);
             } else {
@@ -1220,21 +1498,18 @@ export class HirToSsaCtx {
         this.builder.sealBlock(thenId);
 
         // Lower else branch
-        let elseResult = null;
         if (elseId && expr.elseBranch) {
             this.builder.switchToBlock(elseId);
-            elseResult = this.lowerBlock(expr.elseBranch);
-            if (
-                !(
-                    /** @type {import("./ir").IRBlock} */ (
-                        this.builder.currentBlock
-                    ).terminator
-                )
-            ) {
+            const elseResultResult = this.lowerBlock(expr.elseBranch);
+            if (!elseResultResult.ok) return elseResultResult;
+            const elseResult = elseResultResult.value;
+            if (!this.builder.currentBlock!.terminator) {
                 if (hasResult) {
                     if (elseResult === null) {
-                        throw new Error(
-                            "If else branch is missing result value",
+                        return error(
+                            LoweringErrorKind.MissingResult,
+                            `Missing result`,
+                            (expr as HExpr).span,
                         );
                     }
                     this.builder.br(mergeId, [elseResult]);
@@ -1252,12 +1527,16 @@ export class HirToSsaCtx {
         if (hasResult) {
             const mergeBlock = this.builder.currentBlock;
             if (!mergeBlock || mergeBlock.params.length !== 1) {
-                throw new Error("If merge block is missing result parameter");
+                return error(
+                    LoweringErrorKind.MissingResult,
+                    `Missing result`,
+                    (expr as HExpr).span,
+                );
             }
-            return /** @type {ValueId} */ (mergeBlock.params[0].id);
+            return ok(mergeBlock.params[0].id);
         }
 
-        return /** @type {ValueId} */ (this.builder.iconst(0, IntWidth.I8).id);
+        return ok(this.builder.iconst(0, IntWidth.I8).id as number);
     }
 
     // ============================================================================
@@ -1269,8 +1548,10 @@ export class HirToSsaCtx {
      * @param {import('./hir').HMatchExpr} expr
      * @returns {ValueId}
      */
-    lowerMatch(expr) {
-        const scrutinee = this.lowerExpr(expr.scrutinee);
+    lowerMatch(expr: HMatchExpr): Result<ValueId, LoweringError> {
+        const scrutineeResult = this.lowerExpr(expr.scrutinee);
+        if (!scrutineeResult.ok) return scrutineeResult;
+        const scrutinee = scrutineeResult.value;
         const arms = expr.arms;
         const hasResult = expr.ty.kind !== TypeKind.Unit;
         const resultTy = this.translateType(expr.ty);
@@ -1281,9 +1562,7 @@ export class HirToSsaCtx {
         if (arms.length === 0) {
             // No arms - unreachable
             this.builder.unreachable();
-            return /** @type {ValueId} */ (
-                this.builder.iconst(0, IntWidth.I8).id
-            );
+            return ok(this.builder.iconst(0, IntWidth.I8).id as number);
         }
 
         // Check if all patterns are simple literals or enums
@@ -1296,45 +1575,51 @@ export class HirToSsaCtx {
 
         if (isSimple && arms.some((arm) => arm.pat.kind === HPatKind.Literal)) {
             // Use switch for simple literal patterns
-            return /** @type {ValueId} */ (
-                this.lowerMatchSwitch(
-                    expr,
-                    scrutinee,
-                    arms,
-                    hasResult,
-                    resultTy,
-                )
-            );
-        }
-
-        // Check for enum match
-        if (expr.scrutinee.ty.kind === TypeKind.Enum) {
-            return /** @type {ValueId} */ (
-                this.lowerEnumMatch(expr, scrutinee, arms, hasResult, resultTy)
-            );
-        }
-
-        // General case: generate decision tree
-        return /** @type {ValueId} */ (
-            this.lowerMatchDecisionTree(
+            return this.lowerMatchSwitch(
                 expr,
                 scrutinee,
                 arms,
                 hasResult,
                 resultTy,
-            )
+            );
+        }
+
+        // Check for enum match
+        if (expr.scrutinee.ty.kind === TypeKind.Enum) {
+            return this.lowerEnumMatch(
+                expr,
+                scrutinee,
+                arms,
+                hasResult,
+                resultTy,
+            );
+        }
+
+        // General case: generate decision tree
+        return this.lowerMatchDecisionTree(
+            expr,
+            scrutinee,
+            arms,
+            hasResult,
+            resultTy,
         );
     }
 
     /**
      * Lower a match using switch
-     * @param {any} expr
-     * @param {any} scrutinee
-     * @param {any[]} arms
+     * @param {HMatchExpr} expr
+     * @param {ValueId} scrutinee
+     * @param {HMatchArm[]} arms
      * @param {boolean} hasResult
-     * @param {any} resultTy
+     * @param {IRType} resultTy
      */
-    lowerMatchSwitch(expr, scrutinee, arms, hasResult, resultTy) {
+    lowerMatchSwitch(
+        expr: HMatchExpr,
+        scrutinee: ValueId,
+        arms: HMatchArm[],
+        hasResult: boolean,
+        resultTy: IRType,
+    ): Result<ValueId, LoweringError> {
         const mergeId = this.builder.createBlock("match_merge");
         const armBlocks = arms.map((_, i) =>
             this.builder.createBlock(`arm${i}`),
@@ -1359,19 +1644,27 @@ export class HirToSsaCtx {
             }
         }
 
-        this.builder.switch(scrutinee, cases, defaultBlock, []);
+        this.builder.switch(scrutinee as number, cases, defaultBlock, []);
 
         // Lower each arm
-        let resultValue = null;
         for (let i = 0; i < arms.length; i++) {
             this.builder.switchToBlock(armBlocks[i]);
 
             // Bind pattern
-            this.bindPattern(arms[i].pat, scrutinee, expr.scrutinee.ty);
+            const res_c2rpvb = this.bindPattern(
+                arms[i].pat,
+                scrutinee,
+                expr.scrutinee.ty,
+            );
+            if (!res_c2rpvb.ok) return res_c2rpvb;
 
             // Check guard
             if (arms[i].guard) {
-                const guardResult = this.lowerExpr(arms[i].guard);
+                const guardResultResult = this.lowerExpr(
+                    arms[i].guard as HExpr,
+                );
+                if (!guardResultResult.ok) return guardResultResult;
+                const guardResult = guardResultResult.value;
                 const guardThenId = this.builder.createBlock("guard_then");
                 const guardElseId = this.builder.createBlock("guard_else");
                 this.builder.brIf(
@@ -1389,14 +1682,9 @@ export class HirToSsaCtx {
                 this.builder.switchToBlock(guardThenId);
             }
 
-            const armResult = this.lowerBlock(arms[i].body);
-            if (
-                !(
-                    /** @type {import("./ir").IRBlock} */ (
-                        this.builder.currentBlock
-                    ).terminator
-                )
-            ) {
+            const armResultResult = this.lowerBlock(arms[i].body);
+            if (!armResultResult.ok) return armResultResult;
+            if (!this.builder.currentBlock!.terminator) {
                 this.builder.br(mergeId, []);
             }
             this.builder.sealBlock(armBlocks[i]);
@@ -1405,29 +1693,36 @@ export class HirToSsaCtx {
         this.builder.switchToBlock(mergeId);
         this.builder.sealBlock(mergeId);
 
-        return hasResult
-            ? this.defaultValueForType(resultTy)
-            : this.builder.iconst(0, IntWidth.I8).id;
+        return ok(
+            hasResult
+                ? this.defaultValueForType(resultTy)
+                : (this.builder.iconst(0, IntWidth.I8).id as number),
+        );
     }
 
     /**
      * Lower an enum match
-     * @param {any} expr
-     * @param {any} scrutinee
-     * @param {any[]} arms
+     * @param {HMatchExpr} expr
+     * @param {ValueId} scrutinee
+     * @param {HMatchArm[]} arms
      * @param {boolean} hasResult
-     * @param {any} resultTy
+     * @param {IRType} resultTy
      */
-    lowerEnumMatch(expr, scrutinee, arms, hasResult, resultTy) {
-        const mergeParams =
-            hasResult && resultTy ? [this.translateType(resultTy)] : [];
+    lowerEnumMatch(
+        expr: HMatchExpr,
+        scrutinee: ValueId,
+        arms: HMatchArm[],
+        hasResult: boolean,
+        resultTy: IRType,
+    ): Result<ValueId, LoweringError> {
+        const mergeParams = hasResult && resultTy ? [resultTy] : [];
         const mergeId = this.builder.createBlock("match_merge", mergeParams);
         const armBlocks = arms.map((_, i) =>
             this.builder.createBlock(`arm${i}`),
         );
 
         // Get enum tag
-        const tag = this.builder.enumGetTag(scrutinee);
+        const tag = this.builder.enumGetTag(scrutinee as number);
 
         // Build switch on tag
         const cases = [];
@@ -1464,35 +1759,27 @@ export class HirToSsaCtx {
 
         const defaultArgs =
             hasResult && mergeParams.length > 0 && defaultBlock === mergeId
-                ? [this.defaultValueForType(resultTy)]
+                ? [this.defaultValueForType(resultTy) as number]
                 : [];
-        this.builder.switch(
-            /** @type {ValueId} */ (/** @type {ValueId} */ (tag.id)),
-            cases,
-            defaultBlock,
-            defaultArgs,
-        );
+        this.builder.switch(tag.id as number, cases, defaultBlock, defaultArgs);
 
         // Lower each arm
         for (let i = 0; i < arms.length; i++) {
             this.builder.switchToBlock(armBlocks[i]);
 
             // Bind pattern
-            this.bindEnumPattern(
+            const res_7ygu3k = this.bindEnumPattern(
                 arms[i].pat,
                 scrutinee,
                 expr.scrutinee.ty,
                 armVariantIndices[i],
             );
+            if (!res_7ygu3k.ok) return res_7ygu3k;
 
-            const armResult = this.lowerBlock(arms[i].body);
-            if (
-                !(
-                    /** @type {import("./ir").IRBlock} */ (
-                        this.builder.currentBlock
-                    ).terminator
-                )
-            ) {
+            const armResultResult = this.lowerBlock(arms[i].body);
+            if (!armResultResult.ok) return armResultResult;
+            const armResult = armResultResult.value;
+            if (!this.builder.currentBlock!.terminator) {
                 const branchArgs =
                     hasResult && armResult !== null ? [armResult] : [];
                 this.builder.br(mergeId, branchArgs);
@@ -1504,25 +1791,28 @@ export class HirToSsaCtx {
         this.builder.sealBlock(mergeId);
 
         if (hasResult) {
-            const mergeParam = /** @type {import("./ir").IRBlock} */ (
-                this.builder.currentBlock
-            ).params[0];
+            const mergeParam = this.builder.currentBlock!.params[0];
             if (mergeParam) {
-                return /** @type {ValueId} */ (mergeParam.id);
+                return ok(mergeParam.id as number);
             }
-            return this.defaultValueForType(resultTy);
+            return ok(this.defaultValueForType(resultTy));
         }
-        return /** @type {ValueId} */ (this.builder.iconst(0, IntWidth.I8).id);
+        return ok(this.builder.iconst(0, IntWidth.I8).id as number);
     }
 
     /**
      * Bind an enum pattern
-     * @param {any} pat
-     * @param {any} enumValue
-     * @param {any} enumTy
+     * @param {unknown} pat
+     * @param {unknown} enumValue
+     * @param {unknown} enumTy
      * @param {number} variantIndex
      */
-    bindEnumPattern(pat, enumValue, enumTy, variantIndex) {
+    bindEnumPattern(
+        pat: HPat,
+        enumValue: ValueId,
+        enumTy: Type,
+        variantIndex: number,
+    ): Result<void, LoweringError> {
         if (pat.kind === HPatKind.Struct && pat.fields) {
             // Extract and bind each field
             for (let i = 0; i < pat.fields.length; i++) {
@@ -1534,46 +1824,55 @@ export class HirToSsaCtx {
                     i,
                     this.translateType(fieldTy),
                 );
-                this.bindPattern(
+                const res_t3ds6 = this.bindPattern(
                     field.pat,
-                    /** @type {ValueId} */ (
-                        /** @type {ValueId} */ (fieldValue.id)
-                    ),
+                    fieldValue.id as number,
                     fieldTy,
                 );
+                if (!res_t3ds6.ok) return res_t3ds6;
             }
         } else if (pat.kind === HPatKind.Ident) {
             // Bind whole enum value
-            this.varValues.set(/** @type {ValueId} */ (pat.id), enumValue);
+            this.varValues.set(pat.id as number, enumValue);
         }
+        return ok(undefined);
     }
 
     /**
      * Lower a match using decision tree
-     * @param {any} expr
-     * @param {any} scrutinee
-     * @param {any[]} arms
+     * @param {HMatchExpr} expr
+     * @param {ValueId} scrutinee
+     * @param {HMatchArm[]} arms
      * @param {boolean} hasResult
-     * @param {any} resultTy
+     * @param {IRType} resultTy
      */
-    lowerMatchDecisionTree(expr, scrutinee, arms, hasResult, resultTy) {
+    lowerMatchDecisionTree(
+        expr: HMatchExpr,
+        scrutinee: ValueId,
+        arms: HMatchArm[],
+        hasResult: boolean,
+        resultTy: IRType,
+    ): Result<ValueId, LoweringError> {
         // Simplified: just lower first matching arm
         const mergeId = this.builder.createBlock("match_merge");
 
         for (let i = 0; i < arms.length; i++) {
             const arm = arms[i];
-            const armBlock = this.builder.createBlock(`arm${i}`);
+            // Create arm block (used for branching)
+            this.builder.createBlock(`arm${i}`);
             const nextBlock =
                 i < arms.length - 1
                     ? this.builder.createBlock(`next${i}`)
                     : mergeId;
 
             // Generate pattern check
-            const { matches, bindings } = this.lowerPatternCheck(
+            const patternCheckResult = this.lowerPatternCheck(
                 scrutinee,
                 arm.pat,
                 expr.scrutinee.ty,
             );
+            if (!patternCheckResult.ok) return patternCheckResult;
+            const { matches, bindings } = patternCheckResult.value;
 
             if (matches !== null) {
                 const thenBlock = this.builder.createBlock("pat_then");
@@ -1583,19 +1882,14 @@ export class HirToSsaCtx {
             }
 
             // Apply bindings
-            for (const [id, value] of bindings) {
+            for (const [id, value] of Array.from(bindings.entries())) {
                 this.varValues.set(id, value);
             }
 
             // Lower arm body
-            const armResult = this.lowerBlock(arm.body);
-            if (
-                !(
-                    /** @type {import("./ir").IRBlock} */ (
-                        this.builder.currentBlock
-                    ).terminator
-                )
-            ) {
+            const armResultResult = this.lowerBlock(arm.body);
+            if (!armResultResult.ok) return armResultResult;
+            if (!this.builder.currentBlock!.terminator) {
                 this.builder.br(mergeId, []);
             }
 
@@ -1605,9 +1899,11 @@ export class HirToSsaCtx {
         }
 
         this.builder.switchToBlock(mergeId);
-        return hasResult
-            ? this.defaultValueForType(resultTy)
-            : this.builder.iconst(0, IntWidth.I8).id;
+        return ok(
+            hasResult
+                ? this.defaultValueForType(resultTy)
+                : (this.builder.iconst(0, IntWidth.I8).id as number),
+        );
     }
 
     /**
@@ -1616,36 +1912,43 @@ export class HirToSsaCtx {
      */
     /**
      * Lower a pattern check
-     * @param {any} value
-     * @param {any} pattern
-     * @param {any} ty
-     * @returns {{ matches: ValueId | null, bindings: Map<any, ValueId> }}
+     * @param {unknown} value
+     * @param {unknown} pattern
+     * @param {unknown} ty
+     * @returns {{ matches: ValueId | null, bindings: Map<number, ValueId> }}
      */
-    lowerPatternCheck(value, pattern, ty) {
+    lowerPatternCheck(
+        value: ValueId,
+        pattern: HPat,
+        ty: Type,
+    ): Result<
+        { matches: ValueId | null; bindings: Map<number, ValueId> },
+        LoweringError
+    > {
         const bindings = new Map();
 
         switch (pattern.kind) {
             case HPatKind.Wildcard: {
-                return { matches: null, bindings };
+                return ok({ matches: null, bindings });
             }
             case HPatKind.Ident: {
-                bindings.set(/** @type {ValueId} */ (pattern.id), value);
-                return { matches: null, bindings };
+                bindings.set(pattern.id, value);
+                return ok({ matches: null, bindings });
             }
             case HPatKind.Literal: {
                 const litValue = this.builder.iconst(
-                    pattern.value,
+                    Number(pattern.value),
                     this.getIntWidth(ty),
                 );
                 const matches = this.builder.icmp(
                     IcmpOp.Eq,
                     value,
-                    /** @type {ValueId} */ (litValue.id),
+                    litValue.id as number,
                 );
-                return {
-                    matches: /** @type {ValueId} */ (matches.id),
+                return ok({
+                    matches: matches.id as number,
                     bindings,
-                };
+                });
             }
             case HPatKind.Struct: {
                 // For structs, check each field
@@ -1659,15 +1962,17 @@ export class HirToSsaCtx {
                             i,
                             this.translateType(fieldTy),
                         );
-                        const fieldCheck = this.lowerPatternCheck(
-                            /** @type {ValueId} */ (
-                                /** @type {ValueId} */ (fieldValue.id)
-                            ),
+                        const fieldCheckResult = this.lowerPatternCheck(
+                            fieldValue.id as number,
                             field.pat,
                             fieldTy,
                         );
+                        if (!fieldCheckResult.ok) return fieldCheckResult;
+                        const fieldCheck = fieldCheckResult.value;
 
-                        for (const [id, val] of fieldCheck.bindings) {
+                        for (const [id, val] of Array.from(
+                            fieldCheck.bindings.entries(),
+                        )) {
                             bindings.set(id, val);
                         }
 
@@ -1679,13 +1984,13 @@ export class HirToSsaCtx {
                                     matches,
                                     fieldCheck.matches,
                                     IntWidth.I8,
-                                );
-                                matches = /** @type {ValueId} */ (andInst.id);
+                                ) as unknown as { id: ValueId };
+                                matches = andInst.id as number;
                             }
                         }
                     }
                 }
-                return { matches, bindings };
+                return ok({ matches, bindings });
             }
             case HPatKind.Tuple: {
                 let matches = null;
@@ -1698,13 +2003,17 @@ export class HirToSsaCtx {
                             i,
                             this.translateType(elemTy),
                         );
-                        const elemCheck = this.lowerPatternCheck(
-                            /** @type {ValueId} */ (elemValue.id),
+                        const elemCheckResult = this.lowerPatternCheck(
+                            elemValue.id as number,
                             elemPat,
                             elemTy,
                         );
+                        if (!elemCheckResult.ok) return elemCheckResult;
+                        const elemCheck = elemCheckResult.value;
 
-                        for (const [id, val] of elemCheck.bindings) {
+                        for (const [id, val] of Array.from(
+                            elemCheck.bindings.entries(),
+                        )) {
                             bindings.set(id, val);
                         }
 
@@ -1716,28 +2025,33 @@ export class HirToSsaCtx {
                                     matches,
                                     elemCheck.matches,
                                     IntWidth.I8,
-                                );
-                                matches = /** @type {ValueId} */ (andInst.id);
+                                ) as unknown as { id: ValueId };
+                                matches = andInst.id as number;
                             }
                         }
                     }
                 }
-                return { matches, bindings };
+                return ok({ matches, bindings });
             }
             case HPatKind.Or: {
                 // Or pattern - try each alternative
                 if (pattern.alternatives && pattern.alternatives.length > 0) {
-                    const firstCheck = this.lowerPatternCheck(
+                    const firstCheckResult = this.lowerPatternCheck(
                         value,
                         pattern.alternatives[0],
                         ty,
                     );
-                    return firstCheck;
+                    if (!firstCheckResult.ok) return firstCheckResult;
+                    const firstCheck = firstCheckResult.value;
+                    return ok({
+                        matches: firstCheck.matches,
+                        bindings: firstCheck.bindings,
+                    });
                 }
-                return { matches: null, bindings };
+                return ok({ matches: null, bindings });
             }
             default:
-                return { matches: null, bindings };
+                return ok({ matches: null, bindings });
         }
     }
 
@@ -1750,7 +2064,7 @@ export class HirToSsaCtx {
      * @param {import('./hir').HLoopExpr} expr
      * @returns {ValueId}
      */
-    lowerLoop(expr) {
+    lowerLoop(expr: HLoopExpr): Result<ValueId, LoweringError> {
         const headerId = this.builder.createBlock("loop_header");
         const bodyId = this.builder.createBlock("loop_body");
         const exitId = this.builder.createBlock("loop_exit");
@@ -1768,19 +2082,14 @@ export class HirToSsaCtx {
         this.breakStack.push(exitId);
         this.continueStack.push(headerId);
 
-        this.lowerBlock(expr.body);
+        const res_z8pvvs = this.lowerBlock(expr.body);
+        if (!res_z8pvvs.ok) return res_z8pvvs;
 
         this.breakStack.pop();
         this.continueStack.pop();
 
         // Loop back
-        if (
-            !(
-                /** @type {import("./ir").IRBlock} */ (
-                    this.builder.currentBlock
-                ).terminator
-            )
-        ) {
+        if (!this.builder.currentBlock!.terminator) {
             this.builder.br(headerId);
         }
         this.builder.sealBlock(bodyId);
@@ -1790,7 +2099,7 @@ export class HirToSsaCtx {
         this.builder.sealBlock(exitId);
 
         // Loop returns unit (or value from break)
-        return /** @type {ValueId} */ (this.builder.iconst(0, IntWidth.I8).id);
+        return ok(this.builder.iconst(0, IntWidth.I8).id as number);
     }
 
     // ============================================================================
@@ -1802,7 +2111,7 @@ export class HirToSsaCtx {
      * @param {import('./hir').HWhileExpr} expr
      * @returns {ValueId}
      */
-    lowerWhile(expr) {
+    lowerWhile(expr: HWhileExpr): Result<ValueId, LoweringError> {
         const headerId = this.builder.createBlock("while_header");
         const bodyId = this.builder.createBlock("while_body");
         const exitId = this.builder.createBlock("while_exit");
@@ -1812,7 +2121,9 @@ export class HirToSsaCtx {
 
         // Header: check condition
         this.builder.switchToBlock(headerId);
-        const cond = this.lowerExpr(expr.condition);
+        const condResult = this.lowerExpr(expr.condition);
+        if (!condResult.ok) return condResult;
+        const cond = condResult.value;
         this.builder.brIf(cond, bodyId, [], exitId, []);
         this.builder.sealBlock(headerId);
 
@@ -1821,19 +2132,14 @@ export class HirToSsaCtx {
         this.breakStack.push(exitId);
         this.continueStack.push(headerId);
 
-        this.lowerBlock(expr.body);
+        const res_gin2s8 = this.lowerBlock(expr.body);
+        if (!res_gin2s8.ok) return res_gin2s8;
 
         this.breakStack.pop();
         this.continueStack.pop();
 
         // Loop back
-        if (
-            !(
-                /** @type {import("./ir").IRBlock} */ (
-                    this.builder.currentBlock
-                ).terminator
-            )
-        ) {
+        if (!this.builder.currentBlock!.terminator) {
             this.builder.br(headerId);
         }
         this.builder.sealBlock(bodyId);
@@ -1843,7 +2149,7 @@ export class HirToSsaCtx {
         this.builder.sealBlock(exitId);
 
         // While returns unit
-        return /** @type {ValueId} */ (this.builder.iconst(0, IntWidth.I8).id);
+        return ok(this.builder.iconst(0, IntWidth.I8).id as number);
     }
 
     // ============================================================================
@@ -1855,7 +2161,7 @@ export class HirToSsaCtx {
      * @param {Type} ty
      * @returns {IRType}
      */
-    translateType(ty) {
+    translateType(ty: Type | null | undefined): IRType {
         if (!ty) return makeIRUnitType();
 
         switch (ty.kind) {
@@ -1875,27 +2181,36 @@ export class HirToSsaCtx {
                 return makeIRUnitType();
             case TypeKind.Tuple:
             case TypeKind.Struct: {
-                const anyTy = /** @type {any} */ (ty);
-                const fields = anyTy.fields
-                    ? anyTy.fields.map((/** @type {any} */ f) =>
-                          this.translateType(f.type || f),
-                      )
-                    : anyTy.elements
-                      ? anyTy.elements.map((/** @type {any} */ e) =>
-                            this.translateType(e),
-                        )
-                      : [];
-                return makeIRStructType(anyTy.name || "", fields);
+                let fields: IRType[] = [];
+                let name = "";
+                if (ty && ty.kind === TypeKind.Struct) {
+                    const structTy = ty as import("./types").StructType;
+                    fields = structTy.fields
+                        ? structTy.fields.map(
+                              (f: import("./types").StructField) =>
+                                  this.translateType(f.type),
+                          )
+                        : [];
+                    name = structTy.name || "";
+                } else if (ty && ty.kind === TypeKind.Tuple) {
+                    const tupleTy = ty as import("./types").TupleType;
+                    fields = tupleTy.elements
+                        ? tupleTy.elements.map((e: import("./types").Type) =>
+                              this.translateType(e),
+                          )
+                        : [];
+                }
+                return makeIRStructType(name, fields);
             }
             case TypeKind.Enum:
                 return makeIREnumType(
-                    /** @type {any} */ (ty).name || "",
-                    /** @type {any} */ (ty).variants
-                        ? /** @type {any} */ (ty).variants.map(
-                              (/** @type {any} */ v) =>
-                                  (v.fields || []).map((/** @type {any} */ f) =>
+                    ty.name || "",
+                    ty.variants
+                        ? ty.variants.map((v) =>
+                              (v.fields || []).map(
+                                  (f: import("./types").Type) =>
                                       this.translateType(f),
-                                  ),
+                              ),
                           )
                         : [],
                 );
@@ -1930,7 +2245,7 @@ export class HirToSsaCtx {
      * @param {number} width
      * @returns {number}
      */
-    translateIntWidth(width) {
+    translateIntWidth(width: IntWidthValue) {
         // IR uses same IntWidth enum
         return width;
     }
@@ -1940,7 +2255,7 @@ export class HirToSsaCtx {
      * @param {number} width
      * @returns {number}
      */
-    translateFloatWidth(width) {
+    translateFloatWidth(width: FloatWidthValue) {
         // IR uses same FloatWidth enum
         return width;
     }
@@ -1950,7 +2265,7 @@ export class HirToSsaCtx {
      * @param {Type} ty
      * @returns {number}
      */
-    getIntWidth(ty) {
+    getIntWidth(ty: Type) {
         if (ty.kind === TypeKind.Int) {
             return ty.width;
         }
@@ -1962,7 +2277,7 @@ export class HirToSsaCtx {
      * @param {Type} ty
      * @returns {number}
      */
-    getFloatWidth(ty) {
+    getFloatWidth(ty: Type) {
         if (ty.kind === TypeKind.Float) {
             return ty.width;
         }
@@ -1974,36 +2289,45 @@ export class HirToSsaCtx {
      * @param {Type} ty
      * @returns {boolean}
      */
-    isSignedIntType(ty) {
+    isSignedIntType(ty: Type) {
         if (ty.kind !== TypeKind.Int) return false;
         return ty.width <= IntWidth.Isize;
     }
 
     /**
      * Create a zero/default SSA value for a result type.
-     * @param {Type | null | undefined} ty
+     * @param {Type | IRType | null | undefined} ty
      * @returns {ValueId}
      */
-    defaultValueForType(ty) {
+    defaultValueForType(ty: Type | IRType | null | undefined): ValueId {
         if (!ty) {
-            return /** @type {ValueId} */ (
-                this.builder.iconst(0, IntWidth.I32).id
-            );
+            return this.builder.iconst(0, IntWidth.I32).id as number;
         }
-        if (ty.kind === TypeKind.Bool) {
-            return /** @type {ValueId} */ (this.builder.bconst(false).id);
+        // Handle IRType - check for IRTypeKind properties
+        const irType = ty as IRType;
+        if (irType.kind === IRTypeKind.Bool) {
+            return this.builder.bconst(false).id as number;
         }
-        if (ty.kind === TypeKind.Int) {
-            return /** @type {ValueId} */ (
-                this.builder.iconst(0, this.getIntWidth(ty)).id
-            );
+        if (irType.kind === IRTypeKind.Int) {
+            const width = (irType as any).width ?? IntWidth.I32;
+            return this.builder.iconst(0, width).id as number;
         }
-        if (ty.kind === TypeKind.Float) {
-            return /** @type {ValueId} */ (
-                this.builder.fconst(0, this.getFloatWidth(ty)).id
-            );
+        if (irType.kind === IRTypeKind.Float) {
+            const width = (irType as any).width ?? FloatWidth.F64;
+            return this.builder.fconst(0, width).id as number;
         }
-        return /** @type {ValueId} */ (this.builder.iconst(0, IntWidth.I32).id);
+        // Handle Type - check for TypeKind properties
+        const hirType = ty as Type;
+        if (hirType.kind === TypeKind.Bool) {
+            return this.builder.bconst(false).id as number;
+        }
+        if (hirType.kind === TypeKind.Int) {
+            return this.builder.iconst(0, this.getIntWidth(hirType)).id as number;
+        }
+        if (hirType.kind === TypeKind.Float) {
+            return this.builder.fconst(0, this.getFloatWidth(hirType)).id as number;
+        }
+        return this.builder.iconst(0, IntWidth.I32).id as number;
     }
 
     /**
@@ -2012,14 +2336,19 @@ export class HirToSsaCtx {
      * @param {string} fieldName
      * @returns {Type}
      */
-    getFieldType(structTy, fieldName) {
+    getFieldType(structTy: Type, fieldName: string) {
         if (structTy.kind === TypeKind.Struct && structTy.fields) {
-            const field = structTy.fields.find((f) => f.name === fieldName);
+            const field = structTy.fields.find(
+                (f: import("./types").StructField) => f.name === fieldName,
+            );
             if (field) {
                 return field.type;
             }
         }
-        return { kind: TypeKind.Unit };
+        return {
+            kind: TypeKind.Unit,
+            span: { start: 0, end: 0, line: 0, column: 0 },
+        } as unknown as import("./types").Type;
     }
 
     /**
@@ -2029,7 +2358,7 @@ export class HirToSsaCtx {
      * @param {number} fieldIndex
      * @returns {Type}
      */
-    getEnumFieldType(enumTy, variantIndex, fieldIndex) {
+    getEnumFieldType(enumTy: Type, variantIndex: number, fieldIndex: number) {
         if (enumTy.kind === TypeKind.Enum && enumTy.variants) {
             const variant =
                 variantIndex >= 0 && variantIndex < enumTy.variants.length
@@ -2043,7 +2372,10 @@ export class HirToSsaCtx {
                 return variant.fields[fieldIndex];
             }
         }
-        return { kind: TypeKind.Unit };
+        return {
+            kind: TypeKind.Unit,
+            span: { start: 0, end: 0, line: 0, column: 0 },
+        } as unknown as import("./types").Type;
     }
 
     /**
@@ -2052,7 +2384,7 @@ export class HirToSsaCtx {
      * @param {string} variantName
      * @returns {number}
      */
-    findEnumVariantIndex(enumTy, variantName) {
+    findEnumVariantIndex(enumTy: Type, variantName: string) {
         if (enumTy.kind === TypeKind.Enum && enumTy.variants) {
             for (let i = 0; i < enumTy.variants.length; i++) {
                 if (enumTy.variants[i].name === variantName) {
@@ -2068,7 +2400,7 @@ export class HirToSsaCtx {
      * @param {string} name
      * @returns {number}
      */
-    resolveFunctionId(name) {
+    resolveFunctionId(name: string) {
         // Simple hash-based ID for now
         let hash = 0;
         for (let i = 0; i < name.length; i++) {
@@ -2086,10 +2418,13 @@ export class HirToSsaCtx {
 /**
  * Lower a HIR function to SSA IR
  * @param {import('./hir').HFnDecl} fnDecl
- * @param {{ irModule?: import('./ir').IRModule }} [options]
+ * @param {{ irModule?: IRModule }} [options]
  * @returns {import('./ir').IRFunction}
  */
-export function lowerHirToSsa(fnDecl, options = {}) {
+export function lowerHirToSsa(
+    fnDecl: HFnDecl,
+    options: { irModule?: IRModule } = {},
+) {
     const ctx = new HirToSsaCtx(options);
     return ctx.lowerFunction(fnDecl);
 }
@@ -2097,18 +2432,18 @@ export function lowerHirToSsa(fnDecl, options = {}) {
 /**
  * Lower a HIR module to SSA IR module
  * @param {import('./hir').HModule} hirModule
- * @returns {import('./ir').IRModule}
+ * @returns {unknown}
  */
-export function lowerModuleToSsa(hirModule) {
+export function lowerModuleToSsa(hirModule: HModule) {
     const irModule = makeIRModule(hirModule.name);
 
     for (const item of hirModule.items) {
         if (item.kind === HItemKind.Fn) {
             const ctx = new HirToSsaCtx({ irModule });
-            const irFn = ctx.lowerFunction(
-                /** @type {import('./hir').HFnDecl} */ (item),
-            );
-            addIRFunction(irModule, irFn);
+            const irFnRes = ctx.lowerFunction(item as any);
+            if (irFnRes.ok) {
+                addIRFunction(irModule, irFnRes.value);
+            }
         }
     }
 
