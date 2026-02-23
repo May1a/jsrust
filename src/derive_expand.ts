@@ -12,25 +12,19 @@ import {
     makeBlockExpr,
     makeImplItem,
 } from "./ast";
+import type { Node, Span } from "./ast";
 
-/**
- * @typedef {{ message: string, span?: { line: number, column: number, start?: number, end?: number }, kind?: string }} DeriveError
- */
+export interface DeriveError {
+    message: string;
+    span?: Span;
+    kind?: string;
+}
 
-/**
- * @param {any} node
- * @returns {{ line: number, column: number, start: number, end: number }}
- */
-function spanOf(node) {
+function spanOf(node: Node | null | undefined): Span {
     return node?.span || { line: 1, column: 1, start: 1, end: 1 };
 }
 
-/**
- * @param {string} traitName
- * @param {any} span
- * @returns {any}
- */
-function makeBuiltinTraitDecl(traitName, span) {
+function makeBuiltinTraitDecl(traitName: string, span: Span): Node {
     if (traitName === "Clone") {
         const selfTy = makeNamedType(span, "Self", null);
         const selfRefTy = makeRefType(span, Mutability.Immutable, selfTy);
@@ -54,24 +48,17 @@ function makeBuiltinTraitDecl(traitName, span) {
     return makeTraitItem(span, "Debug", [], false, false);
 }
 
-/**
- * @param {any} structItem
- * @param {any} span
- * @returns {any}
- */
-function makeCloneImpl(structItem, span) {
+function makeCloneImpl(structItem: Node, span: Span): Node {
     const selfTy = makeNamedType(span, "Self", null);
     const selfRefTy = makeRefType(span, Mutability.Immutable, selfTy);
     const selfParam = makeParam(span, "self", selfRefTy, null, true, "ref");
 
     const selfIdent = makeIdentifierExpr(span, "self");
-    const fields = (structItem.fields || []).map(
-        (/** @type {any} */ field) => ({
-            name: field.name,
-            value: makeFieldExpr(span, selfIdent, field.name),
-        }),
-    );
-    const structPath = makeIdentifierExpr(span, structItem.name);
+    const fields = (structItem.fields || []).map((field: Node) => ({
+        name: field.name as string,
+        value: makeFieldExpr(span, selfIdent, field.name as string),
+    }));
+    const structPath = makeIdentifierExpr(span, structItem.name as string);
     const bodyExpr = makeStructExpr(span, structPath, fields, null);
     const body = makeBlockExpr(span, [], bodyExpr);
     const cloneMethod = makeFnItem(
@@ -87,7 +74,7 @@ function makeCloneImpl(structItem, span) {
     );
     return makeImplItem(
         span,
-        makeNamedType(span, structItem.name, null),
+        makeNamedType(span, structItem.name as string, null),
         makeNamedType(span, "Clone", null),
         [cloneMethod],
         false,
@@ -95,16 +82,10 @@ function makeCloneImpl(structItem, span) {
     );
 }
 
-/**
- * @param {any} structItem
- * @param {string} traitName
- * @param {any} span
- * @returns {any}
- */
-function makeMarkerImpl(structItem, traitName, span) {
+function makeMarkerImpl(structItem: Node, traitName: string, span: Span): Node {
     return makeImplItem(
         span,
-        makeNamedType(span, structItem.name, null),
+        makeNamedType(span, structItem.name as string, null),
         makeNamedType(span, traitName, null),
         [],
         false,
@@ -112,24 +93,21 @@ function makeMarkerImpl(structItem, traitName, span) {
     );
 }
 
-/**
- * @param {any} module
- * @returns {{ ok: boolean, module?: any, errors?: DeriveError[] }}
- */
-function expandDerives(module) {
-    /** @type {DeriveError[]} */
-    const errors = [];
-    const items = module.items || [];
+export function expandDerives(module: Node): {
+    ok: boolean;
+    module?: Node;
+    errors?: DeriveError[];
+} {
+    const errors: DeriveError[] = [];
+    const items: Node[] = module.items || [];
     const span = spanOf(module);
     const builtinTraits = ["Clone", "Copy", "Debug"];
-    const traitNames = new Set(
+    const traitNames = new Set<string>(
         items
-            .filter(
-                (/** @type {any} */ item) => item.kind === NodeKind.TraitItem,
-            )
-            .map((/** @type {any} */ item) => item.name),
+            .filter((item: Node) => item.kind === NodeKind.TraitItem)
+            .map((item: Node) => item.name as string)
     );
-    const synthesized = [];
+    const synthesized: Node[] = [];
 
     for (const traitName of builtinTraits) {
         if (!traitNames.has(traitName)) {
@@ -139,7 +117,7 @@ function expandDerives(module) {
     }
 
     for (const item of items) {
-        const derives = item.derives || [];
+        const derives: string[] = item.derives || [];
         if (!Array.isArray(derives) || derives.length === 0) continue;
         if (item.kind !== NodeKind.StructItem) {
             errors.push({
@@ -159,7 +137,7 @@ function expandDerives(module) {
             continue;
         }
 
-        const seen = new Set();
+        const seen = new Set<string>();
         for (const deriveName of derives) {
             if (seen.has(deriveName)) {
                 errors.push({
@@ -183,9 +161,7 @@ function expandDerives(module) {
             if (deriveName === "Clone") {
                 synthesized.push(makeCloneImpl(item, spanOf(item)));
             } else {
-                synthesized.push(
-                    makeMarkerImpl(item, deriveName, spanOf(item)),
-                );
+                synthesized.push(makeMarkerImpl(item, deriveName, spanOf(item)));
             }
         }
     }
@@ -197,5 +173,3 @@ function expandDerives(module) {
     module.items = [...items, ...synthesized];
     return { ok: true, module };
 }
-
-export { expandDerives };
