@@ -2279,10 +2279,6 @@ function parseItem(state: ParserState): Node | null {
     return null;
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
 function parsePattern(state: ParserState): Node {
     const alternatives = [];
     const first = parsePatternAtom(state);
@@ -2299,10 +2295,6 @@ function parsePattern(state: ParserState): Node {
     return makeOrPat(span, alternatives);
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
 function parsePatternAtom(state: ParserState): Node {
     const token = peek(state);
     if (token.type === TokenType.Identifier && token.value === "_") {
@@ -2411,10 +2403,6 @@ function parsePatternAtom(state: ParserState): Node {
     return makeWildcardPat(spanFromToken(token));
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node | null}
- */
 function parseLiteralPat(state: ParserState): Node | null {
     const token = peek(state);
     if (token.type === TokenType.Integer) {
@@ -2451,12 +2439,6 @@ function parseLiteralPat(state: ParserState): Node | null {
     return null;
 }
 
-/**
- * @param {ParserState} state
- * @param {Node} path
- * @param {Token} startToken
- * @returns {Node}
- */
 function parseStructPattern(
     state: ParserState,
     path: Node,
@@ -2503,12 +2485,6 @@ function parseStructPattern(
     return makeStructPat(span, path, fields, rest);
 }
 
-/**
- * @param {ParserState} state
- * @param {Node} path
- * @param {Token} startToken
- * @returns {Node}
- */
 function parseEnumTupleVariantPattern(
     state: ParserState,
     path: Node,
@@ -2538,12 +2514,6 @@ function parseEnumTupleVariantPattern(
     return makeStructPat(span, path, fields, false);
 }
 
-/**
- * @param {ParserState} state
- * @param {Token} startToken
- * @param {string | null} name
- * @returns {Node}
- */
 function parseTuplePattern(
     state: ParserState,
     startToken: Token,
@@ -2582,10 +2552,6 @@ function parseTuplePattern(
     return makeTuplePat(span, elements);
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
 function parseSlicePattern(state: ParserState): Node {
     const startToken =
         expectToken(
@@ -2621,10 +2587,6 @@ function parseSlicePattern(state: ParserState): Node {
     return makeSlicePat(span, elements, rest);
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
 function parseType(state: ParserState): Node {
     const token = peek(state);
     if (token.type === TokenType.And) {
@@ -2783,10 +2745,6 @@ function parseType(state: ParserState): Node {
     return makeNamedType(spanFromToken(token), "unknown", null);
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
 function parseIfExpr(state: ParserState): Node {
     const start =
         expectToken(state, TokenType.If, "Expected if") ?? peek(state);
@@ -2817,10 +2775,6 @@ function parseIfExpr(state: ParserState): Node {
     );
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
 function parseMatchExpr(state: ParserState): Node {
     const start =
         expectToken(state, TokenType.Match, "Expected match") ?? peek(state);
@@ -2863,10 +2817,6 @@ function parseMatchExpr(state: ParserState): Node {
     );
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
 function parseBlockExpr(state: ParserState): Node {
     const start =
         expectToken(state, TokenType.OpenCurly, "Expected {") ?? peek(state);
@@ -2927,10 +2877,6 @@ function parseBlockExpr(state: ParserState): Node {
     return makeBlockExpr(span, stmts, expr);
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
 function parseLoopExpr(state: ParserState): Node {
     const start =
         expectToken(state, TokenType.Loop, "Expected loop") ?? peek(state);
@@ -2939,10 +2885,6 @@ function parseLoopExpr(state: ParserState): Node {
     return makeLoopExpr(span, null, body);
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
 function parseWhileExpr(state: ParserState): Node {
     const start =
         expectToken(state, TokenType.While, "Expected while") ?? peek(state);
@@ -2963,10 +2905,6 @@ function parseWhileExpr(state: ParserState): Node {
     );
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
 function parseForExpr(state: ParserState): Node {
     const start =
         expectToken(state, TokenType.For, "Expected for") ?? peek(state);
@@ -2988,10 +2926,6 @@ function parseForExpr(state: ParserState): Node {
     );
 }
 
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
 function parseModuleFromState(state: ParserState): Node {
     const items = [];
     while (!isAtEnd(state)) {
@@ -3019,11 +2953,6 @@ function parseModuleFromState(state: ParserState): Node {
     return makeModule(span, "root", items);
 }
 
-/**
- * @param {ParserState} state
- * @param {Node | null} value
- * @returns {ParseResult}
- */
 function buildResult(state: ParserState, value: Node | null): ParseResult {
     return {
         ok: state.errors.length === 0 && value !== null,
@@ -3032,10 +2961,6 @@ function buildResult(state: ParserState, value: Node | null): ParseResult {
     };
 }
 
-/**
- * @param {string} source
- * @returns {ParseResult}
- */
 function parseModule(source: string): ParseResult {
     const tokens = tokenize(source);
     const state = createState(tokens);
@@ -3043,10 +2968,6 @@ function parseModule(source: string): ParseResult {
     return buildResult(state, module);
 }
 
-/**
- * @param {string} source
- * @returns {ParseResult}
- */
 function parseExpression(source: string): ParseResult {
     const tokens = tokenize(source);
     const state = createState(tokens);
@@ -3054,10 +2975,6 @@ function parseExpression(source: string): ParseResult {
     return buildResult(state, expr);
 }
 
-/**
- * @param {string} source
- * @returns {ParseResult}
- */
 function parseStatement(source: string): ParseResult {
     const tokens = tokenize(source);
     const state = createState(tokens);
@@ -3065,10 +2982,6 @@ function parseStatement(source: string): ParseResult {
     return buildResult(state, stmt);
 }
 
-/**
- * @param {string} source
- * @returns {ParseResult}
- */
 function parsePatternSource(source: string): ParseResult {
     const tokens = tokenize(source);
     const state = createState(tokens);
@@ -3076,10 +2989,6 @@ function parsePatternSource(source: string): ParseResult {
     return buildResult(state, pat);
 }
 
-/**
- * @param {string} source
- * @returns {ParseResult}
- */
 function parseTypeSource(source: string): ParseResult {
     const tokens = tokenize(source);
     const state = createState(tokens);
@@ -3093,4 +3002,5 @@ export {
     parseStatement,
     parsePatternSource as parsePattern,
     parseTypeSource as parseType,
+    NodeKind,
 };

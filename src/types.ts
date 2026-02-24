@@ -40,12 +40,12 @@ export type TypeKindValue = (typeof TypeKind)[keyof typeof TypeKind];
  */
 export type IntType = {
     kind: typeof TypeKind.Int;
-    width: IntWidthValue;
+    width: IntWidth;
     span: Span;
 };
 export type FloatType = {
     kind: typeof TypeKind.Float;
-    width: FloatWidthValue;
+    width: FloatWidth;
     span: Span;
 };
 export type BoolType = { kind: typeof TypeKind.Bool; span: Span };
@@ -151,36 +151,35 @@ export type Type =
     | TypeVarType
     | NamedType;
 
-export const IntWidth = {
-    I8: 0,
-    I16: 1,
-    I32: 2,
-    I64: 3,
-    I128: 4,
-    Isize: 5,
-    U8: 6,
-    U16: 7,
-    U32: 8,
-    U64: 9,
-    U128: 10,
-    Usize: 11,
-} as const;
-export type IntWidthValue = (typeof IntWidth)[keyof typeof IntWidth];
-export const FloatWidth = {
-    F32: 0,
-    F64: 1,
-} as const;
-export type FloatWidthValue = (typeof FloatWidth)[keyof typeof FloatWidth];
+export enum IntWidth {
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    Isize,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    Usize,
+}
+
+export enum FloatWidth {
+    F32,
+    F64,
+}
 
 // ============================================================================
 // Task 3.1: Type Representation - Primitive Types
 // ============================================================================
 
-function makeIntType(width: IntWidthValue, span: Span): Type {
+function makeIntType(width: IntWidth, span: Span): Type {
     return { kind: TypeKind.Int, width, span };
 }
 
-function makeFloatType(width: FloatWidthValue, span: Span): Type {
+function makeFloatType(width: FloatWidth, span: Span): Type {
     return { kind: TypeKind.Float, width, span };
 }
 
@@ -491,17 +490,13 @@ function typeToString(type: Type): string {
     }
 }
 
-function intWidthToString(width: IntWidthValue): string {
+function intWidthToString(width: IntWidth): string {
     const intStr = Object.entries(IntWidth).find((kv) => kv[1] == width);
     if (!intStr) return "<unknown int>";
     return intStr[0].toLowerCase();
 }
 
-/**
- * @param {FloatWidthValue} width
- * @returns {string}
- */
-function floatWidthToString(width: FloatWidthValue): string {
+function floatWidthToString(width: FloatWidth): string {
     const floatStr = Object.entries(FloatWidth).find((kv) => kv[1] == width);
     if (!floatStr) return `<unknown float>`;
     return floatStr[0].toLowerCase();
@@ -627,7 +622,7 @@ function isCopyableType(
     return visit(type);
 }
 
-function getIntWidthSize(width: IntWidthValue): number {
+function getIntWidthSize(width: IntWidth): number {
     switch (width) {
         case IntWidth.I8:
         case IntWidth.U8:
@@ -653,7 +648,7 @@ function getIntWidthSize(width: IntWidthValue): number {
     }
 }
 
-function isSignedInt(width: IntWidthValue): boolean {
+function isSignedInt(width: IntWidth): boolean {
     return width <= IntWidth.Isize;
 }
 

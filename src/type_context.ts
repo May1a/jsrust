@@ -1,3 +1,4 @@
+import { Node } from "./ast";
 import { Span, Type, TypeKind, TypeVarType, makeTypeVar } from "./types";
 
 export type VarBinding = {
@@ -29,7 +30,7 @@ export type Result<T, E> =
 export type ItemDecl = {
     name: string;
     kind: "fn" | "struct" | "enum" | "mod" | "type" | "trait";
-    node: unknown; // Node type from ast.js
+    node: Node; // Node type from ast.js
     type?: Type;
     genericBindings?: Map<string, Type>;
 };
@@ -81,7 +82,7 @@ export class TypeContext {
     loopStack: LoopContext[];
     methods: Map<string, Method>;
     traitMethods: Map<string, TraitMethod[]>;
-    traits: Map<string, { name: string; node: unknown }>;
+    traits: Map<string, { name: string; node: Node }>;
     traitImpls: Set<string>;
     methodsBySymbol: Map<
         string,
@@ -207,10 +208,7 @@ export class TypeContext {
     // Task 3.8: Item Registry
     // ========================================================================
 
-    registerStruct(
-        name: string,
-        decl: unknown,
-    ): { ok: boolean; error?: string } {
+    registerStruct(name: string, decl: Node): { ok: boolean; error?: string } {
         if (this.items.has(name)) {
             return { ok: false, error: `Item '${name}' already defined` };
         }
@@ -218,7 +216,7 @@ export class TypeContext {
         return { ok: true };
     }
 
-    registerEnum(name: string, decl: unknown): { ok: boolean; error?: string } {
+    registerEnum(name: string, decl: Node): { ok: boolean; error?: string } {
         if (this.items.has(name)) {
             return { ok: false, error: `Item '${name}' already defined` };
         }
@@ -228,7 +226,7 @@ export class TypeContext {
 
     registerFn(
         name: string,
-        decl: unknown,
+        decl: Node,
         type?: Type,
     ): { ok: boolean; error?: string } {
         if (this.items.has(name)) {
@@ -244,7 +242,7 @@ export class TypeContext {
         return { ok: true };
     }
 
-    registerMod(name: string, decl: unknown): { ok: boolean; error?: string } {
+    registerMod(name: string, decl: Node): { ok: boolean; error?: string } {
         if (this.items.has(name)) {
             return { ok: false, error: `Item '${name}' already defined` };
         }
@@ -254,7 +252,7 @@ export class TypeContext {
 
     registerTypeAlias(
         name: string,
-        decl: unknown,
+        decl: Node,
         type: Type,
     ): { ok: boolean; error?: string } {
         if (this.items.has(name)) {
@@ -266,11 +264,11 @@ export class TypeContext {
     }
 
     lookupItem(name: string): ItemDecl | null {
-        return this.items.get(name) || null;
+        return this.items.get(name) ?? null;
     }
 
     lookupTypeAlias(name: string): Type | null {
-        return this.typeAliases.get(name) || null;
+        return this.typeAliases.get(name) ?? null;
     }
 
     hasItem(name: string): boolean {
@@ -314,7 +312,7 @@ export class TypeContext {
         return this.methods.get(`${structName}::${methodName}`) || null;
     }
 
-    registerTrait(traitName: string, decl: unknown): Result<undefined, string> {
+    registerTrait(traitName: string, decl: Node): Result<undefined, string> {
         if (this.traits.has(traitName)) {
             return { ok: false, err: `Trait '${traitName}' already defined` };
         }
@@ -322,7 +320,7 @@ export class TypeContext {
         return { ok: true, result: undefined };
     }
 
-    lookupTrait(traitName: string): { name: string; node: unknown } | null {
+    lookupTrait(traitName: string): { name: string; node: Node } | null {
         return this.traits.get(traitName) || null;
     }
 
@@ -537,7 +535,10 @@ export class TypeContext {
 
     freshTypeVar(span: Span): Type {
         const tv = makeTypeVar(span);
-        if (tv.kind !== TypeKind.TypeVar) throw "unreachable";
+        if (tv.kind !== TypeKind.TypeVar) {
+            debugger;
+            throw __filename;
+        }
         this.typeVars.set(tv.id, tv);
         return tv;
     }

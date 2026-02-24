@@ -4,7 +4,7 @@
  * Computes size, alignment, and field offsets for IR types.
  */
 
-import type { IRType, IntWidthValue, FloatWidthValue } from "./ir";
+import type { IRType } from "./ir";
 
 import { IntWidth, FloatWidth } from "./types";
 import { IRTypeKind } from "./ir";
@@ -104,7 +104,7 @@ function layoutUnit(): TypeLayout {
 /**
  * Get layout for integer type by width
  */
-function layoutInt(width: IntWidthValue): TypeLayout {
+function layoutInt(width: IntWidth): TypeLayout {
     switch (width) {
         case IntWidth.I8:
         case IntWidth.U8:
@@ -133,14 +133,16 @@ function layoutInt(width: IntWidthValue): TypeLayout {
 /**
  * Get layout for float type by width
  */
-function layoutFloat(width: FloatWidthValue): TypeLayout {
+function layoutFloat(width: FloatWidth): TypeLayout {
     switch (width) {
         case FloatWidth.F32:
             return layoutF32();
         case FloatWidth.F64:
             return layoutF64();
-        default:
-            throw "unreachable";
+        default: {
+            debugger;
+            throw __filename;
+        }
     }
 }
 
@@ -348,9 +350,9 @@ class LayoutCache {
     computeLayout(type: IRType): TypeLayout {
         switch (type.kind) {
             case IRTypeKind.Int:
-                return layoutInt(type.width as IntWidthValue);
+                return layoutInt(type.width as IntWidth);
             case IRTypeKind.Float:
-                return layoutFloat(type.width as FloatWidthValue);
+                return layoutFloat(type.width as FloatWidth);
             case IRTypeKind.Bool:
                 return layoutBool();
             case IRTypeKind.Ptr:

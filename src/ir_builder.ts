@@ -11,10 +11,9 @@ import {
     ValueId,
     IRFunction,
     IRBlock,
-    IntWidthValue,
     IRInst,
-    FcmpOpValue,
-    IcmpOpValue,
+    FcmpOp,
+    IcmpOp,
     LocalId,
 } from "./ir";
 import {
@@ -70,7 +69,7 @@ import {
     makeSwitch,
     makeUnreachable,
 } from "./ir_terminators";
-import { FloatWidthValue } from "./types";
+import { FloatWidth, IntWidth } from "./types";
 
 /**
  * IRBuilder - constructs SSA IR functions incrementally
@@ -243,12 +242,12 @@ export class IRBuilder {
     // Constant Instructions
     // ============================================================================
 
-    iconst(value: number, width: IntWidthValue): IRInst {
+    iconst(value: number, width: IntWidth): IRInst {
         const inst = makeIconst(value, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
-    fconst(value: number, width: FloatWidthValue): IRInst {
+    fconst(value: number, width: FloatWidth): IRInst {
         const inst = makeFconst(value, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
@@ -270,67 +269,67 @@ export class IRBuilder {
     // Arithmetic Instructions
     // ============================================================================
 
-    iadd(a: ValueId, b: ValueId, width: IntWidthValue): IRInst {
+    iadd(a: ValueId, b: ValueId, width: IntWidth): IRInst {
         const inst = makeIadd(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    isub(a: ValueId, b: ValueId, width: IntWidthValue): IRInst {
+    isub(a: ValueId, b: ValueId, width: IntWidth): IRInst {
         const inst = makeIsub(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    imul(a: ValueId, b: ValueId, width: IntWidthValue): IRInst {
+    imul(a: ValueId, b: ValueId, width: IntWidth): IRInst {
         const inst = makeImul(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    idiv(a: ValueId, b: ValueId, width: IntWidthValue): IRInst {
+    idiv(a: ValueId, b: ValueId, width: IntWidth): IRInst {
         const inst = makeIdiv(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    imod(a: ValueId, b: ValueId, width: IntWidthValue): IRInst {
+    imod(a: ValueId, b: ValueId, width: IntWidth): IRInst {
         const inst = makeImod(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    fadd(a: ValueId, b: ValueId, width: FloatWidthValue): IRInst {
+    fadd(a: ValueId, b: ValueId, width: FloatWidth): IRInst {
         const inst = makeFadd(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    fsub(a: ValueId, b: ValueId, width: FloatWidthValue): IRInst {
+    fsub(a: ValueId, b: ValueId, width: FloatWidth): IRInst {
         const inst = makeFsub(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    fmul(a: ValueId, b: ValueId, width: FloatWidthValue): IRInst {
+    fmul(a: ValueId, b: ValueId, width: FloatWidth): IRInst {
         const inst = makeFmul(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    fdiv(a: ValueId, b: ValueId, width: FloatWidthValue): IRInst {
+    fdiv(a: ValueId, b: ValueId, width: FloatWidth): IRInst {
         const inst = makeFdiv(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    ineg(a: ValueId, width: IntWidthValue): IRInst {
+    ineg(a: ValueId, width: IntWidth): IRInst {
         const inst = makeIneg(a, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    fneg(a: ValueId, width: FloatWidthValue): IRInst {
+    fneg(a: ValueId, width: FloatWidth): IRInst {
         const inst = makeFneg(a, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
@@ -340,31 +339,31 @@ export class IRBuilder {
     // Bitwise Instructions
     // ============================================================================
 
-    iand(a: ValueId, b: ValueId, width: IntWidthValue): IRInst {
+    iand(a: ValueId, b: ValueId, width: IntWidth): IRInst {
         const inst = makeIand(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    ior(a: ValueId, b: ValueId, width: IntWidthValue): IRInst {
+    ior(a: ValueId, b: ValueId, width: IntWidth): IRInst {
         const inst = makeIor(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    ixor(a: ValueId, b: ValueId, width: IntWidthValue): IRInst {
+    ixor(a: ValueId, b: ValueId, width: IntWidth): IRInst {
         const inst = makeIxor(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    ishl(a: ValueId, b: ValueId, width: IntWidthValue): IRInst {
+    ishl(a: ValueId, b: ValueId, width: IntWidth): IRInst {
         const inst = makeIshl(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    ishr(a: ValueId, b: ValueId, width: IntWidthValue): IRInst {
+    ishr(a: ValueId, b: ValueId, width: IntWidth): IRInst {
         const inst = makeIshr(a, b, width);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
@@ -374,13 +373,13 @@ export class IRBuilder {
     // Comparison Instructions
     // ============================================================================
 
-    icmp(op: IcmpOpValue, a: ValueId, b: ValueId): IRInst {
+    icmp(op: IcmpOp, a: ValueId, b: ValueId): IRInst {
         const inst = makeIcmp(op, a, b);
         addIRInstruction(this.currentBlock!, inst);
         return inst;
     }
 
-    fcmp(op: FcmpOpValue, a: ValueId, b: ValueId): IRInst {
+    fcmp(op: FcmpOp, a: ValueId, b: ValueId): IRInst {
         const inst = makeFcmp(op, a, b);
         addIRInstruction(this.currentBlock!, inst);
         return inst;

@@ -21,7 +21,7 @@ export function makeBrIf(
     thenBlock: BlockId,
     thenArgs: ValueId[] | undefined,
     elseBlock: BlockId,
-    elseArgs: ValueId[] | undefined
+    elseArgs: ValueId[] | undefined,
 ): IRTerm {
     return {
         kind: IRTermKind.BrIf,
@@ -33,17 +33,17 @@ export function makeBrIf(
     };
 }
 
-export interface SwitchCase {
+export type SwitchCase = {
     value: any;
     target: BlockId;
     args: ValueId[];
-}
+};
 
 export function makeSwitch(
     value: ValueId,
     cases: SwitchCase[],
     defaultBlock: BlockId,
-    defaultArgs?: ValueId[]
+    defaultArgs?: ValueId[],
 ): IRTerm {
     return {
         kind: IRTermKind.Switch,
@@ -57,7 +57,7 @@ export function makeSwitch(
 export function makeSwitchCase(
     value: any,
     target: BlockId,
-    args?: ValueId[]
+    args?: ValueId[],
 ): SwitchCase {
     return {
         value,

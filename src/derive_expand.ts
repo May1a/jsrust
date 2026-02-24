@@ -14,11 +14,11 @@ import {
 } from "./ast";
 import type { Node, Span } from "./ast";
 
-export interface DeriveError {
+export type DeriveError = {
     message: string;
     span?: Span;
     kind?: string;
-}
+};
 
 function spanOf(node: Node | null | undefined): Span {
     return node?.span || { line: 1, column: 1, start: 1, end: 1 };
@@ -105,7 +105,7 @@ export function expandDerives(module: Node): {
     const traitNames = new Set<string>(
         items
             .filter((item: Node) => item.kind === NodeKind.TraitItem)
-            .map((item: Node) => item.name as string)
+            .map((item: Node) => item.name as string),
     );
     const synthesized: Node[] = [];
 
@@ -161,7 +161,9 @@ export function expandDerives(module: Node): {
             if (deriveName === "Clone") {
                 synthesized.push(makeCloneImpl(item, spanOf(item)));
             } else {
-                synthesized.push(makeMarkerImpl(item, deriveName, spanOf(item)));
+                synthesized.push(
+                    makeMarkerImpl(item, deriveName, spanOf(item)),
+                );
             }
         }
     }

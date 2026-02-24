@@ -1,4 +1,4 @@
-import { Type, TypeKind, IntWidthValue, FloatWidthValue } from "./types";
+import { Type, TypeKind, IntWidth, FloatWidth, Span } from "./types";
 import { Result, ok, err } from "./diagnostics";
 import {
     HModule,
@@ -71,20 +71,15 @@ import {
     // @ts-ignore
     internIRStringLiteral,
 } from "./ir";
-import { IntWidth, FloatWidth } from "./types";
 import { BinaryOp, UnaryOp } from "./ast";
 
 // ============================================================================
 // Task 9.1: Lowering Context
 // ============================================================================
 
-/**
- * Context for HIR -> SSA lowering
- */
+/**  Context for HIR -> SSA lowering */
 
-/**
- * Lowering error types
- */
+/**  Lowering error types */
 export const LoweringErrorKind = {
     UnknownStatement: 0,
     UnknownExpression: 1,
@@ -102,16 +97,14 @@ export type LoweringErrorKindValue = number;
 export type LoweringError = {
     kind: LoweringErrorKindValue;
     message: string;
-    span?: import("./types").Span;
+    span: Span;
 };
 
-/**
- * Create an error result
- */
+/**  Create an error result */
 function error<T>(
     kind: LoweringErrorKindValue,
     message: string,
-    span?: import("./types").Span,
+    span: Span,
 ): Result<T, LoweringError> {
     return err({ kind, message, span });
 }
@@ -128,9 +121,6 @@ export class HirToSsaCtx {
     varNames: Map<string, { id: number; ty: IRType }>;
     mutableVarIds: Set<number>;
 
-    /**
-     * @param {{ irModule?: IRModule }} [options]
-     */
     constructor(options: { irModule?: IRModule } = {}) {
         this.builder = new IRBuilder();
 
@@ -140,37 +130,24 @@ export class HirToSsaCtx {
             this.irModule ||
             ({ stringLiterals: [], stringLiteralIds: new Map() } as any);
 
-        /** @type {BlockId[]} Stack of block IDs for break targets */
         this.breakStack = [];
 
-        /** @type {BlockId[]} Stack of block IDs for continue targets */
         this.continueStack = [];
 
-        /** @type {BlockId | null} Block to return to for function returns */
         this.returnBlock = null;
 
-        /** @type {IRType | null} Return type for current function */
         this.returnType = null;
 
-        /** @type {Map<number, ValueId>} Variable ID -> alloca pointer */
         this.varAllocas = new Map();
 
-        /** @type {Map<number, ValueId>} Variable ID -> current SSA value */
         this.varValues = new Map();
 
-        /** @type {Map<string, { id: number, ty: IRType }>} Variable name -> info */
         this.varNames = new Map();
 
-        /** @type {Set<number>} Variable IDs that are mutable bindings */
         this.mutableVarIds = new Set();
     }
 
-    /**
-     * Ensure a variable has a stable storage slot.
-     * @param {number} varId
-     * @param {IRType} ty
-     * @returns {ValueId}
-     */
+    /**  Ensure a variable has a stable storage slot. */
     ensureVarAlloca(varId: number, ty: IRType) {
         const existing = this.varAllocas.get(varId);
         if (existing !== undefined) {
@@ -190,11 +167,7 @@ export class HirToSsaCtx {
     // Task 9.2: Function Lowering
     // ============================================================================
 
-    /**
-     * Lower a function declaration to IR
-     * @param {HFnDecl} fnDecl
-     * @returns {IRFunction}
-     */
+    /**  Lower a function declaration to IR */
     lowerFunction(fnDecl: HFnDecl): Result<IRFunction, LoweringError> {
         // Reset state for new function
         this.varAllocas.clear();
@@ -273,11 +246,7 @@ export class HirToSsaCtx {
     // Task 9.3: Block Lowering
     // ============================================================================
 
-    /**
-     * Lower a block (sequence of statements + optional final expression)
-     * @param {HBlock} block
-     * @returns {ValueId | null}
-     */
+    /**  Lower a block (sequence of statements + optional final expression) */
     lowerBlock(block: HBlock): Result<ValueId | null, LoweringError> {
         let finalValue = null;
 
@@ -306,10 +275,7 @@ export class HirToSsaCtx {
     // Task 9.4: Statement Lowering
     // ============================================================================
 
-    /**
-     * Lower a statement
-     * @param {HStmt} stmt
-     */
+    /**  Lower a statement */
     lowerStmt(stmt: HStmt): Result<void, LoweringError> {
         const s = stmt;
         switch (stmt.kind) {
@@ -347,10 +313,7 @@ export class HirToSsaCtx {
         return ok(undefined);
     }
 
-    /**
-     * Lower a let statement
-     * @param {import('./hir').HLetStmt} stmt
-     */
+    /**  Lower a let statement */
     lowerLetStmt(stmt: HLetStmt): Result<void, LoweringError> {
         // Lower initializer
         let initValue = null;
@@ -366,12 +329,7 @@ export class HirToSsaCtx {
         return ok(undefined);
     }
 
-    /**
-     * Bind a pattern to a value
-     * @param {HPat} pat
-     * @param {ValueId | null} value
-     * @param {Type} ty
-     */
+    /**  Bind a pattern to a value */
     bindPattern(
         pat: HPat,
         value: ValueId | null,
@@ -470,10 +428,7 @@ export class HirToSsaCtx {
         return ok(undefined);
     }
 
-    /**
-     * Lower an assignment statement
-     * @param {import('./hir').HAssignStmt} stmt
-     */
+    /**  Lower an assignment statement */
     lowerAssignStmt(stmt: HAssignStmt): Result<void, LoweringError> {
         const valueResult = this.lowerExpr(stmt.value);
         if (!valueResult.ok) return valueResult;
@@ -503,20 +458,14 @@ export class HirToSsaCtx {
         return ok(undefined);
     }
 
-    /**
-     * Lower an expression statement
-     * @param {import('./hir').HExprStmt} stmt
-     */
+    /**  Lower an expression statement */
     lowerExprStmt(stmt: HExprStmt): Result<void, LoweringError> {
         const res_8dxk6k = this.lowerExpr(stmt.expr);
         if (!res_8dxk6k.ok) return res_8dxk6k;
         return ok(undefined);
     }
 
-    /**
-     * Lower a return statement
-     * @param {import('./hir').HReturnStmt} stmt
-     */
+    /**  Lower a return statement */
     lowerReturnStmt(stmt: HReturnStmt): Result<void, LoweringError> {
         let value = null;
         if (stmt.value) {
@@ -528,16 +477,14 @@ export class HirToSsaCtx {
         return ok(undefined);
     }
 
-    /**
-     * Lower a break statement
-     * @param {import('./hir').HBreakStmt} stmt
-     */
+    /** Lower a break statement */
     lowerBreakStmt(stmt: HBreakStmt): Result<void, LoweringError> {
         const targetBlock = this.breakStack[this.breakStack.length - 1];
         if (targetBlock === undefined) {
             return error(
                 LoweringErrorKind.BreakOutsideLoop,
                 `Break outside loop`,
+                stmt.span,
             );
         }
 
@@ -552,15 +499,14 @@ export class HirToSsaCtx {
         return ok(undefined);
     }
 
-    /**
-     * Lower a continue statement
-     * @param {import('./hir').HContinueStmt} stmt
-     */ lowerContinueStmt(_stmt: HContinueStmt): Result<void, LoweringError> {
+    /** Lower a continue statement */
+    lowerContinueStmt(stmt: HContinueStmt): Result<void, LoweringError> {
         const targetBlock = this.continueStack[this.continueStack.length - 1];
         if (targetBlock === undefined) {
             return error(
                 LoweringErrorKind.ContinueOutsideLoop,
                 `Continue outside loop`,
+                stmt.span,
             );
         }
         this.builder.br(targetBlock);
@@ -571,13 +517,13 @@ export class HirToSsaCtx {
     // Task 9.5: Expression Lowering
     // ============================================================================
 
-    /**
-     * Lower an expression to a ValueId
-     * @param {HExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower an expression to a ValueId */
     lowerExpr(expr: HExpr): Result<ValueId, LoweringError> {
         const e = expr;
+        if (!("kind" in expr)) {
+            debugger;
+            throw __filename;
+        }
         switch (expr.kind) {
             case HExprKind.Unit:
                 return this.lowerUnit(e as HUnitExpr);
@@ -620,21 +566,15 @@ export class HirToSsaCtx {
         }
     }
 
-    /**
-     * Lower a unit expression
-     * @param {import('./hir').HUnitExpr} expr
-     * @returns {ValueId}
-     */ lowerUnit(_expr: HUnitExpr): Result<ValueId, LoweringError> {
+    /**  Lower a unit expression */ lowerUnit(
+        _expr: HUnitExpr,
+    ): Result<ValueId, LoweringError> {
         // Unit is represented as a null/void value
         const inst = this.builder.iconst(0, IntWidth.I8);
         return ok(inst.id as number);
     }
 
-    /**
-     * Lower a literal expression
-     * @param {import('./hir').HLiteralExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower a literal expression */
     lowerLiteral(expr: HLiteralExpr): Result<ValueId, LoweringError> {
         switch (expr.literalKind) {
             case HLiteralKind.Int: {
@@ -676,11 +616,7 @@ export class HirToSsaCtx {
         }
     }
 
-    /**
-     * Lower a variable expression
-     * @param {import('./hir').HVarExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower a variable expression */
     lowerVar(expr: HVarExpr): Result<ValueId, LoweringError> {
         const byIdAlloca = this.varAllocas.get(expr.id as number);
         if (byIdAlloca !== undefined) {
@@ -715,11 +651,7 @@ export class HirToSsaCtx {
         return ok(inst.id as number);
     }
 
-    /**
-     * Lower a binary expression
-     * @param {import('./hir').HBinaryExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower a binary expression */
     lowerBinary(expr: HBinaryExpr): Result<ValueId, LoweringError> {
         const leftResult = this.lowerExpr(expr.left);
         if (!leftResult.ok) return leftResult;
@@ -729,9 +661,7 @@ export class HirToSsaCtx {
         const right = rightResult.value;
         const ty = expr.ty; // For comparison operators, we need the operand type, not the result type
         const operandTy = expr.left.ty;
-
         let inst;
-
         switch (expr.op) {
             // Arithmetic
             case BinaryOp.Add: {
@@ -1055,11 +985,7 @@ export class HirToSsaCtx {
         return ok(inst.id as number);
     }
 
-    /**
-     * Lower a unary expression
-     * @param {import('./hir').HUnaryExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower a unary expression */
     lowerUnary(expr: HUnaryExpr): Result<ValueId, LoweringError> {
         const operandResult = this.lowerExpr(expr.operand);
         if (!operandResult.ok) return operandResult;
@@ -1135,17 +1061,18 @@ export class HirToSsaCtx {
         return ok(inst.id as number);
     }
 
-    /**
-     * Lower a call expression
-     * @param {import('./hir').HCallExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower a call expression */
     lowerCall(expr: HCallExpr): Result<ValueId, LoweringError> {
         // Get callee - could be a function name or a function pointer
         let fnId;
         let isDynamic = true;
-        if (expr.callee.kind === HExprKind.Var && expr.callee.id === -1) {
-            fnId = this.resolveFunctionId(expr.callee.name);
+        const { callee } = expr;
+        if (!("kind" in callee)) {
+            debugger;
+            throw __filename;
+        }
+        if (callee.kind === HExprKind.Var && callee.id === -1) {
+            fnId = this.resolveFunctionId(callee.name);
             isDynamic = false;
         } else {
             // Dynamic callee - evaluate to a runtime function id/hash value.
@@ -1167,11 +1094,7 @@ export class HirToSsaCtx {
         return ok(inst.id as number);
     }
 
-    /**
-     * Lower a field access expression
-     * @param {import('./hir').HFieldExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower a field access expression */
     lowerField(expr: HFieldExpr): Result<ValueId, LoweringError> {
         const baseResult = this.lowerExpr(expr.base);
         if (!baseResult.ok) return baseResult;
@@ -1187,11 +1110,7 @@ export class HirToSsaCtx {
         return ok(inst.id as number);
     }
 
-    /**
-     * Lower an index expression
-     * @param {import('./hir').HIndexExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower an index expression */
     lowerIndex(expr: HIndexExpr): Result<ValueId, LoweringError> {
         const baseResult = this.lowerExpr(expr.base);
         if (!baseResult.ok) return baseResult;
@@ -1206,11 +1125,7 @@ export class HirToSsaCtx {
         return ok(loadInst.id as number);
     }
 
-    /**
-     * Lower a reference expression
-     * @param {import('./hir').HRefExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower a reference expression */
     lowerRef(expr: HRefExpr): Result<ValueId, LoweringError> {
         // Get a pointer to the operand
         const ptrResult = this.lowerPlaceToRef(expr.operand);
@@ -1219,11 +1134,7 @@ export class HirToSsaCtx {
         return ok(ptr);
     }
 
-    /**
-     * Lower a dereference expression
-     * @param {import('./hir').HDerefExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower a dereference expression */
     lowerDeref(expr: HDerefExpr): Result<ValueId, LoweringError> {
         const ptrResult = this.lowerExpr(expr.operand);
         if (!ptrResult.ok) return ptrResult;
@@ -1233,11 +1144,7 @@ export class HirToSsaCtx {
         return ok(inst.id as number);
     }
 
-    /**
-     * Lower a struct construction expression
-     * @param {import('./hir').HStructExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower a struct construction expression */
     lowerStruct(expr: HStructExpr): Result<ValueId, LoweringError> {
         const fields = [];
         for (const f of expr.fields) {
@@ -1251,15 +1158,11 @@ export class HirToSsaCtx {
         return ok(inst.id as number);
     }
 
-    /**
-     * Lower an enum construction expression
-     * @param {import('./hir').HEnumExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower an enum construction expression */
     lowerEnum(expr: HEnumExpr): Result<ValueId, LoweringError> {
         const variant = expr.variantIndex;
         let data: ValueId | null = null;
-        
+
         if (expr.fields.length > 0) {
             if (expr.fields.length === 1) {
                 const fieldResult = this.lowerExpr(expr.fields[0]);
@@ -1284,7 +1187,7 @@ export class HirToSsaCtx {
                 data = structInst.id as number;
             }
         }
-        
+
         const enumTy = this.translateType(expr.ty);
 
         const inst = this.builder.enumCreate(variant, data, enumTy);
@@ -1295,13 +1198,13 @@ export class HirToSsaCtx {
     // Task 9.6: Place Lowering
     // ============================================================================
 
-    /**
-     * Lower a place to a reference (pointer)
-     * @param {HPlace | HExpr} place
-     * @returns {ValueId}
-     */
+    /**  Lower a place to a reference (pointer) */
     lowerPlaceToRef(place: HPlace | HExpr): Result<ValueId, LoweringError> {
         // Handle expressions that are places
+        if (!("kind" in place)) {
+            debugger;
+            throw __filename;
+        }
         if (place.kind === HExprKind.Var && typeof place.name === "string") {
             const varInfo = this.varNames.get(place.name);
             if (varInfo) {
@@ -1315,7 +1218,6 @@ export class HirToSsaCtx {
                 place.span,
             );
         }
-
         if (place.kind === HExprKind.Field) {
             // Field access - need pointer to field
             const basePtrRes =
@@ -1382,7 +1284,8 @@ export class HirToSsaCtx {
                         if (!baseAddrResult.ok) return baseAddrResult;
                         const baseAddr = baseAddrResult.value;
                         const ptrTy = this.translateType(place.base.ty);
-                        basePtr = this.builder.load(baseAddr, ptrTy).id as number;
+                        basePtr = this.builder.load(baseAddr, ptrTy)
+                            .id as number;
                     }
                 } else {
                     const basePtrResult = this.lowerPlaceToRef(place.base);
@@ -1395,7 +1298,8 @@ export class HirToSsaCtx {
                     basePtr,
                     [
                         this.builder.iconst(0, IntWidth.I32).id as number,
-                        this.builder.iconst(fieldIndex, IntWidth.I32).id as number,
+                        this.builder.iconst(fieldIndex, IntWidth.I32)
+                            .id as number,
                     ],
                     fieldTy,
                 );
@@ -1413,7 +1317,8 @@ export class HirToSsaCtx {
                         if (!baseAddrResult.ok) return baseAddrResult;
                         const baseAddr = baseAddrResult.value;
                         const ptrTy = this.translateType(place.base.ty);
-                        basePtr = this.builder.load(baseAddr, ptrTy).id as number;
+                        basePtr = this.builder.load(baseAddr, ptrTy)
+                            .id as number;
                     }
                 } else {
                     const basePtrResult = this.lowerPlaceToRef(place.base);
@@ -1543,11 +1448,7 @@ export class HirToSsaCtx {
     // Task 9.8: Match Expression Lowering
     // ============================================================================
 
-    /**
-     * Lower a match expression
-     * @param {import('./hir').HMatchExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower a match expression */
     lowerMatch(expr: HMatchExpr): Result<ValueId, LoweringError> {
         const scrutineeResult = this.lowerExpr(expr.scrutinee);
         if (!scrutineeResult.ok) return scrutineeResult;
@@ -1605,14 +1506,7 @@ export class HirToSsaCtx {
         );
     }
 
-    /**
-     * Lower a match using switch
-     * @param {HMatchExpr} expr
-     * @param {ValueId} scrutinee
-     * @param {HMatchArm[]} arms
-     * @param {boolean} hasResult
-     * @param {IRType} resultTy
-     */
+    /**  Lower a match using switch */
     lowerMatchSwitch(
         expr: HMatchExpr,
         scrutinee: ValueId,
@@ -1700,14 +1594,7 @@ export class HirToSsaCtx {
         );
     }
 
-    /**
-     * Lower an enum match
-     * @param {HMatchExpr} expr
-     * @param {ValueId} scrutinee
-     * @param {HMatchArm[]} arms
-     * @param {boolean} hasResult
-     * @param {IRType} resultTy
-     */
+    /**  Lower an enum match */
     lowerEnumMatch(
         expr: HMatchExpr,
         scrutinee: ValueId,
@@ -1800,13 +1687,7 @@ export class HirToSsaCtx {
         return ok(this.builder.iconst(0, IntWidth.I8).id as number);
     }
 
-    /**
-     * Bind an enum pattern
-     * @param {unknown} pat
-     * @param {unknown} enumValue
-     * @param {unknown} enumTy
-     * @param {number} variantIndex
-     */
+    /**  Bind an enum pattern */
     bindEnumPattern(
         pat: HPat,
         enumValue: ValueId,
@@ -1838,14 +1719,7 @@ export class HirToSsaCtx {
         return ok(undefined);
     }
 
-    /**
-     * Lower a match using decision tree
-     * @param {HMatchExpr} expr
-     * @param {ValueId} scrutinee
-     * @param {HMatchArm[]} arms
-     * @param {boolean} hasResult
-     * @param {IRType} resultTy
-     */
+    /**  Lower a match using decision tree */
     lowerMatchDecisionTree(
         expr: HMatchExpr,
         scrutinee: ValueId,
@@ -1906,17 +1780,8 @@ export class HirToSsaCtx {
         );
     }
 
-    /**
-     * Lower a pattern check
-     * @returns {{ matches: ValueId | null, bindings: Map<number, ValueId> }}
-     */
-    /**
-     * Lower a pattern check
-     * @param {unknown} value
-     * @param {unknown} pattern
-     * @param {unknown} ty
-     * @returns {{ matches: ValueId | null, bindings: Map<number, ValueId> }}
-     */
+    /**  Lower a pattern check */
+    /**  Lower a pattern check */
     lowerPatternCheck(
         value: ValueId,
         pattern: HPat,
@@ -2059,11 +1924,7 @@ export class HirToSsaCtx {
     // Task 9.9: Loop Expression Lowering
     // ============================================================================
 
-    /**
-     * Lower a loop expression
-     * @param {import('./hir').HLoopExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower a loop expression */
     lowerLoop(expr: HLoopExpr): Result<ValueId, LoweringError> {
         const headerId = this.builder.createBlock("loop_header");
         const bodyId = this.builder.createBlock("loop_body");
@@ -2106,11 +1967,7 @@ export class HirToSsaCtx {
     // Task 9.10: While Expression Lowering
     // ============================================================================
 
-    /**
-     * Lower a while expression
-     * @param {import('./hir').HWhileExpr} expr
-     * @returns {ValueId}
-     */
+    /**  Lower a while expression */
     lowerWhile(expr: HWhileExpr): Result<ValueId, LoweringError> {
         const headerId = this.builder.createBlock("while_header");
         const bodyId = this.builder.createBlock("while_body");
@@ -2156,11 +2013,7 @@ export class HirToSsaCtx {
     // Type Translation Helpers
     // ============================================================================
 
-    /**
-     * Translate a HIR type to an IR type
-     * @param {Type} ty
-     * @returns {IRType}
-     */
+    /**  Translate a HIR type to an IR type */
     translateType(ty: Type | null | undefined): IRType {
         if (!ty) return makeIRUnitType();
 
@@ -2240,31 +2093,19 @@ export class HirToSsaCtx {
         }
     }
 
-    /**
-     * Translate integer width
-     * @param {number} width
-     * @returns {number}
-     */
-    translateIntWidth(width: IntWidthValue) {
+    /**  Translate integer width */
+    translateIntWidth(width: IntWidth) {
         // IR uses same IntWidth enum
         return width;
     }
 
-    /**
-     * Translate float width
-     * @param {number} width
-     * @returns {number}
-     */
-    translateFloatWidth(width: FloatWidthValue) {
+    /**  Translate float width */
+    translateFloatWidth(width: FloatWidth) {
         // IR uses same FloatWidth enum
         return width;
     }
 
-    /**
-     * Get integer width from type
-     * @param {Type} ty
-     * @returns {number}
-     */
+    /**  Get integer width from type */
     getIntWidth(ty: Type) {
         if (ty.kind === TypeKind.Int) {
             return ty.width;
@@ -2272,11 +2113,7 @@ export class HirToSsaCtx {
         return IntWidth.I32;
     }
 
-    /**
-     * Get float width from type
-     * @param {Type} ty
-     * @returns {number}
-     */
+    /**  Get float width from type */
     getFloatWidth(ty: Type) {
         if (ty.kind === TypeKind.Float) {
             return ty.width;
@@ -2284,21 +2121,13 @@ export class HirToSsaCtx {
         return FloatWidth.F64;
     }
 
-    /**
-     * Check if integer type is signed
-     * @param {Type} ty
-     * @returns {boolean}
-     */
+    /**  Check if integer type is signed */
     isSignedIntType(ty: Type) {
         if (ty.kind !== TypeKind.Int) return false;
         return ty.width <= IntWidth.Isize;
     }
 
-    /**
-     * Create a zero/default SSA value for a result type.
-     * @param {Type | IRType | null | undefined} ty
-     * @returns {ValueId}
-     */
+    /**  Create a zero/default SSA value for a result type. */
     defaultValueForType(ty: Type | IRType | null | undefined): ValueId {
         if (!ty) {
             return this.builder.iconst(0, IntWidth.I32).id as number;
@@ -2322,20 +2151,17 @@ export class HirToSsaCtx {
             return this.builder.bconst(false).id as number;
         }
         if (hirType.kind === TypeKind.Int) {
-            return this.builder.iconst(0, this.getIntWidth(hirType)).id as number;
+            return this.builder.iconst(0, this.getIntWidth(hirType))
+                .id as number;
         }
         if (hirType.kind === TypeKind.Float) {
-            return this.builder.fconst(0, this.getFloatWidth(hirType)).id as number;
+            return this.builder.fconst(0, this.getFloatWidth(hirType))
+                .id as number;
         }
         return this.builder.iconst(0, IntWidth.I32).id as number;
     }
 
-    /**
-     * Get field type from struct type
-     * @param {Type} structTy
-     * @param {string} fieldName
-     * @returns {Type}
-     */
+    /**  Get field type from struct type */
     getFieldType(structTy: Type, fieldName: string) {
         if (structTy.kind === TypeKind.Struct && structTy.fields) {
             const field = structTy.fields.find(
@@ -2351,13 +2177,7 @@ export class HirToSsaCtx {
         } as unknown as import("./types").Type;
     }
 
-    /**
-     * Get enum field type
-     * @param {Type} enumTy
-     * @param {number} variantIndex
-     * @param {number} fieldIndex
-     * @returns {Type}
-     */
+    /**  Get enum field type */
     getEnumFieldType(enumTy: Type, variantIndex: number, fieldIndex: number) {
         if (enumTy.kind === TypeKind.Enum && enumTy.variants) {
             const variant =
@@ -2378,12 +2198,7 @@ export class HirToSsaCtx {
         } as unknown as import("./types").Type;
     }
 
-    /**
-     * Find enum variant index
-     * @param {Type} enumTy
-     * @param {string} variantName
-     * @returns {number}
-     */
+    /**  Find enum variant index */
     findEnumVariantIndex(enumTy: Type, variantName: string) {
         if (enumTy.kind === TypeKind.Enum && enumTy.variants) {
             for (let i = 0; i < enumTy.variants.length; i++) {
@@ -2395,11 +2210,7 @@ export class HirToSsaCtx {
         return -1;
     }
 
-    /**
-     * Resolve function name to ID
-     * @param {string} name
-     * @returns {number}
-     */
+    /**  Resolve function name to ID */
     resolveFunctionId(name: string) {
         // Simple hash-based ID for now
         let hash = 0;
@@ -2415,12 +2226,7 @@ export class HirToSsaCtx {
 // Entry Point
 // ============================================================================
 
-/**
- * Lower a HIR function to SSA IR
- * @param {import('./hir').HFnDecl} fnDecl
- * @param {{ irModule?: IRModule }} [options]
- * @returns {import('./ir').IRFunction}
- */
+/**  Lower a HIR function to SSA IR */
 export function lowerHirToSsa(
     fnDecl: HFnDecl,
     options: { irModule?: IRModule } = {},
@@ -2429,11 +2235,7 @@ export function lowerHirToSsa(
     return ctx.lowerFunction(fnDecl);
 }
 
-/**
- * Lower a HIR module to SSA IR module
- * @param {import('./hir').HModule} hirModule
- * @returns {unknown}
- */
+/**  Lower a HIR module to SSA IR module */
 export function lowerModuleToSsa(hirModule: HModule) {
     const irModule = makeIRModule(hirModule.name);
 

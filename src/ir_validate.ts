@@ -32,19 +32,20 @@ const ValidationErrorKind = {
     MissingReturn: 10,
 } as const;
 
-type ValidationErrorKindValue = (typeof ValidationErrorKind)[keyof typeof ValidationErrorKind];
+type ValidationErrorKindValue =
+    (typeof ValidationErrorKind)[keyof typeof ValidationErrorKind];
 
-interface ValidationErrorLoc {
+type ValidationErrorLoc = {
     blockId?: BlockId;
     valueId?: ValueId;
     fnId?: number;
-}
+};
 
-interface ValidationError {
+type ValidationError = {
     kind: ValidationErrorKindValue;
     message: string;
     loc?: ValidationErrorLoc;
-}
+};
 
 function makeValidationError(
     kind: ValidationErrorKindValue,
@@ -62,7 +63,11 @@ function errUndefinedValue(valueId: ValueId, context: string): ValidationError {
     );
 }
 
-function errTypeMismatch(expected: string, actual: string, context: string): ValidationError {
+function errTypeMismatch(
+    expected: string,
+    actual: string,
+    context: string,
+): ValidationError {
     return makeValidationError(
         ValidationErrorKind.TypeMismatch,
         `Type mismatch in ${context}: expected ${expected}, got ${actual}`,
@@ -78,7 +83,11 @@ function errMissingTerminator(blockId: BlockId): ValidationError {
     );
 }
 
-function errInvalidBlockArg(blockId: BlockId, expected: number, actual: number): ValidationError {
+function errInvalidBlockArg(
+    blockId: BlockId,
+    expected: number,
+    actual: number,
+): ValidationError {
     return makeValidationError(
         ValidationErrorKind.InvalidBlockArg,
         `Block %${blockId} expects ${expected} args, got ${actual}`,
@@ -118,7 +127,11 @@ function errUnreachableBlock(blockId: BlockId): ValidationError {
     );
 }
 
-function errDominanceViolation(valueId: ValueId, useBlock: BlockId, defBlock: BlockId): ValidationError {
+function errDominanceViolation(
+    valueId: ValueId,
+    useBlock: BlockId,
+    defBlock: BlockId,
+): ValidationError {
     return makeValidationError(
         ValidationErrorKind.DominanceViolation,
         `Value %${valueId} used in block %${useBlock} but defined in block %${defBlock} which does not dominate`,
@@ -142,14 +155,14 @@ function errMissingReturn(fnName: string): ValidationError {
 // Task 12.2: Validation Context
 // ============================================================================
 
-interface ValidationCtx {
+type ValidationCtx = {
     fn: IRFunction | null;
     definedValues: Set<ValueId>;
     valueTypes: Map<ValueId, IRType>;
     blocks: Map<BlockId, IRBlock>;
     valueDefBlock: Map<ValueId, BlockId>;
     errors: ValidationError[];
-}
+};
 
 function makeValidationCtx(): ValidationCtx {
     return {
@@ -175,7 +188,12 @@ function setFunction(ctx: ValidationCtx, fn: IRFunction): void {
     }
 }
 
-function defineValue(ctx: ValidationCtx, id: ValueId, ty: IRType, blockId: BlockId): void {
+function defineValue(
+    ctx: ValidationCtx,
+    id: ValueId,
+    ty: IRType,
+    blockId: BlockId,
+): void {
     ctx.definedValues.add(id);
     ctx.valueTypes.set(id, ty);
     ctx.valueDefBlock.set(id, blockId);
@@ -201,10 +219,10 @@ function addError(ctx: ValidationCtx, error: ValidationError): void {
 // Task 12.3: Module Validation
 // ============================================================================
 
-interface ValidationResult {
+type ValidationResult = {
     ok: boolean;
     errors: ValidationError[];
-}
+};
 
 function validateModule(module: IRModule): ValidationResult {
     const ctx = makeValidationCtx();
@@ -242,7 +260,10 @@ function validateModule(module: IRModule): ValidationResult {
 // Task 12.4: Function Validation
 // ============================================================================
 
-function validateFunction(fn: IRFunction, ctx: ValidationCtx = makeValidationCtx()): ValidationResult {
+function validateFunction(
+    fn: IRFunction,
+    ctx: ValidationCtx = makeValidationCtx(),
+): ValidationResult {
     const startErrorCount = ctx.errors.length;
     setFunction(ctx, fn);
 
@@ -408,7 +429,10 @@ function validateInstruction(inst: IRInst, ctx: ValidationCtx): void {
             break;
 
         default:
-            addError(ctx, errInvalidOperand(`Unknown instruction kind: ${inst.kind}`));
+            addError(
+                ctx,
+                errInvalidOperand(`Unknown instruction kind: ${inst.kind}`),
+            );
     }
 }
 
@@ -473,7 +497,10 @@ function validateLoad(inst: IRInst, ctx: ValidationCtx): void {
     // Check ptr is a pointer type
     const ptrTy = getValueType(ctx, inst.ptr);
     if (ptrTy && ptrTy.kind !== IRTypeKind.Ptr) {
-        addError(ctx, errTypeMismatch("pointer", irTypeToString(ptrTy), "load operand"));
+        addError(
+            ctx,
+            errTypeMismatch("pointer", irTypeToString(ptrTy), "load operand"),
+        );
     }
 }
 
@@ -488,7 +515,10 @@ function validateStore(inst: IRInst, ctx: ValidationCtx): void {
     // Check ptr is a pointer type
     const ptrTy = getValueType(ctx, inst.ptr);
     if (ptrTy && ptrTy.kind !== IRTypeKind.Ptr) {
-        addError(ctx, errTypeMismatch("pointer", irTypeToString(ptrTy), "store operand"));
+        addError(
+            ctx,
+            errTypeMismatch("pointer", irTypeToString(ptrTy), "store operand"),
+        );
     }
 }
 
@@ -609,7 +639,10 @@ function validateTerminator(term: IRTerm, ctx: ValidationCtx): void {
             break;
 
         default:
-            addError(ctx, errInvalidOperand(`Unknown terminator kind: ${term.kind}`));
+            addError(
+                ctx,
+                errInvalidOperand(`Unknown terminator kind: ${term.kind}`),
+            );
     }
 }
 
@@ -645,7 +678,11 @@ function validateBr(term: IRTerm, ctx: ValidationCtx): void {
     if (term.args.length !== target.params.length) {
         addError(
             ctx,
-            errInvalidBlockArg(term.target, target.params.length, term.args.length),
+            errInvalidBlockArg(
+                term.target,
+                target.params.length,
+                term.args.length,
+            ),
         );
     }
 
@@ -666,7 +703,10 @@ function validateBrIf(term: IRTerm, ctx: ValidationCtx): void {
     // Check condition is bool
     const condTy = getValueType(ctx, term.cond);
     if (condTy && condTy.kind !== IRTypeKind.Bool) {
-        addError(ctx, errTypeMismatch("bool", irTypeToString(condTy), "br_if condition"));
+        addError(
+            ctx,
+            errTypeMismatch("bool", irTypeToString(condTy), "br_if condition"),
+        );
     }
 
     // Check then block
@@ -677,7 +717,11 @@ function validateBrIf(term: IRTerm, ctx: ValidationCtx): void {
         if (term.thenArgs.length !== thenBlock.params.length) {
             addError(
                 ctx,
-                errInvalidBlockArg(term.thenBlock, thenBlock.params.length, term.thenArgs.length),
+                errInvalidBlockArg(
+                    term.thenBlock,
+                    thenBlock.params.length,
+                    term.thenArgs.length,
+                ),
             );
         }
         for (const arg of term.thenArgs) {
@@ -695,7 +739,11 @@ function validateBrIf(term: IRTerm, ctx: ValidationCtx): void {
         if (term.elseArgs.length !== elseBlock.params.length) {
             addError(
                 ctx,
-                errInvalidBlockArg(term.elseBlock, elseBlock.params.length, term.elseArgs.length),
+                errInvalidBlockArg(
+                    term.elseBlock,
+                    elseBlock.params.length,
+                    term.elseArgs.length,
+                ),
             );
         }
         for (const arg of term.elseArgs) {
@@ -715,7 +763,10 @@ function validateSwitch(term: IRTerm, ctx: ValidationCtx): void {
     // Check switch value is integer
     const valTy = getValueType(ctx, term.value);
     if (valTy && valTy.kind !== IRTypeKind.Int) {
-        addError(ctx, errTypeMismatch("integer", irTypeToString(valTy), "switch value"));
+        addError(
+            ctx,
+            errTypeMismatch("integer", irTypeToString(valTy), "switch value"),
+        );
     }
 
     // Check each case
@@ -724,7 +775,14 @@ function validateSwitch(term: IRTerm, ctx: ValidationCtx): void {
             typeof c.value === "bigint" ||
             (typeof c.value === "number" && Number.isInteger(c.value));
         if (!isIntLiteral) {
-            addError(ctx, errTypeMismatch("integer literal", typeof c.value, "switch case value"));
+            addError(
+                ctx,
+                errTypeMismatch(
+                    "integer literal",
+                    typeof c.value,
+                    "switch case value",
+                ),
+            );
         }
 
         const target = getBlock(ctx, c.target);
@@ -732,12 +790,22 @@ function validateSwitch(term: IRTerm, ctx: ValidationCtx): void {
             addError(ctx, errUndefinedBlock(c.target));
         } else {
             if (c.args.length !== target.params.length) {
-                addError(ctx, errInvalidBlockArg(c.target, target.params.length, c.args.length));
+                addError(
+                    ctx,
+                    errInvalidBlockArg(
+                        c.target,
+                        target.params.length,
+                        c.args.length,
+                    ),
+                );
             }
             for (let i = 0; i < c.args.length; i++) {
                 const arg = c.args[i];
                 if (!isValueDefined(ctx, arg)) {
-                    addError(ctx, errUndefinedValue(arg, "switch case argument"));
+                    addError(
+                        ctx,
+                        errUndefinedValue(arg, "switch case argument"),
+                    );
                     continue;
                 }
                 const argTy = getValueType(ctx, arg);
@@ -774,7 +842,10 @@ function validateSwitch(term: IRTerm, ctx: ValidationCtx): void {
         for (let i = 0; i < term.defaultArgs.length; i++) {
             const arg = term.defaultArgs[i];
             if (!isValueDefined(ctx, arg)) {
-                addError(ctx, errUndefinedValue(arg, "switch default argument"));
+                addError(
+                    ctx,
+                    errUndefinedValue(arg, "switch default argument"),
+                );
                 continue;
             }
             const argTy = getValueType(ctx, arg);
@@ -849,7 +920,11 @@ function computeDominators(fn: IRFunction): Map<BlockId, Set<BlockId>> {
     return dominators;
 }
 
-function dominates(a: BlockId, b: BlockId, dominators: Map<BlockId, Set<BlockId>>): boolean {
+function dominates(
+    a: BlockId,
+    b: BlockId,
+    dominators: Map<BlockId, Set<BlockId>>,
+): boolean {
     const bDom = dominators.get(b);
     return bDom ? bDom.has(a) : false;
 }
@@ -864,8 +939,14 @@ function validateDominance(fn: IRFunction, ctx: ValidationCtx): void {
             const operands = getInstructionOperands(inst);
             for (const opId of operands) {
                 const defBlock = ctx.valueDefBlock.get(opId);
-                if (defBlock !== undefined && !dominates(defBlock, block.id, dominators)) {
-                    addError(ctx, errDominanceViolation(opId, block.id, defBlock));
+                if (
+                    defBlock !== undefined &&
+                    !dominates(defBlock, block.id, dominators)
+                ) {
+                    addError(
+                        ctx,
+                        errDominanceViolation(opId, block.id, defBlock),
+                    );
                 }
             }
         }
@@ -875,8 +956,14 @@ function validateDominance(fn: IRFunction, ctx: ValidationCtx): void {
             const termOperands = getTerminatorOperands(block.terminator);
             for (const opId of termOperands) {
                 const defBlock = ctx.valueDefBlock.get(opId);
-                if (defBlock !== undefined && !dominates(defBlock, block.id, dominators)) {
-                    addError(ctx, errDominanceViolation(opId, block.id, defBlock));
+                if (
+                    defBlock !== undefined &&
+                    !dominates(defBlock, block.id, dominators)
+                ) {
+                    addError(
+                        ctx,
+                        errDominanceViolation(opId, block.id, defBlock),
+                    );
                 }
             }
         }
@@ -1078,7 +1165,10 @@ function validateSSAForm(fn: IRFunction, ctx: ValidationCtx): void {
         for (const inst of block.instructions) {
             if (inst.id !== null) {
                 if (defined.has(inst.id)) {
-                    addError(ctx, errDuplicateDefinition(`%${inst.id}`, "value"));
+                    addError(
+                        ctx,
+                        errDuplicateDefinition(`%${inst.id}`, "value"),
+                    );
                 }
                 defined.add(inst.id);
             }

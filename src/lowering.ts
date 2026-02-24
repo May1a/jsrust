@@ -193,43 +193,43 @@ function formatArgTagForType(ty: Type | null): number | null {
 // Task 6.1: Lowering Context
 // ============================================================================
 
-interface LoweringError {
+type LoweringError = {
     message: string;
     span: Span;
-}
+};
 
-interface VarInfo {
+type VarInfo = {
     name: string;
     id: number;
     type: Type;
     mutable: boolean;
-}
+};
 
-interface ClosureCapture {
+type ClosureCapture = {
     mode: "value" | "ref";
     name: string;
     varId: number;
     type: Type;
     mutable: boolean;
-}
+};
 
-interface ClosureBinding {
+type ClosureBinding = {
     helperName: string;
     helperType: Type;
     captures: ClosureCapture[];
-}
+};
 
-interface ClosureMeta {
+type ClosureMeta = {
     helperName: string;
     helperType: Type;
     captures: ClosureCapture[];
-}
+};
 
-interface ItemInfo {
+type ItemInfo = {
     kind: "fn" | "struct" | "enum";
     node: Node;
     type?: Type;
-}
+};
 
 /**
  * Lowering context for tracking state during AST to HIR conversion
@@ -436,7 +436,8 @@ function lowerItemIntoList(
                     name: traitName
                         ? `${(item.targetType as { name?: string })?.name || "unknown"}::<${traitName}>::${method.name}`
                         : `${(item.targetType as { name?: string })?.name || "unknown"}::${method.name}`,
-                    implTargetName: (item.targetType as { name?: string })?.name || null,
+                    implTargetName:
+                        (item.targetType as { name?: string })?.name || null,
                     isImplMethod: true,
                     unqualifiedName: method.name,
                 },
@@ -462,7 +463,11 @@ function lowerItemIntoList(
 /**
  * Register an item in the context
  */
-function registerItem(ctx: LoweringCtx, item: Node, typeCtx: TypeContext): void {
+function registerItem(
+    ctx: LoweringCtx,
+    item: Node,
+    typeCtx: TypeContext,
+): void {
     switch (item.kind) {
         case NodeKind.FnItem: {
             const itemDecl = typeCtx.lookupItem(item.name);
@@ -490,7 +495,8 @@ function registerItem(ctx: LoweringCtx, item: Node, typeCtx: TypeContext): void 
         case NodeKind.TraitItem:
             break;
         case NodeKind.ImplItem: {
-            const traitName = (item.traitType as { name?: string })?.name || null;
+            const traitName =
+                (item.traitType as { name?: string })?.name || null;
             for (const method of item.methods || []) {
                 registerItem(
                     ctx,
@@ -590,13 +596,17 @@ function lowerFnItem(
     const params: HParam[] = [];
     for (let i = 0; i < (fn.params || []).length; i++) {
         const param = fn.params[i];
-        const paramType = (fnType as FnType | null)?.params?.[i] || makeUnitType({ line: 0, column: 0, start: 0, end: 0 });
+        const paramType =
+            (fnType as FnType | null)?.params?.[i] ||
+            makeUnitType({ line: 0, column: 0, start: 0, end: 0 });
         const hParam = lowerParam(ctx, param, paramType, typeCtx);
         params.push(hParam);
     }
 
     // Get return type
-    let returnType = (fnType as FnType | null)?.returnType || makeUnitType({ line: 0, column: 0, start: 0, end: 0 });
+    let returnType =
+        (fnType as FnType | null)?.returnType ||
+        makeUnitType({ line: 0, column: 0, start: 0, end: 0 });
     returnType = substituteLoweringGenericType(
         typeCtx,
         returnType,
@@ -686,7 +696,8 @@ function lowerStructItem(
             makeHStructField(
                 field.span,
                 field.name,
-                fieldType || makeUnitType({ line: 0, column: 0, start: 0, end: 0 }),
+                fieldType ||
+                    makeUnitType({ line: 0, column: 0, start: 0, end: 0 }),
                 defaultValue,
             ),
         );
@@ -705,7 +716,7 @@ function lowerStructItem(
  * Lower an enum item to HIR
  */
 function lowerEnumItem(
-    ctx: LoweringCtx,
+    _ctx: LoweringCtx, // FIXME: unused param
     enum_: Node,
     typeCtx: TypeContext,
 ): HEnumDecl {
@@ -721,7 +732,10 @@ function lowerEnumItem(
                     fieldType = typeResult.type;
                 }
             }
-            fields.push(fieldType || makeUnitType({ line: 0, column: 0, start: 0, end: 0 }));
+            fields.push(
+                fieldType ||
+                    makeUnitType({ line: 0, column: 0, start: 0, end: 0 }),
+            );
         }
 
         let discriminant: number | null = null;
@@ -745,11 +759,7 @@ function lowerEnumItem(
 /**
  * Lower an AST statement to HIR
  */
-function lowerStmt(
-    ctx: LoweringCtx,
-    stmt: Node,
-    typeCtx: TypeContext,
-): HStmt {
+function lowerStmt(ctx: LoweringCtx, stmt: Node, typeCtx: TypeContext): HStmt {
     switch (stmt.kind) {
         case NodeKind.LetStmt:
             return lowerLetStmt(ctx, stmt, typeCtx);
@@ -760,14 +770,20 @@ function lowerStmt(
             // Return an empty expression statement
             return makeHExprStmt(
                 stmt.span,
-                makeHUnitExpr(stmt.span, makeUnitType({ line: 0, column: 0, start: 0, end: 0 })),
+                makeHUnitExpr(
+                    stmt.span,
+                    makeUnitType({ line: 0, column: 0, start: 0, end: 0 }),
+                ),
             );
         }
         default:
             ctx.addError(`Unknown statement kind: ${stmt.kind}`, stmt.span);
             return makeHExprStmt(
                 stmt.span,
-                makeHUnitExpr(stmt.span, makeUnitType({ line: 0, column: 0, start: 0, end: 0 })),
+                makeHUnitExpr(
+                    stmt.span,
+                    makeUnitType({ line: 0, column: 0, start: 0, end: 0 }),
+                ),
             );
     }
 }
@@ -805,8 +821,13 @@ function lowerLetStmt(
     // Lower pattern
     const pat = lowerPattern(ctx, letStmt.pat, ty, typeCtx);
 
-    if (init && (init as HVarExpr & { closureMeta?: ClosureMeta }).closureMeta && pat.kind === HPatKind.Ident) {
-        const closureMeta = (init as HVarExpr & { closureMeta?: ClosureMeta }).closureMeta!;
+    if (
+        init &&
+        (init as HVarExpr & { closureMeta?: ClosureMeta }).closureMeta &&
+        pat.kind === HPatKind.Ident
+    ) {
+        const closureMeta = (init as HVarExpr & { closureMeta?: ClosureMeta })
+            .closureMeta!;
         const captures: ClosureCapture[] = [];
         for (const capture of closureMeta.captures || []) {
             const sourceVar = ctx.lookupVar(capture.name);
@@ -869,7 +890,8 @@ function lowerLetStmt(
     } else if (
         init &&
         (init as HVarExpr & { closureMeta?: ClosureMeta }).closureMeta &&
-        (init as HVarExpr & { closureMeta?: ClosureMeta }).closureMeta!.captures?.length > 0
+        (init as HVarExpr & { closureMeta?: ClosureMeta }).closureMeta!.captures
+            ?.length > 0
     ) {
         ctx.addError(
             "Capturing closures currently require a simple identifier let-binding",
@@ -898,7 +920,10 @@ function lowerExprStmt(
             );
             return makeHExprStmt(
                 exprStmt.span,
-                makeHUnitExpr(exprStmt.span, makeUnitType({ line: 0, column: 0, start: 0, end: 0 })),
+                makeHUnitExpr(
+                    exprStmt.span,
+                    makeUnitType({ line: 0, column: 0, start: 0, end: 0 }),
+                ),
             );
         }
         return makeHAssignStmt(exprStmt.span, place, value);
@@ -915,11 +940,7 @@ function lowerExprStmt(
 /**
  * Lower an AST expression to HIR
  */
-function lowerExpr(
-    ctx: LoweringCtx,
-    expr: Node,
-    typeCtx: TypeContext,
-): HExpr {
+function lowerExpr(ctx: LoweringCtx, expr: Node, typeCtx: TypeContext): HExpr {
     switch (expr.kind) {
         case NodeKind.LiteralExpr:
             return lowerLiteral(ctx, expr, typeCtx);
@@ -995,14 +1016,21 @@ function lowerExpr(
 
         default:
             ctx.addError(`Unknown expression kind: ${expr.kind}`, expr.span);
-            return makeHUnitExpr(expr.span, makeUnitType({ line: 0, column: 0, start: 0, end: 0 }));
+            return makeHUnitExpr(
+                expr.span,
+                makeUnitType({ line: 0, column: 0, start: 0, end: 0 }),
+            );
     }
 }
 
 /**
  * Lower a literal expression
  */
-function lowerLiteral(_ctx: LoweringCtx, lit: Node, _typeCtx: TypeContext): HLiteralExpr {
+function lowerLiteral(
+    _ctx: LoweringCtx,
+    lit: Node,
+    _typeCtx: TypeContext,
+): HLiteralExpr {
     const hirLitKind = convertLiteralKind(lit.literalKind);
     const ty = inferLiteralType(lit.literalKind);
     return makeHLiteralExpr(lit.span, hirLitKind, lit.value, ty);
@@ -1035,9 +1063,17 @@ function inferLiteralType(literalKind: number): Type {
     const defaultSpan: Span = { line: 0, column: 0, start: 0, end: 0 };
     switch (literalKind) {
         case LiteralKind.Int:
-            return { kind: TypeKind.Int, width: IntWidth.I32, span: defaultSpan };
+            return {
+                kind: TypeKind.Int,
+                width: IntWidth.I32,
+                span: defaultSpan,
+            };
         case LiteralKind.Float:
-            return { kind: TypeKind.Float, width: FloatWidth.F64, span: defaultSpan };
+            return {
+                kind: TypeKind.Float,
+                width: FloatWidth.F64,
+                span: defaultSpan,
+            };
         case LiteralKind.Bool:
             return { kind: TypeKind.Bool, span: defaultSpan };
         case LiteralKind.String:
@@ -1057,8 +1093,13 @@ function lowerIdentifier(
     ident: Node,
     typeCtx: TypeContext,
 ): HExpr {
-    const defaultSpan: Span = ident.span || { line: 0, column: 0, start: 0, end: 0 };
-    
+    const defaultSpan: Span = ident.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
+
     if (ident.name === "Self" && ctx.currentImplTargetName) {
         const selfType = {
             kind: TypeKind.Struct,
@@ -1154,8 +1195,13 @@ function lowerBinary(
     binary: Node,
     typeCtx: TypeContext,
 ): HBinaryExpr {
-    const defaultSpan: Span = binary.span || { line: 0, column: 0, start: 0, end: 0 };
-    
+    const defaultSpan: Span = binary.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
+
     function autoDeref(expr: HExpr, span: Span): HExpr {
         let out = expr;
         while (
@@ -1212,7 +1258,12 @@ function lowerUnary(
     unary: Node,
     typeCtx: TypeContext,
 ): HUnaryExpr {
-    const defaultSpan: Span = unary.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = unary.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const operand = lowerExpr(ctx, unary.operand, typeCtx);
 
     let ty = operand.ty;
@@ -1229,7 +1280,12 @@ function substituteLoweringGenericType(
     genericNames: Set<string>,
     bindings: Map<string, Type>,
 ): Type {
-    const defaultSpan: Span = type?.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = type?.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const resolved = typeCtx.resolveType(type);
     if (resolved.kind === TypeKind.Named) {
         if (genericNames.has(resolved.name) && !resolved.args) {
@@ -1248,7 +1304,10 @@ function substituteLoweringGenericType(
             : null;
         const item = typeCtx.lookupItem(resolved.name);
         if (item && item.kind === "enum") {
-            const enumNode = item.node as { generics?: string[]; variants?: { name: string; fields?: { ty?: Node }[] }[] };
+            const enumNode = item.node as {
+                generics?: string[];
+                variants?: { name: string; fields?: { ty?: Node }[] }[];
+            };
             const enumGenericParams = (enumNode.generics || [])
                 .map((name: string) => name || "")
                 .filter((name: string) => name.length > 0);
@@ -1271,12 +1330,14 @@ function substituteLoweringGenericType(
                         name: variant.name,
                         fields: (variant.fields || []).map(
                             (field: { ty?: Node }) => {
-                                if (!field?.ty) return makeUnitType(defaultSpan);
+                                if (!field?.ty)
+                                    return makeUnitType(defaultSpan);
                                 const fieldType = resolveTypeFromAst(
                                     field.ty,
                                     typeCtx,
                                 );
-                                if (!fieldType.ok) return makeUnitType(defaultSpan);
+                                if (!fieldType.ok)
+                                    return makeUnitType(defaultSpan);
                                 return substituteLoweringGenericType(
                                     typeCtx,
                                     fieldType.type,
@@ -1407,7 +1468,8 @@ function optionElementTypeForType(
         Array.isArray(resolved.variants)
     ) {
         const someVariant = resolved.variants.find(
-            (variant: { name?: string; fields?: Type[] }) => variant.name === "Some",
+            (variant: { name?: string; fields?: Type[] }) =>
+                variant.name === "Some",
         );
         if (
             someVariant &&
@@ -1462,10 +1524,10 @@ function isEqLowerableType(
     );
 }
 
-interface MethodMeta {
+type MethodMeta = {
     implGenericNames?: string[];
     targetGenericParamNames?: string[];
-}
+};
 
 function instantiateLoweringMethodType(
     typeCtx: TypeContext,
@@ -1510,12 +1572,12 @@ function instantiateLoweringMethodType(
     return substituteLoweringGenericType(typeCtx, fnType, genericSet, bindings);
 }
 
-interface LookupCallItemResult {
+type LookupCallItemResult = {
     kind: "fn" | "struct" | "enum";
     node: Node;
     type?: Type;
     genericBindings?: Map<string, Type>;
-}
+};
 
 function lookupLoweringCallItem(
     typeCtx: TypeContext,
@@ -1531,7 +1593,9 @@ function lookupLoweringCallItem(
             (callee.segments && callee.segments.length > 0
                 ? callee.segments[0]
                 : null);
-        return lookupName ? (typeCtx.lookupItem(lookupName) as LookupCallItemResult | null) : null;
+        return lookupName
+            ? (typeCtx.lookupItem(lookupName) as LookupCallItemResult | null)
+            : null;
     }
     return null;
 }
@@ -1539,13 +1603,14 @@ function lookupLoweringCallItem(
 /**
  * Lower a call expression
  */
-function lowerCall(
-    ctx: LoweringCtx,
-    call: Node,
-    typeCtx: TypeContext,
-): HExpr {
-    const defaultSpan: Span = call.span || { line: 0, column: 0, start: 0, end: 0 };
-    
+function lowerCall(ctx: LoweringCtx, call: Node, typeCtx: TypeContext): HExpr {
+    const defaultSpan: Span = call.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
+
     if (call.callee?.kind === NodeKind.IdentifierExpr) {
         const variantName = call.callee.name;
         if (
@@ -1595,9 +1660,8 @@ function lowerCall(
                     }
                     return sourceExpr;
                 });
-                const userArgs = (call.args || []).map(
-                    (arg: Node) =>
-                        lowerExpr(ctx, arg, typeCtx),
+                const userArgs = (call.args || []).map((arg: Node) =>
+                    lowerExpr(ctx, arg, typeCtx),
                 );
                 const callee = makeHVarExpr(
                     call.callee.span,
@@ -1623,16 +1687,18 @@ function lowerCall(
         const methodField = call.callee;
         const resolvedSymbol = methodField.resolvedMethodSymbolName || null;
         if (resolvedSymbol) {
-            const methodMeta = typeCtx.lookupMethodBySymbol(resolvedSymbol) as { type?: Type; meta?: MethodMeta } | null;
+            const methodMeta = typeCtx.lookupMethodBySymbol(resolvedSymbol) as {
+                type?: Type;
+                meta?: MethodMeta;
+            } | null;
             const receiver = lowerExpr(ctx, methodField.receiver, typeCtx);
             if (methodMeta && methodMeta.type?.kind === TypeKind.Fn) {
-                const methodType =
-                    instantiateLoweringMethodType(
-                        typeCtx,
-                        methodMeta.type,
-                        receiver.ty,
-                        methodMeta.meta || null,
-                    ) as FnType;
+                const methodType = instantiateLoweringMethodType(
+                    typeCtx,
+                    methodMeta.type,
+                    receiver.ty,
+                    methodMeta.meta || null,
+                ) as FnType;
                 let receiverArg = receiver;
                 const receiverType = methodType.params[0];
                 if (receiverType?.kind === TypeKind.Ref) {
@@ -1685,15 +1751,18 @@ function lowerCall(
                 const methodDecl = typeCtx.lookupMethod(
                     receiverStructName,
                     methodName,
-                ) as { type?: Type; symbolName?: string; meta?: MethodMeta } | null;
+                ) as {
+                    type?: Type;
+                    symbolName?: string;
+                    meta?: MethodMeta;
+                } | null;
                 if (methodDecl && methodDecl.type?.kind === TypeKind.Fn) {
-                    const methodType =
-                        instantiateLoweringMethodType(
-                            typeCtx,
-                            methodDecl.type,
-                            receiver.ty,
-                            methodDecl.meta || null,
-                        ) as FnType;
+                    const methodType = instantiateLoweringMethodType(
+                        typeCtx,
+                        methodDecl.type,
+                        receiver.ty,
+                        methodDecl.meta || null,
+                    ) as FnType;
                     let receiverArg = receiver;
                     const receiverType = methodType.params[0];
                     if (receiverType?.kind === TypeKind.Ref) {
@@ -1745,20 +1814,26 @@ function lowerCall(
         const variantName = call.callee.segments[1];
         const enumItem = ctx.lookupItem(enumName);
         if (enumItem && enumItem.kind === "enum") {
-            const loweredArgs = (call.args || []).map(
-                (arg: Node) => lowerExpr(ctx, arg, typeCtx),
+            const loweredArgs = (call.args || []).map((arg: Node) =>
+                lowerExpr(ctx, arg, typeCtx),
             );
-            const enumNode = enumItem.node as { generics?: string[]; variants?: { name: string; fields?: { ty?: Node }[] }[] };
-            const variantIndex = findEnumVariantIndex(enumNode as unknown as Node, variantName);
+            const enumNode = enumItem.node as {
+                generics?: string[];
+                variants?: { name: string; fields?: { ty?: Node }[] }[];
+            };
+            const variantIndex = findEnumVariantIndex(
+                enumNode as unknown as Node,
+                variantName,
+            );
             const enumNodeVariants = enumNode.variants || [];
             const variantNode = enumNodeVariants[variantIndex] || null;
             const enumGenericParams = (enumNode.generics || [])
                 .map((name: string) => name || "")
                 .filter((name: string) => name.length > 0);
-    const genericSet = new Set<string>(enumGenericParams);
-    const bindings = new Map<string, Type>();
+            const genericSet = new Set<string>(enumGenericParams);
+            const bindings = new Map<string, Type>();
 
-    if (variantNode && variantNode.fields) {
+            if (variantNode && variantNode.fields) {
                 const count = Math.min(
                     variantNode.fields.length,
                     loweredArgs.length,
@@ -1785,12 +1860,14 @@ function lowerCall(
                     (variant: { name: string; fields?: { ty?: Node }[] }) => {
                         const fields = (variant.fields || []).map(
                             (field: { ty?: Node }) => {
-                                if (!field?.ty) return makeUnitType(defaultSpan);
+                                if (!field?.ty)
+                                    return makeUnitType(defaultSpan);
                                 const resolved = resolveTypeFromAst(
                                     field.ty,
                                     typeCtx,
                                 );
-                                if (!resolved.ok) return makeUnitType(defaultSpan);
+                                if (!resolved.ok)
+                                    return makeUnitType(defaultSpan);
                                 return substituteLoweringGenericType(
                                     typeCtx,
                                     resolved.type,
@@ -1892,7 +1969,12 @@ function lowerAssertEqMacro(
     macroExpr: Node,
     typeCtx: TypeContext,
 ): HExpr {
-    const defaultSpan: Span = macroExpr.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = macroExpr.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const args = macroExpr.args || [];
     if (args.length !== 2) {
         ctx.addError("assert_eq! requires exactly 2 arguments", macroExpr.span);
@@ -2124,7 +2206,12 @@ function lowerPrintMacro(
     typeCtx: TypeContext,
     builtinName: string,
 ): HExpr {
-    const defaultSpan: Span = macroExpr.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = macroExpr.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const args = macroExpr.args || [];
     if (args.length === 0) {
         ctx.addError(
@@ -2212,13 +2299,18 @@ function lowerVecMacro(
     macroExpr: Node,
     typeCtx: TypeContext,
 ): HExpr {
-    const defaultSpan: Span = macroExpr.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = macroExpr.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const args = macroExpr.args || [];
-    const loweredArgs = args.map((arg: Node) =>
-        lowerExpr(ctx, arg, typeCtx),
-    );
+    const loweredArgs = args.map((arg: Node) => lowerExpr(ctx, arg, typeCtx));
     const elementType =
-        loweredArgs.length > 0 ? loweredArgs[0].ty : typeCtx.freshTypeVar(defaultSpan);
+        loweredArgs.length > 0
+            ? loweredArgs[0].ty
+            : typeCtx.freshTypeVar(defaultSpan);
     const vecType = {
         kind: TypeKind.Named,
         name: "Vec",
@@ -2291,7 +2383,12 @@ function lowerField(
     field: Node,
     typeCtx: TypeContext,
 ): HFieldExpr {
-    const defaultSpan: Span = field.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = field.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const base = lowerExpr(ctx, field.receiver, typeCtx);
     const fieldName =
         typeof field.field === "string" ? field.field : field.field.name;
@@ -2323,7 +2420,9 @@ function lowerField(
         } else {
             const item = typeCtx.lookupItem(baseType.name);
             if (item && item.kind === "struct") {
-                const structNodeItem = item.node as { fields?: { name: string; ty?: Node }[] };
+                const structNodeItem = item.node as {
+                    fields?: { name: string; ty?: Node }[];
+                };
                 const structField = structNodeItem.fields?.find(
                     (f: { name: string; ty?: Node }) => f.name === fieldName,
                 );
@@ -2342,7 +2441,10 @@ function lowerField(
         index = ctx.getFieldIndex(baseType.name, fieldName);
         const item = typeCtx.lookupItem(baseType.name);
         if (item && item.kind === "struct") {
-            const structNodeItem = item.node as { fields?: { name: string; ty?: Node }[]; generics?: string[] };
+            const structNodeItem = item.node as {
+                fields?: { name: string; ty?: Node }[];
+                generics?: string[];
+            };
             const structField = structNodeItem.fields?.find(
                 (f: { name: string; ty?: Node }) => f.name === fieldName,
             );
@@ -2403,7 +2505,12 @@ function lowerIndex(
     index: Node,
     typeCtx: TypeContext,
 ): HExpr {
-    const defaultSpan: Span = index.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = index.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const base = lowerExpr(ctx, index.receiver, typeCtx);
     const idx = lowerExpr(ctx, index.index, typeCtx);
 
@@ -2464,7 +2571,12 @@ function lowerAssign(
     assign: Node,
     typeCtx: TypeContext,
 ): HUnitExpr {
-    const defaultSpan: Span = assign.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = assign.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     lowerExpr(ctx, assign.value, typeCtx);
 
     // Extract place from target
@@ -2487,7 +2599,12 @@ function lowerStructExpr(
     structExpr: Node,
     typeCtx: TypeContext,
 ): HStructExpr {
-    const defaultSpan: Span = structExpr.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = structExpr.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const path = lowerExpr(ctx, structExpr.path, typeCtx);
 
     const fields = (structExpr.fields || []).map(
@@ -2507,7 +2624,12 @@ function lowerStructExpr(
     if (ty.kind === TypeKind.Struct) {
         // Already have struct type
     } else if (ty.kind === TypeKind.Named) {
-        ty = { kind: TypeKind.Struct, name: ty.name, fields: [], span: defaultSpan };
+        ty = {
+            kind: TypeKind.Struct,
+            name: ty.name,
+            fields: [],
+            span: defaultSpan,
+        };
     }
 
     return makeHStructExpr(
@@ -2522,12 +2644,13 @@ function lowerStructExpr(
 /**
  * Lower a reference expression
  */
-function lowerRef(
-    ctx: LoweringCtx,
-    ref: Node,
-    typeCtx: TypeContext,
-): HRefExpr {
-    const defaultSpan: Span = ref.span || { line: 0, column: 0, start: 0, end: 0 };
+function lowerRef(ctx: LoweringCtx, ref: Node, typeCtx: TypeContext): HRefExpr {
+    const defaultSpan: Span = ref.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const operand = lowerExpr(ctx, ref.operand, typeCtx);
     const mutable = ref.mutability === Mutability.Mutable;
 
@@ -2549,7 +2672,12 @@ function lowerDeref(
     deref: Node,
     typeCtx: TypeContext,
 ): HDerefExpr {
-    const defaultSpan: Span = deref.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = deref.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const operand = lowerExpr(ctx, deref.operand, typeCtx);
 
     let ty = makeUnitType(defaultSpan);
@@ -2570,7 +2698,12 @@ function lowerClosure(
     closure: Node,
     typeCtx: TypeContext,
 ): HExpr {
-    const defaultSpan: Span = closure.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = closure.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const inferredType =
         closure.inferredType && closure.inferredType.kind === TypeKind.Fn
             ? closure.inferredType
@@ -2584,8 +2717,9 @@ function lowerClosure(
     const captures = closure.captureInfos || [];
     const helperName = `${ctx.currentFn || "closure"}::__closure_${ctx.nextClosureSymbolId()}`;
 
-    const captureParamTypes = captures.map((cap: { byRef?: boolean; type: Type }) =>
-        cap.byRef ? makeRefType(cap.type, true, defaultSpan) : cap.type,
+    const captureParamTypes = captures.map(
+        (cap: { byRef?: boolean; type: Type }) =>
+            cap.byRef ? makeRefType(cap.type, true, defaultSpan) : cap.type,
     );
     const helperType = makeFnType(
         [...captureParamTypes, ...(inferredType as FnType).params],
@@ -2656,12 +2790,19 @@ function lowerClosure(
     (closureValue as HVarExpr & { closureMeta?: ClosureMeta }).closureMeta = {
         helperName,
         helperType,
-        captures: captures.map((cap: { name: string; type: Type; mutable?: boolean; byRef?: boolean }) => ({
-            name: cap.name,
-            type: cap.type,
-            mutable: cap.mutable === true,
-            mode: cap.byRef ? "ref" : "value",
-        })),
+        captures: captures.map(
+            (cap: {
+                name: string;
+                type: Type;
+                mutable?: boolean;
+                byRef?: boolean;
+            }) => ({
+                name: cap.name,
+                type: cap.type,
+                mutable: cap.mutable === true,
+                mode: cap.byRef ? "ref" : "value",
+            }),
+        ),
     };
     return closureValue;
 }
@@ -2678,7 +2819,12 @@ function lowerBlock(
     block: Node,
     typeCtx: TypeContext,
 ): HBlock {
-    const defaultSpan: Span = block.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = block.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     ctx.pushScope();
 
     const stmts: HStmt[] = [];
@@ -2712,7 +2858,12 @@ function lowerIf(
     ifExpr: Node,
     typeCtx: TypeContext,
 ): HIfExpr {
-    const defaultSpan: Span = ifExpr.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = ifExpr.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const condition = lowerExpr(ctx, ifExpr.condition, typeCtx);
     const thenBranch = lowerBlock(ctx, ifExpr.thenBranch, typeCtx);
 
@@ -2752,7 +2903,12 @@ function lowerMatch(
     matchExpr: Node,
     typeCtx: TypeContext,
 ): HMatchExpr {
-    const defaultSpan: Span = matchExpr.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = matchExpr.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const scrutinee = lowerExpr(ctx, matchExpr.scrutinee, typeCtx);
 
     const arms = (matchExpr.arms || []).map((arm: Node) => {
@@ -2813,7 +2969,12 @@ function lowerWhile(
     whileExpr: Node,
     typeCtx: TypeContext,
 ): HWhileExpr {
-    const defaultSpan: Span = whileExpr.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = whileExpr.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     const condition = lowerExpr(ctx, whileExpr.condition, typeCtx);
 
     ctx.pushScope();
@@ -2834,7 +2995,12 @@ function lowerFor(
     forExpr: Node,
     typeCtx: TypeContext,
 ): HExpr {
-    const defaultSpan: Span = forExpr.span || { line: 0, column: 0, start: 0, end: 0 };
+    const defaultSpan: Span = forExpr.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     // Desugar for loop to while loop with iterator
     // for pat in iter { body } =>
     // {
@@ -2869,24 +3035,45 @@ function lowerFor(
 /**
  * Lower a return expression
  */
-function lowerReturn(_ctx: LoweringCtx, returnExpr: Node, _typeCtx: TypeContext): HUnitExpr {
+function lowerReturn(
+    _ctx: LoweringCtx,
+    returnExpr: Node,
+    _typeCtx: TypeContext,
+): HUnitExpr {
     // Return is a statement in HIR
     // For now, return unit
-    return makeHUnitExpr(returnExpr.span, { kind: TypeKind.Never, span: returnExpr.span });
+    return makeHUnitExpr(returnExpr.span, {
+        kind: TypeKind.Never,
+        span: returnExpr.span,
+    });
 }
 
 /**
  * Lower a break expression
  */
-function lowerBreak(_ctx: LoweringCtx, breakExpr: Node, _typeCtx: TypeContext): HUnitExpr {
-    return makeHUnitExpr(breakExpr.span, { kind: TypeKind.Never, span: breakExpr.span });
+function lowerBreak(
+    _ctx: LoweringCtx,
+    breakExpr: Node,
+    _typeCtx: TypeContext,
+): HUnitExpr {
+    return makeHUnitExpr(breakExpr.span, {
+        kind: TypeKind.Never,
+        span: breakExpr.span,
+    });
 }
 
 /**
  * Lower a continue expression
  */
-function lowerContinue(_ctx: LoweringCtx, continueExpr: Node, _typeCtx: TypeContext): HUnitExpr {
-    return makeHUnitExpr(continueExpr.span, { kind: TypeKind.Never, span: continueExpr.span });
+function lowerContinue(
+    _ctx: LoweringCtx,
+    continueExpr: Node,
+    _typeCtx: TypeContext,
+): HUnitExpr {
+    return makeHUnitExpr(continueExpr.span, {
+        kind: TypeKind.Never,
+        span: continueExpr.span,
+    });
 }
 
 /**
@@ -2897,8 +3084,13 @@ function lowerPath(
     pathExpr: Node,
     typeCtx: TypeContext,
 ): HExpr {
-    const defaultSpan: Span = pathExpr.span || { line: 0, column: 0, start: 0, end: 0 };
-    
+    const defaultSpan: Span = pathExpr.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
+
     if (!pathExpr.segments || pathExpr.segments.length === 0) {
         ctx.addError("Empty path expression", pathExpr.span);
         return makeHUnitExpr(pathExpr.span, makeUnitType(defaultSpan));
@@ -2916,7 +3108,7 @@ function lowerPath(
                 name: pathExpr.segments[pathExpr.segments.length - 1] || "",
                 resolvedItemName: pathExpr.resolvedItemName,
                 span: pathExpr.span,
-                kind: NodeKind.IdentifierExpr
+                kind: NodeKind.IdentifierExpr,
             } as unknown as Node,
             typeCtx,
         );
@@ -2930,7 +3122,7 @@ function lowerPath(
                 name: pathExpr.segments[0],
                 resolvedItemName: pathExpr.resolvedItemName || null,
                 span: pathExpr.span,
-                kind: NodeKind.IdentifierExpr
+                kind: NodeKind.IdentifierExpr,
             } as unknown as Node,
             typeCtx,
         );
@@ -2942,7 +3134,10 @@ function lowerPath(
         const variantName = pathExpr.segments[1];
 
         const item = ctx.lookupItem(itemName);
-        const methodDecl = typeCtx.lookupMethod(itemName, variantName) as { type?: Type; symbolName?: string } | null;
+        const methodDecl = typeCtx.lookupMethod(itemName, variantName) as {
+            type?: Type;
+            symbolName?: string;
+        } | null;
         if (methodDecl && methodDecl.type?.kind === TypeKind.Fn) {
             return makeHVarExpr(
                 pathExpr.span,
@@ -2953,7 +3148,9 @@ function lowerPath(
         }
         if (item && item.kind === "enum") {
             // Enum variant
-            const enumNode = item.node as { variants?: { name: string; fields?: { ty?: Node }[] }[] };
+            const enumNode = item.node as {
+                variants?: { name: string; fields?: { ty?: Node }[] }[];
+            };
             const enumTy = {
                 kind: TypeKind.Enum,
                 name: itemName,
@@ -2962,7 +3159,8 @@ function lowerPath(
                         name: variant.name,
                         fields: (variant.fields || []).map(
                             (field: { ty?: Node }) => {
-                                if (!field?.ty) return makeUnitType(defaultSpan);
+                                if (!field?.ty)
+                                    return makeUnitType(defaultSpan);
                                 const resolved = resolveTypeFromAst(
                                     field.ty,
                                     typeCtx,
@@ -2976,7 +3174,10 @@ function lowerPath(
                 ),
                 span: defaultSpan,
             };
-            const variantIndex = findEnumVariantIndex(enumNode as unknown as Node, variantName);
+            const variantIndex = findEnumVariantIndex(
+                enumNode as unknown as Node,
+                variantName,
+            );
             return makeHEnumExpr(
                 pathExpr.span,
                 itemName,
@@ -3011,8 +3212,17 @@ function findEnumVariantIndex(enumNode: Node, variantName: string): number {
 /**
  * Lower a range expression
  */
-function lowerRange(ctx: LoweringCtx, rangeExpr: Node, typeCtx: TypeContext): HExpr {
-    const defaultSpan: Span = rangeExpr.span || { line: 0, column: 0, start: 0, end: 0 };
+function lowerRange(
+    ctx: LoweringCtx,
+    rangeExpr: Node,
+    _typeCtx: TypeContext,
+): HExpr {
+    const defaultSpan: Span = rangeExpr.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
     // For now, ranges are not fully implemented
     // Return a placeholder
     ctx.addError("Range expressions not yet supported", rangeExpr.span);
@@ -3032,8 +3242,6 @@ function lowerPattern(
     expectedType: Type,
     typeCtx: TypeContext,
 ): HPat {
-    const defaultSpan: Span = pat.span || { line: 0, column: 0, start: 0, end: 0 };
-    
     switch (pat.kind) {
         case NodeKind.IdentPat:
             return lowerIdentPat(ctx, pat, expectedType, typeCtx);
@@ -3112,8 +3320,13 @@ function lowerStructPat(
     expectedType: Type,
     typeCtx: TypeContext,
 ): HStructPat {
-    const defaultSpan: Span = pat.span || { line: 0, column: 0, start: 0, end: 0 };
-    
+    const defaultSpan: Span = pat.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
+
     // Get struct/enum-variant name from path.
     let structName = "";
     let enumName = "";
@@ -3131,14 +3344,21 @@ function lowerStructPat(
     }
 
     const structItem = enumName ? null : ctx.lookupItem(structName);
-    const structNode = structItem?.node as { fields?: { name: string; ty?: Node }[] } | null;
+    const structNode = structItem?.node as {
+        fields?: { name: string; ty?: Node }[];
+    } | null;
     const enumItem = enumName ? ctx.lookupItem(enumName) : null;
-    const enumNodeTyped = enumItem?.kind === "enum" ? enumItem.node as { generics?: unknown[]; variants?: { name: string; fields?: { ty?: Node }[] }[] } : null;
+    const enumNodeTyped =
+        enumItem?.kind === "enum"
+            ? (enumItem.node as {
+                  generics?: unknown[];
+                  variants?: { name: string; fields?: { ty?: Node }[] }[];
+              })
+            : null;
     const enumVariant = enumNodeTyped
-        ? (enumNodeTyped.variants || []).find(
-              (variant: { name: string }) =>
-                  variant.name === enumVariantName,
-          ) as { name: string; fields?: { ty?: Node }[] } | undefined
+        ? ((enumNodeTyped.variants || []).find(
+              (variant: { name: string }) => variant.name === enumVariantName,
+          ) as { name: string; fields?: { ty?: Node }[] } | undefined)
         : null;
     const enumGenericParams: string[] = (enumNodeTyped?.generics || [])
         .map((name: unknown) => (name as string) || "")
@@ -3169,64 +3389,68 @@ function lowerStructPat(
             : null;
 
     // Lower field patterns
-    const fields = (pat.fields || []).map((field: { name: string; pat: Node }) => {
-        let fieldType = makeUnitType(defaultSpan);
+    const fields = (pat.fields || []).map(
+        (field: { name: string; pat: Node }) => {
+            let fieldType = makeUnitType(defaultSpan);
 
-        if (enumVariant && enumVariant.fields) {
-            const tupleFieldIndex = Number.parseInt(field.name, 10);
-            if (
-                Number.isInteger(tupleFieldIndex) &&
-                tupleFieldIndex >= 0 &&
-                tupleFieldIndex < (enumVariant.fields as Type[]).length
-            ) {
+            if (enumVariant && enumVariant.fields) {
+                const tupleFieldIndex = Number.parseInt(field.name, 10);
                 if (
-                    expectedEnumVariant &&
-                    expectedEnumVariant.fields &&
-                    tupleFieldIndex < expectedEnumVariant.fields.length
+                    Number.isInteger(tupleFieldIndex) &&
+                    tupleFieldIndex >= 0 &&
+                    tupleFieldIndex < (enumVariant.fields as Type[]).length
                 ) {
-                    fieldType = expectedEnumVariant.fields[tupleFieldIndex];
-                }
-                const tupleField = (enumVariant.fields as { ty?: Node }[])[tupleFieldIndex];
-                if (
-                    tupleField?.ty &&
-                    !(
+                    if (
                         expectedEnumVariant &&
                         expectedEnumVariant.fields &&
                         tupleFieldIndex < expectedEnumVariant.fields.length
-                    )
-                ) {
-                    const typeResult = resolveTypeFromAst(
-                        tupleField.ty,
-                        typeCtx,
-                    );
-                    if (typeResult.ok) {
-                        fieldType = substituteLoweringGenericType(
+                    ) {
+                        fieldType = expectedEnumVariant.fields[tupleFieldIndex];
+                    }
+                    const tupleField = (enumVariant.fields as { ty?: Node }[])[
+                        tupleFieldIndex
+                    ];
+                    if (
+                        tupleField?.ty &&
+                        !(
+                            expectedEnumVariant &&
+                            expectedEnumVariant.fields &&
+                            tupleFieldIndex < expectedEnumVariant.fields.length
+                        )
+                    ) {
+                        const typeResult = resolveTypeFromAst(
+                            tupleField.ty,
                             typeCtx,
-                            typeResult.type,
-                            enumGenericSet,
-                            enumBindings,
                         );
+                        if (typeResult.ok) {
+                            fieldType = substituteLoweringGenericType(
+                                typeCtx,
+                                typeResult.type,
+                                enumGenericSet,
+                                enumBindings,
+                            );
+                        }
+                    }
+                }
+            } else if (structNode && structNode.fields) {
+                // Find field type from struct definition.
+                const fieldDef = structNode.fields.find(
+                    (f: { name: string; ty?: Node }) => f.name === field.name,
+                );
+                if (fieldDef && fieldDef.ty) {
+                    const typeResult = resolveTypeFromAst(fieldDef.ty, typeCtx);
+                    if (typeResult.ok) {
+                        fieldType = typeResult.type;
                     }
                 }
             }
-        } else if (structNode && structNode.fields) {
-            // Find field type from struct definition.
-            const fieldDef = structNode.fields.find(
-                (f: { name: string; ty?: Node }) => f.name === field.name,
-            );
-            if (fieldDef && fieldDef.ty) {
-                const typeResult = resolveTypeFromAst(fieldDef.ty, typeCtx);
-                if (typeResult.ok) {
-                    fieldType = typeResult.type;
-                }
-            }
-        }
 
-        return {
-            name: field.name,
-            pat: lowerPattern(ctx, field.pat, fieldType, typeCtx),
-        };
-    });
+            return {
+                name: field.name,
+                pat: lowerPattern(ctx, field.pat, fieldType, typeCtx),
+            };
+        },
+    );
 
     return makeHStructPat(
         pat.span,
@@ -3246,23 +3470,26 @@ function lowerTuplePat(
     expectedType: Type,
     typeCtx: TypeContext,
 ): HTuplePat {
-    const defaultSpan: Span = pat.span || { line: 0, column: 0, start: 0, end: 0 };
-    
-    const elements = (pat.elements || []).map(
-        (elem: Node, i: number) => {
-            let elemType = makeUnitType(defaultSpan);
-            if (
-                expectedType &&
-                expectedType.kind === TypeKind.Tuple &&
-                expectedType.elements
-            ) {
-                if (i < expectedType.elements.length) {
-                    elemType = expectedType.elements[i];
-                }
+    const defaultSpan: Span = pat.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
+
+    const elements = (pat.elements || []).map((elem: Node, i: number) => {
+        let elemType = makeUnitType(defaultSpan);
+        if (
+            expectedType &&
+            expectedType.kind === TypeKind.Tuple &&
+            expectedType.elements
+        ) {
+            if (i < expectedType.elements.length) {
+                elemType = expectedType.elements[i];
             }
-            return lowerPattern(ctx, elem, elemType, typeCtx);
-        },
-    );
+        }
+        return lowerPattern(ctx, elem, elemType, typeCtx);
+    });
 
     return makeHTuplePat(pat.span, elements, expectedType);
 }
@@ -3276,9 +3503,8 @@ function lowerOrPat(
     expectedType: Type,
     typeCtx: TypeContext,
 ): HOrPat {
-    const alternatives = (pat.alternatives || []).map(
-        (alt: Node) =>
-            lowerPattern(ctx, alt, expectedType, typeCtx),
+    const alternatives = (pat.alternatives || []).map((alt: Node) =>
+        lowerPattern(ctx, alt, expectedType, typeCtx),
     );
 
     return makeHOrPat(pat.span, alternatives, expectedType);
@@ -3296,8 +3522,13 @@ function extractPlace(
     expr: Node,
     typeCtx: TypeContext,
 ): HPlace | null {
-    const defaultSpan: Span = expr.span || { line: 0, column: 0, start: 0, end: 0 };
-    
+    const defaultSpan: Span = expr.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
+
     switch (expr.kind) {
         case NodeKind.IdentifierExpr: {
             const varInfo = ctx.lookupVar(expr.name);
@@ -3350,14 +3581,8 @@ function extractPlace(
             let index = 0;
             let ty = makeUnitType(defaultSpan);
 
-            if (
-                baseType &&
-                baseType.kind === TypeKind.Struct
-            ) {
-                index = ctx.getFieldIndex(
-                    baseType.name,
-                    fieldName,
-                );
+            if (baseType && baseType.kind === TypeKind.Struct) {
+                index = ctx.getFieldIndex(baseType.name, fieldName);
                 const fieldDef = baseType.fields?.find(
                     (f: any) => f.name === fieldName,
                 );
@@ -3368,9 +3593,13 @@ function extractPlace(
                 index = ctx.getFieldIndex(baseType.name, fieldName);
                 const item = typeCtx.lookupItem(baseType.name);
                 if (item && item.kind === "struct") {
-                    const structNodeItem = item.node as { fields?: { name: string; ty?: Node }[]; generics?: string[] };
+                    const structNodeItem = item.node as {
+                        fields?: { name: string; ty?: Node }[];
+                        generics?: string[];
+                    };
                     const structField = structNodeItem.fields?.find(
-                        (f: { name: string; ty?: Node }) => f.name === fieldName,
+                        (f: { name: string; ty?: Node }) =>
+                            f.name === fieldName,
                     );
                     if (structField?.ty) {
                         const resolvedType = resolveTypeFromAst(
@@ -3460,15 +3689,15 @@ function extractPlace(
 // Type Resolution Helper
 // ============================================================================
 
-interface TypeResult {
+type TypeResult = {
     ok: true;
     type: Type;
-}
+};
 
-interface TypeError {
+type TypeError = {
     ok: false;
     error?: string;
-}
+};
 
 type ResolveTypeResult = TypeResult | TypeError;
 
@@ -3479,8 +3708,13 @@ function resolveTypeFromAst(
     typeNode: Node,
     typeCtx: TypeContext,
 ): ResolveTypeResult {
-    const defaultSpan: Span = typeNode?.span || { line: 0, column: 0, start: 0, end: 0 };
-    
+    const defaultSpan: Span = typeNode?.span || {
+        line: 0,
+        column: 0,
+        start: 0,
+        end: 0,
+    };
+
     if (!typeNode) {
         return { ok: false, error: "No type node" };
     }
@@ -3528,7 +3762,10 @@ function resolveTypeFromAst(
                     };
                 }
                 if (item.kind === "enum") {
-                    const enumNodeItem = item.node as { generics?: string[]; variants?: { name: string; fields?: { ty?: Node }[] }[] };
+                    const enumNodeItem = item.node as {
+                        generics?: string[];
+                        variants?: { name: string; fields?: { ty?: Node }[] }[];
+                    };
                     const genericNames = (enumNodeItem.generics || []).filter(
                         (name: string) => !!name,
                     );
@@ -3549,19 +3786,26 @@ function resolveTypeFromAst(
                             kind: TypeKind.Enum,
                             name: typeNode.name,
                             variants: (enumNodeItem.variants || []).map(
-                                (variant: { name: string; fields?: { ty?: Node }[] }) => ({
+                                (variant: {
+                                    name: string;
+                                    fields?: { ty?: Node }[];
+                                }) => ({
                                     name: variant.name,
                                     fields: (variant.fields || []).map(
                                         (field: { ty?: Node }) => {
                                             if (!field?.ty)
-                                                return makeUnitType(defaultSpan);
+                                                return makeUnitType(
+                                                    defaultSpan,
+                                                );
                                             const fieldType =
                                                 resolveTypeFromAst(
                                                     field.ty,
                                                     typeCtx,
                                                 );
                                             if (!fieldType.ok)
-                                                return makeUnitType(defaultSpan);
+                                                return makeUnitType(
+                                                    defaultSpan,
+                                                );
                                             return substituteLoweringGenericType(
                                                 typeCtx,
                                                 fieldType.type,
@@ -3581,7 +3825,12 @@ function resolveTypeFromAst(
             // Return as named type
             return {
                 ok: true,
-                type: { kind: TypeKind.Named, name: typeNode.name, args, span: defaultSpan },
+                type: {
+                    kind: TypeKind.Named,
+                    name: typeNode.name,
+                    args,
+                    span: defaultSpan,
+                },
             };
         }
 
@@ -3592,7 +3841,10 @@ function resolveTypeFromAst(
                 if (!result.ok) return result;
                 elements.push(result.type);
             }
-            return { ok: true, type: { kind: TypeKind.Tuple, elements, span: defaultSpan } };
+            return {
+                ok: true,
+                type: { kind: TypeKind.Tuple, elements, span: defaultSpan },
+            };
         }
 
         case NodeKind.ArrayType: {
@@ -3615,7 +3867,12 @@ function resolveTypeFromAst(
             const mutable = typeNode.mutability === Mutability.Mutable;
             return {
                 ok: true,
-                type: { kind: TypeKind.Ref, inner: innerResult.type, mutable, span: defaultSpan },
+                type: {
+                    kind: TypeKind.Ref,
+                    inner: innerResult.type,
+                    mutable,
+                    span: defaultSpan,
+                },
             };
         }
 
@@ -3625,7 +3882,12 @@ function resolveTypeFromAst(
             const mutable = typeNode.mutability === Mutability.Mutable;
             return {
                 ok: true,
-                type: { kind: TypeKind.Ptr, inner: innerResult.type, mutable, span: defaultSpan },
+                type: {
+                    kind: TypeKind.Ptr,
+                    inner: innerResult.type,
+                    mutable,
+                    span: defaultSpan,
+                },
             };
         }
 
@@ -3672,33 +3934,89 @@ function resolveBuiltinType(name: string): Type | null {
     const defaultSpan: Span = { line: 0, column: 0, start: 0, end: 0 };
     switch (name) {
         case "i8":
-            return { kind: TypeKind.Int, width: IntWidth.I8, span: defaultSpan };
+            return {
+                kind: TypeKind.Int,
+                width: IntWidth.I8,
+                span: defaultSpan,
+            };
         case "i16":
-            return { kind: TypeKind.Int, width: IntWidth.I16, span: defaultSpan };
+            return {
+                kind: TypeKind.Int,
+                width: IntWidth.I16,
+                span: defaultSpan,
+            };
         case "i32":
-            return { kind: TypeKind.Int, width: IntWidth.I32, span: defaultSpan };
+            return {
+                kind: TypeKind.Int,
+                width: IntWidth.I32,
+                span: defaultSpan,
+            };
         case "i64":
-            return { kind: TypeKind.Int, width: IntWidth.I64, span: defaultSpan };
+            return {
+                kind: TypeKind.Int,
+                width: IntWidth.I64,
+                span: defaultSpan,
+            };
         case "i128":
-            return { kind: TypeKind.Int, width: IntWidth.I128, span: defaultSpan };
+            return {
+                kind: TypeKind.Int,
+                width: IntWidth.I128,
+                span: defaultSpan,
+            };
         case "isize":
-            return { kind: TypeKind.Int, width: IntWidth.Isize, span: defaultSpan };
+            return {
+                kind: TypeKind.Int,
+                width: IntWidth.Isize,
+                span: defaultSpan,
+            };
         case "u8":
-            return { kind: TypeKind.Int, width: IntWidth.U8, span: defaultSpan };
+            return {
+                kind: TypeKind.Int,
+                width: IntWidth.U8,
+                span: defaultSpan,
+            };
         case "u16":
-            return { kind: TypeKind.Int, width: IntWidth.U16, span: defaultSpan };
+            return {
+                kind: TypeKind.Int,
+                width: IntWidth.U16,
+                span: defaultSpan,
+            };
         case "u32":
-            return { kind: TypeKind.Int, width: IntWidth.U32, span: defaultSpan };
+            return {
+                kind: TypeKind.Int,
+                width: IntWidth.U32,
+                span: defaultSpan,
+            };
         case "u64":
-            return { kind: TypeKind.Int, width: IntWidth.U64, span: defaultSpan };
+            return {
+                kind: TypeKind.Int,
+                width: IntWidth.U64,
+                span: defaultSpan,
+            };
         case "u128":
-            return { kind: TypeKind.Int, width: IntWidth.U128, span: defaultSpan };
+            return {
+                kind: TypeKind.Int,
+                width: IntWidth.U128,
+                span: defaultSpan,
+            };
         case "usize":
-            return { kind: TypeKind.Int, width: IntWidth.Usize, span: defaultSpan };
+            return {
+                kind: TypeKind.Int,
+                width: IntWidth.Usize,
+                span: defaultSpan,
+            };
         case "f32":
-            return { kind: TypeKind.Float, width: FloatWidth.F32, span: defaultSpan };
+            return {
+                kind: TypeKind.Float,
+                width: FloatWidth.F32,
+                span: defaultSpan,
+            };
         case "f64":
-            return { kind: TypeKind.Float, width: FloatWidth.F64, span: defaultSpan };
+            return {
+                kind: TypeKind.Float,
+                width: FloatWidth.F64,
+                span: defaultSpan,
+            };
         case "bool":
             return { kind: TypeKind.Bool, span: defaultSpan };
         case "char":

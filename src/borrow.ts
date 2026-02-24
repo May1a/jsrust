@@ -6,22 +6,22 @@ export type RefOrigin =
     | { kind: "local"; name?: string; depth: number }
     | { kind: "temporary" };
 
-export interface BindingInfo {
+export type BindingInfo = {
     kind: "param" | "local";
     depth: number;
     refOrigin: RefOrigin | null;
-}
+};
 
-export interface BorrowLiteError {
+export type BorrowLiteError = {
     message: string;
     span?: { line: number; column: number; start: number; end: number };
-}
+};
 
-export interface FnEnv {
+export type FnEnv = {
     scopeStack: string[][];
     bindings: Map<string, BindingInfo[]>;
     errors: BorrowLiteError[];
-}
+};
 
 function makeBorrowError(
     message: string,

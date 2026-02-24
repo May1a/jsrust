@@ -18,8 +18,6 @@ import type {
     ValueId,
     BlockId,
     LocalId,
-    IcmpOpValue,
-    FcmpOpValue,
 } from "./ir";
 
 // ============================================================================
@@ -102,7 +100,7 @@ export function printType(type: IRType): string {
 /**
  * Get the string representation of an IcmpOp
  */
-export function icmpOpToString(op: IcmpOpValue): string {
+export function icmpOpToString(op: IcmpOp): string {
     switch (op) {
         case IcmpOp.Eq:
             return "eq";
@@ -132,7 +130,7 @@ export function icmpOpToString(op: IcmpOpValue): string {
 /**
  * Get the string representation of an FcmpOp
  */
-export function fcmpOpToString(op: FcmpOpValue): string {
+export function fcmpOpToString(op: FcmpOp): string {
     switch (op) {
         case FcmpOp.Oeq:
             return "oeq";
@@ -222,10 +220,10 @@ export function printInstruction(inst: IRInst, ctx?: PrintContext): string {
             return `${resultPrefix}ishr ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
 
         case IRInstKind.Icmp:
-            return `${resultPrefix}icmp ${icmpOpToString(inst.op as IcmpOpValue)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
+            return `${resultPrefix}icmp ${icmpOpToString(inst.op as IcmpOp)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
 
         case IRInstKind.Fcmp:
-            return `${resultPrefix}fcmp ${fcmpOpToString(inst.op as FcmpOpValue)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
+            return `${resultPrefix}fcmp ${fcmpOpToString(inst.op as FcmpOp)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
 
         case IRInstKind.Alloca:
             return `${resultPrefix}alloca ${printType(inst.ty.inner as IRType)} ; ${ctx.getLocalName(inst.localId)}`;
@@ -299,7 +297,9 @@ export function printInstruction(inst: IRInst, ctx?: PrintContext): string {
 
         case IRInstKind.EnumCreate: {
             const data =
-                inst.data !== null && inst.data !== undefined ? ` [${ctx.getValueName(inst.data)}]` : "";
+                inst.data !== null && inst.data !== undefined
+                    ? ` [${ctx.getValueName(inst.data)}]`
+                    : "";
             return `${resultPrefix}enum_create ${printType(inst.ty)}, variant ${inst.variant}${data}`;
         }
 
@@ -513,9 +513,7 @@ export function printModule(module: IRModule): string {
                     if (v.length === 0) {
                         return `${i}`;
                     }
-                    const fields = v
-                        .map((t: any) => printType(t))
-                        .join(", ");
+                    const fields = v.map((t: any) => printType(t)).join(", ");
                     return `${i}(${fields})`;
                 })
                 .join(", ");

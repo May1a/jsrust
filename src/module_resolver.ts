@@ -8,80 +8,80 @@ import { NodeKind } from "./ast";
 // ============================================================================
 
 /** Source code position information */
-interface Span {
+type Span = {
     line: number;
     column: number;
     start: number;
     end: number;
-}
+};
 
 /** Kinds of items that can be declared (fn, struct, enum, trait) */
 type DeclItemKind = "fn" | "struct" | "enum" | "trait";
 
 /** Error produced during module resolution */
-interface ResolverError {
+type ResolverError = {
     message: string;
     span?: Span;
     kind?: string;
-}
+};
 
 /** Information about a declared item (fn, struct, enum, trait) */
-interface ItemDecl {
+type ItemDecl = {
     qualifiedName: string;
     modulePath: string[];
     isPub: boolean;
     node: AstNode;
     kind: DeclItemKind;
-}
+};
 
 /** Information about a declared module */
-interface ModuleDecl {
+type ModuleDecl = {
     qualifiedName: string;
     modulePath: string[];
     isPub: boolean;
     node: ModItemNode;
-}
+};
 
 /** Alias entry in a module scope */
-interface AliasEntry {
+type AliasEntry = {
     kind: "item" | "module";
     qualifiedName: string;
     isPub: boolean;
-}
+};
 
 /** Scope for a single module containing its local names */
-interface ModuleScope {
+type ModuleScope = {
     path: string[];
     items: Map<string, string>;
     modules: Map<string, string>;
     aliases: Map<string, AliasEntry>;
     uses: UseItemNode[];
-}
+};
 
 /** Result of resolving a name to a target */
-interface ResolvedTarget {
+type ResolvedTarget = {
     kind: "item" | "module";
     qualifiedName: string;
     viaAlias?: {
         modulePath: string[];
         isPub: boolean;
     };
-}
+};
 
 /** State for module expansion phase */
-interface ExpansionState {
+type ExpansionState = {
     errors: ResolverError[];
     sourcePath: string | null;
     loadingStack: string[];
-}
+};
 
 /** State for the full resolution process */
-interface ResolverState {
+type ResolverState = {
     moduleScopes: Map<string, ModuleScope>;
     itemDecls: Map<string, ItemDecl>;
     moduleDecls: Map<string, ModuleDecl>;
     errors: ResolverError[];
-}
+};
 
 // ============================================================================
 // AST Node Types (subset used by resolver)
@@ -95,7 +95,7 @@ function asNode<T extends BaseNode>(node: AstNode): T {
     return node as unknown as T;
 }
 
-interface BaseNode {
+type BaseNode = {
     kind: NodeKind;
     span: Span;
     modulePath?: string[];
@@ -104,31 +104,13 @@ interface BaseNode {
     unqualifiedName?: string;
     name?: string;
     isPub?: boolean;
-}
+};
 
 interface FnItemNode extends BaseNode {
     kind: NodeKind.FnItem;
     name: string;
     params: ParamNode[];
     body: BlockExprNode | null;
-    isPub: boolean;
-}
-
-interface StructItemNode extends BaseNode {
-    kind: NodeKind.StructItem;
-    name: string;
-    isPub: boolean;
-}
-
-interface EnumItemNode extends BaseNode {
-    kind: NodeKind.EnumItem;
-    name: string;
-    isPub: boolean;
-}
-
-interface TraitItemNode extends BaseNode {
-    kind: NodeKind.TraitItem;
-    name: string;
     isPub: boolean;
 }
 
@@ -160,7 +142,7 @@ interface UseTreeNode extends BaseNode {
     children: UseTreeNode[] | null;
 }
 
-interface ParamNode extends BaseNode {
+interface ParamNode extends Omit<BaseNode, "name"> {
     kind: NodeKind.Param;
     name: string | null;
 }
@@ -384,30 +366,30 @@ type PatNode =
     | SlicePatNode
     | BaseNode;
 
-interface ModuleNode extends BaseNode {
+export interface ModuleNode extends BaseNode {
     kind: NodeKind.Module;
     name: string;
     items: AstNode[];
 }
 
 /** Result of parseModule call */
-interface ParseResult {
+type ParseResult = {
     ok: boolean;
     value: ModuleNode | null;
     errors: { message: string; span?: Span }[];
-}
+};
 
 /** Options for resolveModuleTree */
-interface ResolveOptions {
+type ResolveOptions = {
     sourcePath?: string;
-}
+};
 
 /** Result of resolveModuleTree */
-interface ResolveResult {
+type ResolveResult = {
     ok: boolean;
     module?: ModuleNode;
     errors?: ResolverError[];
-}
+};
 
 // ============================================================================
 // Utility Functions
@@ -474,7 +456,11 @@ function getScope(state: ResolverState, modulePath: string[]): ModuleScope {
 }
 
 /** Add an error to the error list */
-function pushError(errors: ResolverError[], message: string, span?: Span): void {
+function pushError(
+    errors: ResolverError[],
+    message: string,
+    span?: Span,
+): void {
     errors.push({ message, span, kind: "resolve" });
 }
 
@@ -548,15 +534,6 @@ function isDeclItem(node: AstNode): boolean {
         node.kind === NodeKind.EnumItem ||
         node.kind === NodeKind.TraitItem
     );
-}
-
-/** Get the target name from an impl item (for struct/enum impls) */
-function implTargetName(implItem: ImplItemNode): string | null {
-    const target = implItem.targetType as TypeNode | undefined;
-    if (target && target.kind === NodeKind.NamedType && target.name) {
-        return target.name;
-    }
-    return null;
 }
 
 // ============================================================================
@@ -680,7 +657,9 @@ function registerModuleItems(
 
         // Register declaration items
         if (isDeclItem(item)) {
-            const qname = item.qualifiedName || qualifiedName(modulePath, item.name || "");
+            const qname =
+                item.qualifiedName ||
+                qualifiedName(modulePath, item.name || "");
 
             if (state.itemDecls.has(qname)) {
                 pushError(
@@ -870,7 +849,8 @@ function resolveAbsolutePath(
     if (itemQName) return { kind: "item", qualifiedName: itemQName };
 
     const moduleQNameFinal = finalScope.modules.get(last);
-    if (moduleQNameFinal) return { kind: "module", qualifiedName: moduleQNameFinal };
+    if (moduleQNameFinal)
+        return { kind: "module", qualifiedName: moduleQNameFinal };
 
     return null;
 }
@@ -966,7 +946,9 @@ function canAccessTarget(
             });
         }
 
-        if (!canTraverseModules(state, currentModulePath, viaAlias.modulePath)) {
+        if (
+            !canTraverseModules(state, currentModulePath, viaAlias.modulePath)
+        ) {
             return false;
         }
 
@@ -987,7 +969,9 @@ function canAccessTarget(
 
         if (arraysEqual(currentModulePath, moduleDecl.modulePath)) return true;
 
-        if (!canTraverseModules(state, currentModulePath, moduleDecl.modulePath)) {
+        if (
+            !canTraverseModules(state, currentModulePath, moduleDecl.modulePath)
+        ) {
             return false;
         }
 
@@ -1152,7 +1136,8 @@ function bindPatternNames(pat: PatNode, scope: Set<string>): void {
 
     switch (pat.kind) {
         case NodeKind.IdentPat:
-            if ((pat as IdentPatNode).name) scope.add((pat as IdentPatNode).name);
+            if ((pat as IdentPatNode).name)
+                scope.add((pat as IdentPatNode).name);
             return;
 
         case NodeKind.BindingPat: {
@@ -1281,7 +1266,12 @@ function resolveExpr(
         }
 
         case NodeKind.UnaryExpr: {
-            resolveExpr(state, modulePath, (expr as UnaryExprNode).operand, localScopes);
+            resolveExpr(
+                state,
+                modulePath,
+                (expr as UnaryExprNode).operand,
+                localScopes,
+            );
             return;
         }
 
@@ -1330,7 +1320,12 @@ function resolveExpr(
                         localScopes,
                     );
                 } else {
-                    resolveExpr(state, modulePath, ifExpr.elseBranch, localScopes);
+                    resolveExpr(
+                        state,
+                        modulePath,
+                        ifExpr.elseBranch,
+                        localScopes,
+                    );
                 }
             }
             return;
@@ -1358,7 +1353,8 @@ function resolveExpr(
         case NodeKind.ReturnExpr:
         case NodeKind.BreakExpr: {
             const ret = expr as ReturnExprNode | BreakExprNode;
-            if (ret.value) resolveExpr(state, modulePath, ret.value, localScopes);
+            if (ret.value)
+                resolveExpr(state, modulePath, ret.value, localScopes);
             return;
         }
 
@@ -1396,7 +1392,12 @@ function resolveExpr(
 
         case NodeKind.RangeExpr: {
             const range = expr as RangeExprNode;
-            resolveExpr(state, modulePath, range.start as ExprNode, localScopes);
+            resolveExpr(
+                state,
+                modulePath,
+                range.start as ExprNode,
+                localScopes,
+            );
             if (range.end) {
                 resolveExpr(state, modulePath, range.end, localScopes);
             }
@@ -1435,7 +1436,12 @@ function resolveExpr(
                     localScopes,
                 );
             } else {
-                resolveExpr(state, modulePath, closure.body as ExprNode, localScopes);
+                resolveExpr(
+                    state,
+                    modulePath,
+                    closure.body as ExprNode,
+                    localScopes,
+                );
             }
             localScopes.pop();
             return;
@@ -1466,7 +1472,12 @@ function resolveStmt(
         }
 
         case NodeKind.ExprStmt:
-            resolveExpr(state, modulePath, (stmt as ExprStmtNode).expr, localScopes);
+            resolveExpr(
+                state,
+                modulePath,
+                (stmt as ExprStmtNode).expr,
+                localScopes,
+            );
             return;
 
         default:

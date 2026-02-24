@@ -47,7 +47,7 @@ const BACKEND_ERROR_LABELS = new Map([
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-interface BackendWasmExports {
+type BackendWasmExports = {
     memory: WebAssembly.Memory;
     jsrust_wasm_alloc: (size: number) => number;
     jsrust_wasm_reset: () => void;
@@ -75,7 +75,7 @@ interface BackendWasmExports {
     jsrust_wasm_trace_len: () => number;
     jsrust_wasm_codegen_wasm_ptr?: () => number;
     jsrust_wasm_codegen_wasm_len?: () => number;
-}
+};
 
 /** @type {{ path: string, exports: BackendWasmExports, memory: WebAssembly.Memory } | null} */
 let wasmRuntime: {
@@ -166,10 +166,10 @@ function canCompileBackendWasm(): { ok: true } | { ok: false; reason: string } {
     return { ok: true };
 }
 
-interface ResolveBackendWasmOptions {
+type ResolveBackendWasmOptions = {
     backendWasm?: string;
     cwd?: string;
-}
+};
 
 type ResolveBackendWasmResult =
     | { ok: true; path: string; source: "cli" | "env" | "default" }
@@ -612,12 +612,12 @@ function runGeneratedWasmBytes(generatedWasmBytes: Uint8Array):
     };
 }
 
-interface RunBackendWasmOptions {
+type RunBackendWasmOptions = {
     entry?: string;
     trace?: boolean;
     backendWasm?: string;
     buildIfMissing?: boolean;
-}
+};
 
 type RunBackendWasmResult =
     | {
