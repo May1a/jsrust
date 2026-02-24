@@ -128,6 +128,439 @@ enum BuiltinType {
     Never,
 }
 
+function serializeAstValue(value: unknown): unknown {
+    if (value instanceof AstNode) {
+        return value.toJSON();
+    }
+    if (Array.isArray(value)) {
+        return value.map((item) => serializeAstValue(item));
+    }
+    if (value instanceof Map) {
+        return Array.from(value.entries()).map(([k, v]) => [
+            serializeAstValue(k),
+            serializeAstValue(v),
+        ]);
+    }
+    if (value && typeof value === "object") {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value)) {
+            out[k] = serializeAstValue(v);
+        }
+        return out;
+    }
+    return value;
+}
+
+export type AstVisitor<R = void, C = void> = {
+    visitNode?: (node: AstNode, ctx: C) => R;
+    [key: string]: ((node: any, ctx: C) => R) | undefined;
+};
+
+export class AstNode {
+    span: Span;
+    kind: NodeKind = -1 as NodeKind;
+    node: string = "AstNode";
+    [key: string]: any;
+
+    constructor(props: { span: Span }) {
+        this.span = props.span;
+    }
+
+    accept<R = void, C = void>(visitor: AstVisitor<R, C>, ctx: C): R {
+        const method = visitor[`visit${this.node}`];
+        if (typeof method === "function") {
+            return method(this, ctx);
+        }
+        if (typeof visitor.visitNode === "function") {
+            return visitor.visitNode(this, ctx);
+        }
+        throw new Error(`No visitor method for node ${this.node}`);
+    }
+
+    toJSON(): Record<string, unknown> {
+        const out: Record<string, unknown> = { node: this.node };
+        for (const key of Object.keys(this)) {
+            if (key === "kind") continue;
+            out[key] = serializeAstValue(this[key]);
+        }
+        return out;
+    }
+}
+
+export class Expression extends AstNode {}
+export class Statement extends AstNode {}
+export class Item extends AstNode {}
+export class Pattern extends AstNode {}
+export class TypeNode extends AstNode {}
+
+function defineAstClass(base: any, kind: NodeKind, node: string) {
+    return class extends base {
+        readonly kind = kind;
+        readonly node = node;
+
+        constructor(props: { span: Span } & Record<string, unknown>) {
+            super(props);
+            Object.assign(this, props);
+        }
+    };
+}
+
+class GenericNode extends AstNode {
+    kind: NodeKind;
+    node: string;
+
+    constructor(
+        props: { span: Span; kind: NodeKind } & Record<string, unknown>,
+    ) {
+        super(props);
+        this.kind = props.kind;
+        this.node = `NodeKind${props.kind}`;
+        Object.assign(this, props);
+    }
+}
+
+export class LiteralExpr extends defineAstClass(
+    Expression,
+    NodeKind.LiteralExpr,
+    "LiteralExpr",
+) {}
+export class IdentifierExpr extends defineAstClass(
+    Expression,
+    NodeKind.IdentifierExpr,
+    "IdentifierExpr",
+) {}
+export class BinaryExpr extends defineAstClass(
+    Expression,
+    NodeKind.BinaryExpr,
+    "BinaryExpr",
+) {}
+export class UnaryExpr extends defineAstClass(
+    Expression,
+    NodeKind.UnaryExpr,
+    "UnaryExpr",
+) {}
+export class CallExpr extends defineAstClass(
+    Expression,
+    NodeKind.CallExpr,
+    "CallExpr",
+) {}
+export class FieldExpr extends defineAstClass(
+    Expression,
+    NodeKind.FieldExpr,
+    "FieldExpr",
+) {}
+export class IndexExpr extends defineAstClass(
+    Expression,
+    NodeKind.IndexExpr,
+    "IndexExpr",
+) {}
+export class AssignExpr extends defineAstClass(
+    Expression,
+    NodeKind.AssignExpr,
+    "AssignExpr",
+) {}
+export class IfExpr extends defineAstClass(
+    Expression,
+    NodeKind.IfExpr,
+    "IfExpr",
+) {}
+export class MatchExpr extends defineAstClass(
+    Expression,
+    NodeKind.MatchExpr,
+    "MatchExpr",
+) {}
+export class BlockExpr extends defineAstClass(
+    Expression,
+    NodeKind.BlockExpr,
+    "BlockExpr",
+) {}
+export class ReturnExpr extends defineAstClass(
+    Expression,
+    NodeKind.ReturnExpr,
+    "ReturnExpr",
+) {}
+export class BreakExpr extends defineAstClass(
+    Expression,
+    NodeKind.BreakExpr,
+    "BreakExpr",
+) {}
+export class ContinueExpr extends defineAstClass(
+    Expression,
+    NodeKind.ContinueExpr,
+    "ContinueExpr",
+) {}
+export class LoopExpr extends defineAstClass(
+    Expression,
+    NodeKind.LoopExpr,
+    "LoopExpr",
+) {}
+export class WhileExpr extends defineAstClass(
+    Expression,
+    NodeKind.WhileExpr,
+    "WhileExpr",
+) {}
+export class ForExpr extends defineAstClass(
+    Expression,
+    NodeKind.ForExpr,
+    "ForExpr",
+) {}
+export class PathExpr extends defineAstClass(
+    Expression,
+    NodeKind.PathExpr,
+    "PathExpr",
+) {}
+export class StructExpr extends defineAstClass(
+    Expression,
+    NodeKind.StructExpr,
+    "StructExpr",
+) {}
+export class RangeExpr extends defineAstClass(
+    Expression,
+    NodeKind.RangeExpr,
+    "RangeExpr",
+) {}
+export class RefExpr extends defineAstClass(
+    Expression,
+    NodeKind.RefExpr,
+    "RefExpr",
+) {}
+export class DerefExpr extends defineAstClass(
+    Expression,
+    NodeKind.DerefExpr,
+    "DerefExpr",
+) {}
+export class MacroExpr extends defineAstClass(
+    Expression,
+    NodeKind.MacroExpr,
+    "MacroExpr",
+) {}
+export class ClosureExpr extends defineAstClass(
+    Expression,
+    NodeKind.ClosureExpr,
+    "ClosureExpr",
+) {}
+
+export class LetStmt extends defineAstClass(
+    Statement,
+    NodeKind.LetStmt,
+    "LetStmt",
+) {}
+export class ExprStmt extends defineAstClass(
+    Statement,
+    NodeKind.ExprStmt,
+    "ExprStmt",
+) {}
+export class ItemStmt extends defineAstClass(
+    Statement,
+    NodeKind.ItemStmt,
+    "ItemStmt",
+) {}
+
+export class FnItem extends defineAstClass(Item, NodeKind.FnItem, "FnItem") {}
+export class StructItem extends defineAstClass(
+    Item,
+    NodeKind.StructItem,
+    "StructItem",
+) {}
+export class EnumItem extends defineAstClass(
+    Item,
+    NodeKind.EnumItem,
+    "EnumItem",
+) {}
+export class ModItem extends defineAstClass(
+    Item,
+    NodeKind.ModItem,
+    "ModItem",
+) {}
+export class UseItem extends defineAstClass(
+    Item,
+    NodeKind.UseItem,
+    "UseItem",
+) {}
+export class ImplItem extends defineAstClass(
+    Item,
+    NodeKind.ImplItem,
+    "ImplItem",
+) {}
+export class TraitItem extends defineAstClass(
+    Item,
+    NodeKind.TraitItem,
+    "TraitItem",
+) {}
+
+export class IdentPat extends defineAstClass(
+    Pattern,
+    NodeKind.IdentPat,
+    "IdentPat",
+) {}
+export class WildcardPat extends defineAstClass(
+    Pattern,
+    NodeKind.WildcardPat,
+    "WildcardPat",
+) {}
+export class LiteralPat extends defineAstClass(
+    Pattern,
+    NodeKind.LiteralPat,
+    "LiteralPat",
+) {}
+export class RangePat extends defineAstClass(
+    Pattern,
+    NodeKind.RangePat,
+    "RangePat",
+) {}
+export class StructPat extends defineAstClass(
+    Pattern,
+    NodeKind.StructPat,
+    "StructPat",
+) {}
+export class TuplePat extends defineAstClass(
+    Pattern,
+    NodeKind.TuplePat,
+    "TuplePat",
+) {}
+export class SlicePat extends defineAstClass(
+    Pattern,
+    NodeKind.SlicePat,
+    "SlicePat",
+) {}
+export class OrPat extends defineAstClass(Pattern, NodeKind.OrPat, "OrPat") {}
+export class BindingPat extends defineAstClass(
+    Pattern,
+    NodeKind.BindingPat,
+    "BindingPat",
+) {}
+
+export class NamedTypeNode extends defineAstClass(
+    TypeNode,
+    NodeKind.NamedType,
+    "NamedTypeNode",
+) {}
+export class TupleTypeNode extends defineAstClass(
+    TypeNode,
+    NodeKind.TupleType,
+    "TupleTypeNode",
+) {}
+export class ArrayTypeNode extends defineAstClass(
+    TypeNode,
+    NodeKind.ArrayType,
+    "ArrayTypeNode",
+) {}
+export class RefTypeNode extends defineAstClass(
+    TypeNode,
+    NodeKind.RefType,
+    "RefTypeNode",
+) {}
+export class PtrTypeNode extends defineAstClass(
+    TypeNode,
+    NodeKind.PtrType,
+    "PtrTypeNode",
+) {}
+export class FnTypeNode extends defineAstClass(
+    TypeNode,
+    NodeKind.FnType,
+    "FnTypeNode",
+) {}
+export class GenericArgsNode extends defineAstClass(
+    TypeNode,
+    NodeKind.GenericArgs,
+    "GenericArgsNode",
+) {}
+
+export class ModuleNode extends defineAstClass(
+    AstNode,
+    NodeKind.Module,
+    "ModuleNode",
+) {}
+export class ParamNode extends defineAstClass(
+    AstNode,
+    NodeKind.Param,
+    "ParamNode",
+) {}
+export class StructFieldNode extends defineAstClass(
+    AstNode,
+    NodeKind.StructField,
+    "StructFieldNode",
+) {}
+export class EnumVariantNode extends defineAstClass(
+    AstNode,
+    NodeKind.EnumVariant,
+    "EnumVariantNode",
+) {}
+export class UseTreeNode extends defineAstClass(
+    AstNode,
+    NodeKind.UseTree,
+    "UseTreeNode",
+) {}
+export class MatchArmNode extends defineAstClass(
+    AstNode,
+    NodeKind.MatchArm,
+    "MatchArmNode",
+) {}
+
+installAstMetadataAccessors(AstNode.prototype);
+
+export type LegacyNode = { kind: NodeKind; span: Span } & Record<string, any>;
+export type Node = AstNode | LegacyNode;
+
+const NODE_CTOR_BY_KIND: Record<number, any> = {
+    [NodeKind.LiteralExpr]: LiteralExpr,
+    [NodeKind.IdentifierExpr]: IdentifierExpr,
+    [NodeKind.BinaryExpr]: BinaryExpr,
+    [NodeKind.UnaryExpr]: UnaryExpr,
+    [NodeKind.CallExpr]: CallExpr,
+    [NodeKind.FieldExpr]: FieldExpr,
+    [NodeKind.IndexExpr]: IndexExpr,
+    [NodeKind.AssignExpr]: AssignExpr,
+    [NodeKind.IfExpr]: IfExpr,
+    [NodeKind.MatchExpr]: MatchExpr,
+    [NodeKind.BlockExpr]: BlockExpr,
+    [NodeKind.ReturnExpr]: ReturnExpr,
+    [NodeKind.BreakExpr]: BreakExpr,
+    [NodeKind.ContinueExpr]: ContinueExpr,
+    [NodeKind.LoopExpr]: LoopExpr,
+    [NodeKind.WhileExpr]: WhileExpr,
+    [NodeKind.ForExpr]: ForExpr,
+    [NodeKind.PathExpr]: PathExpr,
+    [NodeKind.StructExpr]: StructExpr,
+    [NodeKind.RangeExpr]: RangeExpr,
+    [NodeKind.RefExpr]: RefExpr,
+    [NodeKind.DerefExpr]: DerefExpr,
+    [NodeKind.MacroExpr]: MacroExpr,
+    [NodeKind.ClosureExpr]: ClosureExpr,
+    [NodeKind.LetStmt]: LetStmt,
+    [NodeKind.ExprStmt]: ExprStmt,
+    [NodeKind.ItemStmt]: ItemStmt,
+    [NodeKind.FnItem]: FnItem,
+    [NodeKind.StructItem]: StructItem,
+    [NodeKind.EnumItem]: EnumItem,
+    [NodeKind.ModItem]: ModItem,
+    [NodeKind.UseItem]: UseItem,
+    [NodeKind.IdentPat]: IdentPat,
+    [NodeKind.WildcardPat]: WildcardPat,
+    [NodeKind.LiteralPat]: LiteralPat,
+    [NodeKind.RangePat]: RangePat,
+    [NodeKind.StructPat]: StructPat,
+    [NodeKind.TuplePat]: TuplePat,
+    [NodeKind.SlicePat]: SlicePat,
+    [NodeKind.OrPat]: OrPat,
+    [NodeKind.BindingPat]: BindingPat,
+    [NodeKind.NamedType]: NamedTypeNode,
+    [NodeKind.TupleType]: TupleTypeNode,
+    [NodeKind.ArrayType]: ArrayTypeNode,
+    [NodeKind.RefType]: RefTypeNode,
+    [NodeKind.PtrType]: PtrTypeNode,
+    [NodeKind.FnType]: FnTypeNode,
+    [NodeKind.GenericArgs]: GenericArgsNode,
+    [NodeKind.Module]: ModuleNode,
+    [NodeKind.Param]: ParamNode,
+    [NodeKind.StructField]: StructFieldNode,
+    [NodeKind.EnumVariant]: EnumVariantNode,
+    [NodeKind.UseTree]: UseTreeNode,
+    [NodeKind.MatchArm]: MatchArmNode,
+    [NodeKind.ImplItem]: ImplItem,
+    [NodeKind.TraitItem]: TraitItem,
+};
+
 function makeSpan(
     line: number,
     column: number,
