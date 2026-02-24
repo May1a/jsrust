@@ -3,10 +3,6 @@ import type { Type } from "./types";
 
 export type Span = { line: number; column: number; start: number; end: number };
 
-// ============================================================================
-// HIR Node Kinds (Using distinct ranges to prevent overlap bugs)
-// ============================================================================
-
 export enum HItemKind {
     Fn = 100,
     Struct = 101,
@@ -65,48 +61,487 @@ export enum HLiteralKind {
     Char = 604,
 }
 
-// ============================================================================
-// Module Structure
-// ============================================================================
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+type JsonObject = Record<string, JsonValue>;
+type HValue = HNode | Type | JsonValue | Map<string, HValue>;
+type HInit = { [field: string]: HValue };
 
-export type HModule = {
-    kind: HItemKind.Fn;
-    span: Span;
-    name: string;
-    items: HItem[];
-};
-
-export function makeHModule(span: Span, name: string, items: HItem[]): HModule {
-    return { kind: HItemKind.Fn, span, name, items };
+function serializeHirValue(value: HValue): JsonValue {
+    if (value instanceof HNode) {
+        return value.toJSON();
+    }
+    if (Array.isArray(value)) {
+        return value.map((item) => serializeHirValue(item as HValue));
+    }
+    if (value instanceof Map) {
+        const out: JsonObject = {};
+        for (const [k, v] of value.entries()) {
+            out[k] = serializeHirValue(v);
+        }
+        return out;
+    }
+    if (value !== null && typeof value === "object") {
+        const out: JsonObject = {};
+        for (const [k, v] of Object.entries(value as JsonObject)) {
+            out[k] = serializeHirValue(v as HValue);
+        }
+        return out;
+    }
+    return value as JsonPrimitive;
 }
 
-// ============================================================================
-// Items
-// ============================================================================
-
-export type HParam = {
-    name: string | null;
-    ty: Type;
-    pat: HPat | null;
-    span: Span;
+type HirVisitHandler<R, C> = (node: HNode, ctx: C) => R;
+export type HirVisitor<R = void, C = void> = {
+    visitNode?: HirVisitHandler<R, C>;
 };
 
-export type HFnDecl = {
-    kind: HItemKind.Fn;
-    span: Span;
-    name: string;
-    generics: string[] | null;
-    params: HParam[];
-    returnType: Type;
-    body: HBlock | null;
-    isAsync: boolean;
-    isUnsafe: boolean;
-    isConst: boolean;
-    isTest: boolean;
-    expectedOutput: string | null;
-};
+export class HNode {
+    kind = -1;
+    node = "HNode";
 
-export function makeHFnDecl(
+    accept<R = void, C = void>(visitor: HirVisitor<R, C>, ctx: C): R {
+        const method = (
+            visitor as Record<string, HirVisitHandler<R, C>>
+        )[`visit${this.node}`];
+        if (method) {
+            return method(this, ctx);
+        }
+        if (visitor.visitNode) {
+            return visitor.visitNode(this, ctx);
+        }
+        throw new Error(`No visitor method for node ${this.node}`);
+    }
+
+    toJSON(): JsonObject {
+        const out: JsonObject = { node: this.node };
+        const keys = Object.keys(this) as Array<keyof this>;
+        for (const key of keys) {
+            if (key === "kind") {
+                continue;
+            }
+            out[String(key)] = serializeHirValue(this[key] as HValue);
+        }
+        return out;
+    }
+}
+
+export class HItem extends HNode {}
+export class HStmt extends HNode {}
+export class HPlace extends HNode {}
+export class HExpr extends HNode {}
+export class HPat extends HNode {}
+
+export class HModule extends HNode {
+    kind = HItemKind.Fn;
+    node = "HModule";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HFnDecl extends HItem {
+    kind = HItemKind.Fn;
+    node = "HFnDecl";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HStructDecl extends HItem {
+    kind = HItemKind.Struct;
+    node = "HStructDecl";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HEnumDecl extends HItem {
+    kind = HItemKind.Enum;
+    node = "HEnumDecl";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HBlock extends HExpr {
+    kind = HExprKind.Unit;
+    node = "HBlock";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HLetStmt extends HStmt {
+    kind = HStmtKind.Let;
+    node = "HLetStmt";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HAssignStmt extends HStmt {
+    kind = HStmtKind.Assign;
+    node = "HAssignStmt";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HExprStmt extends HStmt {
+    kind = HStmtKind.Expr;
+    node = "HExprStmt";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HReturnStmt extends HStmt {
+    kind = HStmtKind.Return;
+    node = "HReturnStmt";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HBreakStmt extends HStmt {
+    kind = HStmtKind.Break;
+    node = "HBreakStmt";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HContinueStmt extends HStmt {
+    kind = HStmtKind.Continue;
+    node = "HContinueStmt";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HVarPlace extends HPlace {
+    kind = HPlaceKind.Var;
+    node = "HVarPlace";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HFieldPlace extends HPlace {
+    kind = HPlaceKind.Field;
+    node = "HFieldPlace";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HIndexPlace extends HPlace {
+    kind = HPlaceKind.Index;
+    node = "HIndexPlace";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HDerefPlace extends HPlace {
+    kind = HPlaceKind.Deref;
+    node = "HDerefPlace";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HUnitExpr extends HExpr {
+    kind = HExprKind.Unit;
+    node = "HUnitExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HLiteralExpr extends HExpr {
+    kind = HExprKind.Literal;
+    node = "HLiteralExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HVarExpr extends HExpr {
+    kind = HExprKind.Var;
+    node = "HVarExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HBinaryExpr extends HExpr {
+    kind = HExprKind.Binary;
+    node = "HBinaryExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HUnaryExpr extends HExpr {
+    kind = HExprKind.Unary;
+    node = "HUnaryExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HCallExpr extends HExpr {
+    kind = HExprKind.Call;
+    node = "HCallExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HFieldExpr extends HExpr {
+    kind = HExprKind.Field;
+    node = "HFieldExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HIndexExpr extends HExpr {
+    kind = HExprKind.Index;
+    node = "HIndexExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HRefExpr extends HExpr {
+    kind = HExprKind.Ref;
+    node = "HRefExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HDerefExpr extends HExpr {
+    kind = HExprKind.Deref;
+    node = "HDerefExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HStructExpr extends HExpr {
+    kind = HExprKind.Struct;
+    node = "HStructExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HEnumExpr extends HExpr {
+    kind = HExprKind.Enum;
+    node = "HEnumExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HIfExpr extends HExpr {
+    kind = HExprKind.If;
+    node = "HIfExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HMatchExpr extends HExpr {
+    kind = HExprKind.Match;
+    node = "HMatchExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HLoopExpr extends HExpr {
+    kind = HExprKind.Loop;
+    node = "HLoopExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HWhileExpr extends HExpr {
+    kind = HExprKind.While;
+    node = "HWhileExpr";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HIdentPat extends HPat {
+    kind = HPatKind.Ident;
+    node = "HIdentPat";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HWildcardPat extends HPat {
+    kind = HPatKind.Wildcard;
+    node = "HWildcardPat";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HLiteralPat extends HPat {
+    kind = HPatKind.Literal;
+    node = "HLiteralPat";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HStructPat extends HPat {
+    kind = HPatKind.Struct;
+    node = "HStructPat";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HTuplePat extends HPat {
+    kind = HPatKind.Tuple;
+    node = "HTuplePat";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HOrPat extends HPat {
+    kind = HPatKind.Or;
+    node = "HOrPat";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HParam extends HNode {
+    node = "HParam";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HStructField extends HNode {
+    node = "HStructField";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HEnumVariant extends HNode {
+    node = "HEnumVariant";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+
+export class HMatchArm extends HNode {
+    node = "HMatchArm";
+
+    constructor(props: HInit) {
+        super();
+        Object.assign(this, props);
+    }
+}
+function makeHModule(span: Span, name: string, items: HItem[]): HModule {
+    return new HModule({ span, name, items });
+}
+
+function makeHFnDecl(
     span: Span,
     name: string,
     generics: string[] | null,
@@ -119,8 +554,7 @@ export function makeHFnDecl(
     isTest: boolean = false,
     expectedOutput: string | null = null,
 ): HFnDecl {
-    return {
-        kind: HItemKind.Fn,
+    return new HFnDecl({
         span,
         name,
         generics,
@@ -132,483 +566,237 @@ export function makeHFnDecl(
         isConst,
         isTest,
         expectedOutput,
-    };
+    });
 }
 
-export function makeHParam(
+function makeHParam(
     span: Span,
     name: string | null,
     ty: Type,
     pat: HPat | null,
 ): HParam {
-    return { name, ty, pat, span };
+    return new HParam({ span, name, ty, pat });
 }
 
-export type HStructField = {
-    name: string;
-    ty: Type;
-    defaultValue: HExpr | null;
-    span: Span;
-};
-
-export type HStructDecl = {
-    kind: HItemKind.Struct;
-    span: Span;
-    name: string;
-    generics: string[] | null;
-    fields: HStructField[];
-    isTuple: boolean;
-};
-
-export function makeHStructDecl(
+function makeHStructDecl(
     span: Span,
     name: string,
     generics: string[] | null,
     fields: HStructField[],
     isTuple: boolean,
 ): HStructDecl {
-    return { kind: HItemKind.Struct, span, name, generics, fields, isTuple };
+    return new HStructDecl({ span, name, generics, fields, isTuple });
 }
 
-export function makeHStructField(
+function makeHStructField(
     span: Span,
     name: string,
     ty: Type,
     defaultValue: HExpr | null,
 ): HStructField {
-    return { name, ty, defaultValue, span };
+    return new HStructField({ span, name, ty, defaultValue });
 }
 
-export type HEnumVariant = {
-    name: string;
-    fields: Type[];
-    discriminant: number | null;
-    span: Span;
-};
-
-export type HEnumDecl = {
-    kind: HItemKind.Enum;
-    span: Span;
-    name: string;
-    generics: string[] | null;
-    variants: HEnumVariant[];
-};
-
-export function makeHEnumDecl(
+function makeHEnumDecl(
     span: Span,
     name: string,
     generics: string[] | null,
     variants: HEnumVariant[],
 ): HEnumDecl {
-    return { kind: HItemKind.Enum, span, name, generics, variants };
+    return new HEnumDecl({ span, name, generics, variants });
 }
 
-export function makeHEnumVariant(
+function makeHEnumVariant(
     span: Span,
     name: string,
     fields: Type[],
     discriminant: number | null,
 ): HEnumVariant {
-    return { name, fields, discriminant, span };
+    return new HEnumVariant({ span, name, fields, discriminant });
 }
 
-export type HItem = HFnDecl | HStructDecl | HEnumDecl;
-
-// ============================================================================
-// Blocks
-// ============================================================================
-
-export type HBlock = {
-    stmts: HStmt[];
-    expr: HExpr | null;
-    span: Span;
-    ty: Type;
-};
-
-export function makeHBlock(
+function makeHBlock(
     span: Span,
     stmts: HStmt[],
     expr: HExpr | null,
     ty: Type,
 ): HBlock {
-    return { stmts, expr, span, ty };
+    return new HBlock({ span, stmts, expr, ty });
 }
 
-// ============================================================================
-// Statements
-// ============================================================================
-
-export type HLetStmt = {
-    kind: HStmtKind.Let;
-    span: Span;
-    pat: HPat;
-    ty: Type;
-    init: HExpr | null;
-};
-
-export function makeHLetStmt(
+function makeHLetStmt(
     span: Span,
     pat: HPat,
     ty: Type,
     init: HExpr | null,
 ): HLetStmt {
-    return { kind: HStmtKind.Let, span, pat, ty, init };
+    return new HLetStmt({ span, pat, ty, init });
 }
 
-export type HAssignStmt = {
-    kind: HStmtKind.Assign;
-    span: Span;
-    place: HPlace;
-    value: HExpr;
-};
-
-export function makeHAssignStmt(
+function makeHAssignStmt(
     span: Span,
     place: HPlace,
     value: HExpr,
 ): HAssignStmt {
-    return { kind: HStmtKind.Assign, span, place, value };
+    return new HAssignStmt({ span, place, value });
 }
 
-export type HExprStmt = {
-    kind: HStmtKind.Expr;
-    span: Span;
-    expr: HExpr;
-};
-
-export function makeHExprStmt(span: Span, expr: HExpr): HExprStmt {
-    return { kind: HStmtKind.Expr, span, expr };
+function makeHExprStmt(span: Span, expr: HExpr): HExprStmt {
+    return new HExprStmt({ span, expr });
 }
 
-export type HReturnStmt = {
-    kind: HStmtKind.Return;
-    span: Span;
-    value: HExpr | null;
-};
-
-export function makeHReturnStmt(span: Span, value: HExpr | null): HReturnStmt {
-    return { kind: HStmtKind.Return, span, value };
+function makeHReturnStmt(span: Span, value: HExpr | null): HReturnStmt {
+    return new HReturnStmt({ span, value });
 }
 
-export type HBreakStmt = {
-    kind: HStmtKind.Break;
-    span: Span;
-    value: HExpr | null;
-    label: string | null;
-};
-
-export function makeHBreakStmt(
+function makeHBreakStmt(
     span: Span,
     value: HExpr | null,
     label: string | null,
 ): HBreakStmt {
-    return { kind: HStmtKind.Break, span, value, label };
+    return new HBreakStmt({ span, value, label });
 }
 
-export type HContinueStmt = {
-    kind: HStmtKind.Continue;
-    span: Span;
-    label: string | null;
-};
-
-export function makeHContinueStmt(
+function makeHContinueStmt(
     span: Span,
     label: string | null,
 ): HContinueStmt {
-    return { kind: HStmtKind.Continue, span, label };
+    return new HContinueStmt({ span, label });
 }
 
-export type HStmt =
-    | HLetStmt
-    | HAssignStmt
-    | HExprStmt
-    | HReturnStmt
-    | HBreakStmt
-    | HContinueStmt;
-
-// ============================================================================
-// Places
-// ============================================================================
-
-export type HVarPlace = {
-    kind: HPlaceKind.Var;
-    span: Span;
-    name: string;
-    id: number;
-    ty: Type;
-};
-
-export function makeHVarPlace(
+function makeHVarPlace(
     span: Span,
     name: string,
     id: number,
     ty: Type,
 ): HVarPlace {
-    return { kind: HPlaceKind.Var, span, name, id, ty };
+    return new HVarPlace({ span, name, id, ty });
 }
 
-export type HFieldPlace = {
-    kind: HPlaceKind.Field;
-    span: Span;
-    base: HPlace;
-    field: string;
-    index: number;
-    ty: Type;
-};
-
-export function makeHFieldPlace(
+function makeHFieldPlace(
     span: Span,
     base: HPlace,
     field: string,
     index: number,
     ty: Type,
 ): HFieldPlace {
-    return { kind: HPlaceKind.Field, span, base, field, index, ty };
+    return new HFieldPlace({ span, base, field, index, ty });
 }
 
-export type HIndexPlace = {
-    kind: HPlaceKind.Index;
-    span: Span;
-    base: HPlace;
-    index: HExpr;
-    ty: Type;
-};
-
-export function makeHIndexPlace(
+function makeHIndexPlace(
     span: Span,
     base: HPlace,
     index: HExpr,
     ty: Type,
 ): HIndexPlace {
-    return { kind: HPlaceKind.Index, span, base, index, ty };
+    return new HIndexPlace({ span, base, index, ty });
 }
 
-export type HDerefPlace = {
-    kind: HPlaceKind.Deref;
-    span: Span;
-    base: HPlace;
-    ty: Type;
-};
-
-export function makeHDerefPlace(
+function makeHDerefPlace(
     span: Span,
     base: HPlace,
     ty: Type,
 ): HDerefPlace {
-    return { kind: HPlaceKind.Deref, span, base, ty };
+    return new HDerefPlace({ span, base, ty });
 }
 
-export type HPlace = HVarPlace | HFieldPlace | HIndexPlace | HDerefPlace;
-
-// ============================================================================
-// Expressions
-// ============================================================================
-
-export type HUnitExpr = {
-    kind: HExprKind.Unit;
-    span: Span;
-    ty: Type;
-};
-
-export function makeHUnitExpr(span: Span, ty: Type): HUnitExpr {
-    return { kind: HExprKind.Unit, span, ty };
+function makeHUnitExpr(span: Span, ty: Type): HUnitExpr {
+    return new HUnitExpr({ span, ty });
 }
 
-export type HLiteralExpr = {
-    kind: HExprKind.Literal;
-    span: Span;
-    literalKind: HLiteralKind;
-    value: string | number | boolean;
-    ty: Type;
-};
-
-export function makeHLiteralExpr(
+function makeHLiteralExpr(
     span: Span,
     literalKind: HLiteralKind,
     value: string | number | boolean,
     ty: Type,
 ): HLiteralExpr {
-    return { kind: HExprKind.Literal, span, literalKind, value, ty };
+    return new HLiteralExpr({ span, literalKind, value, ty });
 }
 
-export type HVarExpr = {
-    kind: HExprKind.Var;
-    span: Span;
-    name: string;
-    id: number;
-    ty: Type;
-    closureMeta?: {
-        helperName: string;
-        helperType: Type;
-        captures: Array<{
-            name: string;
-            type: Type;
-            mutable: boolean;
-            mode: "value" | "ref";
-        }>;
-    };
-};
-
-export function makeHVarExpr(
+function makeHVarExpr(
     span: Span,
     name: string,
     id: number,
     ty: Type,
 ): HVarExpr {
-    return { kind: HExprKind.Var, span, name, id, ty };
+    return new HVarExpr({ span, name, id, ty });
 }
 
-export type HBinaryExpr = {
-    kind: HExprKind.Binary;
-    span: Span;
-    op: number;
-    left: HExpr;
-    right: HExpr;
-    ty: Type;
-};
-
-export function makeHBinaryExpr(
+function makeHBinaryExpr(
     span: Span,
     op: number,
     left: HExpr,
     right: HExpr,
     ty: Type,
 ): HBinaryExpr {
-    return { kind: HExprKind.Binary, span, op, left, right, ty };
+    return new HBinaryExpr({ span, op, left, right, ty });
 }
 
-export type HUnaryExpr = {
-    kind: HExprKind.Unary;
-    span: Span;
-    op: number;
-    operand: HExpr;
-    ty: Type;
-};
-
-export function makeHUnaryExpr(
+function makeHUnaryExpr(
     span: Span,
     op: number,
     operand: HExpr,
     ty: Type,
 ): HUnaryExpr {
-    return { kind: HExprKind.Unary, span, op, operand, ty };
+    return new HUnaryExpr({ span, op, operand, ty });
 }
 
-export type HCallExpr = {
-    kind: HExprKind.Call;
-    span: Span;
-    callee: HExpr;
-    args: HExpr[];
-    ty: Type;
-};
-
-export function makeHCallExpr(
+function makeHCallExpr(
     span: Span,
     callee: HExpr,
     args: HExpr[],
     ty: Type,
 ): HCallExpr {
-    return { kind: HExprKind.Call, span, callee, args, ty };
+    return new HCallExpr({ span, callee, args, ty });
 }
 
-export type HFieldExpr = {
-    kind: HExprKind.Field;
-    span: Span;
-    base: HExpr;
-    field: string;
-    index: number;
-    ty: Type;
-};
-
-export function makeHFieldExpr(
+function makeHFieldExpr(
     span: Span,
     base: HExpr,
     field: string,
     index: number,
     ty: Type,
 ): HFieldExpr {
-    return { kind: HExprKind.Field, span, base, field, index, ty };
+    return new HFieldExpr({ span, base, field, index, ty });
 }
 
-export type HIndexExpr = {
-    kind: HExprKind.Index;
-    span: Span;
-    base: HExpr;
-    index: HExpr;
-    ty: Type;
-};
-
-export function makeHIndexExpr(
+function makeHIndexExpr(
     span: Span,
     base: HExpr,
     index: HExpr,
     ty: Type,
 ): HIndexExpr {
-    return { kind: HExprKind.Index, span, base, index, ty };
+    return new HIndexExpr({ span, base, index, ty });
 }
 
-export type HRefExpr = {
-    kind: HExprKind.Ref;
-    span: Span;
-    mutable: boolean;
-    operand: HExpr;
-    ty: Type;
-};
-
-export function makeHRefExpr(
+function makeHRefExpr(
     span: Span,
     mutable: boolean,
     operand: HExpr,
     ty: Type,
 ): HRefExpr {
-    return { kind: HExprKind.Ref, span, mutable, operand, ty };
+    return new HRefExpr({ span, mutable, operand, ty });
 }
 
-export type HDerefExpr = {
-    kind: HExprKind.Deref;
-    span: Span;
-    operand: HExpr;
-    ty: Type;
-};
-
-export function makeHDerefExpr(
+function makeHDerefExpr(
     span: Span,
     operand: HExpr,
     ty: Type,
 ): HDerefExpr {
-    return { kind: HExprKind.Deref, span, operand, ty };
+    return new HDerefExpr({ span, operand, ty });
 }
 
-export type HStructExpr = {
-    kind: HExprKind.Struct;
-    span: Span;
-    name: string;
-    fields: { name: string; value: HExpr }[];
-    spread: HExpr | null;
-    ty: Type;
-};
-
-export function makeHStructExpr(
+function makeHStructExpr(
     span: Span,
     name: string,
     fields: { name: string; value: HExpr }[],
     spread: HExpr | null,
     ty: Type,
 ): HStructExpr {
-    return { kind: HExprKind.Struct, span, name, fields, spread, ty };
+    return new HStructExpr({ span, name, fields, spread, ty });
 }
 
-export type HEnumExpr = {
-    kind: HExprKind.Enum;
-    span: Span;
-    enumName: string;
-    variantName: string;
-    variantIndex: number;
-    fields: HExpr[];
-    ty: Type;
-};
-
-export function makeHEnumExpr(
+function makeHEnumExpr(
     span: Span,
     enumName: string,
     variantName: string,
@@ -616,123 +804,55 @@ export function makeHEnumExpr(
     fields: HExpr[],
     ty: Type,
 ): HEnumExpr {
-    return {
-        kind: HExprKind.Enum,
+    return new HEnumExpr({
         span,
         enumName,
         variantName,
         variantIndex,
         fields,
         ty,
-    };
+    });
 }
 
-export type HIfExpr = {
-    kind: HExprKind.If;
-    span: Span;
-    condition: HExpr;
-    thenBranch: HBlock;
-    elseBranch: HBlock | null;
-    ty: Type;
-};
-
-export function makeHIfExpr(
+function makeHIfExpr(
     span: Span,
     condition: HExpr,
     thenBranch: HBlock,
     elseBranch: HBlock | null,
     ty: Type,
 ): HIfExpr {
-    return { kind: HExprKind.If, span, condition, thenBranch, elseBranch, ty };
+    return new HIfExpr({ span, condition, thenBranch, elseBranch, ty });
 }
 
-export type HMatchExpr = {
-    kind: HExprKind.Match;
-    span: Span;
-    scrutinee: HExpr;
-    arms: HMatchArm[];
-    ty: Type;
-};
-
-export function makeHMatchExpr(
+function makeHMatchExpr(
     span: Span,
     scrutinee: HExpr,
     arms: HMatchArm[],
     ty: Type,
 ): HMatchExpr {
-    return { kind: HExprKind.Match, span, scrutinee, arms, ty };
+    return new HMatchExpr({ span, scrutinee, arms, ty });
 }
 
-export type HLoopExpr = {
-    kind: HExprKind.Loop;
-    span: Span;
-    label: string | null;
-    body: HBlock;
-    ty: Type;
-};
-
-export function makeHLoopExpr(
+function makeHLoopExpr(
     span: Span,
     label: string | null,
     body: HBlock,
     ty: Type,
 ): HLoopExpr {
-    return { kind: HExprKind.Loop, span, label, body, ty };
+    return new HLoopExpr({ span, label, body, ty });
 }
 
-export type HWhileExpr = {
-    kind: HExprKind.While;
-    span: Span;
-    label: string | null;
-    condition: HExpr;
-    body: HBlock;
-    ty: Type;
-};
-
-export function makeHWhileExpr(
+function makeHWhileExpr(
     span: Span,
     label: string | null,
     condition: HExpr,
     body: HBlock,
     ty: Type,
 ): HWhileExpr {
-    return { kind: HExprKind.While, span, label, condition, body, ty };
+    return new HWhileExpr({ span, label, condition, body, ty });
 }
 
-export type HExpr =
-    | HUnitExpr
-    | HLiteralExpr
-    | HVarExpr
-    | HBinaryExpr
-    | HUnaryExpr
-    | HCallExpr
-    | HFieldExpr
-    | HIndexExpr
-    | HRefExpr
-    | HDerefExpr
-    | HStructExpr
-    | HEnumExpr
-    | HIfExpr
-    | HMatchExpr
-    | HLoopExpr
-    | HWhileExpr
-    | HBlock;
-
-// ============================================================================
-// Patterns
-// ============================================================================
-
-export type HIdentPat = {
-    kind: HPatKind.Ident;
-    span: Span;
-    name: string;
-    id: number;
-    ty: Type;
-    mutable: boolean;
-    isRef: boolean;
-};
-
-export function makeHIdentPat(
+function makeHIdentPat(
     span: Span,
     name: string,
     id: number,
@@ -740,324 +860,259 @@ export function makeHIdentPat(
     mutable: boolean,
     isRef: boolean,
 ): HIdentPat {
-    return { kind: HPatKind.Ident, span, name, id, ty, mutable, isRef };
+    return new HIdentPat({ span, name, id, ty, mutable, isRef });
 }
 
-export type HWildcardPat = {
-    kind: HPatKind.Wildcard;
-    span: Span;
-    ty: Type;
-};
-
-export function makeHWildcardPat(span: Span, ty: Type): HWildcardPat {
-    return { kind: HPatKind.Wildcard, span, ty };
+function makeHWildcardPat(span: Span, ty: Type): HWildcardPat {
+    return new HWildcardPat({ span, ty });
 }
 
-export type HLiteralPat = {
-    kind: HPatKind.Literal;
-    span: Span;
-    literalKind: HLiteralKind;
-    value: string | number | boolean;
-    ty: Type;
-};
-
-export function makeHLiteralPat(
+function makeHLiteralPat(
     span: Span,
     literalKind: HLiteralKind,
     value: string | number | boolean,
     ty: Type,
 ): HLiteralPat {
-    return { kind: HPatKind.Literal, span, literalKind, value, ty };
+    return new HLiteralPat({ span, literalKind, value, ty });
 }
 
-export type HStructPat = {
-    kind: HPatKind.Struct;
-    span: Span;
-    name: string;
-    fields: { name: string; pat: HPat }[];
-    rest: boolean;
-    ty: Type;
-};
-
-export function makeHStructPat(
+function makeHStructPat(
     span: Span,
     name: string,
     fields: { name: string; pat: HPat }[],
     rest: boolean,
     ty: Type,
 ): HStructPat {
-    return { kind: HPatKind.Struct, span, name, fields, rest, ty };
+    return new HStructPat({ span, name, fields, rest, ty });
 }
 
-export type HTuplePat = {
-    kind: HPatKind.Tuple;
-    span: Span;
-    elements: HPat[];
-    ty: Type;
-};
-
-export function makeHTuplePat(
+function makeHTuplePat(
     span: Span,
     elements: HPat[],
     ty: Type,
 ): HTuplePat {
-    return { kind: HPatKind.Tuple, span, elements, ty };
+    return new HTuplePat({ span, elements, ty });
 }
 
-export type HOrPat = {
-    kind: HPatKind.Or;
-    span: Span;
-    alternatives: HPat[];
-    ty: Type;
-};
-
-export function makeHOrPat(span: Span, alternatives: HPat[], ty: Type): HOrPat {
-    return { kind: HPatKind.Or, span, alternatives, ty };
+function makeHOrPat(span: Span, alternatives: HPat[], ty: Type): HOrPat {
+    return new HOrPat({ span, alternatives, ty });
 }
 
-export type HPat =
-    | HIdentPat
-    | HWildcardPat
-    | HLiteralPat
-    | HStructPat
-    | HTuplePat
-    | HOrPat;
-
-// ============================================================================
-// Match Arm
-// ============================================================================
-
-export type HMatchArm = {
-    pat: HPat;
-    guard: HExpr | null;
-    body: HBlock;
-    span: Span;
-};
-
-export function makeHMatchArm(
+function makeHMatchArm(
     span: Span,
     pat: HPat,
     guard: HExpr | null,
     body: HBlock,
 ): HMatchArm {
-    return { pat, guard, body, span };
+    return new HMatchArm({ span, pat, guard, body });
 }
 
-// ============================================================================
-// Utilities
-// ============================================================================
-
-export type HNode =
-    | HModule
-    | HItem
-    | HBlock
-    | HStmt
-    | HPlace
-    | HExpr
-    | HPat
-    | HMatchArm;
-
-export function hirToString(hir: HNode): string {
-    if ("items" in hir && "name" in hir) {
-        return `module ${(hir as HModule).name} {
-${(hir as HModule).items.map((i) => "  " + hirToString(i)).join("\\n")}
-}`;
+function hirToString(hir: HNode): string {
+    if (hir instanceof HModule) {
+        const module = hir as HModule & { name: string; items: HItem[] };
+        const itemLines = module.items.map((item) => `  ${hirToString(item)}`);
+        return `module ${module.name} {\n${itemLines.join("\\n")}\n}`;
     }
 
-    if ("kind" in hir) {
-        switch (hir.kind) {
-            case HItemKind.Fn: {
-                const fn = hir as HFnDecl;
-                const params = fn.params
-                    .map((p) => `${p.name}: ${typeToString(p.ty)}`)
-                    .join(", ");
-                const body = fn.body ? hirToString(fn.body) : ";";
-                return `fn ${fn.name}(${params}) -> ${typeToString(fn.returnType)} ${body}`;
-            }
-            case HItemKind.Struct: {
-                const struct = hir as HStructDecl;
-                const fields = struct.fields
-                    .map((f) => `${f.name}: ${typeToString(f.ty)}`)
-                    .join(", ");
-                return `struct ${struct.name} { ${fields} }`;
-            }
-            case HItemKind.Enum: {
-                const enum_ = hir as HEnumDecl;
-                const variants = enum_.variants.map((v) => v.name).join(", ");
-                return `enum ${enum_.name} { ${variants} }`;
-            }
-
-            case HStmtKind.Let: {
-                const stmt = hir as HLetStmt;
-                const init = stmt.init ? ` = ${hirToString(stmt.init)}` : "";
-                return `let ${hirToString(stmt.pat)}: ${typeToString(stmt.ty)}${init};`;
-            }
-            case HStmtKind.Assign: {
-                const stmt = hir as HAssignStmt;
-                return `${hirToString(stmt.place)} = ${hirToString(stmt.value)};`;
-            }
-            case HStmtKind.Expr: {
-                const stmt = hir as HExprStmt;
-                return `${hirToString(stmt.expr)};`;
-            }
-            case HStmtKind.Return: {
-                const stmt = hir as HReturnStmt;
-                return stmt.value
-                    ? `return ${hirToString(stmt.value)};`
-                    : "return;";
-            }
-            case HStmtKind.Break: {
-                const stmt = hir as HBreakStmt;
-                return stmt.value
-                    ? `break ${hirToString(stmt.value)};`
-                    : "break;";
-            }
-            case HStmtKind.Continue: {
-                return "continue;";
-            }
-
-            case HPlaceKind.Var: {
-                const place = hir as HVarPlace;
-                return place.name;
-            }
-            case HPlaceKind.Field: {
-                const place = hir as HFieldPlace;
-                return `${hirToString(place.base)}.${place.field}`;
-            }
-            case HPlaceKind.Index: {
-                const place = hir as HIndexPlace;
-                return `${hirToString(place.base)}[${hirToString(place.index)}]`;
-            }
-            case HPlaceKind.Deref: {
-                const place = hir as HDerefPlace;
-                return `*${hirToString(place.base)}`;
-            }
-
-            case HExprKind.Unit: {
-                return "()";
-            }
-            case HExprKind.Literal: {
-                const expr = hir as HLiteralExpr;
-                return String(expr.value);
-            }
-            case HExprKind.Var: {
-                const expr = hir as HVarExpr;
-                return expr.name;
-            }
-            case HExprKind.Binary: {
-                const expr = hir as HBinaryExpr;
-                return `(${hirToString(expr.left)} ${binaryOpToString(expr.op)} ${hirToString(expr.right)})`;
-            }
-            case HExprKind.Unary: {
-                const expr = hir as HUnaryExpr;
-                return `${unaryOpToString(expr.op)}${hirToString(expr.operand)}`;
-            }
-            case HExprKind.Call: {
-                const expr = hir as HCallExpr;
-                const args = expr.args.map(hirToString).join(", ");
-                return `${hirToString(expr.callee)}(${args})`;
-            }
-            case HExprKind.Field: {
-                const expr = hir as HFieldExpr;
-                return `${hirToString(expr.base)}.${expr.field}`;
-            }
-            case HExprKind.Index: {
-                const expr = hir as HIndexExpr;
-                return `${hirToString(expr.base)}[${hirToString(expr.index)}]`;
-            }
-            case HExprKind.Ref: {
-                const expr = hir as HRefExpr;
-                return `&${expr.mutable ? "mut " : ""}${hirToString(expr.operand)}`;
-            }
-            case HExprKind.Deref: {
-                const expr = hir as HDerefExpr;
-                return `*${hirToString(expr.operand)}`;
-            }
-            case HExprKind.Struct: {
-                const expr = hir as HStructExpr;
-                const fields = expr.fields
-                    .map((f) => `${f.name}: ${hirToString(f.value)}`)
-                    .join(", ");
-                return `${expr.name} { ${fields} }`;
-            }
-            case HExprKind.Enum: {
-                const expr = hir as HEnumExpr;
-                const fields = expr.fields.map(hirToString).join(", ");
-                return `${expr.enumName}::${expr.variantName}(${fields})`;
-            }
-            case HExprKind.If: {
-                const expr = hir as HIfExpr;
-                const else_ = expr.elseBranch
-                    ? ` else ${hirToString(expr.elseBranch)}`
-                    : "";
-                return `if ${hirToString(expr.condition)} ${hirToString(expr.thenBranch)}${else_}`;
-            }
-            case HExprKind.Match: {
-                const expr = hir as HMatchExpr;
-                const arms = expr.arms
-                    .map(
-                        (a) =>
-                            `  ${hirToString(a.pat)} => ${hirToString(a.body)}`,
-                    )
-                    .join(",\\n");
-                return `match ${hirToString(expr.scrutinee)} {
-${arms}
-}`;
-            }
-            case HExprKind.Loop: {
-                const expr = hir as HLoopExpr;
-                return `loop ${hirToString(expr.body)}`;
-            }
-            case HExprKind.While: {
-                const expr = hir as HWhileExpr;
-                return `while ${hirToString(expr.condition)} ${hirToString(expr.body)}`;
-            }
-
-            case HPatKind.Ident: {
-                const pat = hir as HIdentPat;
-                return pat.name;
-            }
-            case HPatKind.Wildcard: {
-                return "_";
-            }
-            case HPatKind.Literal: {
-                const pat = hir as HLiteralPat;
-                return String(pat.value);
-            }
-            case HPatKind.Struct: {
-                const pat = hir as HStructPat;
-                const fields = pat.fields
-                    .map((f) => `${f.name}: ${hirToString(f.pat)}`)
-                    .join(", ");
-                return `${pat.name} { ${fields}${pat.rest ? " .." : ""} }`;
-            }
-            case HPatKind.Tuple: {
-                const pat = hir as HTuplePat;
-                return `(${pat.elements.map(hirToString).join(", ")})`;
-            }
-            case HPatKind.Or: {
-                const pat = hir as HOrPat;
-                return pat.alternatives.map(hirToString).join(" | ");
-            }
-        }
+    if (hir instanceof HFnDecl) {
+        const fn = hir as HFnDecl & {
+            name: string;
+            params: Array<{ name: string; ty: Type }>;
+            returnType: Type;
+            body: HBlock | null;
+        };
+        const params = fn.params
+            .map((param) => `${param.name}: ${typeToString(param.ty)}`)
+            .join(", ");
+        const body = fn.body ? hirToString(fn.body) : ";";
+        return `fn ${fn.name}(${params}) -> ${typeToString(fn.returnType)} ${body}`;
+    }
+    if (hir instanceof HStructDecl) {
+        const structDecl = hir as HStructDecl & {
+            name: string;
+            fields: Array<{ name: string; ty: Type }>;
+        };
+        const fields = structDecl.fields
+            .map((field) => `${field.name}: ${typeToString(field.ty)}`)
+            .join(", ");
+        return `struct ${structDecl.name} { ${fields} }`;
+    }
+    if (hir instanceof HEnumDecl) {
+        const enumDecl = hir as HEnumDecl & {
+            name: string;
+            variants: Array<{ name: string }>;
+        };
+        const variants = enumDecl.variants.map((variant) => variant.name).join(", ");
+        return `enum ${enumDecl.name} { ${variants} }`;
+    }
+    if (hir instanceof HLetStmt) {
+        const stmt = hir as HLetStmt & {
+            pat: HPat;
+            ty: Type;
+            init: HExpr | null;
+        };
+        const init = stmt.init ? ` = ${hirToString(stmt.init)}` : "";
+        return `let ${hirToString(stmt.pat)}: ${typeToString(stmt.ty)}${init};`;
+    }
+    if (hir instanceof HAssignStmt) {
+        const stmt = hir as HAssignStmt & { place: HPlace; value: HExpr };
+        return `${hirToString(stmt.place)} = ${hirToString(stmt.value)};`;
+    }
+    if (hir instanceof HExprStmt) {
+        const stmt = hir as HExprStmt & { expr: HExpr };
+        return `${hirToString(stmt.expr)};`;
+    }
+    if (hir instanceof HReturnStmt) {
+        const stmt = hir as HReturnStmt & { value: HExpr | null };
+        return stmt.value ? `return ${hirToString(stmt.value)};` : "return;";
+    }
+    if (hir instanceof HBreakStmt) {
+        const stmt = hir as HBreakStmt & { value: HExpr | null };
+        return stmt.value ? `break ${hirToString(stmt.value)};` : "break;";
+    }
+    if (hir instanceof HContinueStmt) {
+        return "continue;";
+    }
+    if (hir instanceof HVarPlace) {
+        return (hir as HVarPlace & { name: string }).name;
+    }
+    if (hir instanceof HFieldPlace) {
+        const place = hir as HFieldPlace & { base: HPlace; field: string };
+        return `${hirToString(place.base)}.${place.field}`;
+    }
+    if (hir instanceof HIndexPlace) {
+        const place = hir as HIndexPlace & { base: HPlace; index: HExpr };
+        return `${hirToString(place.base)}[${hirToString(place.index)}]`;
+    }
+    if (hir instanceof HDerefPlace) {
+        return `*${hirToString((hir as HDerefPlace & { base: HPlace }).base)}`;
+    }
+    if (hir instanceof HUnitExpr) {
+        return "()";
+    }
+    if (hir instanceof HLiteralExpr) {
+        return String((hir as HLiteralExpr & { value: string | number | boolean }).value);
+    }
+    if (hir instanceof HVarExpr) {
+        return (hir as HVarExpr & { name: string }).name;
+    }
+    if (hir instanceof HBinaryExpr) {
+        const expr = hir as HBinaryExpr & {
+            left: HExpr;
+            right: HExpr;
+            op: number;
+        };
+        return `(${hirToString(expr.left)} ${binaryOpToString(expr.op)} ${hirToString(expr.right)})`;
+    }
+    if (hir instanceof HUnaryExpr) {
+        const expr = hir as HUnaryExpr & { op: number; operand: HExpr };
+        return `${unaryOpToString(expr.op)}${hirToString(expr.operand)}`;
+    }
+    if (hir instanceof HCallExpr) {
+        const expr = hir as HCallExpr & { callee: HExpr; args: HExpr[] };
+        const args = expr.args.map((arg) => hirToString(arg)).join(", ");
+        return `${hirToString(expr.callee)}(${args})`;
+    }
+    if (hir instanceof HFieldExpr) {
+        const expr = hir as HFieldExpr & { base: HExpr; field: string };
+        return `${hirToString(expr.base)}.${expr.field}`;
+    }
+    if (hir instanceof HIndexExpr) {
+        const expr = hir as HIndexExpr & { base: HExpr; index: HExpr };
+        return `${hirToString(expr.base)}[${hirToString(expr.index)}]`;
+    }
+    if (hir instanceof HRefExpr) {
+        const expr = hir as HRefExpr & { mutable: boolean; operand: HExpr };
+        return `&${expr.mutable ? "mut " : ""}${hirToString(expr.operand)}`;
+    }
+    if (hir instanceof HDerefExpr) {
+        return `*${hirToString((hir as HDerefExpr & { operand: HExpr }).operand)}`;
+    }
+    if (hir instanceof HStructExpr) {
+        const expr = hir as HStructExpr & {
+            name: string;
+            fields: Array<{ name: string; value: HExpr }>;
+        };
+        const fields = expr.fields
+            .map((field) => `${field.name}: ${hirToString(field.value)}`)
+            .join(", ");
+        return `${expr.name} { ${fields} }`;
+    }
+    if (hir instanceof HEnumExpr) {
+        const expr = hir as HEnumExpr & {
+            enumName: string;
+            variantName: string;
+            fields: HExpr[];
+        };
+        const fields = expr.fields.map((field) => hirToString(field)).join(", ");
+        return `${expr.enumName}::${expr.variantName}(${fields})`;
+    }
+    if (hir instanceof HIfExpr) {
+        const expr = hir as HIfExpr & {
+            condition: HExpr;
+            thenBranch: HBlock;
+            elseBranch: HBlock | null;
+        };
+        const elseBranch = expr.elseBranch
+            ? ` else ${hirToString(expr.elseBranch)}`
+            : "";
+        return `if ${hirToString(expr.condition)} ${hirToString(expr.thenBranch)}${elseBranch}`;
+    }
+    if (hir instanceof HMatchExpr) {
+        const expr = hir as HMatchExpr & { scrutinee: HExpr; arms: HMatchArm[] };
+        const arms = expr.arms.map((arm) => `  ${hirToString(arm)}`).join(",\\n");
+        return `match ${hirToString(expr.scrutinee)} {\n${arms}\n}`;
+    }
+    if (hir instanceof HLoopExpr) {
+        return `loop ${hirToString((hir as HLoopExpr & { body: HBlock }).body)}`;
+    }
+    if (hir instanceof HWhileExpr) {
+        const expr = hir as HWhileExpr & { condition: HExpr; body: HBlock };
+        return `while ${hirToString(expr.condition)} ${hirToString(expr.body)}`;
+    }
+    if (hir instanceof HIdentPat) {
+        return (hir as HIdentPat & { name: string }).name;
+    }
+    if (hir instanceof HWildcardPat) {
+        return "_";
+    }
+    if (hir instanceof HLiteralPat) {
+        return String((hir as HLiteralPat & { value: string | number | boolean }).value);
+    }
+    if (hir instanceof HStructPat) {
+        const pat = hir as HStructPat & {
+            name: string;
+            fields: Array<{ name: string; pat: HPat }>;
+            rest: boolean;
+        };
+        const fields = pat.fields
+            .map((field) => `${field.name}: ${hirToString(field.pat)}`)
+            .join(", ");
+        return `${pat.name} { ${fields}${pat.rest ? " .." : ""} }`;
+    }
+    if (hir instanceof HTuplePat) {
+        const tuple = hir as HTuplePat & { elements: HPat[] };
+        return `(${tuple.elements.map((item) => hirToString(item)).join(", ")})`;
+    }
+    if (hir instanceof HOrPat) {
+        const orPat = hir as HOrPat & { alternatives: HPat[] };
+        return orPat.alternatives.map((item) => hirToString(item)).join(" | ");
     }
 
-    if ("stmts" in hir && "ty" in hir) {
-        const block = hir as HBlock;
-        const stmts = block.stmts.map((s) => "  " + hirToString(s)).join("\\n");
+    if (hir instanceof HBlock) {
+        const block = hir as HBlock & { stmts: HStmt[]; expr: HExpr | null };
+        const stmts = block.stmts.map((stmt) => `  ${hirToString(stmt)}`).join("\\n");
         const expr = block.expr ? "\\n  " + hirToString(block.expr) : "";
-        return `{
-${stmts}${expr}
-}`;
+        return `{\n${stmts}${expr}\n}`;
     }
 
-    if ("pat" in hir && "body" in hir) {
-        const arm = hir as HMatchArm;
+    if (hir instanceof HMatchArm) {
+        const arm = hir as HMatchArm & { pat: HPat; guard: HExpr | null; body: HBlock };
         const guard = arm.guard ? ` if ${hirToString(arm.guard)}` : "";
         return `${hirToString(arm.pat)}${guard} => ${hirToString(arm.body)}`;
     }
 
-    return "<unknown>";
+    return "<invalid-hir-node>";
 }
 
 function binaryOpToString(op: number): string {
@@ -1089,82 +1144,110 @@ function unaryOpToString(op: number): string {
     return ops[op] ?? "?";
 }
 
-export function collectVars(hir: HNode): Set<number> {
+function collectVars(hir: HNode): Set<number> {
     const vars = new Set<number>();
 
-    function visit(node: any) {
-        if (!node || typeof node !== "object") return;
-
-        if (node.kind === HPlaceKind.Var && typeof node.id === "number") {
-            vars.add(node.id);
+    const visit = (node: HNode | Type | JsonValue): void => {
+        if (node instanceof HVarPlace && typeof (node as { id?: number }).id === "number") {
+            vars.add((node as { id: number }).id);
         }
-
-        if (node.kind === HExprKind.Var && typeof node.id === "number") {
-            vars.add(node.id);
+        if (node instanceof HVarExpr && typeof (node as { id?: number }).id === "number") {
+            vars.add((node as { id: number }).id);
         }
-
-        if (node.kind === HPatKind.Ident && typeof node.id === "number") {
-            vars.add(node.id);
+        if (node instanceof HIdentPat && typeof (node as { id?: number }).id === "number") {
+            vars.add((node as { id: number }).id);
         }
 
         if (Array.isArray(node)) {
             for (const item of node) {
-                visit(item);
+                visit(item as HNode | Type | JsonValue);
             }
             return;
         }
 
-        for (const key of Object.keys(node)) {
-            if (key === "ty" || key === "span") continue;
-            visit(node[key]);
+        if (node !== null && typeof node === "object") {
+            for (const value of Object.values(node as JsonObject)) {
+                visit(value as HNode | Type | JsonValue);
+            }
         }
-    }
+    };
 
     visit(hir);
     return vars;
 }
 
-export function isHExpr(node: any): node is HExpr {
-    return (
-        node &&
-        typeof node.kind === "number" &&
-        node.kind >= HExprKind.Unit &&
-        node.kind <= HExprKind.While
-    );
+function isHExpr(node: HNode): node is HExpr {
+    return node instanceof HExpr;
 }
 
-export function isHStmt(node: any): node is HStmt {
-    return (
-        node &&
-        typeof node.kind === "number" &&
-        node.kind >= HStmtKind.Let &&
-        node.kind <= HStmtKind.Continue
-    );
+function isHStmt(node: HNode): node is HStmt {
+    return node instanceof HStmt;
 }
 
-export function isHPlace(node: any): node is HPlace {
-    return (
-        node &&
-        typeof node.kind === "number" &&
-        node.kind >= HPlaceKind.Var &&
-        node.kind <= HPlaceKind.Deref
-    );
+function isHPlace(node: HNode): node is HPlace {
+    return node instanceof HPlace;
 }
 
-export function isHPat(node: any): node is HPat {
-    return (
-        node &&
-        typeof node.kind === "number" &&
-        node.kind >= HPatKind.Ident &&
-        node.kind <= HPatKind.Or
-    );
+function isHPat(node: HNode): node is HPat {
+    return node instanceof HPat;
 }
 
-export function isHItem(node: any): node is HItem {
-    return (
-        node &&
-        typeof node.kind === "number" &&
-        node.kind >= HItemKind.Fn &&
-        node.kind <= HItemKind.Enum
-    );
+function isHItem(node: HNode): node is HItem {
+    return node instanceof HItem;
 }
+
+function visitHir<R = void, C = void>(node: HNode, visitor: HirVisitor<R, C>, ctx: C): R {
+    return node.accept(visitor, ctx);
+}
+
+export {
+    makeHModule,
+    makeHFnDecl,
+    makeHParam,
+    makeHStructDecl,
+    makeHStructField,
+    makeHEnumDecl,
+    makeHEnumVariant,
+    makeHBlock,
+    makeHLetStmt,
+    makeHAssignStmt,
+    makeHExprStmt,
+    makeHReturnStmt,
+    makeHBreakStmt,
+    makeHContinueStmt,
+    makeHVarPlace,
+    makeHFieldPlace,
+    makeHIndexPlace,
+    makeHDerefPlace,
+    makeHUnitExpr,
+    makeHLiteralExpr,
+    makeHVarExpr,
+    makeHBinaryExpr,
+    makeHUnaryExpr,
+    makeHCallExpr,
+    makeHFieldExpr,
+    makeHIndexExpr,
+    makeHRefExpr,
+    makeHDerefExpr,
+    makeHStructExpr,
+    makeHEnumExpr,
+    makeHIfExpr,
+    makeHMatchExpr,
+    makeHLoopExpr,
+    makeHWhileExpr,
+    makeHIdentPat,
+    makeHWildcardPat,
+    makeHLiteralPat,
+    makeHStructPat,
+    makeHTuplePat,
+    makeHOrPat,
+    makeHMatchArm,
+    hirToString,
+    collectVars,
+    isHExpr,
+    isHStmt,
+    isHPlace,
+    isHPat,
+    isHItem,
+    visitHir,
+};

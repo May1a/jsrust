@@ -1,5 +1,7 @@
 import { tokenize, TokenType } from "./tokenizer";
 import type { Token, TokenTypeValue } from "./tokenizer";
+import { ok, err } from "./diagnostics";
+import type { Result } from "./diagnostics";
 
 import {
     NodeKind,
@@ -72,10 +74,11 @@ type ParserState = { tokens: Token[]; pos: number; errors: ParseError[] };
 type ParseError = {
     message: string;
     span: Span;
-    expected: string[] | null;
-    found: string | null;
+    expected: string[];
+    found: string;
 };
-type ParseResult = { ok: boolean; value: Node | null; errors: ParseError[] };
+type ParseErrorList = ParseError[];
+type ParseResult = Result<Node, ParseErrorList>;
 
 function createState(tokens: Token[]) {
     return { tokens, pos: 0, errors: [] };
@@ -121,22 +124,23 @@ function mergeSpans(a: Span, b: Span): Span {
     return makeSpan(a.line, a.column, a.start, b.end);
 }
 
-function getToken(tkval: TokenTypeValue): keyof typeof TokenType | undefined {
-    return Object.keys(TokenType)[tkval] as keyof typeof TokenType | undefined;
+function getToken(tkval: TokenTypeValue): keyof typeof TokenType {
+    const tokenKey = Object.keys(TokenType)[tkval] as keyof typeof TokenType;
+    return tokenKey || "Eof";
 }
 
 function addError(
     state: ParserState,
     message: string,
     token: Token | null,
-    expected: string[] | null = null,
+    expected: string[] = [],
 ): void {
     const span = token ? spanFromToken(token) : spanFromToken(peek(state));
     state.errors.push({
         message,
         span,
         expected,
-        found: token ? (getToken(token.type) ?? null) : null,
+        found: token ? (getToken(token.type) ?? "") : "",
     });
 }
 
@@ -402,7 +406,7 @@ function parseOuterAttributes(state: ParserState): {
             );
             continue;
         }
-        // Inert unknown attributes are accepted and ignored.
+        // Inert unrecognized attributes are accepted and ignored.
         if (matchToken(state, TokenType.OpenParen)) {
             skipBalancedParens(state);
         }
@@ -497,7 +501,7 @@ function parseStringToken(token: Token): string {
 function parseCharToken(token: Token, state: ParserState): string {
     const value = parseStringToken(token);
     if (value.length !== 1) {
-        addError(state, "Invalid char literal", token, null);
+        addError(state, "Invalid char literal", token, []);
     }
     return value[0] ?? "";
 }
@@ -594,7 +598,7 @@ function parsePathTypeNode(state: ParserState) {
         return null;
     }
     const endToken = previous(state);
-    let args: Node | undefined;
+    let args: Node | null = null;
     if (matchToken(state, TokenType.Lt)) {
         const typeArgs: Node[] = [];
         while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
@@ -1028,7 +1032,7 @@ function parseAtom(
         return node;
     }
 
-    addError(state, "Unexpected token", token, null);
+    addError(state, "Unexpected token", token, []);
     advance(state);
     return null;
 }
@@ -1719,7 +1723,7 @@ function parseFnItem(
     } else if (matchToken(state, TokenType.Semicolon)) {
         body = null;
     } else {
-        addError(state, "Expected function body", peek(state), null);
+        addError(state, "Expected function body", peek(state), []);
     }
     const endSpan = body ? body.span : spanFromToken(nameToken);
     const span = mergeSpans(spanFromToken(start), endSpan);
@@ -1763,8 +1767,8 @@ function parseStructItem(state: ParserState, isPub: boolean): Node {
                     TokenType.Identifier,
                     "Expected field name",
                 ) ?? peek(state);
-            let ty: Node | undefined;
-            let defaultValue: Node | undefined;
+            let ty: Node | null = null;
+            let defaultValue: Node | null = null;
             if (matchToken(state, TokenType.Colon)) {
                 ty = parseType(state);
             }
@@ -1889,7 +1893,7 @@ function parseImplItem(state: ParserState, isUnsafe: boolean): Node {
         ? genericList.ignoredLifetimeParams
         : [];
     const firstType = parseType(state);
-    let traitType: Node | undefined;
+    let traitType: Node | null = null;
     let targetType: Node = firstType;
     if (matchToken(state, TokenType.For)) {
         traitType = firstType;
@@ -1939,7 +1943,7 @@ function parseImplItem(state: ParserState, isUnsafe: boolean): Node {
     const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
     return makeImplItem(
         span,
-        targetType ?? makeNamedType(spanFromToken(start), "unknown", null),
+        targetType ?? makeNamedType(spanFromToken(start), "__unresolved_type", null),
         traitType ?? null,
         methods,
         isUnsafe,
@@ -2275,7 +2279,7 @@ function parseItem(state: ParserState): Node | null {
     if (consumedOnlyInert) {
         return null;
     }
-    addError(state, "Expected item", peek(state), null);
+    addError(state, "Expected item", peek(state), []);
     return null;
 }
 
@@ -2398,7 +2402,7 @@ function parsePatternAtom(state: ParserState): Node {
         }
         return literal;
     }
-    addError(state, "Expected pattern", token, null);
+    addError(state, "Expected pattern", token, []);
     advance(state);
     return makeWildcardPat(spanFromToken(token));
 }
@@ -2610,7 +2614,7 @@ function parseType(state: ParserState): Node {
         return makeRefType(
             span,
             mutability,
-            inner ?? makeNamedType(span, "unknown", null),
+            inner ?? makeNamedType(span, "__unresolved_type", null),
             ignoredLifetimeName,
         );
     }
@@ -2633,7 +2637,7 @@ function parseType(state: ParserState): Node {
         return makePtrType(
             span,
             mutability,
-            inner ?? makeNamedType(span, "unknown", null),
+            inner ?? makeNamedType(span, "__unresolved_type", null),
         );
     }
     if (
@@ -2730,7 +2734,7 @@ function parseType(state: ParserState): Node {
             : spanFromToken(start);
         return makeArrayType(
             span,
-            element ?? makeNamedType(span, "unknown", null),
+            element ?? makeNamedType(span, "__unresolved_type", null),
             length,
         );
     }
@@ -2740,9 +2744,9 @@ function parseType(state: ParserState): Node {
             return pathType;
         }
     }
-    addError(state, "Expected type", token, null);
+    addError(state, "Expected type", token, []);
     advance(state);
-    return makeNamedType(spanFromToken(token), "unknown", null);
+    return makeNamedType(spanFromToken(token), "__unresolved_type", null);
 }
 
 function parseIfExpr(state: ParserState): Node {
@@ -2789,7 +2793,7 @@ function parseMatchExpr(state: ParserState): Node {
             guard = parseExpr(state, 0);
         }
         if (!matchFatArrow(state)) {
-            addError(state, "Expected => in match arm", peek(state), null);
+            addError(state, "Expected => in match arm", peek(state), []);
         }
         const body = check(state, TokenType.OpenCurly)
             ? parseBlockExpr(state)
@@ -2954,11 +2958,20 @@ function parseModuleFromState(state: ParserState): Node {
 }
 
 function buildResult(state: ParserState, value: Node | null): ParseResult {
-    return {
-        ok: state.errors.length === 0 && value !== null,
-        value,
-        errors: state.errors,
-    };
+    if (state.errors.length > 0) {
+        return err(state.errors);
+    }
+    if (value === null) {
+        return err([
+            {
+                message: "Parser produced no node",
+                span: currentSpan(state),
+                expected: [],
+                found: "",
+            },
+        ]);
+    }
+    return ok(value);
 }
 
 function parseModule(source: string): ParseResult {

@@ -88,11 +88,21 @@ type ResolverState = {
 // These are typed as minimally as needed for the resolver's operations.
 // ============================================================================
 
-type AstNode = BaseNode & Record<string, unknown>;
+type AstField =
+    | string
+    | number
+    | boolean
+    | Span
+    | string[]
+    | AstNode
+    | AstNode[]
+    | null;
+
+type AstNode = BaseNode & Record<string, AstField>;
 
 /** Helper to cast AstNode to a specific node type */
 function asNode<T extends BaseNode>(node: AstNode): T {
-    return node as unknown as T;
+    return node as T;
 }
 
 type BaseNode = {
@@ -609,8 +619,8 @@ function expandModuleItems(
         state.loadingStack.push(resolved.filePath);
         const parseResult = parseModule(source) as ParseResult;
 
-        if (!parseResult.ok || !parseResult.value) {
-            for (const err of parseResult.errors || []) {
+        if (!parseResult.ok) {
+            for (const err of parseResult.error) {
                 state.errors.push({
                     message: `In module file ${resolved.filePath}: ${err.message}`,
                     span: err.span,
@@ -1122,7 +1132,7 @@ function resolveUseItems(state: ResolverState): void {
 // Expression Resolution
 // ============================================================================
 
-/** Check if a name is bound in any local scope */
+/** Check whether a name is bound in local scopes */
 function isLocalBinding(name: string, localScopes: Set<string>[]): boolean {
     for (let i = localScopes.length - 1; i >= 0; i--) {
         if (localScopes[i].has(name)) return true;
@@ -1512,7 +1522,7 @@ function resolveModuleExprs(
 ): void {
     for (const item of items || []) {
         if (item.kind === NodeKind.FnItem) {
-            const fn = item as unknown as FnItemNode;
+            const fn = item as FnItemNode;
             if (!fn.body) continue;
 
             const localScopes: Set<string>[] = [new Set()];
@@ -1524,7 +1534,7 @@ function resolveModuleExprs(
         }
 
         if (item.kind === NodeKind.ModItem) {
-            const mod = item as unknown as ModItemNode;
+            const mod = item as ModItemNode;
             resolveModuleExprs(state, mod.items || [], [
                 ...modulePath,
                 mod.name,
@@ -1533,7 +1543,7 @@ function resolveModuleExprs(
         }
 
         if (item.kind === NodeKind.ImplItem) {
-            const impl = item as unknown as ImplItemNode;
+            const impl = item as ImplItemNode;
             for (const method of impl.methods || []) {
                 if (!method.body) continue;
 

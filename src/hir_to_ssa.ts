@@ -3,6 +3,7 @@ import { Result, ok, err } from "./diagnostics";
 import {
     HModule,
     HFnDecl,
+    HParam,
     HBlock,
     HStmt,
     HExpr,
@@ -44,7 +45,6 @@ import {
 } from "./ir";
 
 import {
-    HItemKind,
     HStmtKind,
     HPlaceKind,
     HExprKind,
@@ -128,7 +128,7 @@ export class HirToSsaCtx {
 
         this.internalLiteralModule =
             this.irModule ||
-            ({ stringLiterals: [], stringLiteralIds: new Map() } as any);
+            makeIRModule("__internal_literals");
 
         this.breakStack = [];
 
@@ -178,7 +178,9 @@ export class HirToSsaCtx {
         this.continueStack = [];
 
         // Translate types
-        const paramTypes = fnDecl.params.map((p) => this.translateType(p.ty));
+        const paramTypes = fnDecl.params.map((p: HParam) =>
+            this.translateType(p.ty),
+        );
         const returnType = this.translateType(fnDecl.returnType);
         this.returnType = returnType;
 
@@ -588,7 +590,7 @@ export class HirToSsaCtx {
                 return ok(inst.id as number);
             }
             case HLiteralKind.Bool: {
-                const inst = this.builder.bconst(expr.value as any);
+                const inst = this.builder.bconst(Boolean(expr.value));
                 return ok(inst.id as number);
             }
             case HLiteralKind.String: {
@@ -1081,7 +1083,7 @@ export class HirToSsaCtx {
             fnId = calleeRes.value;
         }
 
-        const args = expr.args.map((arg) => {
+        const args = expr.args.map((arg: HExpr) => {
             const argRes = this.lowerExpr(arg);
             if (!argRes.ok) throw argRes;
             return argRes.value;
@@ -1468,13 +1470,16 @@ export class HirToSsaCtx {
 
         // Check if all patterns are simple literals or enums
         const isSimple = arms.every(
-            (arm) =>
+            (arm: HMatchArm) =>
                 arm.pat.kind === HPatKind.Literal ||
                 arm.pat.kind === HPatKind.Wildcard ||
                 arm.pat.kind === HPatKind.Ident,
         );
 
-        if (isSimple && arms.some((arm) => arm.pat.kind === HPatKind.Literal)) {
+        if (
+            isSimple &&
+            arms.some((arm: HMatchArm) => arm.pat.kind === HPatKind.Literal)
+        ) {
             // Use switch for simple literal patterns
             return this.lowerMatchSwitch(
                 expr,
@@ -1849,7 +1854,7 @@ export class HirToSsaCtx {
                                     matches,
                                     fieldCheck.matches,
                                     IntWidth.I8,
-                                ) as unknown as { id: ValueId };
+                                ) as { id: ValueId };
                                 matches = andInst.id as number;
                             }
                         }
@@ -1890,7 +1895,7 @@ export class HirToSsaCtx {
                                     matches,
                                     elemCheck.matches,
                                     IntWidth.I8,
-                                ) as unknown as { id: ValueId };
+                                ) as { id: ValueId };
                                 matches = andInst.id as number;
                             }
                         }
@@ -2014,7 +2019,7 @@ export class HirToSsaCtx {
     // ============================================================================
 
     /**  Translate a HIR type to an IR type */
-    translateType(ty: Type | null | undefined): IRType {
+    translateType(ty: Type | null): IRType {
         if (!ty) return makeIRUnitType();
 
         switch (ty.kind) {
@@ -2128,7 +2133,7 @@ export class HirToSsaCtx {
     }
 
     /**  Create a zero/default SSA value for a result type. */
-    defaultValueForType(ty: Type | IRType | null | undefined): ValueId {
+    defaultValueForType(ty: Type | IRType | null): ValueId {
         if (!ty) {
             return this.builder.iconst(0, IntWidth.I32).id as number;
         }
@@ -2138,11 +2143,11 @@ export class HirToSsaCtx {
             return this.builder.bconst(false).id as number;
         }
         if (irType.kind === IRTypeKind.Int) {
-            const width = (irType as any).width ?? IntWidth.I32;
+            const width = (irType as IRType & { width?: IntWidth }).width ?? IntWidth.I32;
             return this.builder.iconst(0, width).id as number;
         }
         if (irType.kind === IRTypeKind.Float) {
-            const width = (irType as any).width ?? FloatWidth.F64;
+            const width = (irType as IRType & { width?: FloatWidth }).width ?? FloatWidth.F64;
             return this.builder.fconst(0, width).id as number;
         }
         // Handle Type - check for TypeKind properties
@@ -2171,10 +2176,11 @@ export class HirToSsaCtx {
                 return field.type;
             }
         }
-        return {
+        const unitType: Type = {
             kind: TypeKind.Unit,
             span: { start: 0, end: 0, line: 0, column: 0 },
-        } as unknown as import("./types").Type;
+        };
+        return unitType;
     }
 
     /**  Get enum field type */
@@ -2192,10 +2198,11 @@ export class HirToSsaCtx {
                 return variant.fields[fieldIndex];
             }
         }
-        return {
+        const unitType: Type = {
             kind: TypeKind.Unit,
             span: { start: 0, end: 0, line: 0, column: 0 },
-        } as unknown as import("./types").Type;
+        };
+        return unitType;
     }
 
     /**  Find enum variant index */
@@ -2240,9 +2247,9 @@ export function lowerModuleToSsa(hirModule: HModule) {
     const irModule = makeIRModule(hirModule.name);
 
     for (const item of hirModule.items) {
-        if (item.kind === HItemKind.Fn) {
+        if (item instanceof HFnDecl) {
             const ctx = new HirToSsaCtx({ irModule });
-            const irFnRes = ctx.lowerFunction(item as any);
+            const irFnRes = ctx.lowerFunction(item);
             if (irFnRes.ok) {
                 addIRFunction(irModule, irFnRes.value);
             }

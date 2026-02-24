@@ -634,9 +634,7 @@ function typeKeyForMethodLookup(ty: Type): string | null {
     }
 }
 
-function extractTypeNodeGenericParamNames(
-    typeNode: Node | null | undefined,
-): string[] {
+function extractTypeNodeGenericParamNames(typeNode: Node | null): string[] {
     if (
         !typeNode ||
         typeNode.kind !== NodeKind.NamedType ||
@@ -667,12 +665,17 @@ function vecElementTypeForType(receiverType: Type): Type | null {
     return null;
 }
 
+type MethodImplMeta = {
+    implGenericNames?: string[];
+    targetGenericParamNames?: string[];
+};
+
 /** Instantiate impl generic method signatures for a concrete receiver type. */
 function instantiateMethodTypeForReceiver(
     ctx: TypeContext,
     fnType: FnType,
     receiverType: Type,
-    meta: any,
+    meta: MethodImplMeta,
 ): FnType {
     const implGenericNames = Array.isArray(meta?.implGenericNames) // FIXME: typesafety
         ? meta.implGenericNames
@@ -692,7 +695,7 @@ function instantiateMethodTypeForReceiver(
         return fnType;
     }
     const genericSet: Set<string> = new Set(implGenericNames);
-    const bindings = new Map(); // FIXME: typesafety
+    const bindings = new Map<string, Type>();
     const count = Math.min(
         targetGenericParamNames.length,
         receiverType.args.length,
@@ -822,8 +825,9 @@ function gatherDeclaration(
                 ctx.popImplSelfType();
             }
             if (!typeResult.ok) return typeResult;
+            const itemName = item.qualifiedName || item.name;
             const registerResult = ctx.registerFn(
-                item.name,
+                itemName,
                 item,
                 typeResult.value,
             );
@@ -860,7 +864,8 @@ function gatherDeclaration(
         }
 
         case NodeKind.StructItem: {
-            const registerResult = ctx.registerStruct(item.name, item);
+            const itemName = item.qualifiedName || item.name;
+            const registerResult = ctx.registerStruct(itemName, item);
             if (!registerResult.ok) {
                 return err([
                     {
@@ -874,7 +879,8 @@ function gatherDeclaration(
         }
 
         case NodeKind.EnumItem: {
-            const registerResult = ctx.registerEnum(item.name, item);
+            const itemName = item.qualifiedName || item.name;
+            const registerResult = ctx.registerEnum(itemName, item);
             if (!registerResult.ok) {
                 return err([
                     {
@@ -1063,7 +1069,7 @@ function gatherDeclaration(
                     continue;
                 }
                 const symbolName = isTraitImpl
-                    ? `${targetName}::<${traitName || "unknown"}>::${method.name}`
+                    ? `${targetName}::<${traitName || "__unresolved_trait"}>::${method.name}`
                     : `${targetName}::${method.name}`;
                 const registerFnResult = ctx.registerFn(
                     symbolName,
@@ -1082,7 +1088,7 @@ function gatherDeclaration(
                 if (isTraitImpl) {
                     const registerTraitMethodResult = ctx.registerTraitMethod(
                         targetName,
-                        traitName || "unknown",
+                        traitName || "__unresolved_trait",
                         method.name,
                         method,
                         typeResult.value,
@@ -1418,7 +1424,8 @@ function checkItem(ctx: TypeContext, item: Node): Result<void, TypeError> {
                 return err(targetResult.error);
             }
             const targetType = targetResult.value;
-            const targetName = typeKeyForMethodLookup(targetType) || "unknown";
+            const targetName =
+                typeKeyForMethodLookup(targetType) || "__unresolved_target";
             const traitName = item.traitType?.name || null;
             ctx.pushImplSelfType(targetType);
             const result = checkModuleItems(ctx, {
@@ -1462,7 +1469,7 @@ function checkItem(ctx: TypeContext, item: Node): Result<void, TypeError> {
 
 /** Check a function item */
 function checkFnItem(ctx: TypeContext, fnItem: Node): Result<void, TypeError> {
-    const itemDecl = ctx.lookupItem(fnItem.name);
+    const itemDecl = ctx.lookupItem(fnItem.qualifiedName || fnItem.name);
     if (!itemDecl || !itemDecl.type) {
         return err({
             message: `Function ${fnItem.name} not found in context`,
@@ -2190,7 +2197,7 @@ function inferField(
     function asBoundMethod(
         fnType: FnType,
         symbolName: string,
-        meta: any = null,
+        meta: MethodImplMeta = {},
     ): Result<Type, TypeError> {
         const instantiated = instantiateMethodTypeForReceiver(
             ctx,
@@ -3424,7 +3431,15 @@ function checkStmt(ctx: TypeContext, stmt: Node): Result<Type, TypeError> {
     switch (stmt.kind) {
         case NodeKind.LetStmt:
             const checksmt = checkLetStmt(ctx, stmt);
-            if (!checksmt.ok) return err(checksmt.error[0]);
+            if (!checksmt.ok) {
+                if (checksmt.error.length > 0) {
+                    return err(checksmt.error[0]);
+                }
+                return err({
+                    message: "Let statement type checking failed",
+                    span: stmt.span,
+                });
+            }
             return ok(checksmt.value);
 
         case NodeKind.ExprStmt:
@@ -3462,7 +3477,7 @@ function checkLetStmt(
         }
     }
 
-    let initType: Type | undefined;
+    let initType: Type | null = null;
     if (letStmt.init) {
         const initResult = inferExpr(ctx, letStmt.init, declaredType);
         if (!initResult.ok) {
@@ -3471,8 +3486,6 @@ function checkLetStmt(
             initType = initResult.value;
         }
     }
-    if (!initType) return err(errors);
-
     // Determine the type
     let varType;
     if (declaredType && initType) {
@@ -3994,9 +4007,10 @@ function checkPattern(
             const seenFields: Set<string> = new Set();
             for (const field of pattern.fields as Node[]) {
                 seenFields.add(field.name);
-                const fieldDef: Node | undefined = structDef.node.fields?.find(
-                    (f: Node) => f.name === field.name,
-                );
+                const fieldDef: Node | null =
+                    structDef.node.fields?.find(
+                        (f: Node) => f.name === field.name,
+                    ) || null;
                 if (!fieldDef) {
                     errors.push({
                         message: `Unknown field: ${field.name}`,

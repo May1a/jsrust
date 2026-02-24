@@ -434,8 +434,8 @@ function lowerItemIntoList(
                 {
                     ...method,
                     name: traitName
-                        ? `${(item.targetType as { name?: string })?.name || "unknown"}::<${traitName}>::${method.name}`
-                        : `${(item.targetType as { name?: string })?.name || "unknown"}::${method.name}`,
+                        ? `${(item.targetType as { name?: string })?.name || "__unresolved_target"}::<${traitName}>::${method.name}`
+                        : `${(item.targetType as { name?: string })?.name || "__unresolved_target"}::${method.name}`,
                     implTargetName:
                         (item.targetType as { name?: string })?.name || null,
                     isImplMethod: true,
@@ -470,20 +470,23 @@ function registerItem(
 ): void {
     switch (item.kind) {
         case NodeKind.FnItem: {
-            const itemDecl = typeCtx.lookupItem(item.name);
-            ctx.registerItem(item.name, "fn", item, itemDecl?.type);
+            const itemName = item.qualifiedName || item.name;
+            const itemDecl = typeCtx.lookupItem(itemName);
+            ctx.registerItem(itemName, "fn", item, itemDecl?.type);
             break;
         }
         case NodeKind.StructItem: {
-            ctx.registerItem(item.name, "struct", item);
+            const itemName = item.qualifiedName || item.name;
+            ctx.registerItem(itemName, "struct", item);
             // Register field indices
             for (let i = 0; i < (item.fields || []).length; i++) {
-                ctx.setFieldIndex(item.name, item.fields[i].name, i);
+                ctx.setFieldIndex(itemName, item.fields[i].name, i);
             }
             break;
         }
         case NodeKind.EnumItem: {
-            ctx.registerItem(item.name, "enum", item);
+            const itemName = item.qualifiedName || item.name;
+            ctx.registerItem(itemName, "enum", item);
             break;
         }
         case NodeKind.ModItem: {
@@ -503,8 +506,8 @@ function registerItem(
                     {
                         ...method,
                         name: traitName
-                            ? `${(item.targetType as { name?: string })?.name || "unknown"}::<${traitName}>::${method.name}`
-                            : `${(item.targetType as { name?: string })?.name || "unknown"}::${method.name}`,
+                            ? `${(item.targetType as { name?: string })?.name || "__unresolved_target"}::<${traitName}>::${method.name}`
+                            : `${(item.targetType as { name?: string })?.name || "__unresolved_target"}::${method.name}`,
                     },
                     typeCtx,
                 );
@@ -557,11 +560,12 @@ function lowerFnItem(
     const previousFn = ctx.currentFn;
     const previousImplTargetName = ctx.currentImplTargetName;
     ctx.pushScope();
-    ctx.currentFn = fn.name;
+    const fnName = fn.qualifiedName || fn.name;
+    ctx.currentFn = fnName;
     ctx.currentImplTargetName = fn.implTargetName || null;
 
     // Get function type from type context
-    const itemDecl = typeCtx.lookupItem(fn.name);
+    const itemDecl = typeCtx.lookupItem(fnName);
     let fnType = itemDecl?.type || fn.syntheticFnType || null;
     if (
         fnType &&
@@ -626,7 +630,7 @@ function lowerFnItem(
 
     return makeHFnDecl(
         fn.span,
-        fn.name,
+        fnName,
         fn.generics,
         params,
         returnType,
@@ -1450,7 +1454,7 @@ function vecElementTypeForType(ty: Type | null): Type | null {
 
 function optionElementTypeForType(
     typeCtx: TypeContext,
-    ty: Type | null | undefined,
+    ty: Type | null,
 ): Type | null {
     if (!ty) return null;
     const resolved = typeCtx.resolveType(ty);
@@ -1484,7 +1488,7 @@ function optionElementTypeForType(
 
 function optionEnumTypeForType(
     typeCtx: TypeContext,
-    ty: Type | null | undefined,
+    ty: Type | null,
 ): Type | null {
     if (!ty) return null;
     const resolved = typeCtx.resolveType(ty);
@@ -1513,7 +1517,7 @@ function optionEnumTypeForType(
 
 function isEqLowerableType(
     typeCtx: TypeContext,
-    ty: Type | null | undefined,
+    ty: Type | null,
 ): boolean {
     if (!ty) return false;
     const resolved = typeCtx.resolveType(ty);
@@ -1532,7 +1536,7 @@ type MethodMeta = {
 function instantiateLoweringMethodType(
     typeCtx: TypeContext,
     fnType: Type,
-    receiverType: Type | null | undefined,
+    receiverType: Type | null,
     meta: MethodMeta | null,
 ): Type {
     const implGenericNames = Array.isArray(meta?.implGenericNames)
@@ -1822,7 +1826,7 @@ function lowerCall(ctx: LoweringCtx, call: Node, typeCtx: TypeContext): HExpr {
                 variants?: { name: string; fields?: { ty?: Node }[] }[];
             };
             const variantIndex = findEnumVariantIndex(
-                enumNode as unknown as Node,
+                enumNode,
                 variantName,
             );
             const enumNodeVariants = enumNode.variants || [];
@@ -2104,7 +2108,7 @@ function lowerAssertEqMacro(
 
         const rightMatchInSome = makeHMatchExpr(
             macroExpr.span,
-            rightOptionExpr,
+            rightOptionExpr as HExpr,
             [
                 makeHMatchArm(
                     macroExpr.span,
@@ -2123,7 +2127,7 @@ function lowerAssertEqMacro(
         );
         const rightMatchInNone = makeHMatchExpr(
             macroExpr.span,
-            rightOptionExpr,
+            rightOptionExpr as HExpr,
             [
                 makeHMatchArm(
                     macroExpr.span,
@@ -2142,7 +2146,7 @@ function lowerAssertEqMacro(
         );
         const condition = makeHMatchExpr(
             macroExpr.span,
-            leftOptionExpr,
+            leftOptionExpr as HExpr,
             [
                 makeHMatchArm(
                     macroExpr.span,
@@ -2413,7 +2417,7 @@ function lowerField(
     if (baseType && baseType.kind === TypeKind.Struct) {
         index = ctx.getFieldIndex(baseType.name, fieldName);
         const fieldDef = baseType.fields?.find(
-            (f: any) => f.name === fieldName,
+            (f: { name: string; type: Type }) => f.name === fieldName,
         );
         if (fieldDef) {
             ty = fieldDef.type;
@@ -2955,7 +2959,7 @@ function lowerLoop(
     const body = lowerBlock(ctx, loopExpr.body, typeCtx);
     ctx.popScope();
 
-    // Loop can return any type via break, but typically returns unit
+    // Loop can return different types via break, but typically returns unit
     const ty = { kind: TypeKind.Never, span: loopExpr.span };
 
     return makeHLoopExpr(loopExpr.span, loopExpr.label, body, ty);
@@ -3102,28 +3106,30 @@ function lowerPath(
     }
 
     if (pathExpr.resolvedItemName) {
+        const syntheticIdent: Node = {
+            name: pathExpr.segments[pathExpr.segments.length - 1] || "",
+            resolvedItemName: pathExpr.resolvedItemName,
+            span: pathExpr.span,
+            kind: NodeKind.IdentifierExpr,
+        };
         return lowerIdentifier(
             ctx,
-            {
-                name: pathExpr.segments[pathExpr.segments.length - 1] || "",
-                resolvedItemName: pathExpr.resolvedItemName,
-                span: pathExpr.span,
-                kind: NodeKind.IdentifierExpr,
-            } as unknown as Node,
+            syntheticIdent,
             typeCtx,
         );
     }
 
     // Simple identifier
     if (pathExpr.segments.length === 1) {
+        const syntheticIdent: Node = {
+            name: pathExpr.segments[0],
+            resolvedItemName: pathExpr.resolvedItemName || null,
+            span: pathExpr.span,
+            kind: NodeKind.IdentifierExpr,
+        };
         return lowerIdentifier(
             ctx,
-            {
-                name: pathExpr.segments[0],
-                resolvedItemName: pathExpr.resolvedItemName || null,
-                span: pathExpr.span,
-                kind: NodeKind.IdentifierExpr,
-            } as unknown as Node,
+            syntheticIdent,
             typeCtx,
         );
     }
@@ -3175,7 +3181,7 @@ function lowerPath(
                 span: defaultSpan,
             };
             const variantIndex = findEnumVariantIndex(
-                enumNode as unknown as Node,
+                enumNode,
                 variantName,
             );
             return makeHEnumExpr(
@@ -3199,7 +3205,10 @@ function lowerPath(
 /**
  * Find the index of an enum variant
  */
-function findEnumVariantIndex(enumNode: Node, variantName: string): number {
+function findEnumVariantIndex(
+    enumNode: { variants?: { name: string }[] },
+    variantName: string,
+): number {
     const variants = enumNode.variants || [];
     for (let i = 0; i < variants.length; i++) {
         if (variants[i].name === variantName) {
@@ -3351,17 +3360,17 @@ function lowerStructPat(
     const enumNodeTyped =
         enumItem?.kind === "enum"
             ? (enumItem.node as {
-                  generics?: unknown[];
+                  generics?: string[];
                   variants?: { name: string; fields?: { ty?: Node }[] }[];
               })
             : null;
     const enumVariant = enumNodeTyped
         ? ((enumNodeTyped.variants || []).find(
               (variant: { name: string }) => variant.name === enumVariantName,
-          ) as { name: string; fields?: { ty?: Node }[] } | undefined)
+          ) as { name: string; fields?: { ty?: Node }[] } | null)
         : null;
     const enumGenericParams: string[] = (enumNodeTyped?.generics || [])
-        .map((name: unknown) => (name as string) || "")
+        .map((name: string) => name || "")
         .filter((name: string) => name.length > 0);
     const enumGenericSet = new Set<string>(enumGenericParams);
     const enumBindings = new Map<string, Type>();
@@ -3584,7 +3593,7 @@ function extractPlace(
             if (baseType && baseType.kind === TypeKind.Struct) {
                 index = ctx.getFieldIndex(baseType.name, fieldName);
                 const fieldDef = baseType.fields?.find(
-                    (f: any) => f.name === fieldName,
+                    (f: { name: string; type: Type }) => f.name === fieldName,
                 );
                 if (fieldDef) {
                     ty = fieldDef.type;
