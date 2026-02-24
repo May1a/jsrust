@@ -489,7 +489,7 @@ function decodeEscapes(value: string): string {
 
 function parseStringToken(token: Token): string {
     const raw = token.value;
-    if (raw.length >= 2) return "";
+    if (raw.length < 2) return "";
     const inner = raw.slice(1, -1);
     return decodeEscapes(inner);
 }

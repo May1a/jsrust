@@ -73,7 +73,7 @@ function collectUnsupportedGenericConstraintErrors(
     fnItem: Node,
 ): Result<void, TypeError[]> {
     const errors: TypeError[] = [];
-    const genericParams = fnItem.genericParams;
+    const genericParams = fnItem.genericParams || [];
     const hasTraitBounds: boolean = genericParams.some(
         (p: { bounds?: Node[] }) => (p.bounds || []).length > 0,
     );
@@ -1198,6 +1198,7 @@ function resolveTypeNode(
                 }
             }
 
+            let args: Type[] | null = null;
             if (typeNode.args && typeNode.args.args) {
                 const argsResult = combineResults(
                     // FIXME: typesafety
@@ -1208,10 +1209,7 @@ function resolveTypeNode(
                 if (!argsResult.ok) {
                     return err(argsResult.error);
                 }
-                var args = argsResult.value;
-            } else {
-                debugger;
-                throw new Error(__filename);
+                args = argsResult.value;
             }
             // Check for builtin types
             const builtin = resolveBuiltinType(typeNode.name, typeNode.span);
@@ -1322,8 +1320,8 @@ function resolveTypeNode(
     }
 }
 
-/** Resolve a builtin type name to a Type */
-function resolveBuiltinType(name: string, span: Span): Type {
+/** Resolve a builtin type name to a Type, or null if not a builtin */
+function resolveBuiltinType(name: string, span: Span): Type | null {
     switch (name) {
         case "i8":
             return makeIntType(IntWidth.I8, span);
@@ -1363,9 +1361,8 @@ function resolveBuiltinType(name: string, span: Span): Type {
             return makeUnitType(span);
         case "!":
             return makeNeverType(span);
-        default: {
-            throw new Error("unreachable");
-        }
+        default:
+            return null;
     }
 }
 
