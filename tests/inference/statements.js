@@ -1,13 +1,13 @@
-import { TypeContext } from "../../type_context.js";
+import { TypeContext } from "../../src/type_context";
 import {
     checkStmt,
     checkLetStmt,
     inferBlock,
     inferExpr,
-} from "../../inference.js";
-import { NodeKind, LiteralKind, Mutability } from "../../ast.js";
-import { TypeKind, IntWidth, makeIntType, makeUnitType } from "../../types.js";
-import { assert, assertEq, testGroup } from "../lib.js";
+} from "../../src/inference";
+import { NodeKind, LiteralKind, Mutability } from "../../src/ast";
+import { TypeKind, IntWidth, makeIntType, makeUnitType } from "../../src/types";
+import { assert, assertEq, testGroup } from "../lib";
 
 function makeSpan(line = 1, column = 1, start = 0, end = 0) {
     return { line, column, start, end };
@@ -206,7 +206,11 @@ testGroup("Loop Control Flow Inference", () => {
     assert("loop with break value yields break type", () => {
         const ctx = new TypeContext();
         const body = makeBlockExpr(
-            [makeExprStmt(makeBreakExpr(makeLiteralExpr(LiteralKind.Int, 7, "7")))],
+            [
+                makeExprStmt(
+                    makeBreakExpr(makeLiteralExpr(LiteralKind.Int, 7, "7")),
+                ),
+            ],
             null,
         );
         const result = inferExpr(ctx, makeLoopExpr(body));
@@ -218,7 +222,11 @@ testGroup("Loop Control Flow Inference", () => {
         const ctx = new TypeContext();
         const condition = makeLiteralExpr(LiteralKind.Bool, true, "true");
         const body = makeBlockExpr(
-            [makeExprStmt(makeBreakExpr(makeLiteralExpr(LiteralKind.Int, 1, "1")))],
+            [
+                makeExprStmt(
+                    makeBreakExpr(makeLiteralExpr(LiteralKind.Int, 1, "1")),
+                ),
+            ],
             null,
         );
         const result = inferExpr(ctx, makeWhileExpr(condition, body));

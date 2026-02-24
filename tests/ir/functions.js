@@ -23,18 +23,12 @@ import {
     makeIREnumType,
     addIRInstruction,
     setIRTerminator,
-} from "../../ir.js";
+} from "../../src/ir";
 
-import { makeIconst } from "../../ir_instructions.js";
-import { makeRet } from "../../ir_terminators.js";
-import { IntWidth } from "../../types.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { makeIconst } from "../../src/ir_instructions";
+import { makeRet } from "../../src/ir_terminators";
+import { IntWidth } from "../../src/types";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 test("freshValueId generates unique IDs", () => {
     resetIRIds();

@@ -1,5 +1,5 @@
 /**
- * @typedef {import('../../hir.js').HModule} HModule
+ * @typedef {import('../../src/hir').HModule} HModule
  */
 
 import {
@@ -48,7 +48,7 @@ import {
     makeHMatchArm,
     hirToString,
     collectVars,
-} from "../../hir.js";
+} from "../../src/hir";
 
 import {
     makeIntType,
@@ -56,15 +56,9 @@ import {
     makeUnitType,
     makeFnType,
     IntWidth,
-} from "../../types.js";
+} from "../../src/types";
 
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 // ============================================================================
 // Test hirToString

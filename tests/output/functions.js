@@ -3,7 +3,7 @@ import {
     printFunction,
     printModule,
     createPrintContext,
-} from "../../ir_printer.js";
+} from "../../src/ir_printer";
 
 import {
     IRTypeKind,
@@ -27,7 +27,7 @@ import {
     addIRStruct,
     addIREnum,
     addIRFunction,
-} from "../../ir.js";
+} from "../../src/ir";
 
 import {
     makeIconst,
@@ -37,18 +37,12 @@ import {
     makeStore,
     makeAlloca,
     makeCall,
-} from "../../ir_instructions.js";
+} from "../../src/ir_instructions";
 
-import { makeRet, makeBr, makeBrIf } from "../../ir_terminators.js";
+import { makeRet, makeBr, makeBrIf } from "../../src/ir_terminators";
 
-import { IntWidth } from "../../types.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { IntWidth } from "../../src/types";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 // Helper to check output contains expected substring
 function assertIncludes(str, substr) {

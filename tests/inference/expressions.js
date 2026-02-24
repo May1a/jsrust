@@ -1,4 +1,4 @@
-import { TypeContext } from "../../type_context.js";
+import { TypeContext } from "../../src/type_context";
 import {
     inferExpr,
     inferLiteral,
@@ -7,15 +7,15 @@ import {
     inferCall,
     inferIdentifier,
     unify,
-} from "../../inference.js";
-import { parseExpression } from "../../parser.js";
+} from "../../src/inference";
+import { parseExpression } from "../../src/parser";
 import {
     NodeKind,
     LiteralKind,
     UnaryOp,
     BinaryOp,
     Mutability,
-} from "../../ast.js";
+} from "../../src/ast";
 import {
     TypeKind,
     IntWidth,
@@ -23,8 +23,8 @@ import {
     makeFnType,
     makeIntType,
     typeToString,
-} from "../../types.js";
-import { test, assertEqual, assertTrue } from "../lib.js";
+} from "../../src/types";
+import { test, assertEqual, assertTrue } from "../lib";
 
 function testGroup(name, fn) {
     console.log(`\n=== ${name} ===`);

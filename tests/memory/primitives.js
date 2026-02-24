@@ -14,16 +14,10 @@ import {
     layoutFloat,
     alignTo,
     LayoutCache,
-} from "../../memory_layout.js";
+} from "../../src/memory_layout";
 
-import { IntWidth, FloatWidth } from "../../types.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { IntWidth, FloatWidth } from "../../src/types";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 // ============================================================================
 // Task 10.1: Layout Structure

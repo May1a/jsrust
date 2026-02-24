@@ -1,10 +1,4 @@
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 import {
     TypeKind,
     IntWidth,
@@ -48,7 +42,7 @@ import {
     typeEquals,
     typeToString,
     resetTypeVarId,
-} from "../../types.js";
+} from "../../src/types";
 
 // ============================================================================
 // Task 3.1: Primitive Types

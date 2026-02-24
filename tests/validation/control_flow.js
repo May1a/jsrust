@@ -12,9 +12,9 @@ import {
     makeIRUnitType,
     addPredecessor,
     addSuccessor,
-} from "../../ir.js";
+} from "../../src/ir";
 
-import { makeIconst, makeBconst, makeIadd } from "../../ir_instructions.js";
+import { makeIconst, makeBconst, makeIadd } from "../../src/ir_instructions";
 
 import {
     makeRet,
@@ -23,18 +23,12 @@ import {
     makeSwitch,
     makeSwitchCase,
     makeUnreachable,
-} from "../../ir_terminators.js";
+} from "../../src/ir_terminators";
 
-import { validateModule, ValidationErrorKind } from "../../ir_validate.js";
+import { validateModule, ValidationErrorKind } from "../../src/ir_validate";
 
-import { IntWidth } from "../../types.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { IntWidth } from "../../src/types";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 test("valid simple branch", () => {
     resetIRIds();

@@ -4,7 +4,7 @@ import {
     createPrintContext,
     icmpOpToString,
     fcmpOpToString,
-} from "../../ir_printer.js";
+} from "../../src/ir_printer";
 
 import {
     IRInstKind,
@@ -12,7 +12,7 @@ import {
     resetIRIds,
     IcmpOp,
     FcmpOp,
-} from "../../ir.js";
+} from "../../src/ir";
 
 import {
     makeIconst,
@@ -58,7 +58,7 @@ import {
     makeEnumCreate,
     makeEnumGetTag,
     makeEnumGetData,
-} from "../../ir_instructions.js";
+} from "../../src/ir_instructions";
 
 import {
     makeRet,
@@ -67,16 +67,10 @@ import {
     makeSwitch,
     makeSwitchCase,
     makeUnreachable,
-} from "../../ir_terminators.js";
+} from "../../src/ir_terminators";
 
-import { IntWidth, FloatWidth } from "../../types.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { IntWidth, FloatWidth } from "../../src/types";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 // Helper to check output contains expected substring
 function assertIncludes(str, substr) {

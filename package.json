@@ -1,18 +1,18 @@
 {
-    "type": "module",
-    "scripts": {
-        "test": "node tests/run.js",
-        "test:update-examples": "node tests/run.js --update-examples",
-        "compile": "node main.js",
-        "typecheck": "npx tsc",
-        "fixtures:backend": "node scripts/generate_backend_fixtures.js",
-        "format": "npx prettier -w ."
-    },
-    "devDependencies": {
-        "@types/node": "^25.2.3",
-        "typescript": "^5.9.3"
-    },
-    "prettier": {
-        "tabWidth": 4
-    }
+  "type": "module",
+  "scripts": {
+    "test": "bun tests/run.js",
+    "test:update-examples": "bun tests/run.js --update-examples",
+    "compile": "bun build main.js > out/main.js",
+    "typecheck": "npx tsc",
+    "fixtures:backend": "bun scripts/generate_backend_fixtures.js",
+    "format": "npx prettier -w ."
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "typescript": "^5.9.3"
+  },
+  "prettier": {
+    "tabWidth": 4
+  }
 }

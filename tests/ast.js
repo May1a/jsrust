@@ -1,5 +1,5 @@
-import * as ast from "../ast.js";
-import * as lib from "./lib.js";
+import * as ast from "../src/ast";
+import * as lib from "./lib";
 
 const { test, assertEqual, assertTrue } = lib;
 

@@ -11,15 +11,9 @@ import {
     renderSnippet,
     createSourceContext,
     makeSourceSpanFromLC,
-} from "../../diagnostics.js";
+} from "../../src/diagnostics";
 
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 // ============================================================================
 // Source Location Tests

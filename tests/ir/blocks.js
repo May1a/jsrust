@@ -7,7 +7,7 @@ import {
     setIRTerminator,
     addPredecessor,
     addSuccessor,
-} from "../../ir.js";
+} from "../../src/ir";
 
 import {
     makeRet,
@@ -17,17 +17,11 @@ import {
     makeSwitchCase,
     makeUnreachable,
     isIRTerminator,
-} from "../../ir_terminators.js";
+} from "../../src/ir_terminators";
 
-import { makeIconst } from "../../ir_instructions.js";
-import { IntWidth } from "../../types.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { makeIconst } from "../../src/ir_instructions";
+import { IntWidth } from "../../src/types";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 test("makeIRBlock creates basic block", () => {
     resetIRIds();

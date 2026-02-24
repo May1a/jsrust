@@ -34,10 +34,10 @@ jsrust_backend_codegen_result jsrust_backend_codegen_wasm_bytes(
 - function calls
 - terminators: `ret`, `br`, `br_if`, `switch`, `unreachable`
 - builtin output lowering:
-  - `__jsrust_builtin_print_bytes`
-  - `__jsrust_builtin_println_bytes`
-  - `__jsrust_builtin_print_fmt`
-  - `__jsrust_builtin_println_fmt`
+    - `__jsrust_builtin_print_bytes`
+    - `__jsrust_builtin_println_bytes`
+    - `__jsrust_builtin_print_fmt`
+    - `__jsrust_builtin_println_fmt`
 
 ## Unsupported (Emit-Time Validation Failure)
 
@@ -63,7 +63,7 @@ Return contract for imports:
 ## Backward Compatibility
 
 - No changes to:
-  - `jsrust_backend_run_bytes(...)`
-  - `jsrust_backend_run_file(...)`
-  - native backend CLI `run` contract
-  - frontend canonical wasm execution adapter path
+    - `jsrust_backend_run_bytes(...)`
+    - `jsrust_backend_run_file(...)`
+    - native backend CLI `run` contract
+    - frontend canonical wasm execution adapter path

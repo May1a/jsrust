@@ -2,17 +2,11 @@ import {
     layoutEnum,
     calculateTagSize,
     LayoutCache,
-} from "../../memory_layout.js";
+} from "../../src/memory_layout";
 
-import { IntWidth } from "../../types.js";
-import { IRTypeKind } from "../../ir.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { IntWidth } from "../../src/types";
+import { IRTypeKind } from "../../src/ir";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 // ============================================================================
 // Task 10.5: Enum Layout

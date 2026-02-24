@@ -35,23 +35,23 @@ After interpreter milestones are complete, add a wasm binary generation backend 
 - `.wasm` emission path is library-only (no CLI surface changes)
 - Deterministic wasm writer utilities landed (`wasm_encode`, `wasm_emit`)
 - Imports locked for output sink:
-  - `env.jsrust_write_byte(i32) -> i32`
-  - `env.jsrust_flush() -> i32`
+    - `env.jsrust_write_byte(i32) -> i32`
+    - `env.jsrust_flush() -> i32`
 - Additive formatter/runtime writer imports for generated wasm:
-  - `env.jsrust_write_cstr(i32) -> i32`
-  - `env.jsrust_write_i64(i64) -> i32`
-  - `env.jsrust_write_f64(f64) -> i32`
-  - `env.jsrust_write_bool(i32) -> i32`
-  - `env.jsrust_write_char(i64) -> i32`
+    - `env.jsrust_write_cstr(i32) -> i32`
+    - `env.jsrust_write_i64(i64) -> i32`
+    - `env.jsrust_write_f64(f64) -> i32`
+    - `env.jsrust_write_bool(i32) -> i32`
+    - `env.jsrust_write_char(i64) -> i32`
 - MVP supported subset:
-  - scalar constants/arithmetic/comparisons/casts
-  - calls and control-flow (`ret`, `br`, `br_if`, `switch`, `unreachable`)
-  - builtin print and formatter lowering with deterministic validation limits
+    - scalar constants/arithmetic/comparisons/casts
+    - calls and control-flow (`ret`, `br`, `br_if`, `switch`, `unreachable`)
+    - builtin print and formatter lowering with deterministic validation limits
 - pointer-like type lowering (`ptr`, `struct`, `enum`) as wasm `i32` values
 - memory/global/data sections with string literal data-segment materialization
 - lowered memory ops and aggregate ops used by current fixtures/examples:
-  - `alloca`, `load`, `store`, `memcpy`, `gep`, `ptradd`
-  - `struct_create`, `struct_get`, `enum_create`, `enum_get_tag`, `enum_get_data`
+    - `alloca`, `load`, `store`, `memcpy`, `gep`, `ptradd`
+    - `struct_create`, `struct_get`, `enum_create`, `enum_get_tag`, `enum_get_data`
 
 ## Task Breakdown
 

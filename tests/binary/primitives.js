@@ -1,12 +1,6 @@
-import { IRSerializer, StringTable } from "../../ir_serialize.js";
-import { IRDeserializer, DeserializeErrorKind } from "../../ir_deserialize.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { IRSerializer, StringTable } from "../../src/ir_serialize";
+import { IRDeserializer, DeserializeErrorKind } from "../../src/ir_deserialize";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 // Helper to create a minimal valid module for testing
 function createMinimalModule() {

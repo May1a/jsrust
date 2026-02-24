@@ -1,5 +1,5 @@
-import { IRSerializer, serializeModule } from "../../ir_serialize.js";
-import { IRDeserializer, deserializeModule } from "../../ir_deserialize.js";
+import { IRSerializer, serializeModule } from "../../src/ir_serialize";
+import { IRDeserializer, deserializeModule } from "../../src/ir_deserialize";
 import {
     IRTypeKind,
     resetIRIds,
@@ -14,15 +14,9 @@ import {
     makeIRArrayType,
     makeIRFnType,
     irTypeEquals,
-} from "../../ir.js";
-import { IntWidth, FloatWidth } from "../../types.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+} from "../../src/ir";
+import { IntWidth, FloatWidth } from "../../src/types";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 test("Serialize and deserialize integer types", () => {
     resetIRIds();
