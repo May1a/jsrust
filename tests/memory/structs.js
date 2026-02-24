@@ -1,14 +1,12 @@
-import { layoutStruct, layoutTuple, LayoutCache } from "../../memory_layout.js";
-
-import { IntWidth, FloatWidth } from "../../types.js";
-import { IRTypeKind } from "../../ir.js";
 import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+    layoutStruct,
+    layoutTuple,
+    LayoutCache,
+} from "../../src/memory_layout";
+
+import { IntWidth, FloatWidth } from "../../src/types";
+import { IRTypeKind } from "../../src/ir";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 // ============================================================================
 // Task 10.3: Composite Layouts

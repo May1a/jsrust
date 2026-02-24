@@ -1,5 +1,5 @@
-import { assertEqual, assertTrue } from "../lib.js";
-import { lowerHirToSsa } from "../../hir_to_ssa.js";
+import { assertEqual, assertTrue } from "../lib";
+import { lowerHirToSsa } from "../../src/hir_to_ssa";
 import {
     makeHFnDecl,
     makeHParam,
@@ -34,10 +34,10 @@ import {
     HStmtKind,
     HExprKind,
     HLiteralKind,
-} from "../../hir.js";
-import { IntWidth, FloatWidth, TypeKind } from "../../types.js";
-import { BinaryOp, UnaryOp } from "../../ast.js";
-import { IRInstKind } from "../../ir.js";
+} from "../../src/hir";
+import { IntWidth, FloatWidth, TypeKind } from "../../src/types";
+import { BinaryOp, UnaryOp } from "../../src/ast";
+import { IRInstKind } from "../../src/ir";
 
 // Helper: create a span
 function span(line = 1, column = 1) {

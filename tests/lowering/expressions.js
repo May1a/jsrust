@@ -2,7 +2,7 @@
  * Tests for AST to HIR expression lowering
  */
 
-import { assertEqual, assertTrue, test } from "../lib.js";
+import { assertEqual, assertTrue, test } from "../lib";
 import {
     NodeKind,
     LiteralKind,
@@ -27,11 +27,11 @@ import {
     makeLetStmt,
     makeIdentPat,
     makeNamedType,
-} from "../../ast.js";
-import { lowerModule, lowerExpr, LoweringCtx } from "../../lowering.js";
-import { HExprKind, HItemKind, HLiteralKind, HPlaceKind } from "../../hir.js";
-import { parseModule } from "../../parser.js";
-import { inferModule } from "../../inference.js";
+} from "../../src/ast";
+import { lowerModule, lowerExpr, LoweringCtx } from "../../src/lowering";
+import { HExprKind, HItemKind, HLiteralKind, HPlaceKind } from "../../src/hir";
+import { parseModule } from "../../src/parser";
+import { inferModule } from "../../src/inference";
 import {
     TypeKind,
     IntWidth,
@@ -42,8 +42,8 @@ import {
     makeStructType,
     makeFnType,
     makeRefType,
-} from "../../types.js";
-import { TypeContext } from "../../type_context.js";
+} from "../../src/types";
+import { TypeContext } from "../../src/type_context";
 
 // ============================================================================
 // Test Helpers
@@ -78,7 +78,7 @@ function lowerSource(source) {
         !!lowered.module,
         `lowering failed: ${lowered.errors?.map((e) => e.message).join(", ")}`,
     );
-    return /** @type {import("../../hir.js").HModule} */ (lowered.module);
+    return /** @type {import("../../src/hir").HModule} */ (lowered.module);
 }
 
 /**

@@ -1,5 +1,5 @@
-import { tokenize, TokenType } from "../tokenizer.js";
-import * as lib from "./lib.js";
+import { tokenize, TokenType } from "../src/tokenizer";
+import * as lib from "./lib";
 
 const { test, assertTokensMatch } = lib;
 

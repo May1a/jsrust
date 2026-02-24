@@ -21,16 +21,10 @@ import {
     isIREnumType,
     isIRArrayType,
     isIRFnType,
-} from "../../ir.js";
+} from "../../src/ir";
 
-import { IntWidth, FloatWidth } from "../../types.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { IntWidth, FloatWidth } from "../../src/types";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 test("makeIRIntType creates integer types", () => {
     resetIRIds();

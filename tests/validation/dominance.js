@@ -13,11 +13,11 @@ import {
     makeIRUnitType,
     addPredecessor,
     addSuccessor,
-} from "../../ir.js";
+} from "../../src/ir";
 
-import { makeIconst, makeBconst, makeIadd } from "../../ir_instructions.js";
+import { makeIconst, makeBconst, makeIadd } from "../../src/ir_instructions";
 
-import { makeRet, makeBr, makeBrIf } from "../../ir_terminators.js";
+import { makeRet, makeBr, makeBrIf } from "../../src/ir_terminators";
 
 import {
     validateModule,
@@ -26,16 +26,10 @@ import {
     dominates,
     makeValidationCtx,
     setFunction,
-} from "../../ir_validate.js";
+} from "../../src/ir_validate";
 
-import { IntWidth } from "../../types.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { IntWidth } from "../../src/types";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 test("entry block dominates all blocks", () => {
     resetIRIds();

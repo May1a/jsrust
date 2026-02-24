@@ -1,5 +1,5 @@
-import { serializeModule } from "../../ir_serialize.js";
-import { deserializeModule } from "../../ir_deserialize.js";
+import { serializeModule } from "../../src/ir_serialize";
+import { deserializeModule } from "../../src/ir_deserialize";
 import {
     IRTypeKind,
     IRInstKind,
@@ -13,15 +13,9 @@ import {
     makeIRUnitType,
     makeIRStructType,
     makeIREnumType,
-} from "../../ir.js";
-import { IntWidth, FloatWidth } from "../../types.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+} from "../../src/ir";
+import { IntWidth, FloatWidth } from "../../src/types";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 // Helper to create a minimal function with instructions
 function createModuleWithInstructions(instructions, returnType = null) {

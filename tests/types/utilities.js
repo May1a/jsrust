@@ -1,10 +1,4 @@
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 import {
     IntWidth,
     FloatWidth,
@@ -44,7 +38,7 @@ import {
     isEnumType,
     isCopyableType,
     typeToString,
-} from "../../types.js";
+} from "../../src/types";
 
 // ============================================================================
 // intWidthToString

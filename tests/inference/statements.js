@@ -1,13 +1,13 @@
-import { TypeContext } from "../../type_context.js";
+import { TypeContext } from "../../src/type_context";
 import {
     checkStmt,
     checkLetStmt,
     inferBlock,
     inferExpr,
-} from "../../inference.js";
-import { NodeKind, LiteralKind, Mutability } from "../../ast.js";
-import { TypeKind, IntWidth, makeIntType, makeUnitType } from "../../types.js";
-import { assert, assertEq, testGroup } from "../lib.js";
+} from "../../src/inference";
+import { NodeKind, LiteralKind, Mutability } from "../../src/ast";
+import { TypeKind, IntWidth, makeIntType, makeUnitType } from "../../src/types";
+import { assert, assertEq, testGroup } from "../lib";
 
 function makeSpan(line = 1, column = 1, start = 0, end = 0) {
     return { line, column, start, end };

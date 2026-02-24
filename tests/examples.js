@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
-import { compile } from "../main.js";
-import { test, assertEqual, assertTrue } from "./lib.js";
+import { compile } from "../main";
+import { test, assertEqual, assertTrue } from "./lib";
 
 function normalizeNewlines(text) {
     return text.replace(/\r\n/g, "\n");

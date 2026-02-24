@@ -2,7 +2,7 @@
  * Tests for AST to HIR pattern lowering
  */
 
-import { assertEqual, assertTrue, test } from "../lib.js";
+import { assertEqual, assertTrue, test } from "../lib";
 import {
     NodeKind,
     LiteralKind,
@@ -16,9 +16,9 @@ import {
     makeStructPat,
     makeIdentifierExpr,
     makePathExpr,
-} from "../../ast.js";
-import { lowerPattern, LoweringCtx } from "../../lowering.js";
-import { HPatKind } from "../../hir.js";
+} from "../../src/ast";
+import { lowerPattern, LoweringCtx } from "../../src/lowering";
+import { HPatKind } from "../../src/hir";
 import {
     TypeKind,
     IntWidth,
@@ -26,8 +26,8 @@ import {
     makeUnitType,
     makeIntType,
     makeTupleType,
-} from "../../types.js";
-import { TypeContext } from "../../type_context.js";
+} from "../../src/types";
+import { TypeContext } from "../../src/type_context";
 
 // ============================================================================
 // Test Helpers

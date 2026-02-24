@@ -2,8 +2,8 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { spawnSync } from "child_process";
-import { canRunBackendIntegrationTests as backendIntegrationAvailable } from "../../backend_runner.js";
-import { test, assertEqual, assertTrue } from "../lib.js";
+import { canRunBackendIntegrationTests as backendIntegrationAvailable } from "../../src/backend_runner";
+import { test, assertEqual, assertTrue } from "../lib";
 
 const MAIN_PATH = path.resolve(process.cwd(), "main.js");
 const RUN_FIXTURES_DIR = "tests/fixtures/run_cli";

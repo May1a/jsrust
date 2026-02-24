@@ -1,14 +1,14 @@
 /**
- * @typedef {import('../../hir.js').HModule} HModule
- * @typedef {import('../../hir.js').HItem} HItem
- * @typedef {import('../../hir.js').HFnDecl} HFnDecl
- * @typedef {import('../../hir.js').HStructDecl} HStructDecl
- * @typedef {import('../../hir.js').HEnumDecl} HEnumDecl
- * @typedef {import('../../hir.js').HBlock} HBlock
- * @typedef {import('../../hir.js').HStmt} HStmt
- * @typedef {import('../../hir.js').HExpr} HExpr
- * @typedef {import('../../hir.js').HPlace} HPlace
- * @typedef {import('../../hir.js').HPat} HPat
+ * @typedef {import('../../src/hir').HModule} HModule
+ * @typedef {import('../../src/hir').HItem} HItem
+ * @typedef {import('../../src/hir').HFnDecl} HFnDecl
+ * @typedef {import('../../src/hir').HStructDecl} HStructDecl
+ * @typedef {import('../../src/hir').HEnumDecl} HEnumDecl
+ * @typedef {import('../../src/hir').HBlock} HBlock
+ * @typedef {import('../../src/hir').HStmt} HStmt
+ * @typedef {import('../../src/hir').HExpr} HExpr
+ * @typedef {import('../../src/hir').HPlace} HPlace
+ * @typedef {import('../../src/hir').HPat} HPat
  */
 
 import {
@@ -64,7 +64,7 @@ import {
     isHPlace,
     isHPat,
     isHItem,
-} from "../../hir.js";
+} from "../../src/hir";
 
 import {
     TypeKind,
@@ -75,15 +75,9 @@ import {
     makeTupleType,
     makeFnType,
     IntWidth,
-} from "../../types.js";
+} from "../../src/types";
 
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 // ============================================================================
 // Test HIR Module Structure

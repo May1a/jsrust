@@ -3,8 +3,8 @@
  * Tests the full compilation pipeline from Rust source to SSA IR
  */
 
-import * as lib from "./lib.js";
-import { compile } from "../main.js";
+import * as lib from "./lib";
+import { compile } from "../main";
 
 const { test, assertEqual, assertTrue, printSummary, clearErrors } = lib;
 

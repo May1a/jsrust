@@ -1,15 +1,15 @@
-import { TypeContext } from "../../type_context.js";
-import { inferModule, inferFnSignature } from "../../inference.js";
-import { parseModule } from "../../parser.js";
-import { NodeKind, LiteralKind, Mutability } from "../../ast.js";
+import { TypeContext } from "../../src/type_context";
+import { inferModule, inferFnSignature } from "../../src/inference";
+import { parseModule } from "../../src/parser";
+import { NodeKind, LiteralKind, Mutability } from "../../src/ast";
 import {
     TypeKind,
     IntWidth,
     makeIntType,
     makeFnType,
     makeUnitType,
-} from "../../types.js";
-import { assert, assertEq, testGroup } from "../lib.js";
+} from "../../src/types";
+import { assert, assertEq, testGroup } from "../lib";
 
 function makeSpan(line = 1, column = 1, start = 0, end = 0) {
     return { line, column, start, end };
@@ -111,7 +111,7 @@ function makeModule(name, items) {
 
 /**
  * @param {string} source
- * @returns {import("../../inference.js").InferenceResult}
+ * @returns {import("../../src/inference").InferenceResult}
  */
 function inferSource(source) {
     const parseResult = parseModule(source);

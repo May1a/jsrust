@@ -1,5 +1,5 @@
-import { compile } from "../../main.js";
-import { assert, assertTrue } from "../lib.js";
+import { compile } from "../../main";
+import { assert, assertTrue } from "../lib";
 
 function hasBorrowError(result) {
     return (result.errors || []).some((e) => e.kind === "borrow");
