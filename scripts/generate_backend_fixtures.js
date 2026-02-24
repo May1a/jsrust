@@ -3,9 +3,12 @@
 import * as fs from "fs";
 import * as path from "path";
 import { createHash } from "crypto";
-import { compileFileToIRModule } from "../main.js";
-import { serializeModule, VERSION as BINARY_IR_VERSION } from "../ir_serialize.js";
-import { validateModule } from "../ir_validate.js";
+import { compileFileToIRModule } from "../main";
+import {
+    serializeModule,
+    VERSION as BINARY_IR_VERSION,
+} from "../src/ir_serialize";
+import { validateModule } from "../src/ir_validate";
 
 const fixtureDir = path.resolve(process.cwd(), "tests/fixtures/backend_ir_v2");
 
@@ -67,7 +70,9 @@ function main() {
     const manifestPath = path.join(fixtureDir, "manifest.json");
     fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 4)}\n`);
 
-    console.log(`Generated ${manifest.fixtures.length} backend fixtures in ${fixtureDir}`);
+    console.log(
+        `Generated ${manifest.fixtures.length} backend fixtures in ${fixtureDir}`,
+    );
 }
 
 main();

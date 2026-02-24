@@ -1,4 +1,4 @@
-import { IRInstKind, resetIRIds, IRTypeKind } from "../../ir.js";
+import { IRInstKind, resetIRIds, IRTypeKind } from "../../src/ir";
 
 import {
     makeIconst,
@@ -45,17 +45,11 @@ import {
     makeEnumGetTag,
     makeEnumGetData,
     isIRInst,
-} from "../../ir_instructions.js";
+} from "../../src/ir_instructions";
 
-import { IntWidth, FloatWidth } from "../../types.js";
-import { IcmpOp, FcmpOp } from "../../ir.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { IntWidth, FloatWidth } from "../../src/types";
+import { IcmpOp, FcmpOp } from "../../src/ir";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 test("makeIconst creates integer constant", () => {
     resetIRIds();

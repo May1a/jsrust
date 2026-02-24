@@ -1,8 +1,8 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { compile } from "../main.js";
-import { test, assertEqual, assertTrue } from "./lib.js";
+import { compile } from "../main";
+import { test, assertEqual, assertTrue } from "./lib";
 
 /**
  * @param {string} prefix
@@ -48,8 +48,14 @@ fn main() {
             true,
             `inline module should compile: ${result.errors.map((e) => e.message).join(", ")}`,
         );
-        assertTrue(result.ir && result.ir.includes("fn math::add"), "expected module function name in IR");
-        assertTrue(result.ir && result.ir.includes("fn math::sub"), "expected aliased function target in IR");
+        assertTrue(
+            result.ir && result.ir.includes("fn math::add"),
+            "expected module function name in IR",
+        );
+        assertTrue(
+            result.ir && result.ir.includes("fn math::sub"),
+            "expected aliased function target in IR",
+        );
     });
 
     test("Modules: private item access denied across modules", () => {
@@ -66,7 +72,9 @@ fn main() {
         const result = compile(source, { validate: false });
         assertEqual(result.ok, false, "private module item access should fail");
         assertTrue(
-            result.errors.some((e) => String(e.message).includes("not visible")),
+            result.errors.some((e) =>
+                String(e.message).includes("not visible"),
+            ),
             `expected visibility error, got: ${result.errors.map((e) => e.message).join(", ")}`,
         );
     });
@@ -134,9 +142,17 @@ fn main() {
 }
 `;
         const result = compile(source, { validate: false });
-        assertEqual(result.ok, false, "private use alias should not be exported");
+        assertEqual(
+            result.ok,
+            false,
+            "private use alias should not be exported",
+        );
         assertTrue(
-            result.errors.some((e) => String(e.message).includes("Path is not visible here") || String(e.message).includes("Unresolved path")),
+            result.errors.some(
+                (e) =>
+                    String(e.message).includes("Path is not visible here") ||
+                    String(e.message).includes("Unresolved path"),
+            ),
             `expected visibility/path error, got: ${result.errors.map((e) => e.message).join(", ")}`,
         );
     });
@@ -173,7 +189,10 @@ pub fn add(a: i32, b: i32) -> i32 { a + b }
                 true,
                 `name.rs module should compile: ${result.errors.map((e) => e.message).join(", ")}`,
             );
-            assertTrue(result.ir && result.ir.includes("fn util::add"), "expected util::add in IR");
+            assertTrue(
+                result.ir && result.ir.includes("fn util::add"),
+                "expected util::add in IR",
+            );
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
@@ -211,7 +230,10 @@ pub fn sub(a: i32, b: i32) -> i32 { a - b }
                 true,
                 `name/mod.rs module should compile: ${result.errors.map((e) => e.message).join(", ")}`,
             );
-            assertTrue(result.ir && result.ir.includes("fn util::sub"), "expected util::sub in IR");
+            assertTrue(
+                result.ir && result.ir.includes("fn util::sub"),
+                "expected util::sub in IR",
+            );
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
@@ -235,7 +257,9 @@ fn main() {}
             });
             assertEqual(result.ok, false, "missing module should fail");
             assertTrue(
-                result.errors.some((e) => String(e.message).includes("Module file not found")),
+                result.errors.some((e) =>
+                    String(e.message).includes("Module file not found"),
+                ),
                 `expected missing module file error, got: ${result.errors.map((e) => e.message).join(", ")}`,
             );
         } finally {
@@ -254,8 +278,16 @@ mod util;
 fn main() {}
 `,
             );
-            writeFile(dir, "util.rs", "pub fn add(a: i32, b: i32) -> i32 { a + b }");
-            writeFile(dir, "util/mod.rs", "pub fn sub(a: i32, b: i32) -> i32 { a - b }");
+            writeFile(
+                dir,
+                "util.rs",
+                "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+            );
+            writeFile(
+                dir,
+                "util/mod.rs",
+                "pub fn sub(a: i32, b: i32) -> i32 { a - b }",
+            );
             const source = fs.readFileSync(mainPath, "utf-8");
             const result = compile(source, {
                 validate: false,
@@ -263,7 +295,9 @@ fn main() {}
             });
             assertEqual(result.ok, false, "ambiguous module should fail");
             assertTrue(
-                result.errors.some((e) => String(e.message).includes("Ambiguous module file")),
+                result.errors.some((e) =>
+                    String(e.message).includes("Ambiguous module file"),
+                ),
                 `expected ambiguous module file error, got: ${result.errors.map((e) => e.message).join(", ")}`,
             );
         } finally {
@@ -322,7 +356,11 @@ mod dep;
 fn main() {}
 `;
         const result = compile(source, { validate: false });
-        assertEqual(result.ok, false, "file module without sourcePath should fail");
+        assertEqual(
+            result.ok,
+            false,
+            "file module without sourcePath should fail",
+        );
         assertTrue(
             result.errors.some((e) => String(e.message).includes("sourcePath")),
             `expected sourcePath error, got: ${result.errors.map((e) => e.message).join(", ")}`,

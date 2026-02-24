@@ -1,18 +1,12 @@
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
-import { TypeContext } from "../../type_context.js";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
+import { TypeContext } from "../../src/type_context";
 import {
     makeIntType,
     makeBoolType,
     makeUnitType,
     makeFnType,
     TypeKind,
-} from "../../types.js";
+} from "../../src/types";
 
 // ============================================================================
 // Task 3.6: Type Context

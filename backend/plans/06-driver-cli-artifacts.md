@@ -68,16 +68,16 @@ jsrust_backend_exec_result jsrust_backend_run_file(
 ### Task 6.2 - Execution Result Surface
 
 - define stdout format for success:
-  - execution status
-  - optional scalar return value
+    - execution status
+    - optional scalar return value
 - define stderr format for failure
 
 ### Task 6.3 - Trace Artifact Rules
 
 - when trace enabled and output path provided:
-  - write deterministic trace artifact atomically
+    - write deterministic trace artifact atomically
 - on failure:
-  - no partial trace file at final path
+    - no partial trace file at final path
 
 ### Task 6.4 - JS Integration Adapter Spec
 

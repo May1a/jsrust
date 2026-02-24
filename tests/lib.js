@@ -61,8 +61,7 @@ export function assert(msgOrCondition, fnOrMessage) {
         return;
     }
 
-    const message =
-        typeof fnOrMessage === "string" ? fnOrMessage : undefined;
+    const message = typeof fnOrMessage === "string" ? fnOrMessage : undefined;
     assertTrue(msgOrCondition, message);
 }
 
@@ -84,7 +83,7 @@ export function testAsync(name, fn) {
     const result = fn();
     if (result instanceof Promise) {
         return result.catch(
-            /** @param {unknown} e */(e) => {
+            /** @param {unknown} e */ (e) => {
                 errors.push({
                     test: name,
                     message: e instanceof Error ? e.message : String(e),
@@ -104,7 +103,7 @@ export function assertEqual(actual, expected, msg) {
     if (actual !== expected) {
         throw new Error(
             msg ||
-            `Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
+                `Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`,
         );
     }
 }
@@ -133,14 +132,14 @@ export function assertArrayEqual(actual, expected, msg) {
     if (actual.length !== expected.length) {
         throw new Error(
             msg ||
-            `Array length mismatch: expected ${expected.length}, got ${actual.length}`,
+                `Array length mismatch: expected ${expected.length}, got ${actual.length}`,
         );
     }
     for (let i = 0; i < actual.length; i++) {
         if (actual[i] !== expected[i]) {
             throw new Error(
                 msg ||
-                `Array mismatch at index ${i}: expected ${JSON.stringify(expected[i])}, got ${JSON.stringify(actual[i])}`,
+                    `Array mismatch at index ${i}: expected ${JSON.stringify(expected[i])}, got ${JSON.stringify(actual[i])}`,
             );
         }
     }
@@ -207,7 +206,9 @@ export function printSummary() {
     if (failed === 0) {
         console.log(`All ${totalTestsRun} tests passed!`);
     } else {
-        console.log(`Tests: ${passed} passed, ${failed} failed, ${totalTestsRun} total`);
+        console.log(
+            `Tests: ${passed} passed, ${failed} failed, ${totalTestsRun} total`,
+        );
         console.log(`\nFailures:`);
         for (const e of errors) {
             console.log(`  - ${e.test}: ${e.message}`);

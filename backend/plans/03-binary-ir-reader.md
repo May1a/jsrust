@@ -54,8 +54,8 @@ Implement strict ingestion of JSRust binary IR v1 in C, producing a validated in
 ### Task 3.1 - Primitive Reader Core
 
 - Build bounded cursor reader with:
-  - `read_u8`, `read_u16`, `read_u32`, `read_i64`, `read_f64`
-  - fail-fast on out-of-range reads
+    - `read_u8`, `read_u16`, `read_u32`, `read_i64`, `read_f64`
+    - fail-fast on out-of-range reads
 - Add helper to read and copy byte spans safely.
 
 ### Task 3.2 - Header + Section Dispatch
@@ -87,10 +87,10 @@ Implement strict ingestion of JSRust binary IR v1 in C, producing a validated in
 ### Task 3.6 - Minimal Structural Validation Gate
 
 - Check obvious invariants before codegen:
-  - every function has at least one block
-  - block IDs are unique per function
-  - referenced block IDs exist
-  - referenced values are in-range where representable in reader model
+    - every function has at least one block
+    - block IDs are unique per function
+    - referenced block IDs exist
+    - referenced values are in-range where representable in reader model
 
 ### Task 3.7 - Memory Ownership + Cleanup
 
@@ -108,11 +108,11 @@ Implement strict ingestion of JSRust binary IR v1 in C, producing a validated in
 
 - Golden-path parse tests for all fixture binaries.
 - Negative corpus:
-  - wrong magic
-  - wrong version
-  - invalid section offsets
-  - truncated at each 8-byte boundary
-  - out-of-range string/type references
+    - wrong magic
+    - wrong version
+    - invalid section offsets
+    - truncated at each 8-byte boundary
+    - out-of-range string/type references
 - Leak/regression checks via repeated parse+destroy loops.
 
 ## Exit Condition

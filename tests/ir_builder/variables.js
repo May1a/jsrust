@@ -1,6 +1,6 @@
 // Variable tests for SSA variable tracking and phi construction
-import { assertTrue, test } from "../lib.js";
-import { IRBuilder } from "../../ir_builder.js";
+import { assertTrue, test } from "../lib";
+import { IRBuilder } from "../../src/ir_builder";
 
 export function testSimpleVarFlow() {
     const builder = new IRBuilder();

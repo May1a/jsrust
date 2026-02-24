@@ -1,5 +1,5 @@
-import { serializeModule } from "../../ir_serialize.js";
-import { deserializeModule } from "../../ir_deserialize.js";
+import { serializeModule } from "../../src/ir_serialize";
+import { deserializeModule } from "../../src/ir_deserialize";
 import {
     IRTypeKind,
     IRInstKind,
@@ -21,17 +21,11 @@ import {
     makeIRFunction,
     addIRLocal,
     makeIRLocal,
-} from "../../ir.js";
-import { IntWidth, FloatWidth } from "../../types.js";
-import { makeIconst, makeIadd } from "../../ir_instructions.js";
-import { makeRet } from "../../ir_terminators.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+} from "../../src/ir";
+import { IntWidth, FloatWidth } from "../../src/types";
+import { makeIconst, makeIadd } from "../../src/ir_instructions";
+import { makeRet } from "../../src/ir_terminators";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 test("Roundtrip empty module", () => {
     resetIRIds();

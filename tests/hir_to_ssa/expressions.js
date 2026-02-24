@@ -1,5 +1,5 @@
-import { assertEqual, assertTrue } from "../lib.js";
-import { lowerHirToSsa } from "../../hir_to_ssa.js";
+import { assertEqual, assertTrue } from "../lib";
+import { lowerHirToSsa } from "../../src/hir_to_ssa";
 import {
     makeHFnDecl,
     makeHParam,
@@ -34,10 +34,10 @@ import {
     HStmtKind,
     HExprKind,
     HLiteralKind,
-} from "../../hir.js";
-import { IntWidth, FloatWidth, TypeKind } from "../../types.js";
-import { BinaryOp, UnaryOp } from "../../ast.js";
-import { IRInstKind } from "../../ir.js";
+} from "../../src/hir";
+import { IntWidth, FloatWidth, TypeKind } from "../../src/types";
+import { BinaryOp, UnaryOp } from "../../src/ast";
+import { IRInstKind } from "../../src/ir";
 
 // Helper: create a span
 function span(line = 1, column = 1) {
@@ -323,7 +323,10 @@ export function testLowerWhileMutableCarriesThroughBackedge() {
     }
 
     assertTrue(hasAlloca, "Mutable loop var should get a stable alloca");
-    assertTrue(hasLoad, "Mutable loop var should be loaded in loop condition/body");
+    assertTrue(
+        hasLoad,
+        "Mutable loop var should be loaded in loop condition/body",
+    );
     assertTrue(hasStore, "Mutable loop var assignment should lower to store");
 }
 
@@ -421,7 +424,10 @@ export function testLowerDynamicCallThroughParam() {
     const hasCallDyn = irFn.blocks.some((block) =>
         block.instructions.some((inst) => inst.kind === IRInstKind.CallDyn),
     );
-    assertTrue(hasCallDyn, "Callable parameter invocation should lower to call_dyn");
+    assertTrue(
+        hasCallDyn,
+        "Callable parameter invocation should lower to call_dyn",
+    );
 }
 
 export function testLowerStruct() {
@@ -714,7 +720,10 @@ export function runTests() {
         ["Lower if", testLowerIf],
         ["Lower if without else", testLowerIfWithoutElse],
         ["Lower while", testLowerWhile],
-        ["Lower while mutable backedge", testLowerWhileMutableCarriesThroughBackedge],
+        [
+            "Lower while mutable backedge",
+            testLowerWhileMutableCarriesThroughBackedge,
+        ],
         ["Lower loop", testLowerLoop],
         ["Lower call", testLowerCall],
         ["Lower call with args", testLowerCallWithArgs],

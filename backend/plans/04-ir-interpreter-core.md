@@ -28,24 +28,24 @@ Implement the execution engine that interprets validated JSRust IR function/bloc
 ### Task 4.1 - Execution Context Structures
 
 - define `ExecContext`:
-  - module reference
-  - global state
-  - call stack
-  - current frame pointer
+    - module reference
+    - global state
+    - call stack
+    - current frame pointer
 - define `Frame`:
-  - function id/ref
-  - current block id
-  - SSA value table
-  - local storage table
+    - function id/ref
+    - current block id
+    - SSA value table
+    - local storage table
 
 ### Task 4.2 - Value Representation
 
 - define tagged runtime value type supporting current IR primitives:
-  - integers
-  - floats
-  - bool
-  - pointer/opaque handle
-  - unit
+    - integers
+    - floats
+    - bool
+    - pointer/opaque handle
+    - unit
 - include conversion helpers with explicit failure semantics
 
 ### Task 4.3 - Terminator Semantics

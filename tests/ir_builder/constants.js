@@ -1,6 +1,6 @@
-import { assertEqual, assertTrue, test } from "../lib.js";
-import { IRBuilder } from "../../ir_builder.js";
-import { IntWidth, FloatWidth } from "../../types.js";
+import { assertEqual, assertTrue, test } from "../lib";
+import { IRBuilder } from "../../src/ir_builder";
+import { IntWidth, FloatWidth } from "../../src/types";
 
 // ============================================================================
 // Constant Instruction Tests

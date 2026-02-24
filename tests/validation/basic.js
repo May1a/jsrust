@@ -10,7 +10,7 @@ import {
     setIRTerminator,
     makeIRIntType,
     makeIRUnitType,
-} from "../../ir.js";
+} from "../../src/ir";
 
 import {
     makeIconst,
@@ -18,20 +18,14 @@ import {
     makeIsub,
     makeBconst,
     makeCallDyn,
-} from "../../ir_instructions.js";
+} from "../../src/ir_instructions";
 
-import { makeRet, makeBr, makeBrIf } from "../../ir_terminators.js";
+import { makeRet, makeBr, makeBrIf } from "../../src/ir_terminators";
 
-import { validateModule, ValidationErrorKind } from "../../ir_validate.js";
+import { validateModule, ValidationErrorKind } from "../../src/ir_validate";
 
-import { IntWidth } from "../../types.js";
-import {
-    test,
-    assertEqual,
-    assertTrue,
-    getResults,
-    clearErrors,
-} from "../lib.js";
+import { IntWidth } from "../../src/types";
+import { test, assertEqual, assertTrue, getResults, clearErrors } from "../lib";
 
 test("valid simple function returns constant", () => {
     resetIRIds();
@@ -137,7 +131,12 @@ test("undefined value in instruction", () => {
 test("undefined callee value in call_dyn instruction", () => {
     resetIRIds();
     const mod = makeIRModule("test");
-    const fn = makeIRFunction(0, "bad_call_dyn", [], makeIRIntType(IntWidth.I32));
+    const fn = makeIRFunction(
+        0,
+        "bad_call_dyn",
+        [],
+        makeIRIntType(IntWidth.I32),
+    );
     const block = makeIRBlock(0);
     const callDyn = makeCallDyn(999, [], makeIRIntType(IntWidth.I32));
     const ret = makeRet(callDyn.id);

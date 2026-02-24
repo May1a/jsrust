@@ -1,14 +1,8 @@
-import { TypeContext } from "../../type_context.js";
-import {
-    inferExpr,
-    inferBinary,
-    inferIdentifier,
-    unify,
-    makeTypeError,
-} from "../../inference.js";
-import { NodeKind, LiteralKind, BinaryOp } from "../../ast.js";
-import { TypeKind, IntWidth, FloatWidth, typeToString } from "../../types.js";
-import { assert, assertEq, testGroup } from "../lib.js";
+import { TypeContext } from "../../src/type_context";
+import { inferBinary, inferIdentifier, unify } from "../../src/inference";
+import { NodeKind, LiteralKind, BinaryOp } from "../../src/ast";
+import { TypeKind, IntWidth, FloatWidth, typeToString } from "../../src/types";
+import { assert, assertEq, testGroup } from "../lib";
 
 function makeSpan(line = 1, column = 1, start = 0, end = 0) {
     return { line, column, start, end };

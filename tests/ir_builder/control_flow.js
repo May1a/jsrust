@@ -1,7 +1,7 @@
 // Control flow tests
-import { assertEqual, test } from "../lib.js";
-import { IRBuilder } from "../../ir_builder.js";
-import { IntWidth } from "../../types.js";
+import { assertEqual, test } from "../lib";
+import { IRBuilder } from "../../src/ir_builder";
+import { IntWidth } from "../../src/types";
 
 export function testBrTarget() {
     const builder = new IRBuilder();
