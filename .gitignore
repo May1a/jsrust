@@ -7,3 +7,4 @@ backend/tests/*.o
 backend/tests/tmp_*.bin
 backend/tests/tmp_*.txt
 .vscode/
+out/
