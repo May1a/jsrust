@@ -291,13 +291,13 @@ export class IRSerializer {
             case IRTypeKind.Enum:
                 return 5; // tag + name string id
             case IRTypeKind.Array:
-                return 5 + this.calculateTypeSize(type.element as IRType); // tag + length + element
+                return 5 + this.calculateTypeSize(type.element!); // tag + length + element
             case IRTypeKind.Fn: {
                 let size = 5; // tag + param count
                 for (const param of type.params ?? []) {
                     size += this.calculateTypeSize(param);
                 }
-                size += this.calculateTypeSize(type.returnType as IRType);
+                size += this.calculateTypeSize(type.returnType!);
                 return size;
             }
             default:
@@ -329,7 +329,7 @@ export class IRSerializer {
     private calculateConstantSize(value: any): number {
         if (typeof value === "bigint") {
             return 8;
-        } else if (typeof value === "number") {
+        }if (typeof value === "number") {
             return 8; // Use 64-bit for all numbers
         } else if (typeof value === "boolean") {
             return 1;
@@ -680,10 +680,10 @@ export class IRSerializer {
         this.writeU8(type.kind);
         switch (type.kind) {
             case IRTypeKind.Int:
-                this.writeU8(type.width as number);
+                this.writeU8(type.width!);
                 break;
             case IRTypeKind.Float:
-                this.writeU8(type.width as number);
+                this.writeU8(type.width!);
                 break;
             case IRTypeKind.Bool:
             case IRTypeKind.Ptr:
@@ -691,21 +691,21 @@ export class IRSerializer {
                 // No additional data
                 break;
             case IRTypeKind.Struct:
-                this.writeU32(this.strings.addString(type.name as string));
+                this.writeU32(this.strings.addString(type.name!));
                 break;
             case IRTypeKind.Enum:
-                this.writeU32(this.strings.addString(type.name as string));
+                this.writeU32(this.strings.addString(type.name!));
                 break;
             case IRTypeKind.Array:
-                this.writeU32(type.length as number);
-                this.writeType(type.element as IRType);
+                this.writeU32(type.length!);
+                this.writeType(type.element!);
                 break;
             case IRTypeKind.Fn:
                 this.writeU32((type.params ?? []).length);
                 for (const param of type.params ?? []) {
                     this.writeType(param);
                 }
-                this.writeType(type.returnType as IRType);
+                this.writeType(type.returnType!);
                 break;
         }
     }

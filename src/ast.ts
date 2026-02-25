@@ -1,4 +1,23 @@
-import { TokenType } from "./tokenizer";
+import { type TokenType } from "./tokenizer";
+
+export class Token {
+    type: TokenType;
+    value?: string | number;
+    line: number;
+    column: number;
+
+    constructor(
+        type: TokenType,
+        line: number,
+        column: number,
+        value?: string | number,
+    ) {
+        this.type = type;
+        this.value = value;
+        this.line = line;
+        this.column = column;
+    }
+}
 
 export class Span {
     line: number;
@@ -11,13 +30,8 @@ export class Span {
         this.start = start;
         this.end = end;
     }
-    toToken(type: TokenType, value?: string): import("./tokenizer").Token {
-        return {
-            type,
-            value: value ?? "",
-            line: this.line,
-            column: this.column,
-        };
+    toToken(type: TokenType, value?: string | number): Token {
+        return new Token(type, this.line, this.column, value);
     }
 }
 
@@ -96,7 +110,6 @@ export interface AstVisitor<R, C> {
     visitLoopExpr(node: LoopExpr, ctx: C): R;
     visitWhileExpr(node: WhileExpr, ctx: C): R;
     visitForExpr(node: ForExpr, ctx: C): R;
-    visitPathExpr(node: PathExpr, ctx: C): R;
     visitStructExpr(node: StructExpr, ctx: C): R;
     visitRangeExpr(node: RangeExpr, ctx: C): R;
     visitRefExpr(node: RefExpr, ctx: C): R;
@@ -112,16 +125,14 @@ export interface AstVisitor<R, C> {
     visitModItem(node: ModItem, ctx: C): R;
     visitUseItem(node: UseItem, ctx: C): R;
     visitImplItem(node: ImplItem, ctx: C): R;
+    visitTraitImplItem(node: TraitImplItem, ctx: C): R;
     visitTraitItem(node: TraitItem, ctx: C): R;
-    visitIdentPat(node: IdentPat, ctx: C): R;
-    visitWildcardPat(node: WildcardPat, ctx: C): R;
-    visitLiteralPat(node: LiteralPat, ctx: C): R;
-    visitRangePat(node: RangePat, ctx: C): R;
-    visitStructPat(node: StructPat, ctx: C): R;
-    visitTuplePat(node: TuplePat, ctx: C): R;
-    visitSlicePat(node: SlicePat, ctx: C): R;
-    visitOrPat(node: OrPat, ctx: C): R;
-    visitBindingPat(node: BindingPat, ctx: C): R;
+    visitIdentPat(node: IdentPattern, ctx: C): R;
+    visitWildcardPat(node: WildcardPattern, ctx: C): R;
+    visitLiteralPat(node: LiteralPattern, ctx: C): R;
+    visitRangePat(node: RangePattern, ctx: C): R;
+    visitStructPat(node: StructPattern, ctx: C): R;
+    visitTuplePat(node: TuplePattern, ctx: C): R;
     visitNamedTypeNode(node: NamedTypeNode, ctx: C): R;
     visitTupleTypeNode(node: TupleTypeNode, ctx: C): R;
     visitArrayTypeNode(node: ArrayTypeNode, ctx: C): R;
@@ -130,14 +141,11 @@ export interface AstVisitor<R, C> {
     visitFnTypeNode(node: FnTypeNode, ctx: C): R;
     visitGenericArgsNode(node: GenericArgsNode, ctx: C): R;
     visitModuleNode(node: ModuleNode, ctx: C): R;
-    visitParamNode(node: ParamNode, ctx: C): R;
-    visitStructFieldNode(node: StructFieldNode, ctx: C): R;
-    visitEnumVariantNode(node: EnumVariantNode, ctx: C): R;
-    visitUseTreeNode(node: UseTreeNode, ctx: C): R;
     visitMatchArmNode(node: MatchArmNode, ctx: C): R;
+    visitTraitMethod(node: TraitMethod, ctx: C): R;
 }
 
-export abstract class AstNode {
+export abstract class Node {
     readonly span: Span;
 
     constructor(span: Span) {
@@ -147,11 +155,11 @@ export abstract class AstNode {
     abstract accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R;
 }
 
-export abstract class Expression extends AstNode {}
-export abstract class Statement extends AstNode {}
-export abstract class Item extends AstNode {}
-export abstract class Pattern extends AstNode {}
-export abstract class TypeNode extends AstNode {}
+export abstract class Expression extends Node {}
+export abstract class Statement extends Node {}
+export abstract class Item extends Node {}
+export abstract class Pattern extends Node {}
+export abstract class TypeNode extends Node {}
 
 export enum LiteralKind {
     Int,
@@ -340,8 +348,7 @@ export class BlockExpr extends Expression {
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitBlockExpr) return visitor.visitBlockExpr(this, ctx);
-        throw new Error(`No visitor method for BlockExpr`);
+        return visitor.visitBlockExpr(this, ctx);
     }
 }
 
@@ -370,9 +377,6 @@ export class BreakExpr extends Expression {
 }
 
 export class ContinueExpr extends Expression {
-    constructor(span: Span) {
-        super(span);
-    }
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
         return visitor.visitContinueExpr(this, ctx);
     }
@@ -415,7 +419,7 @@ export class WhileExpr extends Expression {
 
 export class ForExpr extends Expression {
     readonly label?: string;
-    readonly pat: Pattern;
+    readonly pattern: Pattern;
     readonly iter: Expression;
     readonly body: BlockExpr;
 
@@ -428,7 +432,7 @@ export class ForExpr extends Expression {
     ) {
         super(span);
         this.label = label;
-        this.pat = pat;
+        this.pattern = pat;
         this.iter = iter;
         this.body = body;
     }
@@ -437,28 +441,11 @@ export class ForExpr extends Expression {
     }
 }
 
-export class PathExpr extends Expression {
-    readonly segments: string[];
-
-    constructor(span: Span, segments: string[]) {
-        super(span);
-        this.segments = segments;
-    }
-    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        return visitor.visitPathExpr(this, ctx);
-    }
-}
-
-export type StructExprField = {
-    name: string;
-    value: Expression;
-};
-
 export class StructExpr extends Expression {
     readonly path: Expression;
-    readonly fields: StructExprField[];
+    readonly fields: Map<string, Expression>;
 
-    constructor(span: Span, path: Expression, fields: StructExprField[]) {
+    constructor(span: Span, path: Expression, fields: Map<string, Expression>) {
         super(span);
         this.path = path;
         this.fields = fields;
@@ -484,12 +471,12 @@ export class RangeExpr extends Expression {
 
 export class RefExpr extends Expression {
     readonly mutability: Mutability;
-    readonly operand: Expression;
+    readonly target: Expression;
 
-    constructor(span: Span, mutability: Mutability, operand: Expression) {
+    constructor(span: Span, mutability: Mutability, target: Expression) {
         super(span);
         this.mutability = mutability;
-        this.operand = operand;
+        this.target = target;
     }
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
         return visitor.visitRefExpr(this, ctx);
@@ -499,9 +486,9 @@ export class RefExpr extends Expression {
 export class DerefExpr extends Expression {
     readonly target: Expression;
 
-    constructor(span: Span, operand: Expression) {
+    constructor(span: Span, target: Expression) {
         super(span);
-        this.target = operand;
+        this.target = target;
     }
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
         return visitor.visitDerefExpr(this, ctx);
@@ -523,13 +510,13 @@ export class MacroExpr extends Expression {
 }
 
 export class ClosureExpr extends Expression {
-    readonly params: ParamNode[];
+    readonly params: Pattern[];
     readonly returnType: TypeNode; // TODO: Default assign unit
     readonly body: Expression;
 
     constructor(
         span: Span,
-        params: ParamNode[],
+        params: Expression[],
         returnType: TypeNode,
         body: Expression,
     ) {
@@ -544,14 +531,19 @@ export class ClosureExpr extends Expression {
 }
 
 export class LetStmt extends Statement {
-    readonly pat: Pattern;
+    readonly pattern: Pattern;
     readonly type: TypeNode;
     readonly init: Expression;
 
-    constructor(span: Span, pat: Pattern, ty: TypeNode, init: Expression) {
+    constructor(
+        span: Span,
+        pattern: Pattern,
+        type: TypeNode,
+        init: Expression,
+    ) {
         super(span);
-        this.pat = pat;
-        this.type = ty;
+        this.pattern = pattern;
+        this.type = type;
         this.init = init;
     }
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
@@ -584,15 +576,10 @@ export class ItemStmt extends Statement {
         return visitor.visitItemStmt(this, ctx);
     }
 }
-export type GenericParam = {
+export interface GenericParam {
     name: string;
     bounds: TypeNode[];
-};
-
-export type WhereClauseItem = {
-    name: string;
-    bounds: TypeNode[];
-};
+}
 
 enum FnAttributes {
     unsafeFn,
@@ -607,7 +594,7 @@ enum FnAttributes {
  */
 export class FnItem extends Item {
     readonly name: string;
-    readonly params: ParamNode[];
+    readonly params: Map<string, TypeNode>;
     readonly returnType: TypeNode;
     readonly body: BlockExpr;
     readonly attributes: FnAttributes[] = [];
@@ -616,7 +603,7 @@ export class FnItem extends Item {
     constructor(
         span: Span,
         name: string,
-        params: ParamNode[],
+        params: Map<string, TypeNode>,
         returnType: TypeNode,
         body: BlockExpr,
         attributes: FnAttributes[] = [],
@@ -631,8 +618,7 @@ export class FnItem extends Item {
         this.derives = derives;
     }
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitFnItem) return visitor.visitFnItem(this, ctx);
-        throw new Error(`No visitor method for FnItem`);
+        return visitor.visitFnItem(this, ctx);
     }
 }
 
@@ -653,240 +639,175 @@ export class StructItem extends Item {
         this.derives = derives;
     }
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitStructItem) return visitor.visitStructItem(this, ctx);
-        throw new Error(`No visitor method for StructItem`);
-    }
-}
-
-export class EnumVariantNode extends AstNode {
-    readonly node = "EnumVariantNode";
-    readonly name: string;
-    readonly fields: Map<string, TypeNode>;
-
-    constructor(
-        span: Span,
-        name: string,
-        fields: StructFieldNode[],
-        discriminant: Expression | null,
-    ) {
-        super(span);
-        this.name = name;
-        this.fields = fields;
-        this.discriminant = discriminant;
-    }
-
-    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitEnumVariantNode)
-            return visitor.visitEnumVariantNode(this, ctx);
-        throw new Error(`No visitor method for EnumVariantNode`);
+        return visitor.visitStructItem(this, ctx);
     }
 }
 
 export class EnumItem extends Item {
-    readonly node = "EnumItem";
     readonly name: string;
-    readonly generics: string[] | null;
-    readonly ignoredLifetimeParams: string[];
-    readonly variants: EnumVariantNode[];
-    readonly isPub: boolean;
+    readonly variants: Map<string, TypeNode>; // TODO: change this
     readonly derives: string[];
 
     constructor(
         span: Span,
         name: string,
-        generics: string[] | null,
-        ignoredLifetimeParams: string[],
-        variants: EnumVariantNode[],
-        isPub: boolean,
-        derives: string[],
+        variants: Map<string, TypeNode>,
+        derives: string[] = [],
     ) {
         super(span);
         this.name = name;
-        this.generics = generics;
-        this.ignoredLifetimeParams = ignoredLifetimeParams;
         this.variants = variants;
-        this.isPub = isPub;
         this.derives = derives;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitEnumItem) return visitor.visitEnumItem(this, ctx);
-        throw new Error(`No visitor method for EnumItem`);
+        return visitor.visitEnumItem(this, ctx);
     }
 }
 
 export class ModItem extends Item {
-    readonly node = "ModItem";
     readonly name: string;
-    readonly items: Item[];
-    readonly isInline: boolean;
-    readonly isPub: boolean;
+    readonly items: Item[]; // TODO: think about this
 
-    constructor(
-        span: Span,
-        name: string,
-        items: Item[],
-        isInline: boolean,
-        isPub: boolean,
-    ) {
+    constructor(span: Span, name: string, items: Item[]) {
         super(span);
         this.name = name;
         this.items = items;
-        this.isInline = isInline;
-        this.isPub = isPub;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitModItem) return visitor.visitModItem(this, ctx);
-        throw new Error(`No visitor method for ModItem`);
+        return visitor.visitModItem(this, ctx);
     }
 }
 
-export class UseTreeNode extends AstNode {
-    readonly node = "UseTreeNode";
-    readonly path: string[];
-    readonly alias: string | null;
-    readonly children: UseTreeNode[] | null;
-
-    constructor(
-        span: Span,
-        path: string[],
-        alias: string | null,
-        children: UseTreeNode[] | null,
-    ) {
-        super(span);
-        this.path = path;
-        this.alias = alias;
-        this.children = children;
+function pathToString(path: string[]): string {
+    if (!path.length) {
+        throw new Error("Assert: cannot resolve empty path");
     }
-
-    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitUseTreeNode)
-            return visitor.visitUseTreeNode(this, ctx);
-        throw new Error(`No visitor method for UseTreeNode`);
-    }
+    return path.join("::");
 }
+
+type UsePrefix = "crate" | "mod"; // TODO: add more
 
 export class UseItem extends Item {
-    readonly node = "UseItem";
-    readonly tree: UseTreeNode;
-    readonly isPub: boolean;
+    prefix?: UsePrefix;
+    path: string[];
 
-    constructor(span: Span, tree: UseTreeNode, isPub: boolean) {
+    constructor(span: Span, path: string[], prefix?: UsePrefix) {
         super(span);
-        this.tree = tree;
-        this.isPub = isPub;
+        this.path = path;
+        this.prefix = prefix;
     }
 
+    toFullPath(): string {
+        if (this.prefix) {
+            return pathToString([this.prefix, ...this.path]);
+        }
+        return pathToString(this.path);
+    }
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitUseItem) return visitor.visitUseItem(this, ctx);
-        throw new Error(`No visitor method for UseItem`);
+        return visitor.visitUseItem(this, ctx);
+    }
+}
+
+export class TraitMethod extends Item {
+    readonly name: string;
+    readonly returnType: TypeNode;
+
+    constructor(span: Span, name: string, returnType: TypeNode) {
+        super(span);
+        this.name = name;
+        this.returnType = returnType;
+    }
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitTraitMethod(this, ctx);
     }
 }
 
 export class TraitItem extends Item {
-    readonly node = "TraitItem";
     readonly name: string;
-    readonly methods: FnItem[];
-    readonly isUnsafe: boolean;
-    readonly isPub: boolean;
+    readonly methods: TraitMethod[];
+
+    constructor(span: Span, name: string, methods: FnItem[]) {
+        super(span);
+        this.name = name;
+        this.methods = methods;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitTraitItem(this, ctx);
+    }
+}
+
+export class TraitImplItem extends Item {
+    readonly name: string;
+    readonly target: TypeNode;
+    readonly trait: TraitItem;
+    readonly fnImpls: FnItem[];
 
     constructor(
         span: Span,
         name: string,
-        methods: FnItem[],
-        isUnsafe: boolean,
-        isPub: boolean,
+        trait: TraitItem,
+        target: TypeNode,
+        fnImpls: FnItem[],
     ) {
         super(span);
         this.name = name;
-        this.methods = methods;
-        this.isUnsafe = isUnsafe;
-        this.isPub = isPub;
+        this.trait = trait;
+        this.target = target;
+        this.fnImpls = fnImpls;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitTraitItem) return visitor.visitTraitItem(this, ctx);
-        throw new Error(`No visitor method for TraitItem`);
+        return visitor.visitTraitImplItem(this, ctx);
     }
 }
 
 export class ImplItem extends Item {
-    readonly node = "ImplItem";
-    readonly targetType: TypeNode;
-    readonly traitType: TypeNode | null;
+    readonly target: TypeNode;
     readonly methods: FnItem[];
-    readonly isUnsafe: boolean;
-    readonly genericParams: GenericParam[] | null;
-    readonly ignoredLifetimeParams: string[];
 
-    constructor(
-        span: Span,
-        targetType: TypeNode,
-        traitType: TypeNode | null,
-        methods: FnItem[],
-        isUnsafe: boolean,
-        genericParams: GenericParam[] | null,
-        ignoredLifetimeParams: string[],
-    ) {
+    constructor(span: Span, target: TypeNode, methods: FnItem[]) {
         super(span);
-        this.targetType = targetType;
-        this.traitType = traitType;
+        this.target = target;
         this.methods = methods;
-        this.isUnsafe = isUnsafe;
-        this.genericParams = genericParams;
-        this.ignoredLifetimeParams = ignoredLifetimeParams;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitImplItem) return visitor.visitImplItem(this, ctx);
-        throw new Error(`No visitor method for ImplItem`);
+        return visitor.visitImplItem(this, ctx);
     }
 }
 
-export class IdentPat extends Pattern {
-    readonly node = "IdentPat";
+export class IdentPattern extends Pattern {
     readonly name: string;
     readonly mutability: Mutability;
-    readonly isRef: boolean;
-    readonly ty: TypeNode | null;
+    readonly type: TypeNode;
 
     constructor(
         span: Span,
         name: string,
         mutability: Mutability,
-        isRef: boolean,
-        ty: TypeNode | null,
+        ty: TypeNode,
     ) {
         super(span);
         this.name = name;
         this.mutability = mutability;
-        this.isRef = isRef;
-        this.ty = ty;
+        this.type = ty;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitIdentPat) return visitor.visitIdentPat(this, ctx);
-        throw new Error(`No visitor method for IdentPat`);
+        return visitor.visitIdentPat(this, ctx);
     }
 }
 
-export class WildcardPat extends Pattern {
-    readonly node = "WildcardPat";
-
-    constructor(span: Span) {
-        super(span);
-    }
-
+export class WildcardPattern extends Pattern {
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitWildcardPat)
-            return visitor.visitWildcardPat(this, ctx);
-        throw new Error(`No visitor method for WildcardPat`);
+        return visitor.visitWildcardPat(this, ctx);
     }
 }
 
-export class LiteralPat extends Pattern {
-    readonly node = "LiteralPat";
+export class LiteralPattern extends Pattern {
     readonly literalKind: LiteralKind;
     readonly value: string | number | boolean;
 
@@ -901,45 +822,39 @@ export class LiteralPat extends Pattern {
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitLiteralPat) return visitor.visitLiteralPat(this, ctx);
-        throw new Error(`No visitor method for LiteralPat`);
+        return visitor.visitLiteralPat(this, ctx);
     }
 }
 
-export class RangePat extends Pattern {
-    readonly node = "RangePat";
+export class RangePattern extends Pattern {
     readonly start: Pattern;
     readonly end: Pattern;
-    readonly inclusive: boolean;
 
-    constructor(span: Span, start: Pattern, end: Pattern, inclusive: boolean) {
+    constructor(span: Span, start: Pattern, end: Pattern) {
         super(span);
         this.start = start;
         this.end = end;
-        this.inclusive = inclusive;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitRangePat) return visitor.visitRangePat(this, ctx);
-        throw new Error(`No visitor method for RangePat`);
+        return visitor.visitRangePat(this, ctx);
     }
 }
 
-export interface StructPatField {
+export interface StructPatternField {
     name: string;
-    pat: Pattern;
+    pattern: Pattern;
 }
 
-export class StructPat extends Pattern {
-    readonly node = "StructPat";
+export class StructPattern extends Pattern {
     readonly path: Expression;
-    readonly fields: StructPatField[];
+    readonly fields: StructPatternField[];
     readonly rest: boolean;
 
     constructor(
         span: Span,
         path: Expression,
-        fields: StructPatField[],
+        fields: StructPatternField[],
         rest: boolean,
     ) {
         super(span);
@@ -949,13 +864,11 @@ export class StructPat extends Pattern {
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitStructPat) return visitor.visitStructPat(this, ctx);
-        throw new Error(`No visitor method for StructPat`);
+        return visitor.visitStructPat(this, ctx);
     }
 }
 
-export class TuplePat extends Pattern {
-    readonly node = "TuplePat";
+export class TuplePattern extends Pattern {
     readonly elements: Pattern[];
 
     constructor(span: Span, elements: Pattern[]) {
@@ -964,87 +877,26 @@ export class TuplePat extends Pattern {
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitTuplePat) return visitor.visitTuplePat(this, ctx);
-        throw new Error(`No visitor method for TuplePat`);
+        return visitor.visitTuplePat(this, ctx);
     }
 }
 
-export class SlicePat extends Pattern {
-    readonly node = "SlicePat";
-    readonly elements: Pattern[];
-    readonly rest: Pattern | null;
-
-    constructor(span: Span, elements: Pattern[], rest: Pattern | null) {
-        super(span);
-        this.elements = elements;
-        this.rest = rest;
-    }
-
-    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitSlicePat) return visitor.visitSlicePat(this, ctx);
-        throw new Error(`No visitor method for SlicePat`);
-    }
-}
-
-export class OrPat extends Pattern {
-    readonly node = "OrPat";
-    readonly alternatives: Pattern[];
-
-    constructor(span: Span, alternatives: Pattern[]) {
-        super(span);
-        this.alternatives = alternatives;
-    }
-
-    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitOrPat) return visitor.visitOrPat(this, ctx);
-        throw new Error(`No visitor method for OrPat`);
-    }
-}
-
-export class BindingPat extends Pattern {
-    readonly node = "BindingPat";
-    readonly name: string;
-    readonly pat: Pattern;
-
-    constructor(span: Span, name: string, pat: Pattern) {
-        super(span);
-        this.name = name;
-        this.pat = pat;
-    }
-
-    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitBindingPat) return visitor.visitBindingPat(this, ctx);
-        throw new Error(`No visitor method for BindingPat`);
-    }
-}
-
-export class MatchArmNode extends AstNode {
-    readonly node = "MatchArmNode";
-    readonly pat: Pattern;
-    readonly guard: Expression | null;
+export class MatchArmNode extends Node {
+    readonly pattern: Pattern;
     readonly body: Expression;
 
-    constructor(
-        span: Span,
-        pat: Pattern,
-        guard: Expression | null,
-        body: Expression,
-    ) {
+    constructor(span: Span, pattern: Pattern, body: Expression) {
         super(span);
-        this.pat = pat;
-        this.guard = guard;
+        this.pattern = pattern;
         this.body = body;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitMatchArmNode)
-            return visitor.visitMatchArmNode(this, ctx);
-        throw new Error(`No visitor method for MatchArmNode`);
+        return visitor.visitMatchArmNode(this, ctx);
     }
 }
 
 export class NamedTypeNode extends TypeNode {
-    readonly node = "NamedTypeNode";
     readonly name: string;
     readonly args: GenericArgsNode | null;
 
@@ -1055,14 +907,11 @@ export class NamedTypeNode extends TypeNode {
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitNamedTypeNode)
-            return visitor.visitNamedTypeNode(this, ctx);
-        throw new Error(`No visitor method for NamedTypeNode`);
+        return visitor.visitNamedTypeNode(this, ctx);
     }
 }
 
 export class TupleTypeNode extends TypeNode {
-    readonly node = "TupleTypeNode";
     readonly elements: TypeNode[];
 
     constructor(span: Span, elements: TypeNode[]) {
@@ -1071,14 +920,11 @@ export class TupleTypeNode extends TypeNode {
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitTupleTypeNode)
-            return visitor.visitTupleTypeNode(this, ctx);
-        throw new Error(`No visitor method for TupleTypeNode`);
+        return visitor.visitTupleTypeNode(this, ctx);
     }
 }
 
 export class ArrayTypeNode extends TypeNode {
-    readonly node = "ArrayTypeNode";
     readonly element: TypeNode;
     readonly length: Expression | null;
 
@@ -1096,32 +942,6 @@ export class ArrayTypeNode extends TypeNode {
 }
 
 export class RefTypeNode extends TypeNode {
-    readonly node = "RefTypeNode";
-    readonly mutability: Mutability;
-    readonly inner: TypeNode;
-    readonly ignoredLifetimeName: string | null;
-
-    constructor(
-        span: Span,
-        mutability: Mutability,
-        inner: TypeNode,
-        ignoredLifetimeName: string | null,
-    ) {
-        super(span);
-        this.mutability = mutability;
-        this.inner = inner;
-        this.ignoredLifetimeName = ignoredLifetimeName;
-    }
-
-    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitRefTypeNode)
-            return visitor.visitRefTypeNode(this, ctx);
-        throw new Error(`No visitor method for RefTypeNode`);
-    }
-}
-
-export class PtrTypeNode extends TypeNode {
-    readonly node = "PtrTypeNode";
     readonly mutability: Mutability;
     readonly inner: TypeNode;
 
@@ -1132,41 +952,41 @@ export class PtrTypeNode extends TypeNode {
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitPtrTypeNode)
-            return visitor.visitPtrTypeNode(this, ctx);
-        throw new Error(`No visitor method for PtrTypeNode`);
+        return visitor.visitRefTypeNode(this, ctx);
+    }
+}
+
+export class PtrTypeNode extends TypeNode {
+    readonly mutability: Mutability;
+    readonly inner: TypeNode;
+
+    constructor(span: Span, mutability: Mutability, inner: TypeNode) {
+        super(span);
+        this.mutability = mutability;
+        this.inner = inner;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitPtrTypeNode(this, ctx);
     }
 }
 
 export class FnTypeNode extends TypeNode {
-    readonly node = "FnTypeNode";
     readonly params: TypeNode[];
-    readonly returnType: TypeNode | null;
-    readonly isUnsafe: boolean;
-    readonly isConst: boolean;
+    readonly returnType: TypeNode;
 
-    constructor(
-        span: Span,
-        params: TypeNode[],
-        returnType: TypeNode | null,
-        isUnsafe: boolean,
-        isConst: boolean,
-    ) {
+    constructor(span: Span, params: TypeNode[], returnType: TypeNode) {
         super(span);
         this.params = params;
         this.returnType = returnType;
-        this.isUnsafe = isUnsafe;
-        this.isConst = isConst;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitFnTypeNode) return visitor.visitFnTypeNode(this, ctx);
-        throw new Error(`No visitor method for FnTypeNode`);
+        return visitor.visitFnTypeNode(this, ctx);
     }
 }
 
 export class GenericArgsNode extends TypeNode {
-    readonly node = "GenericArgsNode";
     readonly args: TypeNode[];
 
     constructor(span: Span, args: TypeNode[]) {
@@ -1175,14 +995,11 @@ export class GenericArgsNode extends TypeNode {
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitGenericArgsNode)
-            return visitor.visitGenericArgsNode(this, ctx);
-        throw new Error(`No visitor method for GenericArgsNode`);
+        return visitor.visitGenericArgsNode(this, ctx);
     }
 }
 
-export class ModuleNode extends AstNode {
-    readonly node = "ModuleNode";
+export class ModuleNode extends Node {
     readonly name: string;
     readonly items: Item[];
 
@@ -1193,63 +1010,14 @@ export class ModuleNode extends AstNode {
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitModuleNode) return visitor.visitModuleNode(this, ctx);
-        throw new Error(`No visitor method for ModuleNode`);
+        return visitor.visitModuleNode(this, ctx);
     }
 }
 
-export type ReceiverKind = "value" | "ref" | "ref_mut";
-
-export class ParamNode extends AstNode {
-    readonly node = "ParamNode";
-    readonly name: string;
-    readonly ty: TypeNode | null;
-    readonly pat: Pattern | null;
-    readonly isReceiver: boolean;
-    readonly receiverKind: ReceiverKind | null;
-
-    constructor(
-        span: Span,
-        name: string,
-        ty: TypeNode | null,
-        pat: Pattern | null,
-        isReceiver: boolean,
-        receiverKind: ReceiverKind | null,
-    ) {
-        super(span);
-        this.name = name;
-        this.ty = ty;
-        this.pat = pat;
-        this.isReceiver = isReceiver;
-        this.receiverKind = receiverKind;
-    }
-
-    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitParamNode) return visitor.visitParamNode(this, ctx);
-        throw new Error(`No visitor method for ParamNode`);
-    }
-}
-
-export type Node = AstNode;
-
-export function isExpr(node: Node): node is Expression {
-    return node instanceof Expression;
-}
-
-export function isStmt(node: Node): node is Statement {
-    return node instanceof Statement;
-}
-
-export function isItem(node: Node): node is Item {
-    return node instanceof Item;
-}
-
-export function isPat(node: Node): node is Pattern {
-    return node instanceof Pattern;
-}
-
-export function isType(node: Node): node is TypeNode {
-    return node instanceof TypeNode;
+export enum ReceiverKind {
+    value,
+    ref,
+    refMut,
 }
 
 export function visitAst<R = void, C = void>(
@@ -1263,7 +1031,7 @@ export function visitAst<R = void, C = void>(
 export function walkAst(node: Node, fn: (node: Node) => void): void {
     fn(node);
     const walkValue = (value: unknown): void => {
-        if (value instanceof AstNode) {
+        if (value instanceof Node) {
             walkAst(value, fn);
         } else if (Array.isArray(value)) {
             for (const item of value) {

@@ -14,11 +14,11 @@ import {
 } from "./ast";
 import type { Node, Span } from "./ast";
 
-export type DeriveError = {
+export interface DeriveError {
     message: string;
     span?: Span;
     kind?: string;
-};
+}
 
 function spanOf(node: Node | null | undefined): Span {
     return node?.span || { line: 1, column: 1, start: 1, end: 1 };

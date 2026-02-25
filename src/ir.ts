@@ -6,7 +6,7 @@ type IRTypeKindValue = number;
 type IRInstKindValue = number;
 type IRTermKindValue = number;
 
-export type IRType = {
+export interface IRType {
     kind: IRTypeKindValue;
     width?: number;
     inner?: IRType | null;
@@ -17,21 +17,21 @@ export type IRType = {
     length?: number;
     params?: IRType[];
     returnType?: IRType;
-};
+}
 
-export type IRInst = {
+export interface IRInst {
     kind: IRInstKindValue;
     id: ValueId | null;
     ty: IRType;
     [key: string]: any;
-};
+}
 
-export type IRTerm = {
+export interface IRTerm {
     kind: IRTermKindValue;
     [key: string]: any;
-};
+}
 
-export type IRBlock = {
+export interface IRBlock {
     id: BlockId;
     name?: string;
     params: Array<{ id: ValueId; ty: IRType }>;
@@ -39,25 +39,25 @@ export type IRBlock = {
     terminator: IRTerm | null;
     predecessors: BlockId[];
     successors: BlockId[];
-};
+}
 
-export type IRFunction = {
+export interface IRFunction {
     id: FunctionId;
     name: string;
-    params: Array<{ id: ValueId; name: string | null; ty: IRType }>;
+    params: Array<{ id: ValueId; name: string; ty: IRType }>;
     returnType: IRType;
     blocks: IRBlock[];
     locals: IRLocal[];
     entry: IRBlock | null;
-};
+}
 
-export type IRLocal = {
+export interface IRLocal {
     id: LocalId;
     ty: IRType;
     name: string | null;
-};
+}
 
-export type IRModule = {
+export interface IRModule {
     name: string;
     functions: IRFunction[];
     globals: Array<{ name: string; ty: IRType; init?: any }>;
@@ -65,14 +65,7 @@ export type IRModule = {
     enums: Map<string, any>;
     stringLiterals: string[];
     stringLiteralIds: Map<string, number>;
-};
-
-import {
-    IntWidth,
-    intWidthToString,
-    floatWidthToString,
-    FloatWidth,
-} from "./types";
+}
 
 export enum IRTypeKind {
     Int,
@@ -191,8 +184,28 @@ function freshLocalId(): LocalId {
     return nextLocalId++;
 }
 
+export enum IntWidth {
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    Isize,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    Usize,
+}
+
 function makeIRIntType(width: IntWidth): IRType {
     return { kind: IRTypeKind.Int, width };
+}
+
+export enum FloatWidth {
+    F32,
+    F64,
 }
 
 function makeIRFloatType(width: FloatWidth): IRType {
@@ -258,6 +271,7 @@ function irTypeEquals(a: IRType, b: IRType): boolean {
                 const bv = b.variants?.[i] ?? [];
                 if (av.length !== bv.length) return false;
                 for (let j = 0; j < av.length; j++) {
+                    if (!av[j] || !bv[j]) return false;
                     if (!irTypeEquals(av[j], bv[j])) return false;
                 }
             }
@@ -279,33 +293,6 @@ function irTypeEquals(a: IRType, b: IRType): boolean {
         }
         default:
             return false;
-    }
-}
-
-function irTypeToString(type: IRType): string {
-    switch (type.kind) {
-        case IRTypeKind.Int:
-            return intWidthToString(type.width as IntWidth);
-        case IRTypeKind.Float:
-            return floatWidthToString(type.width as FloatWidth);
-        case IRTypeKind.Bool:
-            return "bool";
-        case IRTypeKind.Ptr:
-            return type.inner ? `*${irTypeToString(type.inner)}` : "ptr";
-        case IRTypeKind.Unit:
-            return "()";
-        case IRTypeKind.Struct:
-            return type.name ?? "<struct>";
-        case IRTypeKind.Enum:
-            return type.name ?? "<enum>";
-        case IRTypeKind.Array:
-            return `[${irTypeToString(type.element!)}; ${type.length}]`;
-        case IRTypeKind.Fn: {
-            const params = (type.params ?? []).map(irTypeToString).join(", ");
-            return `fn(${params}) -> ${irTypeToString(type.returnType!)}`;
-        }
-        default:
-            return "<unknown>";
     }
 }
 
@@ -398,7 +385,7 @@ function addIREnum(module: IRModule, name: string, enum_: any) {
 function makeIRFunction(
     id: FunctionId,
     name: string,
-    params: Array<{ id: ValueId; name: string | null; ty: IRType }>,
+    params: { id: ValueId; name: string; ty: IRType }[],
     returnType: IRType,
 ): IRFunction {
     return {
@@ -486,9 +473,6 @@ export {
     makeIRArrayType,
     makeIRFnType,
     irTypeEquals,
-    irTypeToString,
-    intWidthToString,
-    floatWidthToString,
     isIRIntType,
     isIRFloatType,
     isIRBoolType,

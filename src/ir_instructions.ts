@@ -1,14 +1,14 @@
 import { freshValueId, makeIRPtrType } from "./ir";
 import {
-    ValueId,
-    LocalId,
-    IRType,
-    IRInst,
-    IcmpOp,
-    FcmpOp,
+    type ValueId,
+    type LocalId,
+    type IRType,
+    type IRInst,
+    type IcmpOp,
+    type FcmpOp,
     IRInstKind,
 } from "./ir";
-import { FloatWidth, IntWidth } from "./types";
+import { type FloatWidth, type IntWidth } from "./types";
 
 export function makeIRInst(
     kind: IRInstKind,

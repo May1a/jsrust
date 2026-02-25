@@ -70,13 +70,13 @@ import {
     type Node,
 } from "./ast";
 
-type ParserState = { tokens: Token[]; pos: number; errors: ParseError[] };
-type ParseError = {
+interface ParserState { tokens: Token[]; pos: number; errors: ParseError[] }
+interface ParseError {
     message: string;
     span: Span;
     expected: string[];
     found: string;
-};
+}
 type ParseErrorList = ParseError[];
 type ParseResult = Result<Node, ParseErrorList>;
 
@@ -84,7 +84,7 @@ function createState(tokens: Token[]) {
     return { tokens, pos: 0, errors: [] };
 }
 
-function peek(state: ParserState, offset: number = 0): Token {
+function peek(state: ParserState, offset = 0): Token {
     return (
         state.tokens[state.pos + offset] ??
         state.tokens[state.tokens.length - 1]
@@ -159,7 +159,7 @@ function expectToken(
     if (check(state, type)) {
         return advance(state);
     }
-    addError(state, message, peek(state), [getToken(type)!]);
+    addError(state, message, peek(state), [getToken(type)]);
     return null;
 }
 
@@ -845,7 +845,7 @@ function parseStructExpr(state: ParserState, pathNode: Node): Node {
                     state,
                     "Expected expression after ..",
                     peek(state),
-                    null,
+                    undefined,
                 );
             }
             break;
@@ -890,7 +890,7 @@ function parseStructExpr(state: ParserState, pathNode: Node): Node {
  */
 function parseAtom(
     state: ParserState,
-    allowStructLiteral: boolean = true,
+    allowStructLiteral = true,
 ): Node | null {
     const literal = parseLiteralExpr(state);
     if (literal) return literal;
@@ -1316,7 +1316,7 @@ function parseClosureExpr(state: ParserState): Node | null {
  */
 function parsePrefix(
     state: ParserState,
-    allowStructLiteral: boolean = true,
+    allowStructLiteral = true,
 ): Node | null {
     const token = peek(state);
     if (
@@ -1370,9 +1370,9 @@ function parsePrefix(
     return parsePostfix(state, atom);
 }
 
-type BinaryOpInfo = { prec: number; op: BinaryOp; assoc: string };
+interface BinaryOpInfo { prec: number; op: BinaryOp; assoc: string }
 
-const binaryOps: Map<number, BinaryOpInfo> = new Map([
+const binaryOps = new Map<number, BinaryOpInfo>([
     [TokenType.PipePipe, { prec: 2, op: BinaryOp.Or, assoc: "left" }],
     [TokenType.AndAnd, { prec: 3, op: BinaryOp.And, assoc: "left" }],
     [TokenType.Pipe, { prec: 4, op: BinaryOp.BitOr, assoc: "left" }],
@@ -1391,7 +1391,7 @@ const binaryOps: Map<number, BinaryOpInfo> = new Map([
     [TokenType.Percent, { prec: 10, op: BinaryOp.Rem, assoc: "left" }],
 ]);
 
-const compoundAssignOps: Map<number, BinaryOp> = new Map([
+const compoundAssignOps = new Map<number, BinaryOp>([
     [TokenType.PlusEq, BinaryOp.Add],
     [TokenType.MinusEq, BinaryOp.Sub],
     [TokenType.StarEq, BinaryOp.Mul],
@@ -1426,8 +1426,8 @@ function parseRangeOperator(
  */
 function parseExpr(
     state: ParserState,
-    minPrec: number = 0,
-    allowStructLiteral: boolean = true,
+    minPrec = 0,
+    allowStructLiteral = true,
 ): Node | null {
     let left = parsePrefix(state, allowStructLiteral);
     if (!left) return null;
@@ -1681,7 +1681,7 @@ function parseParamList(
                 ? spanFromToken(startToken)
                 : currentSpan(state);
             params.push(
-                makeParam(span, name!, ty, null, isReceiver, receiverKind),
+                makeParam(span, name, ty, null, isReceiver, receiverKind),
             );
             paramIndex += 1;
             if (!matchToken(state, TokenType.Comma)) break;
@@ -1695,8 +1695,8 @@ function parseFnItem(
     state: ParserState,
     isUnsafe: boolean,
     isPub: boolean,
-    isConst: boolean = false,
-    allowReceiver: boolean = false,
+    isConst = false,
+    allowReceiver = false,
 ): Node {
     const start =
         expectToken(state, TokenType.Fn, "Expected fn") ?? peek(state);
@@ -1943,7 +1943,8 @@ function parseImplItem(state: ParserState, isUnsafe: boolean): Node {
     const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
     return makeImplItem(
         span,
-        targetType ?? makeNamedType(spanFromToken(start), "__unresolved_type", null),
+        targetType ??
+            makeNamedType(spanFromToken(start), "__unresolved_type", null),
         traitType ?? null,
         methods,
         isUnsafe,
@@ -2061,7 +2062,7 @@ function parseModItem(state: ParserState, isPub: boolean): Node {
         expectToken(state, TokenType.Identifier, "Expected module name") ??
         peek(state);
     /** @type {Node[]} */
-    let items: Node[] = [];
+    const items: Node[] = [];
     let isInline = false;
     if (matchToken(state, TokenType.OpenCurly)) {
         isInline = true;

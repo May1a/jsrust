@@ -193,43 +193,43 @@ function formatArgTagForType(ty: Type | null): number | null {
 // Task 6.1: Lowering Context
 // ============================================================================
 
-type LoweringError = {
+interface LoweringError {
     message: string;
     span: Span;
-};
+}
 
-type VarInfo = {
+interface VarInfo {
     name: string;
     id: number;
     type: Type;
     mutable: boolean;
-};
+}
 
-type ClosureCapture = {
+interface ClosureCapture {
     mode: "value" | "ref";
     name: string;
     varId: number;
     type: Type;
     mutable: boolean;
-};
+}
 
-type ClosureBinding = {
+interface ClosureBinding {
     helperName: string;
     helperType: Type;
     captures: ClosureCapture[];
-};
+}
 
-type ClosureMeta = {
+interface ClosureMeta {
     helperName: string;
     helperType: Type;
     captures: ClosureCapture[];
-};
+}
 
-type ItemInfo = {
+interface ItemInfo {
     kind: "fn" | "struct" | "enum";
     node: Node;
     type?: Type;
-};
+}
 
 /**
  * Lowering context for tracking state during AST to HIR conversion
@@ -276,7 +276,7 @@ class LoweringCtx {
     /**
      * Define a variable binding
      */
-    defineVar(name: string, type: Type, mutable: boolean = false): VarInfo {
+    defineVar(name: string, type: Type, mutable = false): VarInfo {
         const id = this.freshVarId();
         const info = { name, id, type, mutable };
         this.varBindings.set(name, info);
@@ -601,7 +601,7 @@ function lowerFnItem(
     for (let i = 0; i < (fn.params || []).length; i++) {
         const param = fn.params[i];
         const paramType =
-            (fnType as FnType | null)?.params?.[i] ||
+            (fnType)?.params?.[i] ||
             makeUnitType({ line: 0, column: 0, start: 0, end: 0 });
         const hParam = lowerParam(ctx, param, paramType, typeCtx);
         params.push(hParam);
@@ -609,7 +609,7 @@ function lowerFnItem(
 
     // Get return type
     let returnType =
-        (fnType as FnType | null)?.returnType ||
+        (fnType)?.returnType ||
         makeUnitType({ line: 0, column: 0, start: 0, end: 0 });
     returnType = substituteLoweringGenericType(
         typeCtx,
@@ -826,11 +826,10 @@ function lowerLetStmt(
     const pat = lowerPattern(ctx, letStmt.pat, ty, typeCtx);
 
     if (
-        init &&
-        (init as HVarExpr & { closureMeta?: ClosureMeta }).closureMeta &&
+        init?.closureMeta &&
         pat.kind === HPatKind.Ident
     ) {
-        const closureMeta = (init as HVarExpr & { closureMeta?: ClosureMeta })
+        const closureMeta = (init)
             .closureMeta!;
         const captures: ClosureCapture[] = [];
         for (const capture of closureMeta.captures || []) {
@@ -892,9 +891,8 @@ function lowerLetStmt(
             captures,
         });
     } else if (
-        init &&
-        (init as HVarExpr & { closureMeta?: ClosureMeta }).closureMeta &&
-        (init as HVarExpr & { closureMeta?: ClosureMeta }).closureMeta!.captures
+        init?.closureMeta &&
+        (init).closureMeta!.captures
             ?.length > 0
     ) {
         ctx.addError(
@@ -1166,7 +1164,7 @@ function lowerIdentifier(
     // Prelude-style `None` lowering to `Option::None` when unbound.
     if (ident.name === "None") {
         const optionItem = ctx.lookupItem("Option");
-        if (optionItem && optionItem.kind === "enum") {
+        if (optionItem?.kind === "enum") {
             return lowerPath(
                 ctx,
                 {
@@ -1307,7 +1305,7 @@ function substituteLoweringGenericType(
               )
             : null;
         const item = typeCtx.lookupItem(resolved.name);
-        if (item && item.kind === "enum") {
+        if (item?.kind === "enum") {
             const enumNode = item.node as {
                 generics?: string[];
                 variants?: { name: string; fields?: { ty?: Node }[] }[];
@@ -1444,8 +1442,7 @@ function vecElementTypeForType(ty: Type | null): Type | null {
         ty &&
         ty.kind === TypeKind.Named &&
         ty.name === "Vec" &&
-        ty.args &&
-        ty.args.length === 1
+        ty.args?.length === 1
     ) {
         return ty.args[0];
     }
@@ -1461,8 +1458,7 @@ function optionElementTypeForType(
     if (
         resolved.kind === TypeKind.Named &&
         resolved.name === "Option" &&
-        resolved.args &&
-        resolved.args.length === 1
+        resolved.args?.length === 1
     ) {
         return typeCtx.resolveType(resolved.args[0]);
     }
@@ -1498,8 +1494,7 @@ function optionEnumTypeForType(
     if (
         resolved.kind === TypeKind.Named &&
         resolved.name === "Option" &&
-        resolved.args &&
-        resolved.args.length === 1
+        resolved.args?.length === 1
     ) {
         const payloadType = typeCtx.resolveType(resolved.args[0]);
         return {
@@ -1528,10 +1523,10 @@ function isEqLowerableType(
     );
 }
 
-type MethodMeta = {
+interface MethodMeta {
     implGenericNames?: string[];
     targetGenericParamNames?: string[];
-};
+}
 
 function instantiateLoweringMethodType(
     typeCtx: TypeContext,
@@ -1576,12 +1571,12 @@ function instantiateLoweringMethodType(
     return substituteLoweringGenericType(typeCtx, fnType, genericSet, bindings);
 }
 
-type LookupCallItemResult = {
+interface LookupCallItemResult {
     kind: "fn" | "struct" | "enum";
     node: Node;
     type?: Type;
     genericBindings?: Map<string, Type>;
-};
+}
 
 function lookupLoweringCallItem(
     typeCtx: TypeContext,
@@ -1623,7 +1618,7 @@ function lowerCall(ctx: LoweringCtx, call: Node, typeCtx: TypeContext): HExpr {
             !ctx.lookupItem(variantName)
         ) {
             const optionItem = ctx.lookupItem("Option");
-            if (optionItem && optionItem.kind === "enum") {
+            if (optionItem?.kind === "enum") {
                 return lowerCall(
                     ctx,
                     {
@@ -1817,7 +1812,7 @@ function lowerCall(ctx: LoweringCtx, call: Node, typeCtx: TypeContext): HExpr {
         const enumName = call.callee.segments[0];
         const variantName = call.callee.segments[1];
         const enumItem = ctx.lookupItem(enumName);
-        if (enumItem && enumItem.kind === "enum") {
+        if (enumItem?.kind === "enum") {
             const loweredArgs = (call.args || []).map((arg: Node) =>
                 lowerExpr(ctx, arg, typeCtx),
             );
@@ -1837,7 +1832,7 @@ function lowerCall(ctx: LoweringCtx, call: Node, typeCtx: TypeContext): HExpr {
             const genericSet = new Set<string>(enumGenericParams);
             const bindings = new Map<string, Type>();
 
-            if (variantNode && variantNode.fields) {
+            if (variantNode?.fields) {
                 const count = Math.min(
                     variantNode.fields.length,
                     loweredArgs.length,
@@ -1909,8 +1904,7 @@ function lowerCall(ctx: LoweringCtx, call: Node, typeCtx: TypeContext): HExpr {
     }
     const itemDecl = lookupLoweringCallItem(typeCtx, call.callee);
     if (
-        itemDecl &&
-        itemDecl.kind === "fn" &&
+        itemDecl?.kind === "fn" &&
         itemDecl.type?.kind === TypeKind.Fn
     ) {
         const genericNames = itemDecl.node?.generics || [];
@@ -2423,7 +2417,7 @@ function lowerField(
             ty = fieldDef.type;
         } else {
             const item = typeCtx.lookupItem(baseType.name);
-            if (item && item.kind === "struct") {
+            if (item?.kind === "struct") {
                 const structNodeItem = item.node as {
                     fields?: { name: string; ty?: Node }[];
                 };
@@ -2444,7 +2438,7 @@ function lowerField(
     } else if (baseType && baseType.kind === TypeKind.Named) {
         index = ctx.getFieldIndex(baseType.name, fieldName);
         const item = typeCtx.lookupItem(baseType.name);
-        if (item && item.kind === "struct") {
+        if (item?.kind === "struct") {
             const structNodeItem = item.node as {
                 fields?: { name: string; ty?: Node }[];
                 generics?: string[];
@@ -2791,7 +2785,7 @@ function lowerClosure(
         -1,
         inferredType,
     );
-    (closureValue as HVarExpr & { closureMeta?: ClosureMeta }).closureMeta = {
+    (closureValue).closureMeta = {
         helperName,
         helperType,
         captures: captures.map(
@@ -3152,7 +3146,7 @@ function lowerPath(
                 methodDecl.type,
             );
         }
-        if (item && item.kind === "enum") {
+        if (item?.kind === "enum") {
             // Enum variant
             const enumNode = item.node as {
                 variants?: { name: string; fields?: { ty?: Node }[] }[];
@@ -3402,7 +3396,7 @@ function lowerStructPat(
         (field: { name: string; pat: Node }) => {
             let fieldType = makeUnitType(defaultSpan);
 
-            if (enumVariant && enumVariant.fields) {
+            if (enumVariant?.fields) {
                 const tupleFieldIndex = Number.parseInt(field.name, 10);
                 if (
                     Number.isInteger(tupleFieldIndex) &&
@@ -3410,8 +3404,7 @@ function lowerStructPat(
                     tupleFieldIndex < (enumVariant.fields as Type[]).length
                 ) {
                     if (
-                        expectedEnumVariant &&
-                        expectedEnumVariant.fields &&
+                        expectedEnumVariant?.fields &&
                         tupleFieldIndex < expectedEnumVariant.fields.length
                     ) {
                         fieldType = expectedEnumVariant.fields[tupleFieldIndex];
@@ -3422,8 +3415,7 @@ function lowerStructPat(
                     if (
                         tupleField?.ty &&
                         !(
-                            expectedEnumVariant &&
-                            expectedEnumVariant.fields &&
+                            expectedEnumVariant?.fields &&
                             tupleFieldIndex < expectedEnumVariant.fields.length
                         )
                     ) {
@@ -3441,12 +3433,12 @@ function lowerStructPat(
                         }
                     }
                 }
-            } else if (structNode && structNode.fields) {
+            } else if (structNode?.fields) {
                 // Find field type from struct definition.
                 const fieldDef = structNode.fields.find(
                     (f: { name: string; ty?: Node }) => f.name === field.name,
                 );
-                if (fieldDef && fieldDef.ty) {
+                if (fieldDef?.ty) {
                     const typeResult = resolveTypeFromAst(fieldDef.ty, typeCtx);
                     if (typeResult.ok) {
                         fieldType = typeResult.type;
@@ -3601,7 +3593,7 @@ function extractPlace(
             } else if (baseType && baseType.kind === TypeKind.Named) {
                 index = ctx.getFieldIndex(baseType.name, fieldName);
                 const item = typeCtx.lookupItem(baseType.name);
-                if (item && item.kind === "struct") {
+                if (item?.kind === "struct") {
                     const structNodeItem = item.node as {
                         fields?: { name: string; ty?: Node }[];
                         generics?: string[];
@@ -3698,15 +3690,15 @@ function extractPlace(
 // Type Resolution Helper
 // ============================================================================
 
-type TypeResult = {
+interface TypeResult {
     ok: true;
     type: Type;
-};
+}
 
-type TypeError = {
+interface TypeError {
     ok: false;
     error?: string;
-};
+}
 
 type ResolveTypeResult = TypeResult | TypeError;
 
@@ -3731,7 +3723,7 @@ function resolveTypeFromAst(
     switch (typeNode.kind) {
         case NodeKind.NamedType: {
             let args: Type[] | null = null;
-            if (typeNode.args && typeNode.args.args) {
+            if (typeNode.args?.args) {
                 args = [];
                 for (const arg of typeNode.args.args) {
                     const argResult = resolveTypeFromAst(arg, typeCtx);
@@ -3776,7 +3768,7 @@ function resolveTypeFromAst(
                         variants?: { name: string; fields?: { ty?: Node }[] }[];
                     };
                     const genericNames = (enumNodeItem.generics || []).filter(
-                        (name: string) => !!name,
+                        (name: string) => Boolean(name),
                     );
                     const genericSet = new Set<string>(genericNames);
                     const bindings = new Map<string, Type>();

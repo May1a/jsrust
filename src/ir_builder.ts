@@ -6,15 +6,15 @@ import {
     addIRInstruction,
     setIRTerminator,
     addSuccessor,
-    IRType,
-    BlockId,
-    ValueId,
-    IRFunction,
-    IRBlock,
-    IRInst,
-    FcmpOp,
-    IcmpOp,
-    LocalId,
+    type IRType,
+    type BlockId,
+    type ValueId,
+    type IRFunction,
+    type IRBlock,
+    type IRInst,
+    type FcmpOp,
+    type IcmpOp,
+    type LocalId,
 } from "./ir";
 import {
     makeIconst,
@@ -69,7 +69,7 @@ import {
     makeSwitch,
     makeUnreachable,
 } from "./ir_terminators";
-import { FloatWidth, IntWidth } from "./types";
+import { type FloatWidth, type IntWidth } from "./ir";
 
 /**
  * IRBuilder - constructs SSA IR functions incrementally
@@ -84,7 +84,7 @@ import { FloatWidth, IntWidth } from "./types";
  *   const fn = builder.build();
  */
 export class IRBuilder {
-    currentModule: any | null;
+    currentModule: unknown | null;
     currentFunction: IRFunction | null;
     currentBlock: IRBlock | null;
     sealedBlocks: Set<BlockId>;
@@ -209,7 +209,7 @@ export class IRBuilder {
         // Find the defining block that dominates this block
         // Simplified: look for definition in current block first, then predecessors
         if (defs.has(blockId)) {
-            return defs.get(blockId) as ValueId;
+            return defs.get(blockId)!;
         }
         // Need to create phi node (simplified)
         // In real SSA construction, we'd insert phi at dominance frontiers
@@ -580,11 +580,11 @@ export class IRBuilder {
 
     switch(
         value: ValueId,
-        cases: Array<{
+        cases: {
             value: any;
             target: BlockId;
             args: ValueId[];
-        }>,
+        }[],
         defaultBlock: BlockId,
         defaultArgs: ValueId[] = [],
     ) {

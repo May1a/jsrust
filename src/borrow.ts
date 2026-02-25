@@ -1,27 +1,26 @@
-import { NodeKind } from "./ast";
-import type { TypeContext } from "./type_context";
+import { Node } from "./ast";
 
 export type RefOrigin =
     | { kind: "param"; name?: string }
     | { kind: "local"; name?: string; depth: number }
     | { kind: "temporary" };
 
-export type BindingInfo = {
+export interface BindingInfo {
     kind: "param" | "local";
     depth: number;
     refOrigin: RefOrigin | null;
-};
+}
 
-export type BorrowLiteError = {
+export interface BorrowLiteError {
     message: string;
     span?: { line: number; column: number; start: number; end: number };
-};
+}
 
-export type FnEnv = {
+export interface FnEnv {
     scopeStack: string[][];
     bindings: Map<string, BindingInfo[]>;
     errors: BorrowLiteError[];
-};
+}
 
 function makeBorrowError(
     message: string,
@@ -39,7 +38,7 @@ function pushScope(env: FnEnv): void {
 }
 
 function popScope(env: FnEnv): void {
-    const names = env.scopeStack.pop() || [];
+    const names = env.scopeStack.pop() ?? [];
     for (let i = names.length - 1; i >= 0; i--) {
         const name = names[i];
         const stack = env.bindings.get(name);
@@ -52,7 +51,7 @@ function popScope(env: FnEnv): void {
 }
 
 function defineBinding(env: FnEnv, name: string, info: BindingInfo): void {
-    const stack = env.bindings.get(name) || [];
+    const stack = env.bindings.get(name) ?? [];
     stack.push(info);
     env.bindings.set(name, stack);
     const scope = env.scopeStack[env.scopeStack.length - 1];
@@ -74,19 +73,19 @@ function collectPatternBindings(pat: any, out: string[]): void {
             out.push(pat.name);
             break;
         case NodeKind.TuplePat:
-            for (const e of pat.elements || []) collectPatternBindings(e, out);
+            for (const e of pat.elements ?? []) collectPatternBindings(e, out);
             break;
         case NodeKind.StructPat:
-            for (const f of pat.fields || []) {
+            for (const f of pat.fields ?? []) {
                 if (f.pat) collectPatternBindings(f.pat, out);
             }
             break;
         case NodeKind.SlicePat:
-            for (const e of pat.elements || []) collectPatternBindings(e, out);
+            for (const e of pat.elements ?? []) collectPatternBindings(e, out);
             if (pat.rest) collectPatternBindings(pat.rest, out);
             break;
         case NodeKind.OrPat:
-            if ((pat.alternatives || []).length > 0) {
+            if ((pat.alternatives ?? []).length > 0) {
                 collectPatternBindings(pat.alternatives[0], out);
             }
             break;
@@ -104,14 +103,14 @@ function getRefOrigin(expr: any, env: FnEnv): RefOrigin | null {
     switch (expr.kind) {
         case NodeKind.RefExpr: {
             const origin = getPlaceOrigin(expr.operand, env);
-            return origin || { kind: "temporary" };
+            return origin ?? { kind: "temporary" };
         }
         case NodeKind.IdentifierExpr: {
             const binding = lookupBinding(env, expr.name);
             return binding ? binding.refOrigin : null;
         }
         case NodeKind.PathExpr: {
-            if (!expr.segments || expr.segments.length !== 1) return null;
+            if (expr.segments?.length !== 1) return null;
             const binding = lookupBinding(env, expr.segments[0]);
             return binding ? binding.refOrigin : null;
         }
@@ -152,7 +151,7 @@ function getPlaceOrigin(place: any, env: FnEnv): RefOrigin | null {
             };
         }
         case NodeKind.PathExpr: {
-            if (!place.segments || place.segments.length !== 1) return null;
+            if (place.segments?.length !== 1) return null;
             const binding = lookupBinding(env, place.segments[0]);
             if (!binding) return null;
             if (binding.refOrigin) return binding.refOrigin;
@@ -203,17 +202,16 @@ function checkExpr(expr: any, env: FnEnv): void {
                 targetBinding = lookupBinding(env, expr.target.name);
             } else if (
                 expr.target.kind === NodeKind.PathExpr &&
-                expr.target.segments &&
-                expr.target.segments.length === 1
+                expr.target.segments?.length === 1
             ) {
                 targetBinding = lookupBinding(env, expr.target.segments[0]);
-            } else if (targetOrigin && targetOrigin.kind === "local") {
+            } else if (targetOrigin?.kind === "local") {
                 targetBinding = {
                     kind: "local",
                     depth: targetOrigin.depth,
                     refOrigin: null,
                 };
-            } else if (targetOrigin && targetOrigin.kind === "param") {
+            } else if (targetOrigin?.kind === "param") {
                 targetBinding = {
                     kind: "param",
                     depth: -1,
@@ -266,7 +264,7 @@ function checkExpr(expr: any, env: FnEnv): void {
             return;
         case NodeKind.MatchExpr:
             checkExpr(expr.scrutinee, env);
-            for (const arm of expr.arms || []) {
+            for (const arm of expr.arms ?? []) {
                 pushScope(env);
                 if (arm.guard) checkExpr(arm.guard, env);
                 checkExpr(arm.body, env);
@@ -298,7 +296,7 @@ function checkExpr(expr: any, env: FnEnv): void {
             return;
         case NodeKind.CallExpr:
             checkExpr(expr.callee, env);
-            for (const arg of expr.args || []) checkExpr(arg, env);
+            for (const arg of expr.args ?? []) checkExpr(arg, env);
             return;
         case NodeKind.FieldExpr:
             checkExpr(expr.receiver, env);
@@ -315,7 +313,7 @@ function checkExpr(expr: any, env: FnEnv): void {
             checkExpr(expr.operand, env);
             return;
         case NodeKind.StructExpr:
-            for (const field of expr.fields || []) {
+            for (const field of expr.fields ?? []) {
                 checkExpr(field.value, env);
             }
             if (expr.spread) checkExpr(expr.spread, env);
@@ -331,11 +329,11 @@ function checkExpr(expr: any, env: FnEnv): void {
             checkExpr(expr.operand, env);
             return;
         case NodeKind.MacroExpr:
-            for (const arg of expr.args || []) checkExpr(arg, env);
+            for (const arg of expr.args ?? []) checkExpr(arg, env);
             return;
         case NodeKind.ClosureExpr:
             pushScope(env);
-            for (const param of expr.params || []) {
+            for (const param of expr.params ?? []) {
                 if (!param.name || param.name === "_") continue;
                 defineBinding(env, param.name, {
                     kind: "local",
@@ -397,7 +395,7 @@ function checkStmt(stmt: any, env: FnEnv): void {
 
 function checkBlock(block: any, env: FnEnv, checkTailAsReturn: boolean): void {
     pushScope(env);
-    for (const stmt of block.stmts || []) {
+    for (const stmt of block.stmts ?? []) {
         checkStmt(stmt, env);
     }
     if (block.expr) {
@@ -408,7 +406,7 @@ function checkBlock(block: any, env: FnEnv, checkTailAsReturn: boolean): void {
                 env.errors.push(
                     makeBorrowError(
                         "Cannot return reference to local data or temporary",
-                        block.expr.span || block.span,
+                        block.expr.span ?? block.span,
                     ),
                 );
             }
@@ -425,7 +423,7 @@ function checkFnItem(fnItem: any): BorrowLiteError[] {
         errors: [],
     };
     pushScope(env);
-    for (const param of fnItem.params || []) {
+    for (const param of fnItem.params ?? []) {
         if (!param.name) continue;
         defineBinding(env, param.name, {
             kind: "param",
@@ -445,10 +443,10 @@ function checkItem(item: any, errors: BorrowLiteError[]): void {
             errors.push(...checkFnItem(item));
             break;
         case NodeKind.ModItem:
-            for (const child of item.items || []) checkItem(child, errors);
+            for (const child of item.items ?? []) checkItem(child, errors);
             break;
         case NodeKind.ImplItem:
-            for (const method of item.methods || []) {
+            for (const method of item.methods ?? []) {
                 errors.push(...checkFnItem(method));
             }
             break;
@@ -462,7 +460,7 @@ export function checkBorrowLite(
     _typeCtx: TypeContext,
 ): { ok: boolean; errors?: BorrowLiteError[] } {
     const errors: BorrowLiteError[] = [];
-    for (const item of moduleAst.items || []) {
+    for (const item of moduleAst.items ?? []) {
         checkItem(item, errors);
     }
     if (errors.length > 0) {

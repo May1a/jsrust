@@ -72,19 +72,19 @@ export enum TokenType {
 
 export type TokenTypeValue = TokenType;
 
-export type Token = {
+export interface Token {
     type: TokenTypeValue;
     value: string;
     line: number;
     column: number;
-};
+}
 
-export type LexerState = {
+export interface LexerState {
     source: string;
     pos: number;
     line: number;
     column: number;
-};
+}
 
 const Keywords: Record<string, TokenType> = {
     fn: TokenType.Fn,
@@ -164,31 +164,31 @@ function skipBlockComment(state: LexerState): boolean {
 }
 
 function isIdentifierStart(ch?: string) {
-    return !!ch && (ch === "_" || /[a-zA-Z]/.test(ch));
+    return Boolean(ch) && (ch === "_" || /[a-zA-Z]/.test(ch));
 }
 
 function isIdentifierChar(ch?: string) {
-    return !!ch && (ch === "_" || /[a-zA-Z0-9]/.test(ch));
+    return Boolean(ch) && (ch === "_" || /[a-zA-Z0-9]/.test(ch));
 }
 
 function isWhitespace(ch?: string) {
-    return !!ch && /\s/.test(ch);
+    return Boolean(ch) && /\s/.test(ch);
 }
 
 function isDigit(ch?: string) {
-    return !!ch && /[0-9]/.test(ch);
+    return Boolean(ch) && /[0-9]/.test(ch);
 }
 
 function isHexDigit(ch?: string) {
-    return !!ch && /[0-9a-fA-F]/.test(ch);
+    return Boolean(ch) && /[0-9a-fA-F]/.test(ch);
 }
 
 function isOctalDigit(ch?: string) {
-    return !!ch && /[0-7]/.test(ch);
+    return Boolean(ch) && /[0-7]/.test(ch);
 }
 
 function isBinaryDigit(ch?: string) {
-    return !!ch && /[01]/.test(ch);
+    return Boolean(ch) && /[01]/.test(ch);
 }
 
 function makeToken(

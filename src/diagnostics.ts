@@ -2,7 +2,7 @@
 // Diagnostics and Error Reporting
 // ============================================================================
 
-import type { Span } from "./types";
+import { Span } from "./ast";
 
 // ============================================================================
 // Task 13.1: Source Location
@@ -11,19 +11,19 @@ import type { Span } from "./types";
 /**
  * Represents a position in source code
  */
-type SourceLocation = {
+interface SourceLocation {
     file?: string;
     line: number;
     column: number;
-};
+}
 
 /**
  * Represents a range in source code
  */
-type SourceSpan = {
+interface SourceSpan {
     start: SourceLocation;
     end: SourceLocation;
-};
+}
 
 /**
  * Create a source location
@@ -95,19 +95,19 @@ enum Level {
     Help,
 }
 
-type RelatedInfo = {
+interface RelatedInfo {
     span: SourceSpan;
     message: string;
-};
+}
 
-type Diagnostic = {
+interface Diagnostic {
     level: number;
     message: string;
     span?: SourceSpan;
     code?: string;
     related?: RelatedInfo[];
     hint?: string;
-};
+}
 
 /**
  * Create a diagnostic
@@ -156,7 +156,7 @@ function withRelated(
     span: SourceSpan,
     message: string,
 ): Diagnostic {
-    const related = diag.related || [];
+    const related = diag.related ?? [];
     related.push({ span, message });
     return { ...diag, related };
 }
@@ -190,22 +190,22 @@ class DiagnosticCollector {
     /**
      * Add a diagnostic
      */
-    add(diag: Diagnostic) {
+    add(diag: Diagnostic): void {
         this.diagnostics.push(diag);
-        if (diag.level === Level.Error) {
+        if (diag.level === (Level.Error as number)) {
             this.#hasErrors = true;
         }
     }
-    addError(message: string, span: SourceSpan) {
+    addError(message: string, span: SourceSpan): void {
         this.add(error(message, span));
     }
-    addWarning(message: string, span: SourceSpan) {
+    addWarning(message: string, span: SourceSpan): void {
         this.add(warning(message, span));
     }
-    addNote(message: string, span: SourceSpan) {
+    addNote(message: string, span: SourceSpan): void {
         this.add(note(message, span));
     }
-    addHelp(message: string, span: SourceSpan) {
+    addHelp(message: string, span: SourceSpan): void {
         this.add(help(message, span));
     }
 
@@ -213,25 +213,31 @@ class DiagnosticCollector {
         return this.#hasErrors;
     }
     hasWarnings(): boolean {
-        return this.diagnostics.some((d) => d.level === Level.Warning);
+        return this.diagnostics.some(
+            (d) => d.level === (Level.Warning as number),
+        );
     }
     getDiagnostics(): Diagnostic[] {
         return [...this.diagnostics];
     }
     getErrors(): Diagnostic[] {
-        return this.diagnostics.filter((d) => d.level === Level.Error);
+        return this.diagnostics.filter(
+            (d) => d.level === (Level.Error as number),
+        );
     }
     getWarnings(): Diagnostic[] {
-        return this.diagnostics.filter((d) => d.level === Level.Warning);
+        return this.diagnostics.filter(
+            (d) => d.level === (Level.Warning as number),
+        );
     }
-    clear() {
+    clear(): void {
         this.diagnostics = [];
         this.#hasErrors = false;
     }
     countByLevel(level: number): number {
         return this.diagnostics.filter((d) => d.level === level).length;
     }
-    merge(other: DiagnosticCollector) {
+    merge(other: DiagnosticCollector): void {
         for (const diag of other.diagnostics) {
             this.add(diag);
         }
@@ -260,8 +266,8 @@ function ok$1<T>(value: T): Result<T, never> {
 /**
  * Create an error result
  */
-function err$1<E>(error: E): Result<never, E> {
-    return { ok: false, error };
+function err$1<E>(err: E): Result<never, E> {
+    return { ok: false, error: err };
 }
 
 /**
@@ -383,10 +389,7 @@ class SourceContext {
      * Get source lines (lazy initialization)
      */
     get lines(): string[] {
-        if (this.#lines === null) {
-            this.#lines = this.source.split("\n");
-        }
-        return this.#lines;
+        return (this.#lines ??= this.source.split("\n"));
     }
     /**
      * Get a specific line (1-based)
@@ -462,13 +465,13 @@ const LEVEL_COLORS: Record<number, string> = {
 };
 
 /** @type {string} */
-const RESET: string = "\x1b[0m";
+const RESET = "\x1b[0m";
 /** @type {string} */
-const BOLD: string = "\x1b[1m";
+const BOLD = "\x1b[1m";
 /** @type {string} */
-const DIM: string = "\x1b[2m";
+const DIM = "\x1b[2m";
 /** @type {string} */
-const BLUE: string = "\x1b[34m";
+const BLUE = "\x1b[34m";
 
 /**
  * Render a diagnostic to a string
@@ -544,7 +547,7 @@ function renderDiagnostic(
 function renderSnippet(
     span: SourceSpan,
     ctx: SourceContext,
-    color: boolean = true,
+    color = true,
 ): string {
     const lines = [];
     const width = ctx.lineNumberWidth;
@@ -591,11 +594,7 @@ function renderSnippet(
 /**
  * Build an underline string
  */
-function buildUnderline(
-    start: number,
-    end: number,
-    color: boolean = true,
-): string {
+function buildUnderline(start: number, end: number, color = true): string {
     const reset = color ? RESET : "";
     const bold = color ? BOLD : "";
     const blue = color ? BLUE : "";
@@ -713,7 +712,7 @@ function formatUnreachableCode(span: SourceSpan): Diagnostic {
  */
 function formatUnusedVar(name: string, span: SourceSpan): Diagnostic {
     const diag = warning(`Unused variable: \`${name}\``, span);
-    return withHint(diag, "Prefix with underscore to silence: `_" + name + "`");
+    return withHint(diag, `Prefix with underscore to silence: \`_${name}\``);
 }
 /**
  * Format a dead code warning

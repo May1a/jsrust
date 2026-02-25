@@ -35,17 +35,17 @@ const ValidationErrorKind = {
 type ValidationErrorKindValue =
     (typeof ValidationErrorKind)[keyof typeof ValidationErrorKind];
 
-type ValidationErrorLoc = {
+interface ValidationErrorLoc {
     blockId?: BlockId;
     valueId?: ValueId;
     fnId?: number;
-};
+}
 
-type ValidationError = {
+interface ValidationError {
     kind: ValidationErrorKindValue;
     message: string;
     loc?: ValidationErrorLoc;
-};
+}
 
 function makeValidationError(
     kind: ValidationErrorKindValue,
@@ -155,14 +155,14 @@ function errMissingReturn(fnName: string): ValidationError {
 // Task 12.2: Validation Context
 // ============================================================================
 
-type ValidationCtx = {
+interface ValidationCtx {
     fn: IRFunction | null;
     definedValues: Set<ValueId>;
     valueTypes: Map<ValueId, IRType>;
     blocks: Map<BlockId, IRBlock>;
     valueDefBlock: Map<ValueId, BlockId>;
     errors: ValidationError[];
-};
+}
 
 function makeValidationCtx(): ValidationCtx {
     return {
@@ -219,10 +219,10 @@ function addError(ctx: ValidationCtx, error: ValidationError): void {
 // Task 12.3: Module Validation
 // ============================================================================
 
-type ValidationResult = {
+interface ValidationResult {
     ok: boolean;
     errors: ValidationError[];
-};
+}
 
 function validateModule(module: IRModule): ValidationResult {
     const ctx = makeValidationCtx();
@@ -877,7 +877,7 @@ function computeDominators(fn: IRFunction): Map<BlockId, Set<BlockId>> {
     const allBlocks = new Set<BlockId>(blockIds);
 
     for (const block of fn.blocks) {
-        if (fn.entry && block.id === fn.entry.id) {
+        if (block.id === fn.entry?.id) {
             dominators.set(block.id, new Set([block.id]));
         } else {
             dominators.set(block.id, new Set(allBlocks));
@@ -890,7 +890,7 @@ function computeDominators(fn: IRFunction): Map<BlockId, Set<BlockId>> {
         changed = false;
 
         for (const block of fn.blocks) {
-            if (fn.entry && block.id === fn.entry.id) continue;
+            if (block.id === fn.entry?.id) continue;
 
             const dom = dominators.get(block.id);
             if (!dom) continue;
@@ -1095,7 +1095,7 @@ function validateReachability(entry: IRBlock, ctx: ValidationCtx): void {
         visited.add(blockId);
 
         const block = getBlock(ctx, blockId);
-        if (!block || !block.terminator) continue;
+        if (!block?.terminator) continue;
 
         // Add successors to worklist
         const successors = getSuccessorBlocks(block.terminator);

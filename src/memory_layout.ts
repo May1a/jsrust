@@ -6,18 +6,18 @@
 
 import type { IRType } from "./ir";
 
-import { IntWidth, FloatWidth } from "./types";
+import { IntWidth, FloatWidth } from "./ir";
 import { IRTypeKind } from "./ir";
 
 // ============================================================================
 // Task 10.1: Layout Structure
 // ============================================================================
 
-type TypeLayout = {
+interface TypeLayout {
     size: number;
     align: number;
     fieldOffsets: number[] | null;
-};
+}
 
 function makeTypeLayout(
     size: number,
@@ -140,8 +140,7 @@ function layoutFloat(width: FloatWidth): TypeLayout {
         case FloatWidth.F64:
             return layoutF64();
         default: {
-            debugger;
-            throw __filename;
+            throw new Error("Assert: false");
         }
     }
 }
@@ -360,11 +359,11 @@ class LayoutCache {
             case IRTypeKind.Unit:
                 return layoutUnit();
             case IRTypeKind.Struct:
-                return layoutStruct(type.fields as IRType[], this);
+                return layoutStruct(type.fields!, this);
             case IRTypeKind.Enum:
-                return layoutEnum(type.variants as IRType[][], this);
+                return layoutEnum(type.variants!, this);
             case IRTypeKind.Array:
-                return layoutArray(type.element as IRType, type.length!, this);
+                return layoutArray(type.element!, type.length!, this);
             case IRTypeKind.Fn:
                 // Function types don't have a runtime layout
                 // Return pointer size as a function pointer

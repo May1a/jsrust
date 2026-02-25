@@ -1,13 +1,4 @@
-import {
-    IRTypeKind,
-    IRInstKind,
-    IRTermKind,
-    IcmpOp,
-    FcmpOp,
-    irTypeToString,
-    intWidthToString,
-    floatWidthToString,
-} from "./ir";
+import { IRTypeKind, IRInstKind, IRTermKind, IcmpOp, FcmpOp } from "./ir";
 import type {
     IRType,
     IRInst,
@@ -51,7 +42,7 @@ export class PrintContext {
         if (!this.valueNames.has(id)) {
             this.valueNames.set(id, `v${this.valueCounter++}`);
         }
-        return this.valueNames.get(id) as string;
+        return this.valueNames.get(id)!;
     }
 
     /**
@@ -68,7 +59,7 @@ export class PrintContext {
         if (!this.blockNames.has(id)) {
             this.blockNames.set(id, `block${this.blockCounter++}`);
         }
-        return this.blockNames.get(id) as string;
+        return this.blockNames.get(id)!;
     }
 
     /**
@@ -78,7 +69,7 @@ export class PrintContext {
         if (!this.localNames.has(id)) {
             this.localNames.set(id, `loc${this.localCounter++}`);
         }
-        return this.localNames.get(id) as string;
+        return this.localNames.get(id)!;
     }
 }
 
@@ -160,10 +151,10 @@ export function printInstruction(inst: IRInst, ctx?: PrintContext): string {
 
     switch (inst.kind) {
         case IRInstKind.Iconst:
-            return `${resultPrefix}iconst ${intWidthToString(inst.ty.width as number)} ${inst.value}`;
+            return `${resultPrefix}iconst ${intWidthToString(inst.ty.width!)} ${inst.value}`;
 
         case IRInstKind.Fconst:
-            return `${resultPrefix}fconst ${floatWidthToString(inst.ty.width as number)} ${inst.value}`;
+            return `${resultPrefix}fconst ${floatWidthToString(inst.ty.width!)} ${inst.value}`;
 
         case IRInstKind.Bconst:
             return `${resultPrefix}bconst ${inst.value}`;
@@ -226,7 +217,7 @@ export function printInstruction(inst: IRInst, ctx?: PrintContext): string {
             return `${resultPrefix}fcmp ${fcmpOpToString(inst.op as FcmpOp)} ${ctx.getValueName(inst.a)}, ${ctx.getValueName(inst.b)}`;
 
         case IRInstKind.Alloca:
-            return `${resultPrefix}alloca ${printType(inst.ty.inner as IRType)} ; ${ctx.getLocalName(inst.localId)}`;
+            return `${resultPrefix}alloca ${printType(inst.ty.inner!)} ; ${ctx.getLocalName(inst.localId)}`;
 
         case IRInstKind.Load:
             return `${resultPrefix}load ${printType(inst.ty)}, ${ctx.getValueName(inst.ptr)}`;
@@ -239,7 +230,7 @@ export function printInstruction(inst: IRInst, ctx?: PrintContext): string {
 
         case IRInstKind.Gep: {
             const indices = inst.indices
-                .map((i: any) => ctx!.getValueName(i))
+                .map((i: any) => ctx.getValueName(i))
                 .join(", ");
             return `${resultPrefix}gep ${ctx.getValueName(inst.ptr)}, [${indices}]`;
         }
@@ -273,21 +264,21 @@ export function printInstruction(inst: IRInst, ctx?: PrintContext): string {
 
         case IRInstKind.Call: {
             const args = inst.args
-                .map((a: any) => ctx!.getValueName(a))
+                .map((a: any) => ctx.getValueName(a))
                 .join(", ");
             return `${resultPrefix}call ${inst.fn}(${args})`;
         }
 
         case IRInstKind.CallDyn: {
             const args = inst.args
-                .map((a: any) => ctx!.getValueName(a))
+                .map((a: any) => ctx.getValueName(a))
                 .join(", ");
             return `${resultPrefix}call_dyn ${ctx.getValueName(inst.fn)}(${args})`;
         }
 
         case IRInstKind.StructCreate: {
             const fields = inst.fields
-                .map((f: any) => ctx!.getValueName(f))
+                .map((f: any) => ctx.getValueName(f))
                 .join(", ");
             return `${resultPrefix}struct_create ${printType(inst.ty)} { ${fields} }`;
         }
@@ -336,17 +327,17 @@ export function printTerminator(term: IRTerm, ctx?: PrintContext): string {
 
         case IRTermKind.Br: {
             const args = term.args
-                .map((a: any) => ctx!.getValueName(a))
+                .map((a: any) => ctx.getValueName(a))
                 .join(", ");
             return `br ${ctx.getBlockName(term.target)}${args ? `(${args})` : ""}`;
         }
 
         case IRTermKind.BrIf: {
             const thenArgs = term.thenArgs
-                .map((a: any) => ctx!.getValueName(a))
+                .map((a: any) => ctx.getValueName(a))
                 .join(", ");
             const elseArgs = term.elseArgs
-                .map((a: any) => ctx!.getValueName(a))
+                .map((a: any) => ctx.getValueName(a))
                 .join(", ");
             return `br_if ${ctx.getValueName(term.cond)}, then: ${ctx.getBlockName(term.thenBlock)}(${thenArgs}), else: ${ctx.getBlockName(term.elseBlock)}(${elseArgs})`;
         }
@@ -355,13 +346,13 @@ export function printTerminator(term: IRTerm, ctx?: PrintContext): string {
             const cases = term.cases
                 .map((c: any) => {
                     const args = c.args
-                        .map((a: any) => ctx!.getValueName(a))
+                        .map((a: any) => ctx.getValueName(a))
                         .join(", ");
-                    return `${ctx!.getValueName(c.value)} => ${ctx!.getBlockName(c.target)}(${args})`;
+                    return `${ctx.getValueName(c.value)} => ${ctx.getBlockName(c.target)}(${args})`;
                 })
                 .join(", ");
             const defaultArgs = term.defaultArgs
-                .map((a: any) => ctx!.getValueName(a))
+                .map((a: any) => ctx.getValueName(a))
                 .join(", ");
             return `switch ${ctx.getValueName(term.value)} { ${cases}, default: ${ctx.getBlockName(term.defaultBlock)}(${defaultArgs}) }`;
         }
@@ -391,8 +382,8 @@ export function printBlock(block: IRBlock, ctx?: PrintContext): string {
     if (block.params.length > 0) {
         const params = block.params
             .map((p) => {
-                ctx!.getValueName(p.id); // Register the param value name
-                return `${ctx!.getValueName(p.id)}: ${printType(p.ty)}`;
+                ctx.getValueName(p.id); // Register the param value name
+                return `${ctx.getValueName(p.id)}: ${printType(p.ty)}`;
             })
             .join(", ");
         lines.push(`${blockName}(${params}):`);
@@ -432,7 +423,7 @@ export function printFunction(fn: IRFunction, ctx?: PrintContext): string {
     // Function signature
     const params = fn.params
         .map((p) => {
-            ctx!.getValueName(p.id); // Register param name
+            ctx.getValueName(p.id); // Register param name
             return `${p.name}: ${printType(p.ty)}`;
         })
         .join(", ");

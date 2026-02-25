@@ -1,4 +1,4 @@
-import { Result, ok, err } from "./diagnostics";
+import { type Result, ok, err } from "./diagnostics";
 
 import {
     IRTypeKind,
@@ -23,12 +23,12 @@ import {
     addIRBlockParam,
     addIRInstruction,
     setIRTerminator,
-    IRModule,
-    IRType,
-    IRFunction,
-    IRBlock,
-    IRInst,
-    IRTerm,
+    type IRModule,
+    type IRType,
+    type IRFunction,
+    type IRBlock,
+    type IRInst,
+    type IRTerm,
 } from "./ir";
 
 import { MAGIC, VERSION } from "./ir_serialize";
@@ -49,11 +49,11 @@ const DeserializeErrorKind = {
 
 type DeserializeErrorKindValue = number;
 
-type DeserializeError = {
+interface DeserializeError {
     kind: DeserializeErrorKindValue;
     message: string;
     pos?: number;
-};
+}
 
 /**
  * IR Deserializer - reads IR from binary format
@@ -65,7 +65,7 @@ class IRDeserializer {
     end: number;
     constructor(
         buffer: ArrayBuffer,
-        byteOffset: number = 0,
+        byteOffset = 0,
         byteLength: number = buffer.byteLength - byteOffset,
     ) {
         this.view = new DataView(buffer, byteOffset, byteLength);

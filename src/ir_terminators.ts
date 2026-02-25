@@ -33,11 +33,11 @@ export function makeBrIf(
     };
 }
 
-export type SwitchCase = {
+export interface SwitchCase {
     value: any;
     target: BlockId;
     args: ValueId[];
-};
+}
 
 export function makeSwitch(
     value: ValueId,
