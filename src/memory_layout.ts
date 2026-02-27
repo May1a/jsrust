@@ -4,10 +4,74 @@
  * Computes size, alignment, and field offsets for IR types.
  */
 
-import type { IRType } from "./ir";
+import {
+    FloatWidth,
+    IRTypeKind,
+    IntWidth,
+    type ArrayType,
+    type EnumType,
+    type FloatType,
+    type FnType,
+    type IRType,
+    type IntType,
+    type StructType,
+} from "./ir";
 
-import { IntWidth, FloatWidth } from "./ir";
-import { IRTypeKind } from "./ir";
+// Type guards for IRType narrowing
+function isIntType(type: IRType): type is IntType {
+    return type.kind === IRTypeKind.Int;
+}
+
+function isFloatType(type: IRType): type is FloatType {
+    return type.kind === IRTypeKind.Float;
+}
+
+function isStructType(type: IRType): type is StructType {
+    return type.kind === IRTypeKind.Struct;
+}
+
+function isEnumType(type: IRType): type is EnumType {
+    return type.kind === IRTypeKind.Enum;
+}
+
+function isArrayType(type: IRType): type is ArrayType {
+    return type.kind === IRTypeKind.Array;
+}
+
+function isFnType(type: IRType): type is FnType {
+    return type.kind === IRTypeKind.Fn;
+}
+
+// ============================================================================
+// Layout Constants
+// ============================================================================
+
+// Integer type sizes and alignments
+const I32_SIZE = 4;
+const I32_ALIGN = 4;
+const I64_SIZE = 8;
+const I64_ALIGN = 8;
+const I128_SIZE = 16;
+const I128_ALIGN = 16;
+
+// Float type sizes and alignments
+const F32_SIZE = 4;
+const F32_ALIGN = 4;
+const F64_SIZE = 8;
+const F64_ALIGN = 8;
+
+// Pointer size and alignment (64-bit)
+const PTR_SIZE = 8;
+const PTR_ALIGN = 8;
+
+// Enum tag size thresholds
+const TAG_U8_MAX = 256;
+const TAG_U16_MAX = 65_536;
+const TAG_U32_MAX = 4_294_967_296;
+const TAG_U8_SIZE = 1;
+const TAG_U16_SIZE = 2;
+const TAG_U32_SIZE = 4;
+const TAG_U64_SIZE = 8;
 
 // ============================================================================
 // Task 10.1: Layout Structure
@@ -16,15 +80,15 @@ import { IRTypeKind } from "./ir";
 interface TypeLayout {
     size: number;
     align: number;
-    fieldOffsets: number[] | null;
+    fieldOffsets: number[] | undefined;
 }
 
 function makeTypeLayout(
     size: number,
     align: number,
-    fieldOffsets: number[] | null = null,
+    fieldOffsets?: number[],
 ): TypeLayout {
-    return { size, align, fieldOffsets: fieldOffsets };
+    return { size, align, fieldOffsets };
 }
 
 // ============================================================================
@@ -49,35 +113,35 @@ function layoutI16(): TypeLayout {
  * Layout for i32: size 4, align 4
  */
 function layoutI32(): TypeLayout {
-    return makeTypeLayout(4, 4);
+    return makeTypeLayout(I32_SIZE, I32_ALIGN);
 }
 
 /**
  * Layout for i64: size 8, align 8
  */
 function layoutI64(): TypeLayout {
-    return makeTypeLayout(8, 8);
+    return makeTypeLayout(I64_SIZE, I64_ALIGN);
 }
 
 /**
  * Layout for i128: size 16, align 16
  */
 function layoutI128(): TypeLayout {
-    return makeTypeLayout(16, 16);
+    return makeTypeLayout(I128_SIZE, I128_ALIGN);
 }
 
 /**
  * Layout for f32: size 4, align 4
  */
 function layoutF32(): TypeLayout {
-    return makeTypeLayout(4, 4);
+    return makeTypeLayout(F32_SIZE, F32_ALIGN);
 }
 
 /**
  * Layout for f64: size 8, align 8
  */
 function layoutF64(): TypeLayout {
-    return makeTypeLayout(8, 8);
+    return makeTypeLayout(F64_SIZE, F64_ALIGN);
 }
 
 /**
@@ -91,7 +155,7 @@ function layoutBool(): TypeLayout {
  * Layout for pointer: size 8, align 8 (64-bit)
  */
 function layoutPtr(): TypeLayout {
-    return makeTypeLayout(8, 8);
+    return makeTypeLayout(PTR_SIZE, PTR_ALIGN);
 }
 
 /**
@@ -107,26 +171,33 @@ function layoutUnit(): TypeLayout {
 function layoutInt(width: IntWidth): TypeLayout {
     switch (width) {
         case IntWidth.I8:
-        case IntWidth.U8:
+        case IntWidth.U8: {
             return layoutI8();
+        }
         case IntWidth.I16:
-        case IntWidth.U16:
+        case IntWidth.U16: {
             return layoutI16();
+        }
         case IntWidth.I32:
-        case IntWidth.U32:
+        case IntWidth.U32: {
             return layoutI32();
+        }
         case IntWidth.I64:
-        case IntWidth.U64:
+        case IntWidth.U64: {
             return layoutI64();
+        }
         case IntWidth.I128:
-        case IntWidth.U128:
+        case IntWidth.U128: {
             return layoutI128();
+        }
         case IntWidth.Isize:
-        case IntWidth.Usize:
+        case IntWidth.Usize: {
             // 64-bit platform
             return layoutI64();
-        default:
+        }
+        default: {
             return layoutI8();
+        }
     }
 }
 
@@ -135,10 +206,12 @@ function layoutInt(width: IntWidth): TypeLayout {
  */
 function layoutFloat(width: FloatWidth): TypeLayout {
     switch (width) {
-        case FloatWidth.F32:
+        case FloatWidth.F32: {
             return layoutF32();
-        case FloatWidth.F64:
+        }
+        case FloatWidth.F64: {
             return layoutF64();
+        }
         default: {
             throw new Error("Assert: false");
         }
@@ -214,7 +287,7 @@ function layoutArray(
     const elementLayout = layoutCache.getLayout(element);
     const size = elementLayout.size * count;
     // Array alignment is the element's alignment
-    const align = elementLayout.align;
+    const { align } = elementLayout;
     return makeTypeLayout(size, align);
 }
 
@@ -227,10 +300,10 @@ function layoutArray(
  */
 function calculateTagSize(variantCount: number): number {
     if (variantCount <= 0) return 0;
-    if (variantCount <= 256) return 1; // u8
-    if (variantCount <= 65536) return 2; // u16
-    if (variantCount <= 4294967296) return 4; // u32
-    return 8; // u64
+    if (variantCount <= TAG_U8_MAX) return TAG_U8_SIZE;
+    if (variantCount <= TAG_U16_MAX) return TAG_U16_SIZE;
+    if (variantCount <= TAG_U32_MAX) return TAG_U32_SIZE;
+    return TAG_U64_SIZE;
 }
 
 /**
@@ -251,7 +324,7 @@ function layoutEnum(
 
     if (variants.length === 1) {
         // Single variant - just the data
-        const variantFields = variants[0];
+        const [variantFields] = variants;
         if (variantFields.length === 0) {
             return makeTypeLayout(0, 1);
         }
@@ -318,64 +391,99 @@ class LayoutCache {
      */
     typeKey(type: IRType): string {
         switch (type.kind) {
-            case IRTypeKind.Int:
+            case IRTypeKind.Int: {
+                if (!isIntType(type)) throw new Error("Type mismatch");
                 return `int_${type.width}`;
-            case IRTypeKind.Float:
+            }
+            case IRTypeKind.Float: {
+                if (!isFloatType(type)) throw new Error("Type mismatch");
                 return `float_${type.width}`;
-            case IRTypeKind.Bool:
+            }
+            case IRTypeKind.Bool: {
                 return "bool";
-            case IRTypeKind.Ptr:
+            }
+            case IRTypeKind.Ptr: {
                 return "ptr";
-            case IRTypeKind.Unit:
+            }
+            case IRTypeKind.Unit: {
                 return "unit";
-            case IRTypeKind.Struct:
+            }
+            case IRTypeKind.Struct: {
+                if (!isStructType(type)) throw new Error("Type mismatch");
                 return `struct_${type.name}`;
-            case IRTypeKind.Enum:
+            }
+            case IRTypeKind.Enum: {
+                if (!isEnumType(type)) throw new Error("Type mismatch");
                 return `enum_${type.name}`;
-            case IRTypeKind.Array:
-                return `array_${this.typeKey(/** @type {IRType} */ type.element!)}_${type.length}`;
-            case IRTypeKind.Fn:
-                return `fn_${(type.params ?? []).map((p) => this.typeKey(/** @type {IRType} */ p)).join("_")}_${this.typeKey(/** @type {IRType} */ type.returnType!)}`;
-            default:
-                return `unknown_${type.kind}`;
+            }
+            case IRTypeKind.Array: {
+                if (!isArrayType(type)) throw new Error("Type mismatch");
+                return `array_${this.typeKey(type.element)}_${type.length}`;
+            }
+            case IRTypeKind.Fn: {
+                if (!isFnType(type)) throw new Error("Type mismatch");
+                const { params } = type;
+                const { returnType } = type;
+                const paramsKey = params.map((p) => this.typeKey(p)).join("_");
+                const returnKey = this.typeKey(returnType);
+                return `fn_${paramsKey}_${returnKey}`;
+            }
+            default: {
+                const _never: never = type.kind;
+                return `unknown_${String(_never)}`;
+            }
         }
     }
 
     /**
      * Compute layout for a type
-     * @param {IRType} type
-     * @returns {TypeLayout}
      */
     computeLayout(type: IRType): TypeLayout {
         switch (type.kind) {
-            case IRTypeKind.Int:
-                return layoutInt(type.width as IntWidth);
-            case IRTypeKind.Float:
-                return layoutFloat(type.width as FloatWidth);
-            case IRTypeKind.Bool:
+            case IRTypeKind.Int: {
+                if (!isIntType(type)) throw new Error("Type mismatch");
+                return layoutInt(type.width);
+            }
+            case IRTypeKind.Float: {
+                if (!isFloatType(type)) throw new Error("Type mismatch");
+                return layoutFloat(type.width);
+            }
+            case IRTypeKind.Bool: {
                 return layoutBool();
-            case IRTypeKind.Ptr:
+            }
+            case IRTypeKind.Ptr: {
                 return layoutPtr();
-            case IRTypeKind.Unit:
+            }
+            case IRTypeKind.Unit: {
                 return layoutUnit();
-            case IRTypeKind.Struct:
-                return layoutStruct(type.fields!, this);
-            case IRTypeKind.Enum:
-                return layoutEnum(type.variants!, this);
-            case IRTypeKind.Array:
-                return layoutArray(type.element!, type.length!, this);
-            case IRTypeKind.Fn:
+            }
+            case IRTypeKind.Struct: {
+                if (!isStructType(type)) throw new Error("Type mismatch");
+                return layoutStruct(type.fields, this);
+            }
+            case IRTypeKind.Enum: {
+                if (!isEnumType(type)) throw new Error("Type mismatch");
+                return layoutEnum(type.variants, this);
+            }
+            case IRTypeKind.Array: {
+                if (!isArrayType(type)) throw new Error("Type mismatch");
+                return layoutArray(type.element, type.length, this);
+            }
+            case IRTypeKind.Fn: {
                 // Function types don't have a runtime layout
                 // Return pointer size as a function pointer
                 return layoutPtr();
-            default:
+            }
+            default: {
+                const _never: never = type.kind;
                 return layoutUnit();
+            }
         }
     }
     /**
      * Clear the cache
      */
-    clear() {
+    clear(): void {
         this.cache.clear();
     }
 }

@@ -2,7 +2,10 @@
 // Diagnostics and Error Reporting
 // ============================================================================
 
-import { Span } from "./ast";
+import type { Span } from "./ast";
+
+const ZERO = 0;
+const ONE = 1;
 
 // ============================================================================
 // Task 13.1: Source Location
@@ -183,7 +186,6 @@ class DiagnosticCollector {
     diagnostics: Diagnostic[];
     #hasErrors: boolean;
     constructor() {
-        /** @type {Diagnostic[]} */
         this.diagnostics = [];
         this.#hasErrors = false;
     }
@@ -263,6 +265,9 @@ function ok$1<T>(value: T): Result<T, never> {
     return { ok: true, value };
 }
 
+function ok$2(): Result<void, never> {
+    return { ok: true, value: undefined };
+}
 /**
  * Create an error result
  */
@@ -332,7 +337,7 @@ export function mapErr<T, E, F>(
     if (!result.ok) {
         return err$1(fn(result.error));
     }
-    return /** @type {Result<T, F>} */ result;
+    return result;
 }
 
 /**
@@ -345,16 +350,14 @@ export function andThen<T, U, E>(
     if (result.ok) {
         return fn(result.value);
     }
-    return /** @type {Result<U, E>} */ result;
+    return result;
 }
 
 /**
  * Combine multiple results, collecting all errors
  */
 function combineResults$1<T, E>(results: Result<T, E>[]): Result<T[], E[]> {
-    /** @type {T[]} */
     const values: T[] = [];
-    /** @type {E[]} */
     const errors: E[] = [];
     for (const result of results) {
         if (result.ok) {
@@ -363,7 +366,7 @@ function combineResults$1<T, E>(results: Result<T, E>[]): Result<T[], E[]> {
             errors.push(result.error);
         }
     }
-    if (errors.length > 0) {
+    if (errors.length > ZERO) {
         return err$1(errors);
     }
     return ok$1(values);
@@ -379,11 +382,11 @@ function combineResults$1<T, E>(results: Result<T, E>[]): Result<T[], E[]> {
 class SourceContext {
     source: string;
     file?: string;
-    #lines: string[] | null;
+    #lines: string[];
     constructor(source: string, file: string) {
         this.source = source;
         this.file = file;
-        this.#lines = null;
+        this.#lines = [];
     }
     /**
      * Get source lines (lazy initialization)
@@ -394,11 +397,11 @@ class SourceContext {
     /**
      * Get a specific line (1-based)
      */
-    getLine(lineNum: number): string | null {
-        if (lineNum < 1 || lineNum > this.lines.length) {
-            return null;
+    getLine(lineNum: number): string | undefined {
+        if (lineNum < ONE || lineNum > this.lines.length) {
+            return undefined;
         }
-        return this.lines[lineNum - 1];
+        return this.lines[lineNum - ONE];
     }
     /**
      * Get the total number of lines
@@ -409,23 +412,23 @@ class SourceContext {
     /**
      * Get source text for a span
      */
-    getText(span: SourceSpan): string | null {
+    getText(span: SourceSpan): string | undefined {
         const startLine = this.getLine(span.start.line);
         const endLine = this.getLine(span.end.line);
-        if (!startLine || !endLine) return null;
+        if (!startLine || !endLine) return undefined;
         if (span.start.line === span.end.line) {
             return startLine.substring(
-                span.start.column - 1,
-                span.end.column - 1,
+                span.start.column - ONE,
+                span.end.column - ONE,
             );
         }
         // Multi-line span
-        const parts = [startLine.substring(span.start.column - 1)];
-        for (let i = span.start.line + 1; i < span.end.line; i++) {
+        const parts = [startLine.substring(span.start.column - ONE)];
+        for (let i = span.start.line + ONE; i < span.end.line; i++) {
             const line = this.getLine(i);
             if (line) parts.push(line);
         }
-        parts.push(endLine.substring(0, span.end.column - 1));
+        parts.push(endLine.substring(ZERO, span.end.column - ONE));
         return parts.join("\n");
     }
 
@@ -464,28 +467,12 @@ const LEVEL_COLORS: Record<number, string> = {
     [Level.Help]: "\x1b[32m", // Green
 };
 
-/** @type {string} */
 const RESET = "\x1b[0m";
-/** @type {string} */
 const BOLD = "\x1b[1m";
-/** @type {string} */
 const DIM = "\x1b[2m";
-/** @type {string} */
 const BLUE = "\x1b[34m";
 
-/**
- * Render a diagnostic to a string
- * @param {boolean} [options.color=true] - Whether to use ANSI colors
- */
-function renderDiagnostic(
-    diag: Diagnostic,
-    ctx: SourceContext,
-    options: { color?: boolean } = { color: true },
-): string {
-    const { color } = options;
-    const lines = [];
-
-    // Header: level and message
+function renderHeader(diag: Diagnostic, color: boolean | undefined): string {
     const levelName = LEVEL_NAMES[diag.level] || "unknown";
     const levelColor = color ? LEVEL_COLORS[diag.level] || "" : "";
     const reset = color ? RESET : "";
@@ -496,9 +483,10 @@ function renderDiagnostic(
         header += `${bold}[${diag.code}]${reset}`;
     }
     header += `: ${diag.message}`;
+    return header;
+}
 
-    lines.push(header);
-    // Location
+function renderLocation(diag: Diagnostic, lines: string[]): void {
     if (diag.span) {
         const loc = diag.span.start;
         let locStr = `  `;
@@ -508,24 +496,18 @@ function renderDiagnostic(
         locStr += `${loc.line}:${loc.column}`;
         lines.push(locStr);
     }
-    // Source code snippet
-    if (ctx && diag.span) {
-        const snippet = renderSnippet(diag.span, ctx, color);
-        if (snippet) {
-            lines.push("");
-            lines.push(snippet);
-        }
-    }
-    // Hint
-    if (diag.hint) {
-        const helpColor = color ? LEVEL_COLORS[Level.Help] || "" : "";
-        lines.push(`  ${helpColor}hint${reset}: ${diag.hint}`);
-    }
-    // Related information
-    if (diag.related && diag.related.length > 0) {
+}
+
+function renderRelated(
+    diag: Diagnostic,
+    lines: string[],
+    color: boolean | undefined,
+): void {
+    if (diag.related && diag.related.length > ZERO) {
         for (const rel of diag.related) {
             lines.push("");
             const noteColor = color ? LEVEL_COLORS[Level.Note] || "" : "";
+            const reset = color ? RESET : "";
             lines.push(`  ${noteColor}note${reset}: ${rel.message}`);
             if (rel.span.start.file) {
                 lines.push(
@@ -538,6 +520,40 @@ function renderDiagnostic(
             }
         }
     }
+}
+
+/**
+ * Render a diagnostic to a string
+ * @param {boolean} [options.color=true] - Whether to use ANSI colors
+ */
+function renderDiagnostic(
+    diag: Diagnostic,
+    ctx: SourceContext,
+    options: { color?: boolean } = { color: true },
+): string {
+    const { color } = options;
+    const lines: string[] = [];
+
+    lines.push(renderHeader(diag, color));
+    renderLocation(diag, lines);
+
+    // Source code snippet
+    if (diag.span) {
+        const snippet = renderSnippet(diag.span, ctx, color);
+        if (snippet) {
+            lines.push("");
+            lines.push(snippet);
+        }
+    }
+    // Hint
+    if (diag.hint) {
+        const helpColor = color ? LEVEL_COLORS[Level.Help] || "" : "";
+        const reset = color ? RESET : "";
+        lines.push(`  ${helpColor}hint${reset}: ${diag.hint}`);
+    }
+
+    renderRelated(diag, lines, color);
+
     return lines.join("\n");
 }
 
@@ -556,25 +572,25 @@ function renderSnippet(
     const startLine = span.start.line;
     const endLine = span.end.line;
     // Calculate display range (show context around the span)
-    const contextLines = 1;
-    const displayStart = Math.max(1, startLine - contextLines);
+    const contextLines = ONE;
+    const displayStart = Math.max(ONE, startLine - contextLines);
     const displayEnd = Math.min(ctx.lineCount, endLine + contextLines);
     for (let lineNum = displayStart; lineNum <= displayEnd; lineNum++) {
         const line = ctx.getLine(lineNum);
-        if (line === null) continue;
+        if (line === undefined) continue;
         const lineNumStr = String(lineNum).padStart(width);
         const gutter = `${dim}${lineNumStr} |${reset}`;
         if (lineNum >= startLine && lineNum <= endLine) {
             // This line is part of the span
             lines.push(`${gutter} ${line}`);
             // Add underline/caret
-            let underlineStart = 0;
+            let underlineStart = ZERO;
             let underlineEnd = line.length;
             if (lineNum === startLine) {
-                underlineStart = span.start.column - 1;
+                underlineStart = span.start.column - ONE;
             }
             if (lineNum === endLine) {
-                underlineEnd = span.end.column - 1;
+                underlineEnd = span.end.column - ONE;
             }
             // Build the underline
             const underline = buildUnderline(
@@ -599,7 +615,7 @@ function buildUnderline(start: number, end: number, color = true): string {
     const bold = color ? BOLD : "";
     const blue = color ? BLUE : "";
     const spaces = " ".repeat(start);
-    const carets = "^".repeat(Math.max(1, end - start));
+    const carets = "^".repeat(Math.max(ONE, end - start));
     return `${spaces}${blue}${bold}${carets}${reset}`;
 }
 /**
@@ -646,7 +662,7 @@ function formatUndefinedVar(name: string, span: SourceSpan): Diagnostic {
 function formatDuplicateDef(
     name: string,
     span: SourceSpan,
-    prevSpan: SourceSpan,
+    prevSpan?: SourceSpan,
 ): Diagnostic {
     const diag = error(`Duplicate definition of \`${name}\``, span);
     if (prevSpan) {
@@ -662,8 +678,10 @@ function formatArityMismatch(
     found: number,
     span: SourceSpan,
 ): Diagnostic {
-    const expectedStr = expected === 1 ? "1 argument" : `${expected} arguments`;
-    const foundStr = found === 1 ? "1 argument" : `${found} arguments`;
+    const SIGLE_ARG = 1;
+    const expectedStr =
+        expected === SIGLE_ARG ? "1 argument" : `${expected} arguments`;
+    const foundStr = found === SIGLE_ARG ? "1 argument" : `${found} arguments`;
     return error(`Expected ${expectedStr}, found ${foundStr}`, span);
 }
 /**
@@ -726,7 +744,7 @@ function formatDeadCode(name: string, span: SourceSpan): Diagnostic {
 function formatBorrowError(
     message: string,
     span: SourceSpan,
-    borrowSpan: SourceSpan,
+    borrowSpan?: SourceSpan,
 ): Diagnostic {
     const diag = error(message, span);
     if (borrowSpan) {
@@ -740,7 +758,7 @@ function formatBorrowError(
 function formatMoveError(
     varName: string,
     span: SourceSpan,
-    moveSpan: SourceSpan,
+    moveSpan?: SourceSpan,
 ): Diagnostic {
     const diag = error(`Use of moved value: \`${varName}\``, span);
     if (moveSpan) {
@@ -770,6 +788,7 @@ export {
     createCollector,
     // Result Type
     ok$1 as ok,
+    ok$2 as okVoid,
     err$1 as err,
     combineResults$1 as combineResults,
     // Source Context

@@ -1,46 +1,62 @@
 import {
-    AssignExpr,
+    type AssignExpr,
     BinaryExpr,
     BinaryOp,
-    BlockExpr,
-    BreakExpr,
+    type BlockExpr,
+    type BreakExpr,
     BuiltinType,
-    CallExpr,
-    ContinueExpr,
+    type CallExpr,
+    type ContinueExpr,
     ExprStmt,
     type Expression,
     FnItem,
     IdentPattern,
     IdentifierExpr,
-    IfExpr,
+    type IfExpr,
     LetStmt,
     LiteralExpr,
     LiteralKind,
-    LoopExpr,
-    MatchExpr,
+    type LoopExpr,
+    type MatchExpr,
     type ModuleNode,
     NamedTypeNode,
-    ReturnExpr,
-    Span,
+    type ReturnExpr,
+    type Span,
     type Statement,
     type TypeNode,
     UnaryExpr,
     UnaryOp,
-    WhileExpr,
+    type WhileExpr,
+    type AstVisitor,
 } from "./ast";
-import { type Result, err, ok } from "./diagnostics";
+import { type Result, err, ok, okVoid } from "./diagnostics";
+
+// Type alias for expression visitor to reduce complexity
+type ExpressionVisitor<T> = Pick<
+    AstVisitor<T, AstToSsaCtx>,
+    | "visitLiteralExpr"
+    | "visitIdentifierExpr"
+    | "visitBinaryExpr"
+    | "visitUnaryExpr"
+    | "visitAssignExpr"
+    | "visitCallExpr"
+    | "visitIfExpr"
+    | "visitBlockExpr"
+    | "visitReturnExpr"
+    | "visitBreakExpr"
+    | "visitContinueExpr"
+    | "visitLoopExpr"
+    | "visitWhileExpr"
+    | "visitMatchExpr"
+>;
 import {
     addIRFunction,
     FcmpOp,
     FloatWidth,
     IcmpOp,
     IntWidth,
-    type IRFunction,
-    type IRModule,
-    type IRType,
-    IRTypeKind,
-    type ValueId,
     internIRStringLiteral,
+    IRTypeKind,
     makeIRBoolType,
     makeIRFloatType,
     makeIRIntType,
@@ -49,6 +65,12 @@ import {
     makeIRStructType,
     makeIRUnitType,
     type BlockId,
+    type FloatType,
+    type IRFunction,
+    type IRModule,
+    type IRType,
+    type IntType,
+    type ValueId,
 } from "./ir";
 import { IRBuilder } from "./ir_builder";
 
@@ -84,13 +106,30 @@ function loweringError<T>(
     return err({ kind, message, span });
 }
 
+// Hash constants for djb2 algorithm
+const HASH_INITIAL_VALUE = 5381;
+const HASH_MULTIPLIER = 33;
+
+// Default values for type initialization
+const DEFAULT_INT_VALUE = 0;
+const DEFAULT_FLOAT_VALUE = 0;
+const DEFAULT_UNIT_VALUE = 0;
+const STRING_FIRST_CHAR_INDEX = 0;
+const DEFAULT_CHAR_CODE = 0;
+
+// Loop frame access
+const LAST_FRAME_INDEX = -1;
+
+const ZERO = 0;
+
 function hashName(name: string): number {
-    let hash = 0;
+    // Djb2 hash algorithm - requires bitwise operations for correct hashing
+    let hash = HASH_INITIAL_VALUE;
     for (let i = 0; i < name.length; i++) {
-        hash = (hash << 5) - hash + name.charCodeAt(i);
-        hash |= 0;
+        hash = Math.imul(hash, HASH_MULTIPLIER) + name.charCodeAt(i);
+        hash |= ZERO;
     }
-    return Math.abs(hash) % 1_000_000;
+    return hash >>> ZERO;
 }
 
 export class AstToSsaCtx {
@@ -122,9 +161,11 @@ export class AstToSsaCtx {
 
         const paramEntries = [...fnDecl.params.entries()];
         const paramTypes = paramEntries.map(([, ty]) =>
-            this.translateTypeNode(ty),
+            AstToSsaCtx.translateTypeNode(ty),
         );
-        this.currentReturnType = this.translateTypeNode(fnDecl.returnType);
+        this.currentReturnType = AstToSsaCtx.translateTypeNode(
+            fnDecl.returnType,
+        );
 
         this.builder.createFunction(
             fnDecl.name,
@@ -137,14 +178,20 @@ export class AstToSsaCtx {
         for (let i = 0; i < paramEntries.length; i++) {
             const paramEntry = paramEntries[i];
             const [name, typeNode] = paramEntry;
-            const irType = this.translateTypeNode(typeNode);
+            const irType = AstToSsaCtx.translateTypeNode(typeNode);
             const allocaInst = this.builder.alloca(irType);
-            const allocaId = this.instId(allocaInst.id);
+            const allocaId = allocaInst.id;
             const paramId = this.builder.currentFunction?.params[i]?.id;
-            if (paramId !== undefined) {
+            if (
+                paramId !== null &&
+                typeof paramId !== "undefined" &&
+                allocaId !== null
+            ) {
                 this.builder.store(allocaId, paramId, irType);
             }
-            this.locals.set(name, { ptr: allocaId, ty: irType });
+            if (allocaId !== null) {
+                this.locals.set(name, { ptr: allocaId, ty: irType });
+            }
         }
 
         const bodyResult = this.lowerBlock(fnDecl.body);
@@ -154,11 +201,12 @@ export class AstToSsaCtx {
 
         if (!this.isCurrentBlockTerminated()) {
             if (this.currentTypeKind() === IRTypeKind.Unit) {
-                this.builder.ret(null);
+                this.builder.ret();
             } else {
-                this.builder.ret(
-                    this.defaultValueForType(this.currentReturnType),
+                const defaultValue = this.defaultValueForType(
+                    this.currentReturnType,
                 );
+                this.builder.ret(defaultValue);
             }
         }
 
@@ -168,14 +216,14 @@ export class AstToSsaCtx {
 
     private lowerBlock(
         block: BlockExpr,
-    ): Result<ValueId | null, LoweringError> {
+    ): Result<ValueId | undefined, LoweringError> {
         for (const stmt of block.stmts) {
             const stmtResult = this.lowerStatement(stmt);
             if (!stmtResult.ok) {
                 return stmtResult;
             }
             if (this.isCurrentBlockTerminated()) {
-                return ok(null);
+                return ok(undefined);
             }
         }
 
@@ -195,7 +243,7 @@ export class AstToSsaCtx {
             if (!exprResult.ok) {
                 return exprResult;
             }
-            return ok(undefined);
+            return okVoid();
         }
 
         return loweringError(
@@ -212,126 +260,113 @@ export class AstToSsaCtx {
         }
 
         if (stmt.pattern instanceof IdentPattern) {
-            const ty = this.translateTypeNode(stmt.type);
+            const ty = AstToSsaCtx.translateTypeNode(stmt.type);
             const slot = this.builder.alloca(ty);
-            const slotId = this.instId(slot.id);
+            const slotId = slot.id;
             this.builder.store(slotId, initResult.value, ty);
             this.locals.set(stmt.pattern.name, {
                 ptr: slotId,
                 ty,
             });
         }
-        return ok(undefined);
+        return okVoid();
     }
 
     private lowerExpression(expr: Expression): Result<ValueId, LoweringError> {
-        if (expr instanceof LiteralExpr) {
-            return this.lowerLiteral(expr);
-        }
-        if (expr instanceof IdentifierExpr) {
-            return this.lowerIdentifier(expr);
-        }
-        if (expr instanceof BinaryExpr) {
-            return this.lowerBinary(expr);
-        }
-        if (expr instanceof UnaryExpr) {
-            return this.lowerUnary(expr);
-        }
-        if (expr instanceof AssignExpr) {
-            return this.lowerAssign(expr);
-        }
-        if (expr instanceof CallExpr) {
-            return this.lowerCall(expr);
-        }
-        if (expr instanceof IfExpr) {
-            return this.lowerIf(expr);
-        }
-        if (expr instanceof BlockExpr) {
-            const blockResult = this.lowerBlock(expr);
-            if (!blockResult.ok) {
-                return blockResult;
-            }
-            if (blockResult.value === null) {
-                return ok(this.unitValue());
-            }
-            return ok(blockResult.value);
-        }
-        if (expr instanceof ReturnExpr) {
-            return this.lowerReturn(expr);
-        }
-        if (expr instanceof BreakExpr) {
-            return this.lowerBreak(expr);
-        }
-        if (expr instanceof ContinueExpr) {
-            return this.lowerContinue(expr);
-        }
-        if (expr instanceof LoopExpr) {
-            return this.lowerLoop(expr);
-        }
-        if (expr instanceof WhileExpr) {
-            return this.lowerWhile(expr);
-        }
-        if (expr instanceof MatchExpr) {
-            return loweringError(
-                LoweringErrorKind.UnsupportedNode,
-                "match lowering is intentionally omitted in the small-scale AST refactor",
-                expr.span,
-            );
-        }
+        // Use visitor pattern to dispatch to appropriate handler
+        const visitor = this.getExpressionVisitor();
+        return expr.accept(visitor);
+    }
 
-        return loweringError(
-            LoweringErrorKind.UnsupportedNode,
-            `Unsupported expression: ${expr.constructor.name}`,
-            expr.span,
-        );
+    private getExpressionVisitor(): ExpressionVisitor<
+        Result<ValueId, LoweringError>
+    > {
+        return {
+            visitLiteralExpr: (expr: LiteralExpr) => this.lowerLiteral(expr),
+            visitIdentifierExpr: (expr: IdentifierExpr) =>
+                this.lowerIdentifier(expr),
+            visitBinaryExpr: (expr: BinaryExpr) => this.lowerBinary(expr),
+            visitUnaryExpr: (expr: UnaryExpr) => this.lowerUnary(expr),
+            visitAssignExpr: (expr: AssignExpr) => this.lowerAssign(expr),
+            visitCallExpr: (expr: CallExpr) => this.lowerCall(expr),
+            visitIfExpr: (expr: IfExpr) => this.lowerIf(expr),
+            visitBlockExpr: (expr: BlockExpr) => {
+                const blockResult = this.lowerBlock(expr);
+                if (!blockResult.ok) {
+                    return blockResult;
+                }
+                if (blockResult.value === null) {
+                    return ok(this.unitValue());
+                }
+                return ok(blockResult.value);
+            },
+            visitReturnExpr: (expr: ReturnExpr) => this.lowerReturn(expr),
+            visitBreakExpr: (expr: BreakExpr) => this.lowerBreak(expr),
+            visitContinueExpr: (expr: ContinueExpr) => this.lowerContinue(expr),
+            visitLoopExpr: (expr: LoopExpr) => this.lowerLoop(expr),
+            visitWhileExpr: (expr: WhileExpr) => this.lowerWhile(expr),
+            visitMatchExpr: (expr: MatchExpr) =>
+                loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "match lowering is intentionally omitted in the small-scale AST refactor",
+                    expr.span,
+                ),
+        };
     }
 
     private lowerLiteral(expr: LiteralExpr): Result<ValueId, LoweringError> {
         switch (expr.literalKind) {
             case LiteralKind.Int: {
-                const value =
-                    typeof expr.value === "number"
-                        ? expr.value
-                        : Number(expr.value);
-                return ok(
-                    this.instId(this.builder.iconst(value, IntWidth.I32).id),
-                );
+                let value: number;
+                if (typeof expr.value === "number") {
+                    value = expr.value;
+                } else {
+                    value = Number(expr.value);
+                }
+                const constInst = this.builder.iconst(value, IntWidth.I32);
+                return AstToSsaCtx.handleInstructionId(constInst.id);
             }
             case LiteralKind.Float: {
-                const value =
-                    typeof expr.value === "number"
-                        ? expr.value
-                        : Number(expr.value);
-                return ok(
-                    this.instId(this.builder.fconst(value, FloatWidth.F64).id),
-                );
+                let value: number;
+                if (typeof expr.value === "number") {
+                    value = expr.value;
+                } else {
+                    value = Number(expr.value);
+                }
+                const constInst = this.builder.fconst(value, FloatWidth.F64);
+                return AstToSsaCtx.handleInstructionId(constInst.id);
             }
-            case LiteralKind.Bool:
-                return ok(
-                    this.instId(this.builder.bconst(Boolean(expr.value)).id),
-                );
+            case LiteralKind.Bool: {
+                const constInst = this.builder.bconst(Boolean(expr.value));
+                return AstToSsaCtx.handleInstructionId(constInst.id);
+            }
             case LiteralKind.String: {
                 const literalId = internIRStringLiteral(
                     this.irModule,
                     String(expr.value),
                 );
-                return ok(this.instId(this.builder.sconst(literalId).id));
+                const constInst = this.builder.sconst(literalId);
+                return AstToSsaCtx.handleInstructionId(constInst.id);
             }
             case LiteralKind.Char: {
-                const cp =
-                    typeof expr.value === "string"
-                        ? (expr.value.codePointAt(0) ?? 0)
-                        : Number(expr.value);
-                return ok(
-                    this.instId(this.builder.iconst(cp, IntWidth.U32).id),
-                );
+                let cp: number;
+                if (typeof expr.value === "string") {
+                    cp =
+                        expr.value.codePointAt(STRING_FIRST_CHAR_INDEX) ??
+                        DEFAULT_CHAR_CODE;
+                } else {
+                    cp = Number(expr.value);
+                }
+                const constInst = this.builder.iconst(cp, IntWidth.U32);
+                return AstToSsaCtx.handleInstructionId(constInst.id);
             }
-            default:
+            default: {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
                     "Unsupported literal kind",
                     expr.span,
                 );
+            }
         }
     }
 
@@ -339,14 +374,14 @@ export class AstToSsaCtx {
         expr: IdentifierExpr,
     ): Result<ValueId, LoweringError> {
         const binding = this.locals.get(expr.name);
-        if (binding !== undefined) {
-            return ok(
-                this.instId(this.builder.load(binding.ptr, binding.ty).id),
-            );
+        if (binding !== null && typeof binding !== "undefined") {
+            const loadInst = this.builder.load(binding.ptr, binding.ty);
+            return AstToSsaCtx.handleInstructionId(loadInst.id);
         }
 
         const fnId = this.resolveFunctionId(expr.name);
-        return ok(this.instId(this.builder.iconst(fnId, IntWidth.I64).id));
+        const constInst = this.builder.iconst(fnId, IntWidth.I64);
+        return AstToSsaCtx.handleInstructionId(constInst.id);
     }
 
     private lowerAssign(expr: AssignExpr): Result<ValueId, LoweringError> {
@@ -359,7 +394,7 @@ export class AstToSsaCtx {
         }
 
         const binding = this.locals.get(expr.target.name);
-        if (binding === undefined) {
+        if (binding === null || typeof binding === "undefined") {
             return loweringError(
                 LoweringErrorKind.UnknownVariable,
                 `Unknown variable '${expr.target.name}'`,
@@ -390,172 +425,382 @@ export class AstToSsaCtx {
         const isFloat =
             this.isFloatish(expr.left) || this.isFloatish(expr.right);
 
-        switch (expr.op) {
-            case BinaryOp.Add:
-                return ok(
-                    this.instId(
-                        (isFloat
-                            ? this.builder.fadd(left, right, FloatWidth.F64)
-                            : this.builder.iadd(left, right, IntWidth.I32)
-                        ).id,
-                    ),
-                );
-            case BinaryOp.Sub:
-                return ok(
-                    this.instId(
-                        (isFloat
-                            ? this.builder.fsub(left, right, FloatWidth.F64)
-                            : this.builder.isub(left, right, IntWidth.I32)
-                        ).id,
-                    ),
-                );
-            case BinaryOp.Mul:
-                return ok(
-                    this.instId(
-                        (isFloat
-                            ? this.builder.fmul(left, right, FloatWidth.F64)
-                            : this.builder.imul(left, right, IntWidth.I32)
-                        ).id,
-                    ),
-                );
-            case BinaryOp.Div:
-                return ok(
-                    this.instId(
-                        (isFloat
-                            ? this.builder.fdiv(left, right, FloatWidth.F64)
-                            : this.builder.idiv(left, right, IntWidth.I32)
-                        ).id,
-                    ),
-                );
-            case BinaryOp.Rem:
-                return ok(
-                    this.instId(
-                        this.builder.imod(left, right, IntWidth.I32).id,
-                    ),
-                );
-            case BinaryOp.Eq:
-                return ok(
-                    this.instId(
-                        (isFloat
-                            ? this.builder.fcmp(FcmpOp.Oeq, left, right)
-                            : this.builder.icmp(IcmpOp.Eq, left, right)
-                        ).id,
-                    ),
-                );
-            case BinaryOp.Ne:
-                return ok(
-                    this.instId(
-                        (isFloat
-                            ? this.builder.fcmp(FcmpOp.One, left, right)
-                            : this.builder.icmp(IcmpOp.Ne, left, right)
-                        ).id,
-                    ),
-                );
-            case BinaryOp.Lt:
-                return ok(
-                    this.instId(
-                        (isFloat
-                            ? this.builder.fcmp(FcmpOp.Olt, left, right)
-                            : this.builder.icmp(IcmpOp.Slt, left, right)
-                        ).id,
-                    ),
-                );
-            case BinaryOp.Le:
-                return ok(
-                    this.instId(
-                        (isFloat
-                            ? this.builder.fcmp(FcmpOp.Ole, left, right)
-                            : this.builder.icmp(IcmpOp.Sle, left, right)
-                        ).id,
-                    ),
-                );
-            case BinaryOp.Gt:
-                return ok(
-                    this.instId(
-                        (isFloat
-                            ? this.builder.fcmp(FcmpOp.Ogt, left, right)
-                            : this.builder.icmp(IcmpOp.Sgt, left, right)
-                        ).id,
-                    ),
-                );
-            case BinaryOp.Ge:
-                return ok(
-                    this.instId(
-                        (isFloat
-                            ? this.builder.fcmp(FcmpOp.Oge, left, right)
-                            : this.builder.icmp(IcmpOp.Sge, left, right)
-                        ).id,
-                    ),
-                );
-            case BinaryOp.And:
-            case BinaryOp.BitAnd:
-                return ok(
-                    this.instId(this.builder.iand(left, right, IntWidth.I8).id),
-                );
-            case BinaryOp.Or:
-            case BinaryOp.BitOr:
-                return ok(
-                    this.instId(this.builder.ior(left, right, IntWidth.I8).id),
-                );
-            case BinaryOp.BitXor:
-                return ok(
-                    this.instId(
-                        this.builder.ixor(left, right, IntWidth.I32).id,
-                    ),
-                );
-            case BinaryOp.Shl:
-                return ok(
-                    this.instId(
-                        this.builder.ishl(left, right, IntWidth.I32).id,
-                    ),
-                );
-            case BinaryOp.Shr:
-                return ok(
-                    this.instId(
-                        this.builder.ishr(left, right, IntWidth.I32).id,
-                    ),
-                );
-            default:
+        // Dispatch to specific binary operation handlers
+        return this.handleBinaryOperation(
+            expr.op,
+            left,
+            right,
+            isFloat,
+            expr.span,
+        );
+    }
+
+    private handleBinaryOperation(
+        op: BinaryOp,
+        left: ValueId,
+        right: ValueId,
+        isFloat: boolean,
+        span: Span,
+    ): Result<ValueId, LoweringError> {
+        // Dispatch to operation category handlers
+        if (AstToSsaCtx.isArithmeticOperation(op)) {
+            return this.handleArithmeticOperation(op, left, right, isFloat);
+        }
+        if (AstToSsaCtx.isComparisonOperation(op)) {
+            return this.handleComparisonOperation(op, left, right, isFloat);
+        }
+        if (AstToSsaCtx.isBitwiseOperation(op)) {
+            return this.handleBitwiseOperation(op, left, right);
+        }
+
+        return loweringError(
+            LoweringErrorKind.UnsupportedNode,
+            "Unsupported binary operation",
+            span,
+        );
+    }
+
+    private static isArithmeticOperation(op: BinaryOp): boolean {
+        return (
+            op === BinaryOp.Add ||
+            op === BinaryOp.Sub ||
+            op === BinaryOp.Mul ||
+            op === BinaryOp.Div ||
+            op === BinaryOp.Rem
+        );
+    }
+
+    private static isComparisonOperation(op: BinaryOp): boolean {
+        return (
+            op === BinaryOp.Eq ||
+            op === BinaryOp.Ne ||
+            op === BinaryOp.Lt ||
+            op === BinaryOp.Le ||
+            op === BinaryOp.Gt ||
+            op === BinaryOp.Ge
+        );
+    }
+
+    private static isBitwiseOperation(op: BinaryOp): boolean {
+        return (
+            op === BinaryOp.And ||
+            op === BinaryOp.BitAnd ||
+            op === BinaryOp.Or ||
+            op === BinaryOp.BitOr ||
+            op === BinaryOp.BitXor ||
+            op === BinaryOp.Shl ||
+            op === BinaryOp.Shr
+        );
+    }
+
+    private handleArithmeticOperation(
+        op: BinaryOp,
+        left: ValueId,
+        right: ValueId,
+        isFloat: boolean,
+    ): Result<ValueId, LoweringError> {
+        switch (op) {
+            case BinaryOp.Add: {
+                return this.handleAddOperation(left, right, isFloat);
+            }
+            case BinaryOp.Sub: {
+                return this.handleSubOperation(left, right, isFloat);
+            }
+            case BinaryOp.Mul: {
+                return this.handleMulOperation(left, right, isFloat);
+            }
+            case BinaryOp.Div: {
+                return this.handleDivOperation(left, right, isFloat);
+            }
+            case BinaryOp.Rem: {
+                return this.handleRemOperation(left, right);
+            }
+            default: {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
-                    "Unsupported binary operation",
-                    expr.span,
+                    "Unsupported arithmetic operation",
+                    { start: 0, end: 0, fileId: 0 },
                 );
+            }
         }
+    }
+
+    private handleComparisonOperation(
+        op: BinaryOp,
+        left: ValueId,
+        right: ValueId,
+        isFloat: boolean,
+    ): Result<ValueId, LoweringError> {
+        switch (op) {
+            case BinaryOp.Eq: {
+                return this.handleEqOperation(left, right, isFloat);
+            }
+            case BinaryOp.Ne: {
+                return this.handleNeOperation(left, right, isFloat);
+            }
+            case BinaryOp.Lt: {
+                return this.handleLtOperation(left, right, isFloat);
+            }
+            case BinaryOp.Le: {
+                return this.handleLeOperation(left, right, isFloat);
+            }
+            case BinaryOp.Gt: {
+                return this.handleGtOperation(left, right, isFloat);
+            }
+            case BinaryOp.Ge: {
+                return this.handleGeOperation(left, right, isFloat);
+            }
+            default: {
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "Unsupported comparison operation",
+                    { start: 0, end: 0, fileId: 0 },
+                );
+            }
+        }
+    }
+
+    private handleBitwiseOperation(
+        op: BinaryOp,
+        left: ValueId,
+        right: ValueId,
+    ): Result<ValueId, LoweringError> {
+        switch (op) {
+            case BinaryOp.And:
+            case BinaryOp.BitAnd: {
+                return this.handleAndOperation(left, right);
+            }
+            case BinaryOp.Or:
+            case BinaryOp.BitOr: {
+                return this.handleOrOperation(left, right);
+            }
+            case BinaryOp.BitXor: {
+                return this.handleXorOperation(left, right);
+            }
+            case BinaryOp.Shl: {
+                return this.handleShlOperation(left, right);
+            }
+            case BinaryOp.Shr: {
+                return this.handleShrOperation(left, right);
+            }
+            default: {
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "Unsupported bitwise operation",
+                    { start: 0, end: 0, fileId: 0 },
+                );
+            }
+        }
+    }
+
+    // Arithmetic operation handlers
+    private handleAddOperation(
+        left: ValueId,
+        right: ValueId,
+        isFloat: boolean,
+    ): Result<ValueId, LoweringError> {
+        if (isFloat) {
+            const addInst = this.builder.fadd(left, right, FloatWidth.F64);
+            return ok(addInst.id);
+        }
+        const addInst = this.builder.iadd(left, right, IntWidth.I32);
+        return ok(addInst.id);
+    }
+
+    private handleSubOperation(
+        left: ValueId,
+        right: ValueId,
+        isFloat: boolean,
+    ): Result<ValueId, LoweringError> {
+        if (isFloat) {
+            const subInst = this.builder.fsub(left, right, FloatWidth.F64);
+            return ok(subInst.id);
+        }
+        const subInst = this.builder.isub(left, right, IntWidth.I32);
+        return ok(subInst.id);
+    }
+
+    private handleMulOperation(
+        left: ValueId,
+        right: ValueId,
+        isFloat: boolean,
+    ): Result<ValueId, LoweringError> {
+        if (isFloat) {
+            const mulInst = this.builder.fmul(left, right, FloatWidth.F64);
+            return ok(mulInst.id);
+        }
+        const mulInst = this.builder.imul(left, right, IntWidth.I32);
+        return ok(mulInst.id);
+    }
+
+    private handleDivOperation(
+        left: ValueId,
+        right: ValueId,
+        isFloat: boolean,
+    ): Result<ValueId, LoweringError> {
+        if (isFloat) {
+            const divInst = this.builder.fdiv(left, right, FloatWidth.F64);
+            return ok(divInst.id);
+        }
+        const divInst = this.builder.idiv(left, right, IntWidth.I32);
+        return ok(divInst.id);
+    }
+
+    private handleRemOperation(
+        left: ValueId,
+        right: ValueId,
+    ): Result<ValueId, LoweringError> {
+        const remInst = this.builder.imod(left, right, IntWidth.I32);
+        return ok(remInst.id);
+    }
+
+    // Comparison operation handlers
+    private handleEqOperation(
+        left: ValueId,
+        right: ValueId,
+        isFloat: boolean,
+    ): Result<ValueId, LoweringError> {
+        if (isFloat) {
+            const cmpInst = this.builder.fcmp(FcmpOp.Oeq, left, right);
+            return ok(cmpInst.id);
+        }
+        const cmpInst = this.builder.icmp(IcmpOp.Eq, left, right);
+        return ok(cmpInst.id);
+    }
+
+    private handleNeOperation(
+        left: ValueId,
+        right: ValueId,
+        isFloat: boolean,
+    ): Result<ValueId, LoweringError> {
+        if (isFloat) {
+            const cmpInst = this.builder.fcmp(FcmpOp.One, left, right);
+            return ok(cmpInst.id);
+        }
+        const cmpInst = this.builder.icmp(IcmpOp.Ne, left, right);
+        return ok(cmpInst.id);
+    }
+
+    private handleLtOperation(
+        left: ValueId,
+        right: ValueId,
+        isFloat: boolean,
+    ): Result<ValueId, LoweringError> {
+        if (isFloat) {
+            const cmpInst = this.builder.fcmp(FcmpOp.Olt, left, right);
+            return ok(cmpInst.id);
+        }
+        const cmpInst = this.builder.icmp(IcmpOp.Slt, left, right);
+        return ok(cmpInst.id);
+    }
+
+    private handleLeOperation(
+        left: ValueId,
+        right: ValueId,
+        isFloat: boolean,
+    ): Result<ValueId, LoweringError> {
+        if (isFloat) {
+            const cmpInst = this.builder.fcmp(FcmpOp.Ole, left, right);
+            return ok(cmpInst.id);
+        }
+        const cmpInst = this.builder.icmp(IcmpOp.Sle, left, right);
+        return ok(cmpInst.id);
+    }
+
+    private handleGtOperation(
+        left: ValueId,
+        right: ValueId,
+        isFloat: boolean,
+    ): Result<ValueId, LoweringError> {
+        if (isFloat) {
+            const cmpInst = this.builder.fcmp(FcmpOp.Ogt, left, right);
+            return ok(cmpInst.id);
+        }
+        const cmpInst = this.builder.icmp(IcmpOp.Sgt, left, right);
+        return ok(cmpInst.id);
+    }
+
+    private handleGeOperation(
+        left: ValueId,
+        right: ValueId,
+        isFloat: boolean,
+    ): Result<ValueId, LoweringError> {
+        if (isFloat) {
+            const cmpInst = this.builder.fcmp(FcmpOp.Oge, left, right);
+            return ok(cmpInst.id);
+        }
+        const cmpInst = this.builder.icmp(IcmpOp.Sge, left, right);
+        return ok(cmpInst.id);
+    }
+
+    // Bitwise operation handlers
+    private handleAndOperation(
+        left: ValueId,
+        right: ValueId,
+    ): Result<ValueId, LoweringError> {
+        const andInst = this.builder.iand(left, right, IntWidth.I8);
+        return ok(andInst.id);
+    }
+
+    private handleOrOperation(
+        left: ValueId,
+        right: ValueId,
+    ): Result<ValueId, LoweringError> {
+        const orInst = this.builder.ior(left, right, IntWidth.I8);
+        return ok(orInst.id);
+    }
+
+    private handleXorOperation(
+        left: ValueId,
+        right: ValueId,
+    ): Result<ValueId, LoweringError> {
+        const xorInst = this.builder.ixor(left, right, IntWidth.I32);
+        return ok(xorInst.id);
+    }
+
+    private handleShlOperation(
+        left: ValueId,
+        right: ValueId,
+    ): Result<ValueId, LoweringError> {
+        const shlInst = this.builder.ishl(left, right, IntWidth.I32);
+        return ok(shlInst.id);
+    }
+
+    private handleShrOperation(
+        left: ValueId,
+        right: ValueId,
+    ): Result<ValueId, LoweringError> {
+        const shrInst = this.builder.ishr(left, right, IntWidth.I32);
+        return ok(shrInst.id);
     }
 
     private lowerUnary(expr: UnaryExpr): Result<ValueId, LoweringError> {
         const operandResult = this.lowerExpression(expr.operand);
-        if (!operandResult.ok) {
-            return operandResult;
-        }
+        if (!operandResult.ok) return operandResult;
         const operand = operandResult.value;
 
         switch (expr.op) {
             case UnaryOp.Neg: {
                 if (this.isFloatish(expr.operand)) {
-                    return ok(
-                        this.instId(
-                            this.builder.fneg(operand, FloatWidth.F64).id,
-                        ),
-                    );
+                    const negInst = this.builder.fneg(operand, FloatWidth.F64);
+                    return ok(negInst.id);
                 }
-                return ok(
-                    this.instId(this.builder.ineg(operand, IntWidth.I32).id),
-                );
+                const negInst = this.builder.ineg(operand, IntWidth.I32);
+                return ok(negInst.id);
             }
             case UnaryOp.Not: {
-                const oneId = this.instId(this.builder.bconst(true).id);
-                return ok(
-                    this.instId(
-                        this.builder.ixor(operand, oneId, IntWidth.I8).id,
-                    ),
+                const oneInst = this.builder.bconst(true);
+                const xorInst = this.builder.ixor(
+                    operand,
+                    oneInst.id,
+                    IntWidth.I8,
                 );
+                return ok(xorInst.id);
             }
             case UnaryOp.Ref: {
                 if (expr.operand instanceof IdentifierExpr) {
                     const binding = this.locals.get(expr.operand.name);
-                    if (binding === undefined) {
+                    if (!binding) {
                         return loweringError(
                             LoweringErrorKind.UnknownVariable,
                             `Unknown variable '${expr.operand.name}'`,
@@ -566,23 +811,25 @@ export class AstToSsaCtx {
                 }
 
                 const ptrTy = makeIRIntType(IntWidth.I64);
-                const ptrId = this.instId(this.builder.alloca(ptrTy).id);
+                const allocaInst = this.builder.alloca(ptrTy);
+                const ptrId = allocaInst.id;
                 this.builder.store(ptrId, operand, ptrTy);
                 return ok(ptrId);
             }
-            case UnaryOp.Deref:
-                return ok(
-                    this.instId(
-                        this.builder.load(operand, makeIRIntType(IntWidth.I64))
-                            .id,
-                    ),
+            case UnaryOp.Deref: {
+                const loadInst = this.builder.load(
+                    operand,
+                    makeIRIntType(IntWidth.I64),
                 );
-            default:
+                return ok(loadInst.id);
+            }
+            default: {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
                     "Unsupported unary operation",
                     expr.span,
                 );
+            }
         }
     }
 
@@ -599,25 +846,25 @@ export class AstToSsaCtx {
         const retTy = makeIRIntType(IntWidth.I64);
         if (expr.callee instanceof IdentifierExpr) {
             const fnId = this.resolveFunctionId(expr.callee.name);
-            return ok(this.instId(this.builder.call(fnId, args, retTy).id));
+            const callInst = this.builder.call(fnId, args, retTy);
+            return ok(callInst.id);
         }
 
         const calleeResult = this.lowerExpression(expr.callee);
         if (!calleeResult.ok) {
             return calleeResult;
         }
-        return ok(
-            this.instId(
-                this.builder.callDyn(calleeResult.value, args, retTy).id,
-            ),
+        const callDynInst = this.builder.callDyn(
+            calleeResult.value,
+            args,
+            retTy,
         );
+        return ok(callDynInst.id);
     }
 
     private lowerIf(expr: IfExpr): Result<ValueId, LoweringError> {
         const condResult = this.lowerExpression(expr.condition);
-        if (!condResult.ok) {
-            return condResult;
-        }
+        if (!condResult.ok) return condResult;
 
         const thenId = this.builder.createBlock("if_then");
         const elseId = this.builder.createBlock("if_else");
@@ -635,11 +882,9 @@ export class AstToSsaCtx {
         }
 
         this.builder.switchToBlock(elseId);
-        if (expr.elseBranch !== undefined) {
+        if (expr.elseBranch) {
             const elseResult = this.lowerExpression(expr.elseBranch);
-            if (!elseResult.ok) {
-                return elseResult;
-            }
+            if (!elseResult.ok) return elseResult;
         }
         if (!this.isCurrentBlockTerminated()) {
             this.builder.br(mergeId);
@@ -659,8 +904,8 @@ export class AstToSsaCtx {
     }
 
     private lowerBreak(expr: BreakExpr): Result<ValueId, LoweringError> {
-        const frame = this.loopStack.at(-1);
-        if (frame === undefined) {
+        const frame = this.loopStack.at(LAST_FRAME_INDEX);
+        if (!frame) {
             return loweringError(
                 LoweringErrorKind.BreakOutsideLoop,
                 "break used outside of a loop",
@@ -672,8 +917,8 @@ export class AstToSsaCtx {
     }
 
     private lowerContinue(expr: ContinueExpr): Result<ValueId, LoweringError> {
-        const frame = this.loopStack.at(-1);
-        if (frame === undefined) {
+        const frame = this.loopStack.at(LAST_FRAME_INDEX);
+        if (!frame) {
             return loweringError(
                 LoweringErrorKind.ContinueOutsideLoop,
                 "continue used outside of a loop",
@@ -738,137 +983,183 @@ export class AstToSsaCtx {
         return ok(this.unitValue());
     }
 
-    private translateTypeNode(typeNode: TypeNode): IRType {
+    private static translateTypeNode(typeNode: TypeNode): IRType {
         if (typeNode instanceof NamedTypeNode) {
-            const builtin = this.namedBuiltin(typeNode.name);
-            if (builtin !== null) {
-                return this.builtinToIrType(builtin);
+            const builtin = AstToSsaCtx.namedBuiltin(typeNode.name);
+            if (builtin !== undefined) {
+                return AstToSsaCtx.builtinToIrType(builtin);
             }
             return makeIRStructType(typeNode.name, []);
         }
         return makeIRUnitType();
     }
 
-    private namedBuiltin(name: string): BuiltinType | null {
+    static namedBuiltin(name: string): BuiltinType | null {
         const n = name.toLowerCase();
         switch (n) {
-            case "i8":
+            case "i8": {
                 return BuiltinType.I8;
-            case "i16":
+            }
+            case "i16": {
                 return BuiltinType.I16;
-            case "i32":
+            }
+            case "i32": {
                 return BuiltinType.I32;
-            case "i64":
+            }
+            case "i64": {
                 return BuiltinType.I64;
-            case "i128":
+            }
+            case "i128": {
                 return BuiltinType.I128;
-            case "isize":
+            }
+            case "isize": {
                 return BuiltinType.Isize;
-            case "u8":
+            }
+            case "u8": {
                 return BuiltinType.U8;
-            case "u16":
+            }
+            case "u16": {
                 return BuiltinType.U16;
-            case "u32":
+            }
+            case "u32": {
                 return BuiltinType.U32;
-            case "u64":
+            }
+            case "u64": {
                 return BuiltinType.U64;
-            case "u128":
+            }
+            case "u128": {
                 return BuiltinType.U128;
-            case "usize":
+            }
+            case "usize": {
                 return BuiltinType.Usize;
-            case "f32":
+            }
+            case "f32": {
                 return BuiltinType.F32;
-            case "f64":
+            }
+            case "f64": {
                 return BuiltinType.F64;
-            case "bool":
+            }
+            case "bool": {
                 return BuiltinType.Bool;
-            case "char":
+            }
+            case "char": {
                 return BuiltinType.Char;
-            case "str":
+            }
+            case "str": {
                 return BuiltinType.Str;
-            case "unit":
+            }
+            case "unit": {
                 return BuiltinType.Unit;
-            case "never":
+            }
+            case "never": {
                 return BuiltinType.Never;
-            default:
-                return null;
+            }
+            default: {
+                return undefined;
+            }
         }
     }
 
-    private builtinToIrType(ty: BuiltinType): IRType {
+    static builtinToIrType(ty: BuiltinType): IRType {
         switch (ty) {
-            case BuiltinType.I8:
+            case BuiltinType.I8: {
                 return makeIRIntType(IntWidth.I8);
-            case BuiltinType.I16:
+            }
+            case BuiltinType.I16: {
                 return makeIRIntType(IntWidth.I16);
-            case BuiltinType.I32:
+            }
+            case BuiltinType.I32: {
                 return makeIRIntType(IntWidth.I32);
-            case BuiltinType.I64:
+            }
+            case BuiltinType.I64: {
                 return makeIRIntType(IntWidth.I64);
-            case BuiltinType.I128:
+            }
+            case BuiltinType.I128: {
                 return makeIRIntType(IntWidth.I128);
-            case BuiltinType.Isize:
+            }
+            case BuiltinType.Isize: {
                 return makeIRIntType(IntWidth.Isize);
-            case BuiltinType.U8:
+            }
+            case BuiltinType.U8: {
                 return makeIRIntType(IntWidth.U8);
-            case BuiltinType.U16:
+            }
+            case BuiltinType.U16: {
                 return makeIRIntType(IntWidth.U16);
-            case BuiltinType.U32:
+            }
+            case BuiltinType.U32: {
                 return makeIRIntType(IntWidth.U32);
-            case BuiltinType.U64:
+            }
+            case BuiltinType.U64: {
                 return makeIRIntType(IntWidth.U64);
-            case BuiltinType.U128:
+            }
+            case BuiltinType.U128: {
                 return makeIRIntType(IntWidth.U128);
-            case BuiltinType.Usize:
+            }
+            case BuiltinType.Usize: {
                 return makeIRIntType(IntWidth.Usize);
-            case BuiltinType.F32:
+            }
+            case BuiltinType.F32: {
                 return makeIRFloatType(FloatWidth.F32);
-            case BuiltinType.F64:
+            }
+            case BuiltinType.F64: {
                 return makeIRFloatType(FloatWidth.F64);
-            case BuiltinType.Bool:
+            }
+            case BuiltinType.Bool: {
                 return makeIRBoolType();
-            case BuiltinType.Char:
+            }
+            case BuiltinType.Char: {
                 return makeIRIntType(IntWidth.U32);
-            case BuiltinType.Str:
-                return makeIRPtrType(null);
+            }
+            case BuiltinType.Str: {
+                return makeIRPtrType();
+            }
             case BuiltinType.Unit:
-            case BuiltinType.Never:
+            case BuiltinType.Never: {
                 return makeIRUnitType();
-            default:
+            }
+            default: {
                 return makeIRUnitType();
+            }
         }
     }
 
     private defaultValueForType(ty: IRType): ValueId {
-        const kind = this.irTypeKindOf(ty);
+        const { kind } = ty;
         if (kind === IRTypeKind.Bool) {
-            return this.instId(this.builder.bconst(false).id);
+            const constInst = this.builder.bconst(false);
+            return constInst.id;
         }
         if (kind === IRTypeKind.Int) {
-            const width = ty.width as IntWidth | undefined;
-            return this.instId(
-                this.builder.iconst(0, width ?? IntWidth.I32).id,
+            const intType = ty as IntType;
+            const constInst = this.builder.iconst(
+                DEFAULT_INT_VALUE,
+                intType.width ?? IntWidth.I32,
             );
+            return constInst.id;
         }
         if (kind === IRTypeKind.Float) {
-            const width = ty.width as FloatWidth | undefined;
-            return this.instId(
-                this.builder.fconst(0, width ?? FloatWidth.F64).id,
+            const floatType = ty as FloatType;
+            const constInst = this.builder.fconst(
+                DEFAULT_FLOAT_VALUE,
+                floatType.width ?? FloatWidth.F64,
             );
+            return constInst.id;
         }
         if (kind === IRTypeKind.Ptr) {
-            return this.instId(this.builder.null(ty).id);
+            const nullInst = this.builder.null(ty);
+            return nullInst.id;
         }
         return this.unitValue();
     }
 
     private unitValue(): ValueId {
-        return this.instId(this.builder.iconst(0, IntWidth.I8).id);
+        const constInst = this.builder.iconst(DEFAULT_UNIT_VALUE, IntWidth.I8);
+        return constInst.id;
     }
 
     private resolveFunctionId(name: string): number {
         const existing = this.functionIds.get(name);
-        if (existing !== undefined) {
+        if (existing) {
             return existing;
         }
         const value = hashName(name);
@@ -904,19 +1195,21 @@ export class AstToSsaCtx {
         return false;
     }
 
-    private instId(id: ValueId | null): ValueId {
-        if (id === null) {
-            return 0;
-        }
-        return id;
-    }
-
     private currentTypeKind(): IRTypeKind {
-        return this.irTypeKindOf(this.currentReturnType);
+        return this.currentReturnType.kind;
     }
 
-    private irTypeKindOf(ty: IRType): IRTypeKind {
-        return ty.kind as IRTypeKind;
+    private static handleInstructionId(
+        id: ValueId | null,
+    ): Result<ValueId, LoweringError> {
+        if (id === null) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                "Instruction returned null ID",
+                { start: 0, end: 0 },
+            );
+        }
+        return ok(id);
     }
 }
 

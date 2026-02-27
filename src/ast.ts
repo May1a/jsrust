@@ -1,4 +1,4 @@
-import { type TokenType } from "./tokenizer";
+import type { TokenType } from "./tokenizer";
 
 export class Token {
     type: TokenType;
@@ -36,58 +36,58 @@ export class Span {
 }
 
 export enum UnaryOp {
-    Not,
-    Neg,
-    Deref,
-    Ref,
+    Not = 0,
+    Neg = 1,
+    Deref = 2,
+    Ref = 3,
 }
 
 export enum BinaryOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
-    And,
-    Or,
-    BitXor,
-    BitAnd,
-    BitOr,
-    Shl,
-    Shr,
+    Add = 0,
+    Sub = 1,
+    Mul = 2,
+    Div = 3,
+    Rem = 4,
+    Eq = 5,
+    Ne = 6,
+    Lt = 7,
+    Le = 8,
+    Gt = 9,
+    Ge = 10,
+    And = 11,
+    Or = 12,
+    BitXor = 13,
+    BitAnd = 14,
+    BitOr = 15,
+    Shl = 16,
+    Shr = 17,
 }
 
 export enum Mutability {
-    Immutable,
-    Mutable,
+    Immutable = 0,
+    Mutable = 1,
 }
 
 export enum BuiltinType {
-    I8,
-    I16,
-    I32,
-    I64,
-    I128,
-    Isize,
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    Usize,
-    F32,
-    F64,
-    Bool,
-    Char,
-    Str,
-    Unit,
-    Never,
+    I8 = 0,
+    I16 = 1,
+    I32 = 2,
+    I64 = 3,
+    I128 = 4,
+    Isize = 5,
+    U8 = 6,
+    U16 = 7,
+    U32 = 8,
+    U64 = 9,
+    U128 = 10,
+    Usize = 11,
+    F32 = 12,
+    F64 = 13,
+    Bool = 14,
+    Char = 15,
+    Str = 16,
+    Unit = 17,
+    Never = 18,
 }
 /**
  * Will be implemented by other classes (e.g.: for type-checking)
@@ -162,11 +162,11 @@ export abstract class Pattern extends Node {}
 export abstract class TypeNode extends Node {}
 
 export enum LiteralKind {
-    Int,
-    Float,
-    Bool,
-    String,
-    Char,
+    Int = 0,
+    Float = 1,
+    Bool = 2,
+    String = 3,
+    Char = 4,
 }
 
 export class LiteralExpr extends Expression {
@@ -256,7 +256,7 @@ export class CallExpr extends Expression {
 }
 
 /**
- * field access expression
+ * Field access expression
  * e.g.: `some_struct.a`
  */
 export class FieldExpr extends Expression {
@@ -553,7 +553,7 @@ export class LetStmt extends Statement {
 
 export class ExprStmt extends Statement {
     readonly expr: Expression;
-    readonly isReturn: boolean; // no semicolon
+    readonly isReturn: boolean; // No semicolon
 
     constructor(span: Span, expr: Expression, isReturn: boolean) {
         super(span);
@@ -582,11 +582,11 @@ export interface GenericParam {
 }
 
 enum FnAttributes {
-    unsafeFn,
-    asyncFn,
-    constFn,
-    testFn,
-    builtin,
+    unsafeFn = 0,
+    asyncFn = 1,
+    constFn = 2,
+    testFn = 3,
+    builtin = 4,
 }
 
 /**
@@ -935,9 +935,7 @@ export class ArrayTypeNode extends TypeNode {
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        if (visitor.visitArrayTypeNode)
-            return visitor.visitArrayTypeNode(this, ctx);
-        throw new Error(`No visitor method for ArrayTypeNode`);
+        return visitor.visitArrayTypeNode(this, ctx);
     }
 }
 
@@ -1046,10 +1044,11 @@ export function walkAst(node: Node, fn: (node: Node) => void): void {
     const obj = node as unknown as Record<string, unknown>;
     for (const key of Object.keys(obj)) {
         if (key === "span" || key === "node") continue;
+
         walkValue(obj[key]);
     }
 }
 
-export function mergeSpans(a: Span, b: Span): Span {
-    return new Span(a.line, a.column, a.start, b.end);
+export function mergeSpans(spanA: Span, spanB: Span): Span {
+    return new Span(spanA.line, spanA.column, spanA.start, spanB.end);
 }
