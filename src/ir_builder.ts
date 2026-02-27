@@ -1,75 +1,75 @@
 import {
-    freshValueId,
-    makeIRBlock,
+    type BlockId,
+    type FcmpOp,
+    type IRBlock,
+    type IRFunction,
+    type IRInst,
+    type IRType,
+    type IcmpOp,
+    type LocalId,
+    type ValueId,
     addIRBlock,
     addIRBlockParam,
     addIRInstruction,
-    setIRTerminator,
     addSuccessor,
-    type IRType,
-    type BlockId,
-    type ValueId,
-    type IRFunction,
-    type IRBlock,
-    type IRInst,
-    type FcmpOp,
-    type IcmpOp,
-    type LocalId,
+    freshValueId,
+    makeIRBlock,
+    setIRTerminator,
 } from "./ir";
 import {
-    makeIconst,
-    makeFconst,
-    makeBconst,
-    makeNull,
-    makeIadd,
-    makeIsub,
-    makeImul,
-    makeIdiv,
-    makeImod,
-    makeFadd,
-    makeFsub,
-    makeFmul,
-    makeFdiv,
-    makeIneg,
-    makeFneg,
-    makeIand,
-    makeIor,
-    makeIxor,
-    makeIshl,
-    makeIshr,
-    makeIcmp,
-    makeFcmp,
     makeAlloca,
-    makeLoad,
-    makeStore,
-    makeMemcpy,
-    makeGep,
-    makePtradd,
-    makeTrunc,
-    makeSext,
-    makeZext,
-    makeFptoui,
-    makeFptosi,
-    makeUitofp,
-    makeSitofp,
+    makeBconst,
     makeBitcast,
     makeCall,
     makeCallDyn,
+    makeEnumCreate,
+    makeEnumGetData,
+    makeEnumGetTag,
+    makeFadd,
+    makeFcmp,
+    makeFconst,
+    makeFdiv,
+    makeFmul,
+    makeFneg,
+    makeFptosi,
+    makeFptoui,
+    makeFsub,
+    makeGep,
+    makeIadd,
+    makeIand,
+    makeIcmp,
+    makeIconst,
+    makeIdiv,
+    makeImod,
+    makeImul,
+    makeIneg,
+    makeIor,
+    makeIshl,
+    makeIshr,
+    makeIsub,
+    makeIxor,
+    makeLoad,
+    makeMemcpy,
+    makeNull,
+    makePtradd,
+    makeSconst,
+    makeSext,
+    makeSitofp,
+    makeStore,
     makeStructCreate,
     makeStructGet,
-    makeEnumCreate,
-    makeEnumGetTag,
-    makeEnumGetData,
-    makeSconst,
+    makeTrunc,
+    makeUitofp,
+    makeZext,
 } from "./ir_instructions";
 import {
-    makeRet,
     makeBr,
     makeBrIf,
+    makeRet,
     makeSwitch,
     makeUnreachable,
 } from "./ir_terminators";
-import { type FloatWidth, type IntWidth } from "./ir";
+import type { FloatWidth, IntWidth } from "./ir";
 
 /**
  * IRBuilder - constructs SSA IR functions incrementally
@@ -84,9 +84,9 @@ import { type FloatWidth, type IntWidth } from "./ir";
  *   const fn = builder.build();
  */
 export class IRBuilder {
-    currentModule: unknown | null;
-    currentFunction: IRFunction | null;
-    currentBlock: IRBlock | null;
+    currentModule?: unknown = null;
+    currentFunction?: IRFunction | null;
+    currentBlock?: IRBlock;
     sealedBlocks: Set<BlockId>;
     varDefs: Map<string, Map<BlockId, ValueId>>;
     incompletePhis: Map<string, Map<BlockId, ValueId[]>>;
@@ -94,18 +94,20 @@ export class IRBuilder {
     nextBlockId: number;
 
     constructor() {
-        this.currentModule = null;
         this.currentFunction = null;
         this.currentBlock = null;
         this.sealedBlocks = new Set();
-        this.varDefs = new Map(); // varName -> Map<blockId, ValueId>
-        this.incompletePhis = new Map(); // blockId -> Map<varName, ValueId>
-        this.varTypes = new Map(); // varName -> IRType
+        this.varDefs = new Map(); // VarName -> Map<blockId, ValueId>
+        this.incompletePhis = new Map(); // BlockId -> Map<varName, ValueId>
+        this.varTypes = new Map(); // VarName -> IRType
         this.nextBlockId = 0;
     }
     createFunction(name: string, params: IRType[], returnType: IRType) {
         this.currentFunction = {
+            blocks: [],
+            entry: null,
             id: freshValueId(),
+            locals: [],
             name,
             params: params.map((ty, i) => ({
                 id: freshValueId(),
@@ -113,9 +115,6 @@ export class IRBuilder {
                 ty,
             })),
             returnType,
-            blocks: [],
-            locals: [],
-            entry: null,
         };
         this.currentModule = null; // Will be set later if added to module
     }
@@ -134,9 +133,7 @@ export class IRBuilder {
         }
         if (this.currentFunction) {
             addIRBlock(this.currentFunction, block);
-            if (this.currentFunction.entry === null) {
-                this.currentFunction.entry = block;
-            }
+            this.currentFunction.entry ??= block;
         }
         return blockId;
     }
@@ -161,7 +158,9 @@ export class IRBuilder {
     }
 
     getPredecessors(blockId: BlockId): BlockId[] {
-        if (!this.currentFunction) return [];
+        if (!this.currentFunction) {
+            return [];
+        }
         const block = this.currentFunction.blocks.find((b) => b.id === blockId);
         return block?.predecessors ?? [];
     }
@@ -177,7 +176,9 @@ export class IRBuilder {
     }
     defineVar(name: string, value: ValueId, blockId: BlockId | null = null) {
         if (blockId === null) {
-            if (!this.currentBlock) throw new Error("No current block");
+            if (!this.currentBlock) {
+                throw new Error("No current block");
+            }
             blockId = this.currentBlock.id;
         }
         const defs = this.varDefs.get(name);
@@ -199,7 +200,9 @@ export class IRBuilder {
 
     useVar(name: string, blockId: BlockId | null = null): ValueId {
         if (blockId === null) {
-            if (!this.currentBlock) throw new Error("No current block");
+            if (!this.currentBlock) {
+                throw new Error("No current block");
+            }
             blockId = this.currentBlock.id;
         }
         const defs = this.varDefs.get(name);
@@ -554,9 +557,10 @@ export class IRBuilder {
     // Terminators
     // ============================================================================
 
-    ret(value: ValueId | null = null) {
-        const term = makeRet(value ?? null);
-        setIRTerminator(this.currentBlock!, term);
+    ret(value?: ValueId): void {
+        const term = makeRet(value);
+        if (!this.currentBlock) throw new Error("Assert: false");
+        setIRTerminator(this.currentBlock, term);
     }
 
     br(target: BlockId, args: ValueId[] = []) {
