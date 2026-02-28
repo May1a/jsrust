@@ -4,10 +4,10 @@
 #include "bytes.h"
 #include "wasm_alloc.h"
 
+#include "alloc.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "alloc.h"
 
 static jsrust_backend_exec_result g_wasmResult;
 static jsrust_backend_codegen_result g_wasmCodegenResult;
@@ -92,12 +92,10 @@ static bool BackendWasm_flush(void* context)
 
 uint32_t jsrust_wasm_alloc(uint32_t size)
 {
-    uint8_t* ptr;
-
     if (size == 0)
         return 0;
 
-    ptr = (uint8_t*)malloc((size_t)size);
+    uint8_t* ptr = malloc((size_t)size);
     if (!ptr)
         return 0;
 

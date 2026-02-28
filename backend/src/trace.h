@@ -21,4 +21,3 @@ bool TraceBuffer_appendU32(TraceBuffer* trace, uint32_t value);
 bool TraceBuffer_appendI64(TraceBuffer* trace, int64_t value);
 bool TraceBuffer_appendNewline(TraceBuffer* trace);
 ByteSpan TraceBuffer_span(const TraceBuffer* trace);
-

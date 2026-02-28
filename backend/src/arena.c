@@ -96,4 +96,3 @@ void* Arena_allocZero(Arena* arena, size_t size, size_t align)
     ByteOps_set(ptr, 0, size);
     return ptr;
 }
-

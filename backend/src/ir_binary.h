@@ -10,4 +10,3 @@ typedef struct {
 } IRReadResult;
 
 IRReadResult IRBinary_readModule(Arena* arena, ByteSpan input);
-

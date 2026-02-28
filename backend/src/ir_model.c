@@ -10,4 +10,3 @@ bool IRInstruction_hasResult(uint8_t kind)
         return true;
     }
 }
-

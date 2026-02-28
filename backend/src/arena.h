@@ -17,4 +17,3 @@ void Arena_reset(Arena* arena);
 void* Arena_alloc(Arena* arena, size_t size, size_t align);
 void* Arena_allocZero(Arena* arena, size_t size, size_t align);
 size_t Arena_alignment(size_t align);
-

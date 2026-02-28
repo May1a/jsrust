@@ -10,4 +10,3 @@ typedef struct {
 
 FSReadResult FS_readWholeFile(Arena* arena, const char* path, size_t maxBytes);
 BackendStatus FS_writeFileAtomic(const char* path, ByteSpan content);
-

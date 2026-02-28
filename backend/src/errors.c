@@ -42,4 +42,3 @@ int BackendError_exitCode(jsrust_backend_error_code code)
 {
     return (int)code;
 }
-

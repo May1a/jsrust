@@ -76,4 +76,3 @@ CLIOptions CLI_parse(int argc, const char** argv)
 
     return options;
 }
-

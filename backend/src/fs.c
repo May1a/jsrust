@@ -127,4 +127,3 @@ BackendStatus FS_writeFileAtomic(const char* path, ByteSpan content)
 
     return BackendStatus_ok();
 }
-
