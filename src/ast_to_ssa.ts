@@ -46,6 +46,7 @@ import {
     type AstVisitor,
 } from "./ast";
 import { type Result, err, ok, okVoid } from "./diagnostics";
+import { BUILTIN_SYMBOLS } from "./builtin_symbols";
 
 // Type alias for expression visitor to reduce complexity
 type ExpressionVisitor<T> = Pick<
@@ -118,6 +119,7 @@ export interface LoweringError {
 interface LocalBinding {
     ptr: ValueId;
     ty: IRType;
+    formatTag?: FormatTag;
 }
 
 interface LoopFrame {
@@ -142,11 +144,26 @@ const DEFAULT_CHAR_CODE = 0;
 const HASH_FACTOR = 31;
 const HASH_MODULUS = 1_000_000;
 const VEC_CAPACITY_FALLBACK = 4;
+const EMPTY_FORMAT = "";
 
 // Loop frame access
 const LAST_FRAME_INDEX = -1;
 
 const ZERO = 0;
+const ONE = 1;
+
+enum FormatTag {
+    String = 0,
+    Int = 1,
+    Float = 2,
+    Bool = 3,
+    Char = 4,
+}
+
+interface FormatTemplate {
+    literal: string;
+    placeholderCount: number;
+}
 
 function hashName(name: string): number {
     // Keep in sync with backend/src/bytes.c: ByteSpan_hashFunctionId
@@ -268,7 +285,9 @@ export class AstToSsaCtx {
         this.builder.switchToBlock(entryId);
     }
 
-    private bindFunctionParams(params: { name?: string; ty: TypeNode }[]): void {
+    private bindFunctionParams(
+        params: { name?: string; ty: TypeNode }[],
+    ): void {
         const { currentFunction } = this.builder;
         if (!currentFunction) {
             return;
@@ -279,7 +298,11 @@ export class AstToSsaCtx {
             const allocaId = this.builder.alloca(irType).id;
             const param = currentFunction.params[i];
             this.builder.store(allocaId, param.id, irType);
-            this.locals.set(paramEntry.name ?? "_", { ptr: allocaId, ty: irType });
+            this.locals.set(paramEntry.name ?? "_", {
+                ptr: allocaId,
+                ty: irType,
+                formatTag: AstToSsaCtx.formatTagFromTypeNode(paramEntry.ty),
+            });
         }
     }
 
@@ -346,6 +369,7 @@ export class AstToSsaCtx {
             this.locals.set(stmt.pattern.name, {
                 ptr: slotId,
                 ty,
+                formatTag: this.inferExpressionFormatTag(stmt.init),
             });
         }
         return okVoid();
@@ -367,7 +391,9 @@ export class AstToSsaCtx {
                 `Unexpected AST node in expression visitor: ${name}`,
                 zeroSpan(),
             );
-        const expressionVisitors: ExpressionVisitor<Result<ValueId, LoweringError>> = {
+        const expressionVisitors: ExpressionVisitor<
+            Result<ValueId, LoweringError>
+        > = {
             visitLiteralExpr: (expr: LiteralExpr) => this.lowerLiteral(expr),
             visitIdentifierExpr: (expr: IdentifierExpr) =>
                 this.lowerIdentifier(expr),
@@ -404,7 +430,8 @@ export class AstToSsaCtx {
                     "for-loop lowering is not implemented",
                     expr.span,
                 ),
-            visitStructExpr: (expr: StructExpr) => this.lowerStructLiteral(expr),
+            visitStructExpr: (expr: StructExpr) =>
+                this.lowerStructLiteral(expr),
             visitRangeExpr: (expr: RangeExpr) =>
                 loweringError(
                     LoweringErrorKind.UnsupportedNode,
@@ -515,7 +542,7 @@ export class AstToSsaCtx {
                 const cp =
                     typeof expr.value === "string"
                         ? (expr.value.codePointAt(STRING_FIRST_CHAR_INDEX) ??
-                            DEFAULT_CHAR_CODE)
+                          DEFAULT_CHAR_CODE)
                         : Number(expr.value);
                 const constInst = this.builder.iconst(cp, IntWidth.U32);
                 return AstToSsaCtx.handleInstructionId(constInst.id);
@@ -1087,7 +1114,10 @@ export class AstToSsaCtx {
         }
     }
 
-    private resolveReceiverArg(callee: FieldExpr, receiverValue: ValueId): ValueId {
+    private resolveReceiverArg(
+        callee: FieldExpr,
+        receiverValue: ValueId,
+    ): ValueId {
         if (!(callee.receiver instanceof IdentifierExpr)) {
             return receiverValue;
         }
@@ -1139,8 +1169,12 @@ export class AstToSsaCtx {
 
     private lowerMacro(expr: MacroExpr): Result<ValueId, LoweringError> {
         switch (expr.name) {
-            case "print":
-            case "println":
+            case "print": {
+                return this.lowerPrintMacro(expr, false);
+            }
+            case "println": {
+                return this.lowerPrintMacro(expr, true);
+            }
             case "assert":
             case "assert_eq": {
                 return ok(this.unitValue());
@@ -1156,6 +1190,146 @@ export class AstToSsaCtx {
                 );
             }
         }
+    }
+
+    private lowerPrintMacro(
+        expr: MacroExpr,
+        appendNewline: boolean,
+    ): Result<ValueId, LoweringError> {
+        const preparedArgs = this.preparePrintArguments(expr);
+        if (!preparedArgs.ok) {
+            return preparedArgs;
+        }
+        const builtinName = appendNewline
+            ? BUILTIN_SYMBOLS.PRINTLN_FMT
+            : BUILTIN_SYMBOLS.PRINT_FMT;
+        const callInst = this.builder.call(
+            this.resolveFunctionId(builtinName),
+            preparedArgs.value,
+            makeIRUnitType(),
+        );
+        return AstToSsaCtx.handleInstructionId(callInst.id);
+    }
+
+    private preparePrintArguments(
+        expr: MacroExpr,
+    ): Result<ValueId[], LoweringError> {
+        const templateResult = this.parseFormatTemplate(expr);
+        if (!templateResult.ok) {
+            return templateResult;
+        }
+        const template = templateResult.value;
+        const formatLiteralId = internIRStringLiteral(
+            this.irModule,
+            template.literal,
+        );
+        const args: ValueId[] = [this.builder.sconst(formatLiteralId).id];
+        for (const valueExpr of expr.args.slice(1)) {
+            const lowered = this.lowerExpression(valueExpr);
+            if (!lowered.ok) {
+                return lowered;
+            }
+            const formatTag = this.resolveExpressionFormatTag(
+                valueExpr,
+                lowered.value,
+            );
+            if (typeof formatTag === "undefined") {
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    `unsupported value in \`${expr.name}!\` formatting`,
+                    valueExpr.span,
+                );
+            }
+            args.push(this.builder.iconst(formatTag, IntWidth.I64).id);
+            args.push(lowered.value);
+        }
+        return ok(args);
+    }
+
+    private parseFormatTemplate(
+        expr: MacroExpr,
+    ): Result<FormatTemplate, LoweringError> {
+        if (expr.args.length === ZERO) {
+            return ok({
+                literal: EMPTY_FORMAT,
+                placeholderCount: ZERO,
+            });
+        }
+        const [formatExpr, ...valueArgs] = expr.args;
+        if (
+            !(formatExpr instanceof LiteralExpr) ||
+            formatExpr.literalKind !== LiteralKind.String
+        ) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                `\`${expr.name}!\` requires a string literal format argument`,
+                formatExpr.span,
+            );
+        }
+        const literal = String(formatExpr.value);
+        const parsed = AstToSsaCtx.countFormatPlaceholders(literal);
+        if (!parsed.ok) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                parsed.error,
+                formatExpr.span,
+            );
+        }
+        if (parsed.value !== valueArgs.length) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                `\`${expr.name}!\` expected ${parsed.value} format argument(s) but got ${valueArgs.length}`,
+                expr.span,
+            );
+        }
+        return ok({
+            literal,
+            placeholderCount: parsed.value,
+        });
+    }
+
+    private resolveExpressionFormatTag(
+        expr: Expression,
+        valueId: ValueId,
+    ): FormatTag | undefined {
+        const fromExpr = this.inferExpressionFormatTag(expr);
+        if (typeof fromExpr !== "undefined") {
+            return fromExpr;
+        }
+        return this.inferFormatTagFromValueType(valueId);
+    }
+
+    private inferExpressionFormatTag(expr: Expression): FormatTag | undefined {
+        if (expr instanceof LiteralExpr) {
+            return AstToSsaCtx.formatTagForLiteral(expr.literalKind);
+        }
+        if (expr instanceof IdentifierExpr) {
+            const local = this.locals.get(expr.name);
+            return local ? local.formatTag : undefined;
+        }
+        return undefined;
+    }
+
+    private inferFormatTagFromValueType(
+        valueId: ValueId,
+    ): FormatTag | undefined {
+        const valueType = this.resolveValueType(valueId);
+        if (typeof valueType === "undefined") {
+            return undefined;
+        }
+        if (valueType.kind === IRTypeKind.Bool) {
+            return FormatTag.Bool;
+        }
+        if (valueType instanceof FloatType) {
+            return FormatTag.Float;
+        }
+        if (valueType instanceof IntType) {
+            return FormatTag.Int;
+        }
+        if (valueType instanceof PtrType) {
+            return FormatTag.String;
+        }
+        return undefined;
     }
 
     private lowerVecMacro(expr: MacroExpr): Result<ValueId, LoweringError> {
@@ -1186,7 +1360,9 @@ export class AstToSsaCtx {
         return AstToSsaCtx.handleInstructionId(vecCreate.id);
     }
 
-    private lowerStructLiteral(expr: StructExpr): Result<ValueId, LoweringError> {
+    private lowerStructLiteral(
+        expr: StructExpr,
+    ): Result<ValueId, LoweringError> {
         if (!(expr.path instanceof IdentifierExpr)) {
             return loweringError(
                 LoweringErrorKind.UnsupportedNode,
@@ -1196,8 +1372,9 @@ export class AstToSsaCtx {
         }
 
         const structName = expr.path.name;
-        const fieldOrder =
-            this.structFieldNames.get(structName) ?? [...expr.fields.keys()];
+        const fieldOrder = this.structFieldNames.get(structName) ?? [
+            ...expr.fields.keys(),
+        ];
         if (fieldOrder.length === ZERO) {
             return loweringError(
                 LoweringErrorKind.UnsupportedNode,
@@ -1228,7 +1405,8 @@ export class AstToSsaCtx {
         }
 
         const existingType = this.irModule.structs.get(structName);
-        const structType = existingType ?? makeIRStructType(structName, fieldTypes);
+        const structType =
+            existingType ?? makeIRStructType(structName, fieldTypes);
         if (!existingType) {
             this.irModule.structs.set(structName, structType);
             this.structFieldNames.set(structName, [...fieldOrder]);
@@ -1306,8 +1484,7 @@ export class AstToSsaCtx {
             const arm = expr.arms[index];
             if ("literalKind" in arm.pattern && "value" in arm.pattern) {
                 const raw = arm.pattern.value;
-                const value =
-                    typeof raw === "number" ? raw : Number(raw);
+                const value = typeof raw === "number" ? raw : Number(raw);
                 cases.push({ value, target: armBlocks[index], args: [] });
             } else {
                 defaultBlock = armBlocks[index];
@@ -1605,16 +1782,127 @@ export class AstToSsaCtx {
         }
     }
 
+    private static formatTagFromTypeNode(
+        typeNode: TypeNode,
+    ): FormatTag | undefined {
+        if (
+            typeNode instanceof RefTypeNode ||
+            typeNode instanceof PtrTypeNode
+        ) {
+            return AstToSsaCtx.formatTagFromTypeNode(typeNode.inner);
+        }
+        if (!(typeNode instanceof NamedTypeNode)) {
+            return undefined;
+        }
+        const typeName = typeNode.name.toLowerCase();
+        if (AstToSsaCtx.isIntegerFormatType(typeName)) {
+            return FormatTag.Int;
+        }
+        switch (typeName) {
+            case "str": {
+                return FormatTag.String;
+            }
+            case "char": {
+                return FormatTag.Char;
+            }
+            case "bool": {
+                return FormatTag.Bool;
+            }
+            case "f32":
+            case "f64": {
+                return FormatTag.Float;
+            }
+            default: {
+                return undefined;
+            }
+        }
+    }
+
+    private static isIntegerFormatType(typeName: string): boolean {
+        switch (typeName) {
+            case "i8":
+            case "i16":
+            case "i32":
+            case "i64":
+            case "i128":
+            case "isize":
+            case "u8":
+            case "u16":
+            case "u32":
+            case "u64":
+            case "u128":
+            case "usize": {
+                return true;
+            }
+            default: {
+                return false;
+            }
+        }
+    }
+
+    private static formatTagForLiteral(
+        literalKind: LiteralKind,
+    ): FormatTag | undefined {
+        switch (literalKind) {
+            case LiteralKind.String: {
+                return FormatTag.String;
+            }
+            case LiteralKind.Char: {
+                return FormatTag.Char;
+            }
+            case LiteralKind.Bool: {
+                return FormatTag.Bool;
+            }
+            case LiteralKind.Float: {
+                return FormatTag.Float;
+            }
+            case LiteralKind.Int: {
+                return FormatTag.Int;
+            }
+            default: {
+                return undefined;
+            }
+        }
+    }
+
+    private static countFormatPlaceholders(
+        literal: string,
+    ): Result<number, string> {
+        let count = ZERO;
+        for (let index = ZERO; index < literal.length; index++) {
+            const byte = literal[index];
+            if (byte === "{") {
+                const nextByte = literal[index + ONE];
+                if (nextByte === "{") {
+                    index += ONE;
+                    continue;
+                }
+                if (nextByte === "}") {
+                    count += ONE;
+                    index += ONE;
+                    continue;
+                }
+                return err("unsupported format token after `{`");
+            }
+            if (byte === "}") {
+                const nextByte = literal[index + ONE];
+                if (nextByte === "}") {
+                    index += ONE;
+                    continue;
+                }
+                return err("unmatched `}` in format string");
+            }
+        }
+        return ok(count);
+    }
+
     private defaultValueForType(ty: IRType): ValueId {
         if (ty.kind === IRTypeKind.Bool) {
             const constInst = this.builder.bconst(false);
             return constInst.id;
         }
         if (ty instanceof IntType) {
-            const constInst = this.builder.iconst(
-                DEFAULT_INT_VALUE,
-                ty.width,
-            );
+            const constInst = this.builder.iconst(DEFAULT_INT_VALUE, ty.width);
             return constInst.id;
         }
         if (ty instanceof FloatType) {
@@ -1752,7 +2040,7 @@ function seedStructMetadata(
         if (!(item instanceof StructItem)) {
             continue;
         }
-        const names = item.fields.map(f => f.name);
+        const names = item.fields.map((f) => f.name);
         structFieldNames.set(item.name, names);
         if (!irModule.structs.has(item.name)) {
             irModule.structs.set(
@@ -1774,7 +2062,10 @@ function collectFunctionIds(moduleNode: ModuleNode): Map<string, number> {
     return fnIdMap;
 }
 
-function collectItemFunctionIds(item: ModuleNode["items"][number], fnIdMap: Map<string, number>): void {
+function collectItemFunctionIds(
+    item: ModuleNode["items"][number],
+    fnIdMap: Map<string, number>,
+): void {
     if (item instanceof FnItem && item.body) {
         fnIdMap.set(item.name, hashName(item.name));
         return;
@@ -1807,7 +2098,10 @@ function collectItemFunctionIds(item: ModuleNode["items"][number], fnIdMap: Map<
     }
 }
 
-function collectImplFunctionIds(item: ImplItem, fnIdMap: Map<string, number>): void {
+function collectImplFunctionIds(
+    item: ImplItem,
+    fnIdMap: Map<string, number>,
+): void {
     const implTarget =
         item.target instanceof NamedTypeNode ? item.target.name : "Self";
     if (implTarget === "Vec") {
@@ -1842,7 +2136,9 @@ function ensureImplStructMetadata(
     implTarget: string,
 ): void {
     if (!structFieldNames.has(implTarget) && structFieldNames.has("Self")) {
-        structFieldNames.set(implTarget, [...(structFieldNames.get("Self") ?? [])]);
+        structFieldNames.set(implTarget, [
+            ...(structFieldNames.get("Self") ?? []),
+        ]);
     }
     const selfStruct = irModule.structs.get("Self");
     if (!selfStruct) {
@@ -1851,7 +2147,7 @@ function ensureImplStructMetadata(
     const targetStruct = irModule.structs.get(implTarget);
     const targetNeedsUpgrade =
         !targetStruct ||
-        targetStruct.fields.every(field => field.kind === IRTypeKind.Unit);
+        targetStruct.fields.every((field) => field.kind === IRTypeKind.Unit);
     if (targetNeedsUpgrade) {
         irModule.structs.set(
             implTarget,
@@ -1860,7 +2156,10 @@ function ensureImplStructMetadata(
     }
 }
 
-function rewriteNewMethodReturnType(method: FnItem, implTarget: string): FnItem {
+function rewriteNewMethodReturnType(
+    method: FnItem,
+    implTarget: string,
+): FnItem {
     const returnsUnit = isUnitNamedTypeNode(method.returnType);
     if (method.name !== "new" || !returnsUnit) {
         return method;
@@ -1903,7 +2202,11 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
                 if (!method.body) {
                     continue;
                 }
-                ensureImplStructMetadata(irModule, structFieldNames, implTarget);
+                ensureImplStructMetadata(
+                    irModule,
+                    structFieldNames,
+                    implTarget,
+                );
                 lowerOwnedFunction(
                     rewriteNewMethodReturnType(method, implTarget),
                     irModule,
@@ -1927,7 +2230,12 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
                 if (!(modItem instanceof FnItem) || !modItem.body) {
                     continue;
                 }
-                lowerOwnedFunction(modItem, irModule, structFieldNames, fnIdMap);
+                lowerOwnedFunction(
+                    modItem,
+                    irModule,
+                    structFieldNames,
+                    fnIdMap,
+                );
             }
         }
     }

@@ -95,6 +95,7 @@ import {
     type IntType,
     type StructType,
 } from "./ir";
+import { fromBinaryInstKind } from "./ir_binary_opcode";
 
 import { MAGIC, VERSION } from "./ir_serialize";
 
@@ -111,52 +112,6 @@ const IR_TYPE_KIND_VALUES = new Set<number>([
     IRTypeKind.Enum,
     IRTypeKind.Array,
     IRTypeKind.Fn,
-]);
-const IR_INST_KIND_VALUES = new Set<number>([
-    IRInstKind.Iconst,
-    IRInstKind.Fconst,
-    IRInstKind.Bconst,
-    IRInstKind.Null,
-    IRInstKind.Sconst,
-    IRInstKind.Iadd,
-    IRInstKind.Isub,
-    IRInstKind.Imul,
-    IRInstKind.Idiv,
-    IRInstKind.Imod,
-    IRInstKind.Fadd,
-    IRInstKind.Fsub,
-    IRInstKind.Fmul,
-    IRInstKind.Fdiv,
-    IRInstKind.Ineg,
-    IRInstKind.Fneg,
-    IRInstKind.Iand,
-    IRInstKind.Ior,
-    IRInstKind.Ixor,
-    IRInstKind.Ishl,
-    IRInstKind.Ishr,
-    IRInstKind.Icmp,
-    IRInstKind.Fcmp,
-    IRInstKind.Alloca,
-    IRInstKind.Load,
-    IRInstKind.Store,
-    IRInstKind.Memcpy,
-    IRInstKind.Gep,
-    IRInstKind.Ptradd,
-    IRInstKind.Trunc,
-    IRInstKind.Sext,
-    IRInstKind.Zext,
-    IRInstKind.Fptoui,
-    IRInstKind.Fptosi,
-    IRInstKind.Uitofp,
-    IRInstKind.Sitofp,
-    IRInstKind.Bitcast,
-    IRInstKind.Call,
-    IRInstKind.CallDyn,
-    IRInstKind.StructCreate,
-    IRInstKind.StructGet,
-    IRInstKind.EnumCreate,
-    IRInstKind.EnumGetTag,
-    IRInstKind.EnumGetData,
 ]);
 const IR_TERM_KIND_VALUES = new Set<number>([
     IRTermKind.Ret,
@@ -207,10 +162,6 @@ interface DeserializeError {
 
 function isIRTypeKind(value: number): value is IRTypeKind {
     return IR_TYPE_KIND_VALUES.has(value);
-}
-
-function isIRInstKind(value: number): value is IRInstKind {
-    return IR_INST_KIND_VALUES.has(value);
 }
 
 function isIRTermKind(value: number): value is IRTermKind {
@@ -685,7 +636,8 @@ class IRDeserializer {
 
     readInstruction(): Result<IRInst, DeserializeError> {
         const opcodeValue = this.readU8();
-        if (!isIRInstKind(opcodeValue)) {
+        const opcode = fromBinaryInstKind(opcodeValue);
+        if (typeof opcode === "undefined") {
             return err({
                 kind: DeserializeErrorKind.InvalidOpcode,
                 message: `Invalid instruction opcode: ${opcodeValue}`,
@@ -698,7 +650,7 @@ class IRDeserializer {
         if (!typeResult.ok) {
             return typeResult;
         }
-        const reader = INSTRUCTION_READERS[opcodeValue];
+        const reader = INSTRUCTION_READERS[opcode];
         if (!reader) {
             return err({
                 kind: DeserializeErrorKind.InvalidOpcode,

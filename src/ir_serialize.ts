@@ -1,5 +1,6 @@
 import {
     IRTypeKind,
+    IRInstKind,
     IRTermKind,
     type IntType,
     type FloatType,
@@ -64,7 +65,9 @@ import {
     type IRTypeVisitor,
     type IRInstVisitor,
     type IRTermVisitor,
+    type ValueId,
 } from "./ir";
+import { toBinaryInstKind } from "./ir_binary_opcode";
 
 // Magic bytes: "JSRS" (0x4A 0x53 0x52 0x53)
 export const MAGIC = 0x52_53_4a_53; // "JSRS" in little-endian
@@ -140,11 +143,13 @@ export class IRSerializer {
     private view: DataView;
     private pos: number;
     private readonly strings: StringTable;
+    private readonly currentValueTypes: Map<ValueId, IRType>;
 
     constructor() {
         this.view = new DataView(new ArrayBuffer(0));
         this.pos = 0;
         this.strings = new StringTable();
+        this.currentValueTypes = new Map();
     }
 
     /**
@@ -557,11 +562,13 @@ export class IRSerializer {
     private calculateFunctionsSize(module: IRModule): number {
         let size = U32_BYTE_WIDTH; // Count
         for (const fn of module.functions) {
+            this.currentValueTypes.clear();
             size += U32_BYTE_WIDTH; // Name string id
             size += U32_BYTE_WIDTH; // Param count
             for (const param of fn.params) {
                 size += this.calculateTypeSize(param.ty);
                 size += U32_BYTE_WIDTH; // Id
+                this.currentValueTypes.set(param.id, param.ty);
             }
             size += this.calculateTypeSize(fn.returnType);
             size += U32_BYTE_WIDTH; // Local count
@@ -571,6 +578,12 @@ export class IRSerializer {
             }
             size += U32_BYTE_WIDTH; // Block count
             for (const block of fn.blocks) {
+                for (const param of block.params) {
+                    this.currentValueTypes.set(param.id, param.ty);
+                }
+                for (const inst of block.instructions) {
+                    this.currentValueTypes.set(inst.id, inst.irType);
+                }
                 size += this.calculateBlockSize(block);
             }
         }
@@ -600,7 +613,9 @@ export class IRSerializer {
      */
     private calculateInstructionSize(inst: IRInst): number {
         let size = BYTE_WIDTH; // Opcode
-        size += U32_BYTE_WIDTH; // Dest value id
+        if (this.instructionHasResult(inst.kind)) {
+            size += U32_BYTE_WIDTH; // Dest value id
+        }
         size += this.calculateTypeSize(inst.irType);
 
         const visitor: IRInstVisitor<number, void> = {
@@ -627,134 +642,57 @@ export class IRSerializer {
             visitIshrInst: (): number => TWO_U32_WIDTH, // Left, right
             visitIcmpInst: (): number => TWO_U32_AND_TAG_WIDTH, // Left, right, op
             visitFcmpInst: (): number => TWO_U32_AND_TAG_WIDTH, // Left, right, op
-            visitAllocaInst: (alloca: AllocaInst): number => {
-                let s = this.calculateTypeSize(alloca.allocType);
-                s += BYTE_WIDTH; // Has alignment
-                if (alloca.alignment !== undefined) {
-                    s += U32_BYTE_WIDTH; // Alignment
-                }
-                return s;
-            },
-            visitLoadInst: (load: LoadInst): number => {
-                let s = U32_BYTE_WIDTH; // Ptr
-                s += this.calculateTypeSize(load.loadType);
-                s += BYTE_WIDTH; // Has alignment
-                if (load.alignment !== undefined) {
-                    s += U32_BYTE_WIDTH; // Alignment
-                }
-                return s;
-            },
-            visitStoreInst: (store: StoreInst): number => {
-                let s = TWO_U32_WIDTH; // Value, ptr
-                s += BYTE_WIDTH; // Has alignment
-                if (store.alignment !== undefined) {
-                    s += U32_BYTE_WIDTH; // Alignment
-                }
-                return s;
-            },
+            visitAllocaInst: (): number => U32_BYTE_WIDTH, // Local id
+            visitLoadInst: (): number => U32_BYTE_WIDTH, // Ptr
+            visitStoreInst: (store: StoreInst): number =>
+                TWO_U32_WIDTH + this.calculateTypeSize(this.requireValueType(store.value)),
             visitMemcpyInst: (): number => THREE_U32_WIDTH, // Dest, src, size
             visitGepInst: (gep: GepInst): number => {
                 let s = U32_BYTE_WIDTH; // Ptr
                 s += U32_BYTE_WIDTH; // Index count
                 s += U32_BYTE_WIDTH * gep.indices.length; // Indices
-                s += this.calculateTypeSize(gep.resultType);
                 return s;
             },
             visitPtraddInst: (): number => TWO_U32_WIDTH, // Ptr, offset
-            visitTruncInst: (trunc: TruncInst): number => {
-                let s = U32_BYTE_WIDTH; // Operand
-                s += this.calculateTypeSize(trunc.fromType);
-                s += this.calculateTypeSize(trunc.toType);
-                return s;
-            },
-            visitSextInst: (sext: SextInst): number => {
-                let s = U32_BYTE_WIDTH; // Operand
-                s += this.calculateTypeSize(sext.fromType);
-                s += this.calculateTypeSize(sext.toType);
-                return s;
-            },
-            visitZextInst: (zext: ZextInst): number => {
-                let s = U32_BYTE_WIDTH; // Operand
-                s += this.calculateTypeSize(zext.fromType);
-                s += this.calculateTypeSize(zext.toType);
-                return s;
-            },
-            visitFptouiInst: (fptoui: FptouiInst): number => {
-                let s = U32_BYTE_WIDTH; // Operand
-                s += this.calculateTypeSize(fptoui.fromType);
-                s += this.calculateTypeSize(fptoui.toType);
-                return s;
-            },
-            visitFptosiInst: (fptosi: FptosiInst): number => {
-                let s = U32_BYTE_WIDTH; // Operand
-                s += this.calculateTypeSize(fptosi.fromType);
-                s += this.calculateTypeSize(fptosi.toType);
-                return s;
-            },
-            visitUitofpInst: (uitofp: UitofpInst): number => {
-                let s = U32_BYTE_WIDTH; // Operand
-                s += this.calculateTypeSize(uitofp.fromType);
-                s += this.calculateTypeSize(uitofp.toType);
-                return s;
-            },
-            visitSitofpInst: (sitofp: SitofpInst): number => {
-                let s = U32_BYTE_WIDTH; // Operand
-                s += this.calculateTypeSize(sitofp.fromType);
-                s += this.calculateTypeSize(sitofp.toType);
-                return s;
-            },
-            visitBitcastInst: (bitcast: BitcastInst): number => {
-                let s = U32_BYTE_WIDTH; // Operand
-                s += this.calculateTypeSize(bitcast.fromType);
-                s += this.calculateTypeSize(bitcast.toType);
-                return s;
-            },
+            visitTruncInst: (trunc: TruncInst): number =>
+                U32_BYTE_WIDTH + this.calculateTypeSize(trunc.fromType),
+            visitSextInst: (sext: SextInst): number =>
+                U32_BYTE_WIDTH + this.calculateTypeSize(sext.fromType),
+            visitZextInst: (zext: ZextInst): number =>
+                U32_BYTE_WIDTH + this.calculateTypeSize(zext.fromType),
+            visitFptouiInst: (): number => U32_BYTE_WIDTH,
+            visitFptosiInst: (): number => U32_BYTE_WIDTH,
+            visitUitofpInst: (): number => U32_BYTE_WIDTH,
+            visitSitofpInst: (): number => U32_BYTE_WIDTH,
+            visitBitcastInst: (): number => U32_BYTE_WIDTH,
             visitCallInst: (call: CallInst): number => {
                 let s = U32_BYTE_WIDTH; // Callee
                 s += U32_BYTE_WIDTH; // Arg count
                 s += U32_BYTE_WIDTH * call.args.length; // Args
-                s += this.calculateTypeSize(call.calleeType);
                 return s;
             },
             visitCallDynInst: (callDyn: CallDynInst): number => {
                 let s = U32_BYTE_WIDTH; // Callee (value id)
                 s += U32_BYTE_WIDTH; // Arg count
                 s += U32_BYTE_WIDTH * callDyn.args.length; // Args
-                s += this.calculateTypeSize(callDyn.calleeType);
                 return s;
             },
             visitStructCreateInst: (sc: StructCreateInst): number => {
                 let s = U32_BYTE_WIDTH; // Field count
                 s += U32_BYTE_WIDTH * sc.fields.length; // Fields
-                s += this.calculateTypeSize(sc.structType);
                 return s;
             },
-            visitStructGetInst: (sg: StructGetInst): number => {
-                let s = U32_BYTE_WIDTH; // Struct
-                s += U32_BYTE_WIDTH; // Index
-                s += this.calculateTypeSize(sg.structType);
-                return s;
-            },
+            visitStructGetInst: (): number => TWO_U32_WIDTH,
             visitEnumCreateInst: (ec: EnumCreateInst): number => {
                 let s = U32_BYTE_WIDTH; // Tag
                 s += BYTE_WIDTH; // Has_data
                 if (typeof ec.data === "number") {
                     s += U32_BYTE_WIDTH; // Data
                 }
-                s += this.calculateTypeSize(ec.enumType);
                 return s;
             },
-            visitEnumGetTagInst: (egt: EnumGetTagInst): number => {
-                let s = U32_BYTE_WIDTH; // Enum_
-                s += this.calculateTypeSize(egt.enumType);
-                return s;
-            },
-            visitEnumGetDataInst: (egd: EnumGetDataInst): number => {
-                let s = U32_BYTE_WIDTH; // Enum_
-                s += this.calculateTypeSize(egd.enumType);
-                s += this.calculateTypeSize(egd.dataType);
-                return s;
-            },
+            visitEnumGetTagInst: (): number => U32_BYTE_WIDTH,
+            visitEnumGetDataInst: (): number => THREE_U32_WIDTH,
         };
         size += inst.accept(visitor, undefined);
         return size;
@@ -1000,6 +938,7 @@ export class IRSerializer {
     // ========================================================================
 
     private writeFunction(fn: IRFunction): void {
+        this.currentValueTypes.clear();
         this.writeU32(this.strings.addString(fn.name));
 
         // Parameters
@@ -1007,6 +946,7 @@ export class IRSerializer {
         for (const param of fn.params) {
             this.writeType(param.ty);
             this.writeU32(param.id);
+            this.currentValueTypes.set(param.id, param.ty);
         }
 
         // Return type
@@ -1022,6 +962,12 @@ export class IRSerializer {
         // Blocks
         this.writeU32(fn.blocks.length);
         for (const block of fn.blocks) {
+            for (const param of block.params) {
+                this.currentValueTypes.set(param.id, param.ty);
+            }
+            for (const inst of block.instructions) {
+                this.currentValueTypes.set(inst.id, inst.irType);
+            }
             this.writeBlock(block);
         }
     }
@@ -1055,8 +1001,10 @@ export class IRSerializer {
     // ========================================================================
 
     private writeInstruction(inst: IRInst): void {
-        this.writeU8(inst.kind);
-        this.writeU32(inst.id);
+        this.writeU8(toBinaryInstKind(inst.kind));
+        if (this.instructionHasResult(inst.kind)) {
+            this.writeU32(inst.id);
+        }
         this.writeType(inst.irType);
 
         const visitor: IRInstVisitor<void, void> = {
@@ -1152,33 +1100,15 @@ export class IRSerializer {
                 this.writeU8(i.op);
             },
             visitAllocaInst: (i: AllocaInst): void => {
-                this.writeType(i.allocType);
-                if (i.alignment !== undefined) {
-                    this.writeU8(1);
-                    this.writeU32(i.alignment);
-                } else {
-                    this.writeU8(0);
-                }
+                this.writeU32(i.id);
             },
             visitLoadInst: (i: LoadInst): void => {
                 this.writeU32(i.ptr);
-                this.writeType(i.loadType);
-                if (i.alignment !== undefined) {
-                    this.writeU8(1);
-                    this.writeU32(i.alignment);
-                } else {
-                    this.writeU8(0);
-                }
             },
             visitStoreInst: (i: StoreInst): void => {
-                this.writeU32(i.value);
                 this.writeU32(i.ptr);
-                if (i.alignment !== undefined) {
-                    this.writeU8(1);
-                    this.writeU32(i.alignment);
-                } else {
-                    this.writeU8(0);
-                }
+                this.writeU32(i.value);
+                this.writeType(this.requireValueType(i.value));
             },
             visitMemcpyInst: (i: MemcpyInst): void => {
                 this.writeU32(i.dest);
@@ -1191,7 +1121,6 @@ export class IRSerializer {
                 for (const idx of i.indices) {
                     this.writeU32(idx);
                 }
-                this.writeType(i.resultType);
             },
             visitPtraddInst: (i: PtraddInst): void => {
                 this.writeU32(i.ptr);
@@ -1200,42 +1129,29 @@ export class IRSerializer {
             visitTruncInst: (i: TruncInst): void => {
                 this.writeU32(i.operand);
                 this.writeType(i.fromType);
-                this.writeType(i.toType);
             },
             visitSextInst: (i: SextInst): void => {
                 this.writeU32(i.operand);
                 this.writeType(i.fromType);
-                this.writeType(i.toType);
             },
             visitZextInst: (i: ZextInst): void => {
                 this.writeU32(i.operand);
                 this.writeType(i.fromType);
-                this.writeType(i.toType);
             },
             visitFptouiInst: (i: FptouiInst): void => {
                 this.writeU32(i.operand);
-                this.writeType(i.fromType);
-                this.writeType(i.toType);
             },
             visitFptosiInst: (i: FptosiInst): void => {
                 this.writeU32(i.operand);
-                this.writeType(i.fromType);
-                this.writeType(i.toType);
             },
             visitUitofpInst: (i: UitofpInst): void => {
                 this.writeU32(i.operand);
-                this.writeType(i.fromType);
-                this.writeType(i.toType);
             },
             visitSitofpInst: (i: SitofpInst): void => {
                 this.writeU32(i.operand);
-                this.writeType(i.fromType);
-                this.writeType(i.toType);
             },
             visitBitcastInst: (i: BitcastInst): void => {
                 this.writeU32(i.operand);
-                this.writeType(i.fromType);
-                this.writeType(i.toType);
             },
             visitCallInst: (i: CallInst): void => {
                 this.writeU32(i.callee);
@@ -1243,7 +1159,6 @@ export class IRSerializer {
                 for (const arg of i.args) {
                     this.writeU32(arg);
                 }
-                this.writeType(i.calleeType);
             },
             visitCallDynInst: (i: CallDynInst): void => {
                 this.writeU32(i.callee);
@@ -1251,19 +1166,16 @@ export class IRSerializer {
                 for (const arg of i.args) {
                     this.writeU32(arg);
                 }
-                this.writeType(i.calleeType);
             },
             visitStructCreateInst: (i: StructCreateInst): void => {
                 this.writeU32(i.fields.length);
                 for (const field of i.fields) {
                     this.writeU32(field);
                 }
-                this.writeType(i.structType);
             },
             visitStructGetInst: (i: StructGetInst): void => {
                 this.writeU32(i.struct);
                 this.writeU32(i.index);
-                this.writeType(i.structType);
             },
             visitEnumCreateInst: (i: EnumCreateInst): void => {
                 this.writeU32(i.tag);
@@ -1273,19 +1185,29 @@ export class IRSerializer {
                 } else {
                     this.writeU8(0);
                 }
-                this.writeType(i.enumType);
             },
             visitEnumGetTagInst: (i: EnumGetTagInst): void => {
                 this.writeU32(i.enum_);
-                this.writeType(i.enumType);
             },
             visitEnumGetDataInst: (i: EnumGetDataInst): void => {
                 this.writeU32(i.enum_);
-                this.writeType(i.enumType);
-                this.writeType(i.dataType);
+                this.writeU32(0);
+                this.writeU32(0);
             },
         };
         inst.accept(visitor, undefined);
+    }
+
+    private instructionHasResult(kind: IRInstKind): boolean {
+        return kind !== IRInstKind.Store && kind !== IRInstKind.Memcpy;
+    }
+
+    private requireValueType(valueId: ValueId): IRType {
+        const valueType = this.currentValueTypes.get(valueId);
+        if (typeof valueType !== "undefined") {
+            return valueType;
+        }
+        throw new Error(`Missing value type for operand v${String(valueId)}`);
     }
 
     // ========================================================================
