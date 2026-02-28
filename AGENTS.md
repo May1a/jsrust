@@ -1,35 +1,23 @@
 # JSRust - Rust compiler in TypeScript
 
-A Rust compiler written in pure TypeScript with no dependencies.
+A Rust compiler written in TypeScript with no dependencies.
 
-## Plans
+## Instructions
 
-See `plans/README.md` for the current planning structure.
-
-## Plan Status
-
-- `plans/STATUS.md`
-
-## Running
+After working on a file run:
 
 ```bash
-node main.js run <file.rs>
+bun typecheck <file>
 ```
 
-Optional run flags:
+DO NOT run the tests (or other various commands) **unless** instructed otherwise
 
-- `--entry <fn>`
-- `--trace --trace-out <path>`
-- `--out-bin <path>`
-- `--codegen-wasm`
-- `--no-validate`
+## Frontend Type-Safety Constraints
 
-## Testing
+- Write typesafe code
+- **NEVER** use an `eslint-disable` comment (if you see one, **remove** it)
 
-```bash
-npm run test
-```
+## Code quality
 
-- Use `npm run test:update-examples` to regenerate changed/missing IR snapshots in `examples/expected/`.
-- Simple Rust examples live in `examples/`
-- The test suite compiles every `examples/*.rs` file via `tests/examples.js`
+- Ensure that a high level of code quality is enforced.
+- DO **NOT** take shortcuts of any kind
