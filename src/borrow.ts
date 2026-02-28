@@ -1,4 +1,46 @@
-import { Node } from "./ast";
+import {
+    AssignExpr,
+    BinaryExpr,
+    BlockExpr,
+    CallExpr,
+    ClosureExpr,
+    DerefExpr,
+    ExprStmt,
+    FieldExpr,
+    FnItem,
+    ForExpr,
+    IdentifierExpr,
+    IfExpr,
+    ImplItem,
+    IndexExpr,
+    ItemStmt,
+    LetStmt,
+    LoopExpr,
+    MacroExpr,
+    MatchExpr,
+    ModItem,
+    ModuleNode,
+    OrPattern,
+    PathExpr,
+    type Item,
+    type Pattern,
+    RangeExpr,
+    RefExpr,
+    ReturnExpr,
+    type Span,
+    SlicePattern,
+    type Statement,
+    StructExpr,
+    StructPattern,
+    TuplePattern,
+    UnaryExpr,
+    WhileExpr,
+    BindingPattern,
+    IdentPattern,
+} from "./ast";
+import type { TypeContext } from "./type_context";
+
+const PARAM_DEPTH = -1;
 
 export type RefOrigin =
     | { kind: "param"; name?: string }
@@ -8,7 +50,7 @@ export type RefOrigin =
 export interface BindingInfo {
     kind: "param" | "local";
     depth: number;
-    refOrigin: RefOrigin | null;
+    refOrigin?: RefOrigin;
 }
 
 export interface BorrowLiteError {
@@ -22,10 +64,7 @@ export interface FnEnv {
     errors: BorrowLiteError[];
 }
 
-function makeBorrowError(
-    message: string,
-    span?: { line: number; column: number; start: number; end: number },
-): BorrowLiteError {
+function makeBorrowError(message: string, span?: Span): BorrowLiteError {
     return { message, span };
 }
 
@@ -42,7 +81,9 @@ function popScope(env: FnEnv): void {
     for (let i = names.length - 1; i >= 0; i--) {
         const name = names[i];
         const stack = env.bindings.get(name);
-        if (!stack || stack.length === 0) continue;
+        if (!stack || stack.length === 0) {
+            continue;
+        }
         stack.pop();
         if (stack.length === 0) {
             env.bindings.delete(name);
@@ -54,417 +95,525 @@ function defineBinding(env: FnEnv, name: string, info: BindingInfo): void {
     const stack = env.bindings.get(name) ?? [];
     stack.push(info);
     env.bindings.set(name, stack);
-    const scope = env.scopeStack[env.scopeStack.length - 1];
-    if (scope) {
-        scope.push(name);
-    }
+    env.scopeStack[env.scopeStack.length - 1].push(name);
 }
 
-function lookupBinding(env: FnEnv, name: string): BindingInfo | null {
+function lookupBinding(env: FnEnv, name: string): BindingInfo | undefined {
     const stack = env.bindings.get(name);
-    if (!stack || stack.length === 0) return null;
-    return stack[stack.length - 1];
+    return stack && stack.length > 0 ? stack[stack.length - 1] : undefined;
 }
 
-function collectPatternBindings(pat: any, out: string[]): void {
-    if (!pat) return;
-    switch (pat.kind) {
-        case NodeKind.IdentPat:
-            out.push(pat.name);
-            break;
-        case NodeKind.TuplePat:
-            for (const e of pat.elements ?? []) collectPatternBindings(e, out);
-            break;
-        case NodeKind.StructPat:
-            for (const f of pat.fields ?? []) {
-                if (f.pat) collectPatternBindings(f.pat, out);
-            }
-            break;
-        case NodeKind.SlicePat:
-            for (const e of pat.elements ?? []) collectPatternBindings(e, out);
-            if (pat.rest) collectPatternBindings(pat.rest, out);
-            break;
-        case NodeKind.OrPat:
-            if ((pat.alternatives ?? []).length > 0) {
-                collectPatternBindings(pat.alternatives[0], out);
-            }
-            break;
-        case NodeKind.BindingPat:
-            out.push(pat.name);
-            if (pat.pat) collectPatternBindings(pat.pat, out);
-            break;
-        default:
-            break;
+function collectPatternBindings(pattern: Pattern | undefined, out: string[]): void {
+    if (!pattern) {
+        return;
+    }
+    if (pattern instanceof IdentPattern) {
+        out.push(pattern.name);
+        return;
+    }
+    if (pattern instanceof TuplePattern || pattern instanceof SlicePattern) {
+        for (const element of pattern.elements) {
+            collectPatternBindings(element, out);
+        }
+        if (pattern instanceof SlicePattern) {
+            collectPatternBindings(pattern.rest, out);
+        }
+        return;
+    }
+    if (pattern instanceof StructPattern) {
+        for (const field of pattern.fields) {
+            collectPatternBindings(field.pattern, out);
+        }
+        return;
+    }
+    if (pattern instanceof OrPattern) {
+        collectPatternBindings(pattern.alternatives[0], out);
+        return;
+    }
+    if (pattern instanceof BindingPattern) {
+        out.push(pattern.name);
+        collectPatternBindings(pattern.pattern, out);
     }
 }
 
-function getRefOrigin(expr: any, env: FnEnv): RefOrigin | null {
-    if (!expr) return null;
-    switch (expr.kind) {
-        case NodeKind.RefExpr: {
-            const origin = getPlaceOrigin(expr.operand, env);
-            return origin ?? { kind: "temporary" };
-        }
-        case NodeKind.IdentifierExpr: {
-            const binding = lookupBinding(env, expr.name);
-            return binding ? binding.refOrigin : null;
-        }
-        case NodeKind.PathExpr: {
-            if (expr.segments?.length !== 1) return null;
-            const binding = lookupBinding(env, expr.segments[0]);
-            return binding ? binding.refOrigin : null;
-        }
-        case NodeKind.BlockExpr:
-            return getRefOrigin(expr.expr, env);
-        case NodeKind.IfExpr: {
-            const thenOrigin = getRefOrigin(expr.thenBranch, env);
-            const elseOrigin = getRefOrigin(expr.elseBranch, env);
-            if (!thenOrigin || !elseOrigin) return null;
-            if (thenOrigin.kind !== elseOrigin.kind) return null;
-            if (
-                thenOrigin.kind === "local" &&
-                elseOrigin.kind === "local" &&
-                thenOrigin.depth !== elseOrigin.depth
-            ) {
-                return null;
-            }
-            return thenOrigin;
-        }
-        default:
-            return null;
+function getSingleSegmentPathName(expr: IdentifierExpr | PathExpr): string | undefined {
+    if (expr instanceof PathExpr) {
+        return expr.segments.length === 1 ? expr.segments[0] : undefined;
     }
+    return expr.name;
 }
 
-function getPlaceOrigin(place: any, env: FnEnv): RefOrigin | null {
-    if (!place) return null;
-    switch (place.kind) {
-        case NodeKind.IdentifierExpr: {
-            const binding = lookupBinding(env, place.name);
-            if (!binding) return null;
-            if (binding.refOrigin) return binding.refOrigin;
-            if (binding.kind === "param")
-                return { kind: "param", name: place.name };
-            return {
-                kind: "local",
-                name: place.name,
-                depth: binding.depth,
-            };
-        }
-        case NodeKind.PathExpr: {
-            if (place.segments?.length !== 1) return null;
-            const binding = lookupBinding(env, place.segments[0]);
-            if (!binding) return null;
-            if (binding.refOrigin) return binding.refOrigin;
-            if (binding.kind === "param")
-                return { kind: "param", name: place.segments[0] };
-            return {
-                kind: "local",
-                name: place.segments[0],
-                depth: binding.depth,
-            };
-        }
-        case NodeKind.FieldExpr:
-            return getPlaceOrigin(place.receiver, env);
-        case NodeKind.IndexExpr:
-            return getPlaceOrigin(place.receiver, env);
-        case NodeKind.DerefExpr:
-            return getRefOrigin(place.operand, env);
-        default:
-            return null;
+function getBindingRefOrigin(
+    env: FnEnv,
+    expr: IdentifierExpr | PathExpr,
+): RefOrigin | undefined {
+    const name = getSingleSegmentPathName(expr);
+    if (!name) {
+        return undefined;
     }
+    const binding = lookupBinding(env, name);
+    return binding ? binding.refOrigin : undefined;
 }
 
-function isInvalidReturnOrigin(origin: RefOrigin | null): boolean {
-    if (!origin) return false;
+function getRefOrigin(expr: ExpressionLike, env: FnEnv): RefOrigin | undefined {
+    if (!expr) {
+        return undefined;
+    }
+    if (expr instanceof RefExpr) {
+        return getPlaceOrigin(expr.target, env) ?? { kind: "temporary" };
+    }
+    if (expr instanceof IdentifierExpr) {
+        return getBindingRefOrigin(env, expr);
+    }
+    if (expr instanceof BlockExpr) {
+        return getRefOrigin(expr.expr, env);
+    }
+    if (expr instanceof IfExpr) {
+        return getIfRefOrigin(expr, env);
+    }
+    return undefined;
+}
+
+function getIfRefOrigin(expr: IfExpr, env: FnEnv): RefOrigin | undefined {
+    const thenOrigin = getRefOrigin(expr.thenBranch, env);
+    const elseOrigin = getRefOrigin(expr.elseBranch, env);
+    if (!thenOrigin || !elseOrigin) {
+        return undefined;
+    }
+    if (thenOrigin.kind !== elseOrigin.kind) {
+        return undefined;
+    }
+    if (
+        thenOrigin.kind === "local" &&
+        elseOrigin.kind === "local" &&
+        thenOrigin.depth !== elseOrigin.depth
+    ) {
+        return undefined;
+    }
+    return thenOrigin;
+}
+
+function getPlaceOrigin(
+    place: ExpressionLike,
+    env: FnEnv,
+): RefOrigin | undefined {
+    if (!place) {
+        return undefined;
+    }
+    if (place instanceof IdentifierExpr) {
+        return getBindingPlaceOrigin(env, place.name);
+    }
+    if (place instanceof PathExpr) {
+        const name = getSingleSegmentPathName(place);
+        return name ? getBindingPlaceOrigin(env, name) : undefined;
+    }
+    if (place instanceof FieldExpr || place instanceof IndexExpr) {
+        return getPlaceOrigin(place.receiver, env);
+    }
+    if (place instanceof DerefExpr) {
+        return getRefOrigin(place.target, env);
+    }
+    return undefined;
+}
+
+function getBindingPlaceOrigin(env: FnEnv, name: string): RefOrigin | undefined {
+    const binding = lookupBinding(env, name);
+    if (!binding) {
+        return undefined;
+    }
+    if (binding.refOrigin) {
+        return binding.refOrigin;
+    }
+    return binding.kind === "param"
+        ? { kind: "param", name }
+        : { kind: "local", name, depth: binding.depth };
+}
+
+function isInvalidReturnOrigin(origin: RefOrigin | undefined): boolean {
+    if (!origin) {
+        return false;
+    }
     return origin.kind === "local" || origin.kind === "temporary";
 }
 
 function isEscapingStore(
-    origin: RefOrigin | null,
-    target: BindingInfo | null,
+    origin: RefOrigin | undefined,
+    target: BindingInfo | undefined,
 ): boolean {
-    if (!origin || !target) return false;
-    if (origin.kind === "temporary") return true;
-    if (origin.kind !== "local") return false;
-    const targetDepth = target.kind === "param" ? -1 : target.depth;
+    if (!origin || !target) {
+        return false;
+    }
+    if (origin.kind === "temporary") {
+        return true;
+    }
+    if (origin.kind !== "local") {
+        return false;
+    }
+    const targetDepth = target.kind === "param" ? PARAM_DEPTH : target.depth;
     return targetDepth < origin.depth;
 }
 
-function checkExpr(expr: any, env: FnEnv): void {
-    if (!expr) return;
-    switch (expr.kind) {
-        case NodeKind.AssignExpr: {
-            checkExpr(expr.value, env);
-            const valueOrigin = getRefOrigin(expr.value, env);
-            const targetOrigin = getPlaceOrigin(expr.target, env);
-            let targetBinding: BindingInfo | null = null;
-            if (expr.target.kind === NodeKind.IdentifierExpr) {
-                targetBinding = lookupBinding(env, expr.target.name);
-            } else if (
-                expr.target.kind === NodeKind.PathExpr &&
-                expr.target.segments?.length === 1
-            ) {
-                targetBinding = lookupBinding(env, expr.target.segments[0]);
-            } else if (targetOrigin?.kind === "local") {
-                targetBinding = {
-                    kind: "local",
-                    depth: targetOrigin.depth,
-                    refOrigin: null,
-                };
-            } else if (targetOrigin?.kind === "param") {
-                targetBinding = {
-                    kind: "param",
-                    depth: -1,
-                    refOrigin: null,
-                };
-            }
-            if (isEscapingStore(valueOrigin, targetBinding)) {
+function createBinding(kind: "param" | "local", depth: number): BindingInfo {
+    return { kind, depth };
+}
+
+function getTargetBinding(
+    target: ExpressionLike,
+    env: FnEnv,
+): BindingInfo | undefined {
+    if (!target) {
+        return undefined;
+    }
+    if (target instanceof IdentifierExpr) {
+        return lookupBinding(env, target.name);
+    }
+    if (target instanceof PathExpr) {
+        const name = getSingleSegmentPathName(target);
+        return name ? lookupBinding(env, name) : undefined;
+    }
+    const targetOrigin = getPlaceOrigin(target, env);
+    if (!targetOrigin) {
+        return undefined;
+    }
+    if (targetOrigin.kind === "local") {
+        return createBinding("local", targetOrigin.depth);
+    }
+    if (targetOrigin.kind === "param") {
+        return createBinding("param", PARAM_DEPTH);
+    }
+    return undefined;
+}
+
+function assignRefOriginToTarget(
+    target: ExpressionLike,
+    valueOrigin: RefOrigin | undefined,
+    env: FnEnv,
+): void {
+    if (!valueOrigin || !(target instanceof IdentifierExpr)) {
+        return;
+    }
+    const binding = lookupBinding(env, target.name);
+    if (binding) {
+        binding.refOrigin = valueOrigin;
+    }
+}
+
+function checkAssignExpr(expr: AssignExpr, env: FnEnv): void {
+    checkExpr(expr.value, env);
+    const valueOrigin = getRefOrigin(expr.value, env);
+    const targetBinding = getTargetBinding(expr.target, env);
+    if (isEscapingStore(valueOrigin, targetBinding)) {
+        env.errors.push(
+            makeBorrowError(
+                "Reference escapes the lifetime of its source in assignment",
+                expr.span,
+            ),
+        );
+    }
+    assignRefOriginToTarget(expr.target, valueOrigin, env);
+    checkExpr(expr.target, env);
+}
+
+function checkReturnExpr(expr: ReturnExpr, env: FnEnv): void {
+    if (!expr.value) {
+        return;
+    }
+    checkExpr(expr.value, env);
+    if (isInvalidReturnOrigin(getRefOrigin(expr.value, env))) {
+        env.errors.push(
+            makeBorrowError(
+                "Cannot return reference to local data or temporary",
+                expr.span,
+            ),
+        );
+    }
+}
+
+function withPatternScope(pattern: Pattern, env: FnEnv, fn: () => void): void {
+    pushScope(env);
+    const names: string[] = [];
+    collectPatternBindings(pattern, names);
+    for (const name of names) {
+        defineBinding(env, name, createBinding("local", currentDepth(env)));
+    }
+    fn();
+    popScope(env);
+}
+
+function checkMatchExpr(expr: MatchExpr, env: FnEnv): void {
+    checkExpr(expr.scrutinee, env);
+    for (const arm of expr.arms) {
+        withPatternScope(arm.pattern, env, () => {
+            checkExpr(arm.guard, env);
+            checkExpr(arm.body, env);
+        });
+    }
+}
+
+function checkForExpr(expr: ForExpr, env: FnEnv): void {
+    checkExpr(expr.iter, env);
+    withPatternScope(expr.pattern, env, () => {
+        checkExpr(expr.body, env);
+    });
+}
+
+function checkClosureExpr(expr: ClosureExpr, env: FnEnv): void {
+    pushScope(env);
+    for (const param of expr.params) {
+        if (!param.name || param.name === "_") {
+            continue;
+        }
+        defineBinding(env, param.name, createBinding("local", currentDepth(env)));
+    }
+    if (expr.body instanceof BlockExpr) {
+        checkBlock(expr.body, env, false);
+    } else {
+        checkExpr(expr.body, env);
+    }
+    popScope(env);
+}
+
+function checkStructExpr(expr: StructExpr, env: FnEnv): void {
+    checkExpr(expr.path, env);
+    for (const value of expr.fields.values()) {
+        checkExpr(value, env);
+    }
+    checkExpr(expr.spread, env);
+}
+
+function checkBranchingExpr(expr: ExpressionLike, env: FnEnv): boolean {
+    if (!expr) {
+        return true;
+    }
+    if (expr instanceof IfExpr) {
+        checkExpr(expr.condition, env);
+        checkExpr(expr.thenBranch, env);
+        checkExpr(expr.elseBranch, env);
+        return true;
+    }
+    if (expr instanceof WhileExpr) {
+        checkExpr(expr.condition, env);
+        checkExpr(expr.body, env);
+        return true;
+    }
+    if (expr instanceof LoopExpr) {
+        checkExpr(expr.body, env);
+        return true;
+    }
+    return false;
+}
+
+function checkAccessExpr(expr: ExpressionLike, env: FnEnv): boolean {
+    if (!expr) {
+        return true;
+    }
+    if (expr instanceof CallExpr) {
+        checkExpr(expr.callee, env);
+        for (const arg of expr.args) {
+            checkExpr(arg, env);
+        }
+        return true;
+    }
+    if (expr instanceof FieldExpr) {
+        checkExpr(expr.receiver, env);
+        return true;
+    }
+    if (expr instanceof IndexExpr) {
+        checkExpr(expr.receiver, env);
+        checkExpr(expr.index, env);
+        return true;
+    }
+    if (expr instanceof BinaryExpr) {
+        checkExpr(expr.left, env);
+        checkExpr(expr.right, env);
+        return true;
+    }
+    if (expr instanceof UnaryExpr) {
+        checkExpr(expr.operand, env);
+        return true;
+    }
+    return false;
+}
+
+function checkLeafExpr(expr: ExpressionLike, env: FnEnv): boolean {
+    if (!expr) {
+        return true;
+    }
+    if (expr instanceof RangeExpr) {
+        checkExpr(expr.start, env);
+        checkExpr(expr.end, env);
+        return true;
+    }
+    if (expr instanceof RefExpr) {
+        checkExpr(expr.target, env);
+        return true;
+    }
+    if (expr instanceof DerefExpr) {
+        checkExpr(expr.target, env);
+        return true;
+    }
+    if (expr instanceof MacroExpr) {
+        for (const arg of expr.args) {
+            checkExpr(arg, env);
+        }
+        return true;
+    }
+    return false;
+}
+
+type ExpressionLike = AssignExpr | BinaryExpr | BlockExpr | CallExpr | ClosureExpr | DerefExpr | FieldExpr | ForExpr | IdentifierExpr | IfExpr | IndexExpr | LoopExpr | MacroExpr | MatchExpr | PathExpr | RangeExpr | RefExpr | ReturnExpr | StructExpr | UnaryExpr | WhileExpr | undefined;
+
+function checkExpr(expr: ExpressionLike, env: FnEnv): void {
+    if (!expr) {
+        return;
+    }
+    if (expr instanceof AssignExpr) {
+        checkAssignExpr(expr, env);
+        return;
+    }
+    if (expr instanceof ReturnExpr) {
+        checkReturnExpr(expr, env);
+        return;
+    }
+    if (expr instanceof BlockExpr) {
+        checkBlock(expr, env, false);
+        return;
+    }
+    if (expr instanceof MatchExpr) {
+        checkMatchExpr(expr, env);
+        return;
+    }
+    if (expr instanceof ForExpr) {
+        checkForExpr(expr, env);
+        return;
+    }
+    if (expr instanceof ClosureExpr) {
+        checkClosureExpr(expr, env);
+        return;
+    }
+    if (expr instanceof StructExpr) {
+        checkStructExpr(expr, env);
+        return;
+    }
+    if (checkBranchingExpr(expr, env) || checkAccessExpr(expr, env)) {
+        return;
+    }
+    if (checkLeafExpr(expr, env)) {
+        return;
+    }
+}
+
+function checkStmt(stmt: Statement | undefined, env: FnEnv): void {
+    if (!stmt) {
+        return;
+    }
+    if (stmt instanceof LetStmt) {
+        checkExpr(stmt.init, env);
+        const initOrigin = getRefOrigin(stmt.init, env);
+        const names: string[] = [];
+        collectPatternBindings(stmt.pattern, names);
+        for (const name of names) {
+            const binding: BindingInfo = {
+                kind: "local",
+                depth: currentDepth(env),
+                refOrigin: initOrigin,
+            };
+            if (isEscapingStore(initOrigin, binding)) {
                 env.errors.push(
                     makeBorrowError(
-                        "Reference escapes the lifetime of its source in assignment",
-                        expr.span,
+                        "Reference escapes the lifetime of its source in let-binding",
+                        stmt.span,
                     ),
                 );
             }
-            if (
-                targetBinding &&
-                valueOrigin &&
-                expr.target.kind === NodeKind.IdentifierExpr
-            ) {
-                const binding = lookupBinding(env, expr.target.name);
-                if (binding) {
-                    binding.refOrigin = valueOrigin;
-                }
-            }
-            checkExpr(expr.target, env);
-            return;
+            defineBinding(env, name, binding);
         }
-        case NodeKind.ReturnExpr: {
-            if (expr.value) {
-                checkExpr(expr.value, env);
-                const origin = getRefOrigin(expr.value, env);
-                if (isInvalidReturnOrigin(origin)) {
-                    env.errors.push(
-                        makeBorrowError(
-                            "Cannot return reference to local data or temporary",
-                            expr.span,
-                        ),
-                    );
-                }
-            }
-            return;
-        }
-        case NodeKind.BlockExpr:
-            checkBlock(expr, env, false);
-            return;
-        case NodeKind.IfExpr:
-            checkExpr(expr.condition, env);
-            checkExpr(expr.thenBranch, env);
-            if (expr.elseBranch) checkExpr(expr.elseBranch, env);
-            return;
-        case NodeKind.MatchExpr:
-            checkExpr(expr.scrutinee, env);
-            for (const arm of expr.arms ?? []) {
-                pushScope(env);
-                if (arm.guard) checkExpr(arm.guard, env);
-                checkExpr(arm.body, env);
-                popScope(env);
-            }
-            return;
-        case NodeKind.WhileExpr:
-            checkExpr(expr.condition, env);
-            checkExpr(expr.body, env);
-            return;
-        case NodeKind.ForExpr:
-            checkExpr(expr.iter, env);
-            pushScope(env);
-            const forNames: string[] = [];
-            collectPatternBindings(expr.pat, forNames);
-            for (const name of forNames) {
-                const binding: BindingInfo = {
-                    kind: "local",
-                    depth: currentDepth(env),
-                    refOrigin: null,
-                };
-                defineBinding(env, name, binding);
-            }
-            checkExpr(expr.body, env);
-            popScope(env);
-            return;
-        case NodeKind.LoopExpr:
-            checkExpr(expr.body, env);
-            return;
-        case NodeKind.CallExpr:
-            checkExpr(expr.callee, env);
-            for (const arg of expr.args ?? []) checkExpr(arg, env);
-            return;
-        case NodeKind.FieldExpr:
-            checkExpr(expr.receiver, env);
-            return;
-        case NodeKind.IndexExpr:
-            checkExpr(expr.receiver, env);
-            checkExpr(expr.index, env);
-            return;
-        case NodeKind.BinaryExpr:
-            checkExpr(expr.left, env);
-            checkExpr(expr.right, env);
-            return;
-        case NodeKind.UnaryExpr:
-            checkExpr(expr.operand, env);
-            return;
-        case NodeKind.StructExpr:
-            for (const field of expr.fields ?? []) {
-                checkExpr(field.value, env);
-            }
-            if (expr.spread) checkExpr(expr.spread, env);
-            return;
-        case NodeKind.RangeExpr:
-            if (expr.start) checkExpr(expr.start, env);
-            if (expr.end) checkExpr(expr.end, env);
-            return;
-        case NodeKind.RefExpr:
-            checkExpr(expr.operand, env);
-            return;
-        case NodeKind.DerefExpr:
-            checkExpr(expr.operand, env);
-            return;
-        case NodeKind.MacroExpr:
-            for (const arg of expr.args ?? []) checkExpr(arg, env);
-            return;
-        case NodeKind.ClosureExpr:
-            pushScope(env);
-            for (const param of expr.params ?? []) {
-                if (!param.name || param.name === "_") continue;
-                defineBinding(env, param.name, {
-                    kind: "local",
-                    depth: currentDepth(env),
-                    refOrigin: null,
-                });
-            }
-            if (expr.body) {
-                if (expr.body.kind === NodeKind.BlockExpr) {
-                    checkBlock(expr.body, env, false);
-                } else {
-                    checkExpr(expr.body, env);
-                }
-            }
-            popScope(env);
-            return;
-        default:
-            return;
+        return;
+    }
+    if (stmt instanceof ExprStmt) {
+        checkExpr(stmt.expr, env);
+        return;
+    }
+    if (stmt instanceof ItemStmt) {
+        return;
     }
 }
 
-function checkStmt(stmt: any, env: FnEnv): void {
-    if (!stmt) return;
-    switch (stmt.kind) {
-        case NodeKind.LetStmt: {
-            if (stmt.init) {
-                checkExpr(stmt.init, env);
-            }
-            const initOrigin = stmt.init ? getRefOrigin(stmt.init, env) : null;
-            const names: string[] = [];
-            collectPatternBindings(stmt.pat, names);
-            for (const name of names) {
-                const binding: BindingInfo = {
-                    kind: "local",
-                    depth: currentDepth(env),
-                    refOrigin: initOrigin,
-                };
-                if (isEscapingStore(initOrigin, binding)) {
-                    env.errors.push(
-                        makeBorrowError(
-                            "Reference escapes the lifetime of its source in let-binding",
-                            stmt.span,
-                        ),
-                    );
-                }
-                defineBinding(env, name, binding);
-            }
-            return;
-        }
-        case NodeKind.ExprStmt:
-            if (stmt.expr) checkExpr(stmt.expr, env);
-            return;
-        case NodeKind.ItemStmt:
-            return;
-        default:
-            return;
-    }
-}
-
-function checkBlock(block: any, env: FnEnv, checkTailAsReturn: boolean): void {
+function checkBlock(
+    block: BlockExpr,
+    env: FnEnv,
+    checkTailAsReturn: boolean,
+): void {
     pushScope(env);
-    for (const stmt of block.stmts ?? []) {
+    for (const stmt of block.stmts) {
         checkStmt(stmt, env);
     }
     if (block.expr) {
         checkExpr(block.expr, env);
-        if (checkTailAsReturn) {
-            const origin = getRefOrigin(block.expr, env);
-            if (isInvalidReturnOrigin(origin)) {
-                env.errors.push(
-                    makeBorrowError(
-                        "Cannot return reference to local data or temporary",
-                        block.expr.span ?? block.span,
-                    ),
-                );
-            }
+        if (checkTailAsReturn && isInvalidReturnOrigin(getRefOrigin(block.expr, env))) {
+            env.errors.push(
+                makeBorrowError(
+                    "Cannot return reference to local data or temporary",
+                    block.expr.span,
+                ),
+            );
         }
     }
     popScope(env);
 }
 
-function checkFnItem(fnItem: any): BorrowLiteError[] {
-    if (!fnItem.body) return [];
+function checkFnItem(fnItem: FnItem): BorrowLiteError[] {
+    if (!fnItem.body) {
+        return [];
+    }
     const env: FnEnv = {
         scopeStack: [],
         bindings: new Map(),
         errors: [],
     };
     pushScope(env);
-    for (const param of fnItem.params ?? []) {
-        if (!param.name) continue;
-        defineBinding(env, param.name, {
-            kind: "param",
-            depth: -1,
-            refOrigin: null,
-        });
+    for (const param of fnItem.params) {
+        if (!param.name) {
+            continue;
+        }
+        defineBinding(env, param.name, createBinding("param", PARAM_DEPTH));
     }
     checkBlock(fnItem.body, env, true);
     popScope(env);
     return env.errors;
 }
 
-function checkItem(item: any, errors: BorrowLiteError[]): void {
-    if (!item) return;
-    switch (item.kind) {
-        case NodeKind.FnItem:
-            errors.push(...checkFnItem(item));
-            break;
-        case NodeKind.ModItem:
-            for (const child of item.items ?? []) checkItem(child, errors);
-            break;
-        case NodeKind.ImplItem:
-            for (const method of item.methods ?? []) {
-                errors.push(...checkFnItem(method));
-            }
-            break;
-        default:
-            break;
+function checkItem(item: Item | undefined, errors: BorrowLiteError[]): void {
+    if (!item) {
+        return;
+    }
+    if (item instanceof FnItem) {
+        errors.push(...checkFnItem(item));
+        return;
+    }
+    if (item instanceof ModItem) {
+        for (const child of item.items) {
+            checkItem(child, errors);
+        }
+        return;
+    }
+    if (item instanceof ImplItem) {
+        for (const method of item.methods) {
+            errors.push(...checkFnItem(method));
+        }
     }
 }
 
 export function checkBorrowLite(
-    moduleAst: any,
+    moduleAst: unknown,
     _typeCtx: TypeContext,
 ): { ok: boolean; errors?: BorrowLiteError[] } {
+    if (!(moduleAst instanceof ModuleNode)) {
+        return { ok: true };
+    }
     const errors: BorrowLiteError[] = [];
-    for (const item of moduleAst.items ?? []) {
+    for (const item of moduleAst.items) {
         checkItem(item, errors);
     }
-    if (errors.length > 0) {
-        return { ok: false, errors };
-    }
-    return { ok: true };
+    return errors.length > 0 ? { ok: false, errors } : { ok: true };
 }
