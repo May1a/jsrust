@@ -1,3020 +1,2116 @@
-import { tokenize, TokenType } from "./tokenizer";
-import type { Token, TokenTypeValue } from "./tokenizer";
-import { ok, err } from "./diagnostics";
-import type { Result } from "./diagnostics";
-
+import { tokenize, TokenType, type Token } from "./tokenizer";
 import {
-    NodeKind,
-    LiteralKind,
-    UnaryOp,
+    ArrayTypeNode,
+    AssignExpr,
+    BinaryExpr,
     BinaryOp,
+    BindingPattern,
+    BlockExpr,
+    BreakExpr,
+    CallExpr,
+    ClosureExpr,
+    ContinueExpr,
+    DerefExpr,
+    EnumItem,
+    type EnumVariantNode,
+    ExprStmt,
+    FieldExpr,
+    FnItem,
+    FnTypeNode,
+    ForExpr,
+    GenericArgsNode,
+    IdentPattern,
+    IdentifierExpr,
+    IfExpr,
+    ImplItem,
+    IndexExpr,
+    ItemStmt,
+    LetStmt,
+    LiteralExpr,
+    LiteralKind,
+    LiteralPattern,
+    LoopExpr,
+    MacroExpr,
+    MatchArmNode,
+    MatchExpr,
+    ModItem,
+    ModuleNode,
     Mutability,
-    makeSpan,
-    makeLiteralExpr,
-    makeIdentifierExpr,
-    makeBinaryExpr,
-    makeUnaryExpr,
-    makeCallExpr,
-    makeFieldExpr,
-    makeIndexExpr,
-    makeAssignExpr,
-    makeIfExpr,
-    makeMatchExpr,
-    makeBlockExpr,
-    makeReturnExpr,
-    makeBreakExpr,
-    makeContinueExpr,
-    makeLoopExpr,
-    makeWhileExpr,
-    makeForExpr,
-    makePathExpr,
-    makeStructExpr,
-    makeRangeExpr,
-    makeRefExpr,
-    makeDerefExpr,
-    makeMacroExpr,
-    makeClosureExpr,
-    makeLetStmt,
-    makeExprStmt,
-    makeItemStmt,
-    makeParam,
-    makeFnItem,
-    makeStructField,
-    makeStructItem,
-    makeEnumVariant,
-    makeEnumItem,
-    makeModItem,
-    makeUseTree,
-    makeUseItem,
-    makeTraitItem,
-    makeImplItem,
-    makeIdentPat,
-    makeWildcardPat,
-    makeLiteralPat,
-    makeRangePat,
-    makeStructPat,
-    makeTuplePat,
-    makeSlicePat,
-    makeOrPat,
-    makeBindingPat,
-    makeMatchArm,
-    makeNamedType,
-    makeTupleType,
-    makeArrayType,
-    makeRefType,
-    makePtrType,
-    makeFnType,
-    makeGenericArgs,
-    makeModule,
-    type Span,
-    type Node,
+    NamedTypeNode,
+    OrPattern,
+    type ParamNode,
+    PathExpr,
+    PtrTypeNode,
+    RangeExpr,
+    RangePattern,
+    RefExpr,
+    RefTypeNode,
+    ReturnExpr,
+    SlicePattern,
+    Span,
+    StructExpr,
+    type StructFieldNode,
+    StructItem,
+    StructPattern,
+    type StructPatternField,
+    TraitItem,
+    TuplePattern,
+    TupleTypeNode,
+    UnaryExpr,
+    UnaryOp,
+    UseItem,
+    WhileExpr,
+    WildcardPattern,
+    type Expression,
+    type Item,
+    type Pattern,
+    type Statement,
+    type TypeNode,
 } from "./ast";
 
-interface ParserState { tokens: Token[]; pos: number; errors: ParseError[] }
-interface ParseError {
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export interface ParseDiagnostic {
     message: string;
-    span: Span;
-    expected: string[];
-    found: string;
+    line: number;
+    column: number;
 }
-type ParseErrorList = ParseError[];
-type ParseResult = Result<Node, ParseErrorList>;
+export type ParseResult<T> =
+    | { ok: true; value: T }
+    | { ok: false; errors: ParseDiagnostic[] };
 
-function createState(tokens: Token[]) {
-    return { tokens, pos: 0, errors: [] };
+export function parseModule(source: string): ParseResult<ModuleNode> {
+    const p = new Parser(tokenize(source));
+    const value = p.parseModuleNode();
+    return p.errors.length > 0
+        ? { ok: false, errors: p.errors }
+        : { ok: true, value };
 }
 
-function peek(state: ParserState, offset = 0): Token {
+export function parseExpression(source: string): ParseResult<Expression> {
+    const p = new Parser(tokenize(source));
+    const value = p.parseExpr(0);
+    return p.errors.length > 0
+        ? { ok: false, errors: p.errors }
+        : { ok: true, value };
+}
+
+export function parseStatement(source: string): ParseResult<Statement> {
+    const p = new Parser(tokenize(source));
+    const value = p.parseStatement();
+    if (value === undefined) {
+        return { ok: false, errors: [{ message: "Expected statement", line: 1, column: 1 }] };
+    }
+    return p.errors.length > 0
+        ? { ok: false, errors: p.errors }
+        : { ok: true, value };
+}
+
+export function parseType(source: string): ParseResult<TypeNode> {
+    const p = new Parser(tokenize(source));
+    const value = p.parseTypeNode();
+    return p.errors.length > 0
+        ? { ok: false, errors: p.errors }
+        : { ok: true, value };
+}
+
+export function parsePattern(source: string): ParseResult<Pattern> {
+    const p = new Parser(tokenize(source));
+    const value = p.parsePattern();
+    return p.errors.length > 0
+        ? { ok: false, errors: p.errors }
+        : { ok: true, value };
+}
+
+// ---------------------------------------------------------------------------
+// Parser
+// ---------------------------------------------------------------------------
+
+function parseIntValue(s: string): number {
+    if (s.startsWith("0x") || s.startsWith("0X")) return Number.parseInt(s.slice(2), 16);
+    if (s.startsWith("0o") || s.startsWith("0O")) return Number.parseInt(s.slice(2), 8);
+    if (s.startsWith("0b") || s.startsWith("0B")) return Number.parseInt(s.slice(2), 2);
+    return Number.parseInt(s, 10);
+}
+
+function isCharLiteral(raw: string): boolean {
+    return raw.startsWith("'");
+}
+
+function processStringValue(raw: string): string {
+    if (raw.length < 2) return raw;
+    const closingQuoteOffset = -1;
+    const inner = raw.slice(1, closingQuoteOffset);
+    return inner
+        .replace(/\\n/g, "\n")
+        .replace(/\\t/g, "\t")
+        .replace(/\\r/g, "\r")
+        .replace(/\\\\/g, "\\")
+        .replace(/\\'/g, "'")
+        .replace(/\\"/g, '"')
+        .replace(/\\0/g, "\0");
+}
+
+const TYPE_SUFFIX_RE = /^([uif]\d+|usize|isize)$/;
+const RANGE_PRECEDENCE = 1;
+const ASSIGNMENT_PRECEDENCE = 2;
+const OR_PRECEDENCE = 3;
+const AND_PRECEDENCE = 4;
+const COMPARISON_PRECEDENCE = 5;
+const BIT_OR_PRECEDENCE = 6;
+const BIT_XOR_PRECEDENCE = 7;
+const BIT_AND_PRECEDENCE = 8;
+const ADDITIVE_PRECEDENCE = 9;
+const MULTIPLICATIVE_PRECEDENCE = 10;
+const POSTFIX_PRECEDENCE = 11;
+const UNIT_LITERAL_VALUE = 0;
+const ERROR_LITERAL_VALUE = 0;
+
+const INFIX_PRECEDENCE = new Map<TokenType, number>([
+    [TokenType.Eq, ASSIGNMENT_PRECEDENCE],
+    [TokenType.PlusEq, ASSIGNMENT_PRECEDENCE],
+    [TokenType.MinusEq, ASSIGNMENT_PRECEDENCE],
+    [TokenType.StarEq, ASSIGNMENT_PRECEDENCE],
+    [TokenType.SlashEq, ASSIGNMENT_PRECEDENCE],
+    [TokenType.PercentEq, ASSIGNMENT_PRECEDENCE],
+    [TokenType.AndEq, ASSIGNMENT_PRECEDENCE],
+    [TokenType.PipeEq, ASSIGNMENT_PRECEDENCE],
+    [TokenType.CaretEq, ASSIGNMENT_PRECEDENCE],
+    [TokenType.PipePipe, OR_PRECEDENCE],
+    [TokenType.AndAnd, AND_PRECEDENCE],
+    [TokenType.EqEq, COMPARISON_PRECEDENCE],
+    [TokenType.BangEq, COMPARISON_PRECEDENCE],
+    [TokenType.LtEq, COMPARISON_PRECEDENCE],
+    [TokenType.GtEq, COMPARISON_PRECEDENCE],
+    [TokenType.Pipe, BIT_OR_PRECEDENCE],
+    [TokenType.Caret, BIT_XOR_PRECEDENCE],
+    [TokenType.And, BIT_AND_PRECEDENCE],
+    [TokenType.Plus, ADDITIVE_PRECEDENCE],
+    [TokenType.Minus, ADDITIVE_PRECEDENCE],
+    [TokenType.Star, MULTIPLICATIVE_PRECEDENCE],
+    [TokenType.Slash, MULTIPLICATIVE_PRECEDENCE],
+    [TokenType.Percent, MULTIPLICATIVE_PRECEDENCE],
+]);
+
+const COMPOUND_ASSIGNMENT_OPERATORS: Partial<Record<TokenType, BinaryOp>> = {
+    [TokenType.PlusEq]: BinaryOp.Add,
+    [TokenType.MinusEq]: BinaryOp.Sub,
+    [TokenType.StarEq]: BinaryOp.Mul,
+    [TokenType.SlashEq]: BinaryOp.Div,
+    [TokenType.PercentEq]: BinaryOp.Rem,
+    [TokenType.AndEq]: BinaryOp.BitAnd,
+    [TokenType.PipeEq]: BinaryOp.BitOr,
+    [TokenType.CaretEq]: BinaryOp.BitXor,
+};
+
+const BINARY_OPERATORS: Partial<Record<TokenType, BinaryOp>> = {
+    [TokenType.PipePipe]: BinaryOp.Or,
+    [TokenType.AndAnd]: BinaryOp.And,
+    [TokenType.EqEq]: BinaryOp.Eq,
+    [TokenType.BangEq]: BinaryOp.Ne,
+    [TokenType.Lt]: BinaryOp.Lt,
+    [TokenType.Gt]: BinaryOp.Gt,
+    [TokenType.LtEq]: BinaryOp.Le,
+    [TokenType.GtEq]: BinaryOp.Ge,
+    [TokenType.Pipe]: BinaryOp.BitOr,
+    [TokenType.Caret]: BinaryOp.BitXor,
+    [TokenType.And]: BinaryOp.BitAnd,
+    [TokenType.Plus]: BinaryOp.Add,
+    [TokenType.Minus]: BinaryOp.Sub,
+    [TokenType.Star]: BinaryOp.Mul,
+    [TokenType.Slash]: BinaryOp.Div,
+    [TokenType.Percent]: BinaryOp.Rem,
+};
+
+const EXPRESSION_START_TOKENS = new Set<TokenType>([
+    TokenType.Integer,
+    TokenType.Float,
+    TokenType.String,
+    TokenType.True,
+    TokenType.False,
+    TokenType.Identifier,
+    TokenType.Self,
+    TokenType.OpenParen,
+    TokenType.OpenCurly,
+    TokenType.OpenSquare,
+    TokenType.And,
+    TokenType.Star,
+    TokenType.Minus,
+    TokenType.Bang,
+    TokenType.If,
+    TokenType.Match,
+    TokenType.Loop,
+    TokenType.While,
+    TokenType.For,
+    TokenType.Return,
+    TokenType.Break,
+    TokenType.Continue,
+    TokenType.Pipe,
+    TokenType.PipePipe,
+]);
+
+const ITEM_START_TOKENS = new Set<TokenType>([
+    TokenType.Fn,
+    TokenType.Struct,
+    TokenType.Enum,
+    TokenType.Impl,
+    TokenType.Trait,
+    TokenType.Mod,
+    TokenType.Use,
+    TokenType.Hash,
+    TokenType.Unsafe,
+]);
+
+function isBlockLikeExpr(e: Expression): boolean {
     return (
-        state.tokens[state.pos + offset] ??
-        state.tokens[state.tokens.length - 1]
+        e instanceof BlockExpr ||
+        e instanceof IfExpr ||
+        e instanceof MatchExpr ||
+        e instanceof LoopExpr ||
+        e instanceof WhileExpr ||
+        e instanceof ForExpr
     );
 }
 
-function advance(state: ParserState): Token {
-    const token = peek(state);
-    if (state.pos < state.tokens.length) {
-        state.pos += 1;
+function isTypeSuffix(s: string): boolean {
+    return TYPE_SUFFIX_RE.test(s);
+}
+
+class Parser {
+    private readonly tokens: Token[];
+    private pos = 0;
+    readonly errors: ParseDiagnostic[] = [];
+
+    constructor(tokens: Token[]) {
+        this.tokens = tokens;
     }
-    return token;
-}
 
-function previous(state: ParserState): Token {
-    if (state.pos - 1 >= 0) {
-        return state.tokens[state.pos - 1];
+    // -----------------------------------------------------------------------
+    // Core token operations
+    // -----------------------------------------------------------------------
+
+    peek(): Token {
+        return this.tokens[this.pos] ?? this.tokens[this.tokens.length - 1];
     }
-    return state.tokens[0] ?? peek(state);
-}
 
-function check(state: ParserState, type: number): boolean {
-    return peek(state).type === type;
-}
-
-function isAtEnd(state: ParserState): boolean {
-    return peek(state).type === TokenType.Eof;
-}
-
-function spanFromToken(token: Token): Span {
-    const start = token.column;
-    const end = token.column + (token.value ? token.value.length : 0);
-    return makeSpan(token.line, token.column, start, end);
-}
-
-function mergeSpans(a: Span, b: Span): Span {
-    return makeSpan(a.line, a.column, a.start, b.end);
-}
-
-function getToken(tkval: TokenTypeValue): keyof typeof TokenType {
-    const tokenKey = Object.keys(TokenType)[tkval] as keyof typeof TokenType;
-    return tokenKey || "Eof";
-}
-
-function addError(
-    state: ParserState,
-    message: string,
-    token: Token | null,
-    expected: string[] = [],
-): void {
-    const span = token ? spanFromToken(token) : spanFromToken(peek(state));
-    state.errors.push({
-        message,
-        span,
-        expected,
-        found: token ? (getToken(token.type) ?? "") : "",
-    });
-}
-
-function matchToken(state: ParserState, type: number): Token | null {
-    if (check(state, type)) {
-        return advance(state);
+    peekAt(offset: number): Token {
+        const idx = this.pos + offset;
+        if (idx >= this.tokens.length) return this.tokens[this.tokens.length - 1];
+        return this.tokens[idx];
     }
-    return null;
-}
 
-function expectToken(
-    state: ParserState,
-    type: TokenTypeValue,
-    message: string,
-) {
-    if (check(state, type)) {
-        return advance(state);
+    advance(): Token {
+        const t = this.peek();
+        if (t.type !== TokenType.Eof) this.pos++;
+        return t;
     }
-    addError(state, message, peek(state), [getToken(type)]);
-    return null;
-}
 
-function currentSpan(state: ParserState): Span {
-    return spanFromToken(peek(state));
-}
-
-function skipToRecovery(state: ParserState, tokenTypes: number[]): void {
-    while (!isAtEnd(state) && !tokenTypes.includes(peek(state).type)) {
-        advance(state);
+    check(type: TokenType): boolean {
+        return this.peek().type === type;
     }
-}
 
-function isIdentifierToken(token: Token): boolean {
-    return token.type === TokenType.Identifier || token.type === TokenType.Self;
-}
-
-function isIdentifierValue(token: Token, value: string): boolean {
-    return token.type === TokenType.Identifier && token.value === value;
-}
-
-function matchDouble(state: ParserState, type: number): Token | null {
-    if (check(state, type) && peek(state, 1).type === type) {
-        const first = advance(state);
-        advance(state);
-        return first;
+    eat(type: TokenType): Token | undefined {
+        if (this.check(type)) return this.advance();
+        return undefined;
     }
-    return null;
-}
 
-function matchArrow(state: ParserState): Token | null {
-    if (check(state, TokenType.Minus) && peek(state, 1).type === TokenType.Gt) {
-        const token = advance(state);
-        advance(state);
-        return token;
+    expect(type: TokenType): Token {
+        if (this.check(type)) return this.advance();
+        const tok = this.peek();
+        this.errors.push({
+            message: `Expected ${TokenType[type]}, got ${TokenType[tok.type]} ('${tok.value}')`,
+            line: tok.line,
+            column: tok.column,
+        });
+        return tok;
     }
-    return null;
-}
 
-function matchFatArrow(state: ParserState): Token | null {
-    if (check(state, TokenType.FatArrow)) {
-        return advance(state);
+    makeSpan(tok: Token): Span {
+        return new Span(tok.line, tok.column, 0, 0);
     }
-    // Also support the old way for backwards compatibility
-    if (check(state, TokenType.Eq) && peek(state, 1).type === TokenType.Gt) {
-        const token = advance(state);
-        advance(state);
-        return token;
-    }
-    return null;
-}
 
-function matchInvalidSymbol(state: ParserState, symbol: string): Token | null {
-    if (
-        peek(state).type === TokenType.Invalid &&
-        peek(state).value === symbol
-    ) {
-        return advance(state);
+    spanFrom(startToken: Token): Span {
+        return new Span(startToken.line, startToken.column, 0, 0);
     }
-    return null;
-}
 
-// FIXME: clean this up
-function parseOuterAttributes(state: ParserState): {
-    derives: string[];
-    isTest: boolean;
-    expectedOutput: string | null;
-    builtinName: string | null;
-    consumedOnlyInert: boolean;
-} {
-    const derives: string[] = [];
-    let isTest = false;
-    let expectedOutput: string | null = null;
-    let builtinName: string | null = null;
-    let consumedAny = false;
-    let consumedMeaningful = false;
-    while (
-        peek(state).type === TokenType.Invalid &&
-        peek(state).value === "#" &&
-        (peek(state, 1).type === TokenType.OpenSquare ||
-            (peek(state, 1).type === TokenType.Bang &&
-                peek(state, 2).type === TokenType.OpenSquare))
-    ) {
-        consumedAny = true;
-        advance(state);
-        const isInner = matchToken(state, TokenType.Bang) !== null;
-        expectToken(state, TokenType.OpenSquare, "Expected [ after #");
-        const attrName = peek(state);
-        if (!isIdentifierToken(attrName)) {
-            addError(state, "Expected attribute name", attrName, [
-                "Identifier",
-            ]);
-            skipAttribute(state);
-            continue;
+    // -----------------------------------------------------------------------
+    // Multi-token sequence helpers
+    // -----------------------------------------------------------------------
+
+    checkThinArrow(): boolean {
+        return this.peek().type === TokenType.Minus && this.peekAt(1).type === TokenType.Gt;
+    }
+
+    eatThinArrow(): boolean {
+        if (this.checkThinArrow()) {
+            this.advance();
+            this.advance();
+            return true;
         }
-        const attrIdent = advance(state).value;
-        if (isInner) {
-            if (matchToken(state, TokenType.OpenParen)) {
-                skipBalancedParens(state);
-            }
-            expectToken(
-                state,
-                TokenType.CloseSquare,
-                "Expected ] after attribute",
-            );
-            continue;
-        }
-        if (attrIdent === "test") {
-            isTest = true;
-            consumedMeaningful = true;
-            expectToken(
-                state,
-                TokenType.CloseSquare,
-                "Expected ] after test attribute",
-            );
-            continue;
-        }
-        if (attrIdent === "expect_output") {
-            consumedMeaningful = true;
-            if (!matchToken(state, TokenType.OpenParen)) {
-                addError(state, "Expected ( after expect_output", peek(state), [
-                    "(",
-                ]);
-                skipAttribute(state);
-                continue;
-            }
-            const valueToken = peek(state);
-            if (
-                valueToken.type === TokenType.String &&
-                !valueToken.value.startsWith("'")
-            ) {
-                advance(state);
-                expectedOutput = parseStringToken(valueToken);
-            } else {
-                addError(
-                    state,
-                    "Expected string literal in expect_output attribute",
-                    valueToken,
-                    ["String"],
-                );
-                if (
-                    !check(state, TokenType.CloseParen) &&
-                    !check(state, TokenType.CloseSquare) &&
-                    !isAtEnd(state)
-                ) {
-                    advance(state);
-                }
-            }
-            expectToken(
-                state,
-                TokenType.CloseParen,
-                "Expected ) after expect_output argument",
-            );
-            expectToken(
-                state,
-                TokenType.CloseSquare,
-                "Expected ] after expect_output attribute",
-            );
-            continue;
-        }
-        if (attrIdent === "derive") {
-            consumedMeaningful = true;
-            if (!matchToken(state, TokenType.OpenParen)) {
-                addError(state, "Expected ( after derive", peek(state), ["("]);
-                skipAttribute(state);
-                continue;
-            }
-            while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
-                const nameToken = peek(state);
-                if (!isIdentifierToken(nameToken)) {
-                    addError(state, "Expected derive trait name", nameToken, [
-                        "Identifier",
-                    ]);
-                    break;
-                }
-                derives.push(advance(state).value);
-                if (!matchToken(state, TokenType.Comma)) break;
-            }
-            expectToken(
-                state,
-                TokenType.CloseParen,
-                "Expected ) after derive list",
-            );
-            expectToken(
-                state,
-                TokenType.CloseSquare,
-                "Expected ] after attribute",
-            );
-            continue;
-        }
-        if (attrIdent === "builtin") {
-            consumedMeaningful = true;
-            builtinName = "__attribute_builtin__";
-            if (matchToken(state, TokenType.OpenParen)) {
-                const keyToken = peek(state);
-                if (!isIdentifierToken(keyToken) || keyToken.value !== "name") {
-                    addError(
-                        state,
-                        'Expected builtin attribute argument `name = "..."`',
-                        keyToken,
-                        ["Identifier"],
-                    );
-                    skipBalancedParens(state);
-                } else {
-                    advance(state);
-                    if (!matchToken(state, TokenType.Eq)) {
-                        addError(
-                            state,
-                            "Expected = after builtin attribute name",
-                            peek(state),
-                            ["="],
-                        );
-                    }
-                    const valueToken = peek(state);
-                    if (
-                        valueToken.type === TokenType.String &&
-                        !valueToken.value.startsWith("'")
-                    ) {
-                        advance(state);
-                        builtinName = parseStringToken(valueToken);
-                    } else {
-                        addError(
-                            state,
-                            "Expected string literal for builtin attribute name",
-                            valueToken,
-                            ["String"],
-                        );
-                    }
-                    if (!check(state, TokenType.CloseParen)) {
-                        skipBalancedParens(state);
-                    } else {
-                        expectToken(
-                            state,
-                            TokenType.CloseParen,
-                            "Expected ) after builtin attribute",
-                        );
-                    }
-                }
-            }
-            expectToken(
-                state,
-                TokenType.CloseSquare,
-                "Expected ] after builtin attribute",
-            );
-            continue;
-        }
-        // Inert unrecognized attributes are accepted and ignored.
-        if (matchToken(state, TokenType.OpenParen)) {
-            skipBalancedParens(state);
-        }
-        expectToken(state, TokenType.CloseSquare, "Expected ] after attribute");
-    }
-    return {
-        derives,
-        isTest,
-        expectedOutput,
-        builtinName,
-        consumedOnlyInert: consumedAny && !consumedMeaningful,
-    };
-}
-
-function skipAttribute(state: ParserState) {
-    let depth = 0;
-    while (!isAtEnd(state)) {
-        if (matchToken(state, TokenType.OpenSquare)) {
-            depth += 1;
-            continue;
-        }
-        if (matchToken(state, TokenType.CloseSquare)) {
-            if (depth === 0) break;
-            depth -= 1;
-            continue;
-        }
-        advance(state);
-    }
-}
-
-function skipBalancedParens(state: ParserState) {
-    let depth = 1;
-    while (!isAtEnd(state) && depth > 0) {
-        if (matchToken(state, TokenType.OpenParen)) {
-            depth += 1;
-            continue;
-        }
-        if (matchToken(state, TokenType.CloseParen)) {
-            depth -= 1;
-            continue;
-        }
-        advance(state);
-    }
-}
-
-function parseIntegerToken(token: Token): number {
-    if (token.value.startsWith("0x") || token.value.startsWith("0X")) {
-        return Number.parseInt(token.value.slice(2), 16);
-    }
-    if (token.value.startsWith("0o") || token.value.startsWith("0O")) {
-        return Number.parseInt(token.value.slice(2), 8);
-    }
-    if (token.value.startsWith("0b") || token.value.startsWith("0B")) {
-        return Number.parseInt(token.value.slice(2), 2);
-    }
-    return Number.parseInt(token.value, 10);
-}
-
-function parseFloatToken(token: Token): number {
-    return Number.parseFloat(token.value);
-}
-
-function decodeEscapes(value: string): string {
-    let result = "";
-    for (let i = 0; i < value.length; i += 1) {
-        const ch = value[i];
-        if (ch !== "\\") {
-            result += ch;
-            continue;
-        }
-        const next = value[i + 1] ?? "";
-        i += 1;
-        if (next === "n") result += "\n";
-        else if (next === "t") result += "\t";
-        else if (next === "r") result += "\r";
-        else if (next === "0") result += "\0";
-        else if (next === "\\") result += "\\";
-        else if (next === "'") result += "'";
-        else if (next === '"') result += '"';
-        else result += next;
-    }
-    return result;
-}
-
-function parseStringToken(token: Token): string {
-    const raw = token.value;
-    if (raw.length < 2) return "";
-    const inner = raw.slice(1, -1);
-    return decodeEscapes(inner);
-}
-
-function parseCharToken(token: Token, state: ParserState): string {
-    const value = parseStringToken(token);
-    if (value.length !== 1) {
-        addError(state, "Invalid char literal", token, []);
-    }
-    return value[0] ?? "";
-}
-
-function parseLiteralExpr(state: ParserState) {
-    const token = peek(state);
-    if (token.type === TokenType.Integer) {
-        advance(state);
-        const value = parseIntegerToken(token);
-        return makeLiteralExpr(
-            spanFromToken(token),
-            LiteralKind.Int,
-            value,
-            token.value,
-        );
-    }
-    if (token.type === TokenType.Float) {
-        advance(state);
-        const value = parseFloatToken(token);
-        return makeLiteralExpr(
-            spanFromToken(token),
-            LiteralKind.Float,
-            value,
-            token.value,
-        );
-    }
-    if (token.type === TokenType.String) {
-        advance(state);
-        if (token.value.startsWith("'")) {
-            const value = parseCharToken(token, state);
-            return makeLiteralExpr(
-                spanFromToken(token),
-                LiteralKind.Char,
-                value,
-                token.value,
-            );
-        }
-        const value = parseStringToken(token);
-        return makeLiteralExpr(
-            spanFromToken(token),
-            LiteralKind.String,
-            value,
-            token.value,
-        );
-    }
-    if (token.type === TokenType.True || token.type === TokenType.False) {
-        advance(state);
-        return makeLiteralExpr(
-            spanFromToken(token),
-            LiteralKind.Bool,
-            token.type === TokenType.True,
-            token.value,
-        );
-    }
-    return null;
-}
-
-function parsePathSegments(state: ParserState): string[] {
-    const segments: string[] = [];
-    const first = peek(state);
-    if (!isIdentifierToken(first)) {
-        addError(state, "Expected identifier", first, ["Identifier"]);
-        return segments;
-    }
-    segments.push(advance(state).value);
-    while (
-        check(state, TokenType.Colon) &&
-        peek(state, 1).type === TokenType.Colon
-    ) {
-        if (!isIdentifierToken(peek(state, 2))) {
-            break;
-        }
-        advance(state);
-        advance(state);
-        const next = peek(state);
-        if (!isIdentifierToken(next)) {
-            addError(state, "Expected identifier segment", next, [
-                "Identifier",
-            ]);
-            return segments;
-        }
-        segments.push(advance(state).value);
-    }
-    return segments;
-}
-
-function parsePathTypeNode(state: ParserState) {
-    const start = peek(state);
-    if (!isIdentifierToken(start)) {
-        return null;
-    }
-    const segments = parsePathSegments(state);
-    if (segments.length === 0) {
-        return null;
-    }
-    const endToken = previous(state);
-    let args: Node | null = null;
-    if (matchToken(state, TokenType.Lt)) {
-        const typeArgs: Node[] = [];
-        while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
-            if (check(state, TokenType.Lifetime)) {
-                advance(state);
-            } else {
-                const arg = parseType(state);
-                if (arg) typeArgs.push(arg);
-            }
-            if (!matchToken(state, TokenType.Comma)) break;
-        }
-        const gtToken =
-            expectToken(state, TokenType.Gt, "Expected > in generic args") ??
-            endToken;
-        args = makeGenericArgs(
-            mergeSpans(spanFromToken(start), spanFromToken(gtToken)),
-            typeArgs,
-        );
-    }
-    return makeNamedType(
-        mergeSpans(spanFromToken(start), spanFromToken(endToken)),
-        segments.join("::"),
-        args!,
-    );
-}
-
-/**
- * @param {ParserState} state
- * @returns {{ genericParams: { name: string, bounds: Node[] }[], ignoredLifetimeParams: string[] } | null}
- */
-function parseGenericParamList(state: ParserState): {
-    genericParams: { name: string; bounds: Node[] }[];
-    ignoredLifetimeParams: string[];
-} | null {
-    if (!matchToken(state, TokenType.Lt)) {
-        return null;
-    }
-    /** @type {{ name: string, bounds: Node[] }[]} */
-    const genericParams: { name: string; bounds: Node[] }[] = [];
-    /** @type {string[]} */
-    const ignoredLifetimeParams: string[] = [];
-    while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
-        if (check(state, TokenType.Lifetime)) {
-            const lifetimeToken = advance(state);
-            ignoredLifetimeParams.push(lifetimeToken.value ?? "");
-            if (matchToken(state, TokenType.Colon)) {
-                while (!isAtEnd(state)) {
-                    if (
-                        check(state, TokenType.Lifetime) ||
-                        isIdentifierToken(peek(state))
-                    ) {
-                        advance(state);
-                    } else {
-                        break;
-                    }
-                    if (!matchToken(state, TokenType.Plus)) break;
-                }
-            }
-            if (!matchToken(state, TokenType.Comma)) break;
-            continue;
-        }
-        const paramToken =
-            expectToken(
-                state,
-                TokenType.Identifier,
-                "Expected generic parameter name",
-            ) ?? peek(state);
-        const name = paramToken.value ?? "";
-        /** @type {Node[]} */
-        const bounds: Node[] = [];
-        if (matchToken(state, TokenType.Colon)) {
-            while (!isAtEnd(state)) {
-                const bound = parseTypeBound(state);
-                if (bound) bounds.push(bound);
-                if (!matchToken(state, TokenType.Plus)) break;
-            }
-        }
-        genericParams.push({ name, bounds });
-        if (!matchToken(state, TokenType.Comma)) break;
-    }
-    expectToken(state, TokenType.Gt, "Expected > after generic parameters");
-    return { genericParams, ignoredLifetimeParams };
-}
-
-/**
- * @param {ParserState} state
- * @returns {{ name: string, bounds: Node[] }[] | null}
- */
-function parseOptionalWhereClause(
-    state: ParserState,
-): { name: string; bounds: Node[] }[] | null {
-    if (!matchToken(state, TokenType.Where)) {
-        return null;
-    }
-    /** @type {{ name: string, bounds: Node[] }[]} */
-    const whereClause: { name: string; bounds: Node[] }[] = [];
-    while (
-        !check(state, TokenType.OpenCurly) &&
-        !check(state, TokenType.Semicolon) &&
-        !isAtEnd(state)
-    ) {
-        const paramToken =
-            expectToken(
-                state,
-                TokenType.Identifier,
-                "Expected type parameter name in where clause",
-            ) ?? peek(state);
-        const name = paramToken.value ?? "";
-        /** @type {Node[]} */
-        const bounds: Node[] = [];
-        if (matchToken(state, TokenType.Colon)) {
-            while (!isAtEnd(state)) {
-                const bound = parseTypeBound(state);
-                if (bound) bounds.push(bound);
-                if (!matchToken(state, TokenType.Plus)) break;
-            }
-        } else {
-            addError(
-                state,
-                "Expected : in where clause predicate",
-                peek(state),
-                [":"],
-            );
-            break;
-        }
-        whereClause.push({ name, bounds });
-        if (!matchToken(state, TokenType.Comma)) break;
-    }
-    return whereClause;
-}
-
-/**
- * Parse a generic/where bound and consume Rust function-trait bound tails
- * like `FnOnce(A, B) -> R` for syntax compatibility.
- * @param {ParserState} state
- * @returns {Node | null}
- */
-function parseTypeBound(state: ParserState): Node | null {
-    const bound = parsePathTypeNode(state) || parseType(state);
-    if (
-        !bound ||
-        bound.kind !== NodeKind.NamedType ||
-        !check(state, TokenType.OpenParen)
-    ) {
-        return bound;
-    }
-    const pathName = typeof bound.name === "string" ? bound.name : "";
-    const tailName = pathName.includes("::")
-        ? pathName.slice(pathName.lastIndexOf("::") + 2)
-        : pathName;
-    if (tailName !== "Fn" && tailName !== "FnMut" && tailName !== "FnOnce") {
-        return bound;
-    }
-
-    expectToken(
-        state,
-        TokenType.OpenParen,
-        "Expected ( in function trait bound",
-    );
-    if (!check(state, TokenType.CloseParen)) {
-        while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
-            parseType(state);
-            if (!matchToken(state, TokenType.Comma)) break;
-        }
-    }
-    expectToken(
-        state,
-        TokenType.CloseParen,
-        "Expected ) in function trait bound",
-    );
-    if (matchArrow(state)) {
-        parseType(state);
-    }
-    return bound;
-}
-
-/**
- * Parse `pub` and restricted `pub(...)` visibility for syntax compatibility.
- * Restriction details are intentionally discarded and mapped to boolean public.
- * @param {ParserState} state
- * @returns {boolean}
- */
-function parseOptionalVisibility(state: ParserState): boolean {
-    if (!matchToken(state, TokenType.Pub)) {
         return false;
     }
-    if (!matchToken(state, TokenType.OpenParen)) {
-        return true;
+
+    checkColonColon(): boolean {
+        return this.peek().type === TokenType.Colon && this.peekAt(1).type === TokenType.Colon;
     }
 
-    const first = peek(state);
-    if (!isIdentifierToken(first)) {
-        addError(state, "Expected visibility restriction in pub(...)", first, [
-            "Identifier",
-        ]);
-    } else {
-        advance(state);
+    eatColonColon(): boolean {
+        if (this.checkColonColon()) {
+            this.advance();
+            this.advance();
+            return true;
+        }
+        return false;
+    }
+
+    checkDotDot(): boolean {
+        return (
+            this.peek().type === TokenType.Dot &&
+            this.peekAt(1).type === TokenType.Dot &&
+            this.peekAt(2).type !== TokenType.Eq
+        );
+    }
+
+    eatDotDot(): boolean {
+        if (this.checkDotDot()) {
+            this.advance();
+            this.advance();
+            return true;
+        }
+        return false;
+    }
+
+    checkDotDotEq(): boolean {
+        return (
+            this.peek().type === TokenType.Dot &&
+            this.peekAt(1).type === TokenType.Dot &&
+            this.peekAt(2).type === TokenType.Eq
+        );
+    }
+
+    eatDotDotEq(): boolean {
+        if (this.checkDotDotEq()) {
+            this.advance();
+            this.advance();
+            this.advance();
+            return true;
+        }
+        return false;
+    }
+
+    // -----------------------------------------------------------------------
+    // Utility
+    // -----------------------------------------------------------------------
+
+    private eatPub(): void {
+        if (!this.eat(TokenType.Pub)) return;
+        // Pub(crate) / pub(super) / pub(in path)
+        if (this.eat(TokenType.OpenParen)) {
+            let depth = 1;
+            while (depth > 0 && !this.check(TokenType.Eof)) {
+                if (this.check(TokenType.OpenParen)) depth++;
+                else if (this.check(TokenType.CloseParen)) depth--;
+                this.advance();
+            }
+        }
+    }
+
+    private skipGenericParams(): void {
+        if (!this.check(TokenType.Lt)) return;
+        let depth = 1;
+        this.advance(); // Consume <
+        while (depth > 0 && !this.check(TokenType.Eof)) {
+            if (this.check(TokenType.Lt)) depth++;
+            else if (this.check(TokenType.Gt)) depth--;
+            this.advance();
+        }
+    }
+
+    private skipWhereClause(): void {
+        if (!this.check(TokenType.Where)) return;
+        this.advance();
+        // Consume until { or ;
+        while (!this.check(TokenType.OpenCurly) && !this.check(TokenType.Semicolon) && !this.check(TokenType.Eof)) {
+            this.advance();
+        }
+    }
+
+    private skipBracketContent(): void {
+        // Skips content inside [...] including the closing ]
+        let depth = 1;
+        while (depth > 0 && !this.check(TokenType.Eof)) {
+            if (this.check(TokenType.OpenSquare)) depth++;
+            else if (this.check(TokenType.CloseSquare)) depth--;
+            this.advance();
+        }
+    }
+
+    private skipUntil(...terminators: TokenType[]): void {
         while (
-            check(state, TokenType.Colon) &&
-            peek(state, 1).type === TokenType.Colon
+            !terminators.some((terminator) => this.check(terminator)) &&
+            !this.check(TokenType.Eof)
         ) {
-            advance(state);
-            advance(state);
-            const next = peek(state);
-            if (!isIdentifierToken(next)) {
-                addError(
-                    state,
-                    "Expected identifier segment in pub(...)",
-                    next,
-                    ["Identifier"],
-                );
-                break;
-            }
-            advance(state);
+            this.advance();
         }
     }
 
-    if (!matchToken(state, TokenType.CloseParen)) {
-        addError(state, "Expected ) after pub(...)", peek(state), [")"]);
-        skipToRecovery(state, [TokenType.CloseParen]);
-        matchToken(state, TokenType.CloseParen);
+    private canStartExpression(): boolean {
+        if (EXPRESSION_START_TOKENS.has(this.peek().type)) return true;
+        return this.peek().type === TokenType.Dot && (this.checkDotDot() || this.checkDotDotEq());
     }
-    return true;
-}
 
-/**
- * @param {ParserState} state
- * @param {Node} pathNode
- * @returns {Node}
- */
-function parseStructExpr(state: ParserState, pathNode: Node): Node {
-    const fields = [];
-    let spread = null;
-    expectToken(state, TokenType.OpenCurly, "Expected { in struct literal");
-    while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
-        if (
-            check(state, TokenType.Dot) &&
-            peek(state, 1).type === TokenType.Dot
-        ) {
-            matchDouble(state, TokenType.Dot);
-            spread = parseExpr(state, 0);
-            if (!spread) {
-                addError(
-                    state,
-                    "Expected expression after ..",
-                    peek(state),
-                    undefined,
-                );
+    // -----------------------------------------------------------------------
+    // Attributes
+    // -----------------------------------------------------------------------
+
+    parseAttributes(): { derives: string[] } {
+        const derives: string[] = [];
+
+        while (this.check(TokenType.Hash)) {
+            this.advance(); // Consume #
+            const isBang = this.eat(TokenType.Bang) !== undefined; // #! inner attribute
+
+            if (!this.eat(TokenType.OpenSquare)) break;
+
+            if (
+                !isBang &&
+                this.check(TokenType.Identifier) &&
+                this.peek().value === "derive"
+            ) {
+                this.advance(); // Consume "derive"
+                if (this.eat(TokenType.OpenParen)) {
+                    while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+                        if (this.check(TokenType.Identifier)) {
+                            derives.push(this.advance().value);
+                        }
+                        this.eat(TokenType.Comma);
+                    }
+                    this.eat(TokenType.CloseParen);
+                }
+                this.expect(TokenType.CloseSquare);
+            } else {
+                this.skipBracketContent(); // Consumes until and including ]
             }
-            break;
         }
-        const nameToken = peek(state);
-        if (!isIdentifierToken(nameToken)) {
-            addError(state, "Expected field name", nameToken, ["Identifier"]);
-            skipToRecovery(state, [TokenType.Comma, TokenType.CloseCurly]);
-            matchToken(state, TokenType.Comma);
-            continue;
+
+        return { derives };
+    }
+
+    // -----------------------------------------------------------------------
+    // Module
+    // -----------------------------------------------------------------------
+
+    parseModuleNode(name = "main"): ModuleNode {
+        const start = this.peek();
+        const items: Item[] = [];
+
+        while (!this.check(TokenType.Eof) && !this.check(TokenType.CloseCurly)) {
+            const parsed = this.parseItems();
+            for (const item of parsed) {
+                items.push(item);
+            }
         }
-        const name = advance(state).value;
-        let value = null;
-        if (matchToken(state, TokenType.Colon)) {
-            value = parseExpr(state, 0);
+
+        return new ModuleNode(this.spanFrom(start), name, items);
+    }
+
+    // -----------------------------------------------------------------------
+    // Items
+    // -----------------------------------------------------------------------
+
+    private parseItems(): Item[] {
+        // Skip standalone semicolons
+        if (this.eat(TokenType.Semicolon)) return [];
+
+        const { derives } = this.parseAttributes();
+        this.eatPub();
+
+        const start = this.peek();
+        return (
+            this.parseDirectItem(start, derives) ??
+            this.parseUnsafeItem(start, derives) ??
+            this.parseTypeAliasItem() ??
+            this.parseStaticOrConstItem() ??
+            this.parseUnexpectedItem()
+        );
+    }
+
+    private parseDirectItem(start: Token, derives: string[]): Item[] | undefined {
+        if (this.eat(TokenType.Fn)) return [this.parseFnBody(start, derives)];
+        if (this.eat(TokenType.Struct)) return [this.parseStructBody(start, derives)];
+        if (this.eat(TokenType.Enum)) return [this.parseEnumBody(start, derives)];
+        if (this.eat(TokenType.Impl)) return [this.parseImplBody(start)];
+        if (this.eat(TokenType.Trait)) return [this.parseTraitBody(start)];
+        if (this.eat(TokenType.Mod)) return [this.parseModBody(start)];
+        if (this.eat(TokenType.Use)) return this.parseUseBody(start);
+        return undefined;
+    }
+
+    private parseUnsafeItem(start: Token, derives: string[]): Item[] | undefined {
+        if (!this.eat(TokenType.Unsafe)) return undefined;
+        if (this.eat(TokenType.Fn)) return [this.parseFnBody(start, derives)];
+        if (this.eat(TokenType.Impl)) return [this.parseImplBody(start)];
+        if (this.eat(TokenType.Trait)) return [this.parseTraitBody(start)];
+        if (this.check(TokenType.OpenCurly)) {
+            this.skipBlock();
+        }
+        return [];
+    }
+
+    private parseTypeAliasItem(): Item[] | undefined {
+        if (!this.eat(TokenType.Type)) return undefined;
+        this.eat(TokenType.Identifier);
+        this.skipGenericParams();
+        if (this.eat(TokenType.Eq)) {
+            this.skipUntil(TokenType.Semicolon);
+        }
+        this.eat(TokenType.Semicolon);
+        return [];
+    }
+
+    private parseStaticOrConstItem(): Item[] | undefined {
+        if (!this.check(TokenType.Static) && !this.check(TokenType.Const)) return undefined;
+        this.advance();
+        this.skipUntil(TokenType.Semicolon, TokenType.CloseCurly);
+        this.eat(TokenType.Semicolon);
+        return [];
+    }
+
+    private parseUnexpectedItem(): Item[] {
+        const tok = this.peek();
+        if (tok.type !== TokenType.Eof && tok.type !== TokenType.CloseCurly) {
+            this.errors.push({
+                message: `Unexpected token '${tok.value}' in item position`,
+                line: tok.line,
+                column: tok.column,
+            });
+            this.advance();
+        }
+        return [];
+    }
+
+    // -----------------------------------------------------------------------
+    // Fn item
+    // -----------------------------------------------------------------------
+
+    private parseFnBody(startTok: Token, derives: string[]): FnItem {
+        this.skipGenericParams();
+        const name = this.expect(TokenType.Identifier).value;
+        this.skipGenericParams(); // Generics after name
+
+        this.expect(TokenType.OpenParen);
+        const params = this.parseFnParams();
+        this.expect(TokenType.CloseParen);
+
+        this.skipWhereClause();
+
+        let returnType: TypeNode = new TupleTypeNode(this.spanFrom(startTok), []);
+        if (this.eatThinArrow()) {
+            returnType = this.parseTypeNode();
+        }
+
+        this.skipWhereClause();
+
+        let body: BlockExpr | undefined;
+        if (this.check(TokenType.OpenCurly)) {
+            body = this.parseBlock();
         } else {
-            value = makeIdentifierExpr(spanFromToken(nameToken), name);
-        }
-        if (value) {
-            fields.push({ name, value });
-        }
-        matchToken(state, TokenType.Comma);
-    }
-    const endToken =
-        expectToken(
-            state,
-            TokenType.CloseCurly,
-            "Expected } after struct literal",
-        ) ?? peek(state);
-    return makeStructExpr(
-        mergeSpans(pathNode.span, spanFromToken(endToken)),
-        pathNode,
-        fields,
-        spread,
-    );
-}
-
-/**
- * @param {ParserState} state
- * @param {boolean} [allowStructLiteral=true]
- * @returns {Node | null}
- */
-function parseAtom(
-    state: ParserState,
-    allowStructLiteral = true,
-): Node | null {
-    const literal = parseLiteralExpr(state);
-    if (literal) return literal;
-
-    const token = peek(state);
-
-    if (token.type === TokenType.OpenParen) {
-        const startToken = advance(state);
-        const elements = [];
-        let hasComma = false;
-
-        // Parse tuple or grouped expression
-        if (!check(state, TokenType.CloseParen)) {
-            while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
-                const elem = parseExpr(state, 0);
-                if (elem) elements.push(elem);
-                if (matchToken(state, TokenType.Comma)) {
-                    hasComma = true;
-                } else {
-                    break;
-                }
-            }
+            this.eat(TokenType.Semicolon);
         }
 
-        const end =
-            expectToken(state, TokenType.CloseParen, "Expected )") ??
-            startToken;
-
-        // Empty parens = unit literal
-        if (elements.length === 0) {
-            return makeLiteralExpr(
-                mergeSpans(spanFromToken(startToken), spanFromToken(end)),
-                LiteralKind.Int,
-                0,
-                "()",
-            );
-        }
-
-        // Single element without comma = grouped expression
-        if (elements.length === 1 && !hasComma) {
-            elements[0].span = mergeSpans(
-                spanFromToken(startToken),
-                spanFromToken(end),
-            );
-            return elements[0];
-        }
-
-        // Multiple elements or trailing comma = tuple
-        // For now, return as a struct expression (tuple is a struct with numeric fields)
-        const span = mergeSpans(spanFromToken(startToken), spanFromToken(end));
-        // Create a tuple as a struct with field names "0", "1", etc.
-        const fields = elements.map((elem, i) => ({
-            name: String(i),
-            value: elem,
-        }));
-        const path = makePathExpr(span, ["()"]); // Unit type name for tuples
-        return makeStructExpr(span, path, fields, null);
+        return new FnItem(this.spanFrom(startTok), name, params, returnType, body, derives);
     }
 
-    if (token.type === TokenType.OpenCurly) {
-        return parseBlockExpr(state);
-    }
+    private parseFnParams(): ParamNode[] {
+        const params: ParamNode[] = [];
 
-    if (token.type === TokenType.If) {
-        return parseIfExpr(state);
-    }
+        while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+            const paramStart = this.peek();
 
-    if (token.type === TokenType.Match) {
-        return parseMatchExpr(state);
-    }
-
-    if (token.type === TokenType.Loop) {
-        return parseLoopExpr(state);
-    }
-
-    if (token.type === TokenType.While) {
-        return parseWhileExpr(state);
-    }
-
-    if (token.type === TokenType.For) {
-        return parseForExpr(state);
-    }
-
-    if (token.type === TokenType.Return) {
-        const start = advance(state);
-        if (
-            check(state, TokenType.Semicolon) ||
-            check(state, TokenType.CloseCurly)
-        ) {
-            return makeReturnExpr(spanFromToken(start), null);
-        }
-        const value = parseExpr(state, 0);
-        const span = value
-            ? mergeSpans(spanFromToken(start), value.span)
-            : spanFromToken(start);
-        return makeReturnExpr(span, value);
-    }
-
-    if (token.type === TokenType.Identifier && token.value === "break") {
-        const start = advance(state);
-        if (
-            check(state, TokenType.Semicolon) ||
-            check(state, TokenType.CloseCurly)
-        ) {
-            return makeBreakExpr(spanFromToken(start), null);
-        }
-        const value = parseExpr(state, 0);
-        const span = value
-            ? mergeSpans(spanFromToken(start), value.span)
-            : spanFromToken(start);
-        return makeBreakExpr(span, value);
-    }
-
-    if (token.type === TokenType.Identifier && token.value === "continue") {
-        const start = advance(state);
-        return makeContinueExpr(spanFromToken(start));
-    }
-
-    if (isIdentifierToken(token)) {
-        const startToken = token;
-        const segments = parsePathSegments(state);
-        const endToken = segments.length > 0 ? previous(state) : startToken;
-        let node =
-            segments.length > 1
-                ? makePathExpr(
-                      mergeSpans(
-                          spanFromToken(startToken),
-                          spanFromToken(endToken),
-                      ),
-                      segments,
-                  )
-                : makeIdentifierExpr(
-                      spanFromToken(startToken),
-                      segments[0] ?? startToken.value,
-                  );
-        if (allowStructLiteral && check(state, TokenType.OpenCurly)) {
-            node = parseStructExpr(state, node);
-        }
-        return node;
-    }
-
-    addError(state, "Unexpected token", token, []);
-    advance(state);
-    return null;
-}
-
-/**
- * Parse macro invocation arguments
- * Macros use different delimiters: println!("..."), vec![...], macro!{...}
- */
-function parseMacroArgs(state: ParserState): Node[] {
-    const args: Node[] = [];
-
-    // Determine the delimiter
-    let endToken: TokenTypeValue = TokenType.CloseParen;
-    if (check(state, TokenType.OpenSquare)) {
-        endToken = TokenType.CloseSquare;
-    } else if (check(state, TokenType.OpenCurly)) {
-        endToken = TokenType.CloseCurly;
-    } else if (!check(state, TokenType.OpenParen)) {
-        // No arguments
-        return args;
-    }
-
-    // Consume opening delimiter
-    advance(state);
-
-    // Parse arguments
-    if (!check(state, endToken)) {
-        while (!check(state, endToken) && !isAtEnd(state)) {
-            const arg = parseExpr(state, 0);
-            if (arg) args.push(arg);
-            if (
-                endToken === TokenType.CloseSquare &&
-                check(state, TokenType.Semicolon)
-            ) {
-                const semi = advance(state);
-                addError(
-                    state,
-                    "Macro repeat form `[expr; count]` is not supported yet",
-                    semi,
-                    null,
-                );
-                const repeatCount = parseExpr(state, 0);
-                if (repeatCount) args.push(repeatCount);
-                while (!check(state, endToken) && !isAtEnd(state)) {
-                    advance(state);
-                }
-                break;
-            }
-            if (!matchToken(state, TokenType.Comma)) break;
-        }
-    }
-
-    // Consume closing delimiter
-    expectToken(
-        state,
-        endToken,
-        "Expected closing delimiter after macro arguments",
-    );
-
-    return args;
-}
-
-function parsePostfix(state: ParserState, expr: Node): Node | null {
-    let result = expr;
-    /** @type {Node[] | null} */
-    let pendingTypeArgs: Node[] | null = null;
-    while (result) {
-        if (
-            check(state, TokenType.Dot) &&
-            peek(state, 1).type === TokenType.Dot
-        ) {
-            return result;
-        }
-        if (check(state, TokenType.Invalid) && peek(state).value === "?") {
-            // Parse-only compatibility: consume try-operator suffix.
-            advance(state);
-            continue;
-        }
-        // Handle macro invocation: identifier! followed by args
-        if (matchToken(state, TokenType.Bang)) {
-            // Check if this looks like a macro invocation (has delimiter after !)
-            if (
-                check(state, TokenType.OpenParen) ||
-                check(state, TokenType.OpenSquare) ||
-                check(state, TokenType.OpenCurly)
-            ) {
-                // Get macro name from the identifier expression
-                let macroName = null;
-                if (result.kind === 1) {
-                    // NodeKind.IdentifierExpr
-                    macroName = result.name;
-                } else if (result.kind === 17) {
-                    // NodeKind.PathExpr
-                    // For paths, use the last segment
-                    macroName = result.segments[result.segments.length - 1];
-                }
-
-                if (macroName) {
-                    const args = parseMacroArgs(state);
-                    const endToken = previous(state);
-                    const span = mergeSpans(
-                        result.span,
-                        spanFromToken(endToken),
-                    );
-                    result = makeMacroExpr(span, macroName, args);
+            // &self / &mut self
+            if (this.check(TokenType.And)) {
+                this.advance(); // Consume &
+                const isMut = this.eat(TokenType.Mut) !== undefined;
+                if (this.eat(TokenType.Self)) {
+                    params.push({
+                        span: this.spanFrom(paramStart),
+                        isReceiver: true,
+                        receiverKind: isMut ? "ref_mut" : "ref",
+                    });
+                    this.eat(TokenType.Comma);
                     continue;
                 }
+                // Not self — backtrack by reparsing as type
+                // (rare: &Type param)
+                this.pos -= isMut ? 2 : 1; // Undo & (and mut if consumed)
             }
-            // Not a macro invocation - put back the ! token
-            state.pos -= 1;
-            return result;
-        }
-        if (matchToken(state, TokenType.Dot)) {
-            const fieldToken =
-                expectToken(
-                    state,
-                    TokenType.Identifier,
-                    "Expected field name",
-                ) ?? peek(state);
-            const field = fieldToken.value ?? "";
-            const span = mergeSpans(result.span, spanFromToken(fieldToken));
-            result = makeFieldExpr(span, result, field);
-            continue;
-        }
-        if (matchToken(state, TokenType.OpenSquare)) {
-            const indexExpr = parseExpr(state, 0);
-            const endToken =
-                expectToken(state, TokenType.CloseSquare, "Expected ]") ??
-                peek(state);
-            const span = indexExpr
-                ? mergeSpans(result.span, spanFromToken(endToken))
-                : mergeSpans(result.span, spanFromToken(endToken));
-            result = makeIndexExpr(span, result, indexExpr ?? result);
-            continue;
-        }
-        if (matchToken(state, TokenType.OpenParen)) {
-            const args = [];
-            if (!check(state, TokenType.CloseParen)) {
-                while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
-                    const arg = parseExpr(state, 0);
-                    if (arg) args.push(arg);
-                    if (!matchToken(state, TokenType.Comma)) break;
-                }
-            }
-            const endToken =
-                expectToken(state, TokenType.CloseParen, "Expected )") ??
-                peek(state);
-            const span = mergeSpans(result.span, spanFromToken(endToken));
-            result = makeCallExpr(span, result, args, pendingTypeArgs);
-            pendingTypeArgs = null;
-            continue;
-        }
-        if (
-            check(state, TokenType.Colon) &&
-            peek(state, 1).type === TokenType.Colon
-        ) {
-            advance(state);
-            advance(state);
-            if (!matchToken(state, TokenType.Lt)) {
-                addError(
-                    state,
-                    "Expected <...> after :: for generic call arguments",
-                    peek(state),
-                    ["<"],
-                );
+
+            // Self
+            if (this.eat(TokenType.Self)) {
+                params.push({
+                    span: this.spanFrom(paramStart),
+                    isReceiver: true,
+                    receiverKind: "value",
+                });
+                this.eat(TokenType.Comma);
                 continue;
             }
-            /** @type {Node[]} */
-            const typeArgs: Node[] = [];
-            while (!check(state, TokenType.Gt) && !isAtEnd(state)) {
-                const typeArg = parseType(state);
-                if (typeArg) typeArgs.push(typeArg);
-                if (!matchToken(state, TokenType.Comma)) break;
-            }
-            expectToken(
-                state,
-                TokenType.Gt,
-                "Expected > after generic call arguments",
-            );
-            pendingTypeArgs = typeArgs;
-            if (!check(state, TokenType.OpenParen)) {
-                addError(
-                    state,
-                    "Generic call arguments must be followed by function call parentheses",
-                    peek(state),
-                    ["("],
-                );
-                pendingTypeArgs = null;
-            }
-            continue;
-        }
-        break;
-    }
-    return result;
-}
 
-/**
- * @param {ParserState} state
- * @returns {Node | null}
- */
-function parseClosureExpr(state: ParserState): Node | null {
-    let isMove = false;
-    let startToken = peek(state);
-    if (isIdentifierValue(peek(state), "move")) {
-        const next = peek(state, 1);
-        if (next.type !== TokenType.Pipe && next.type !== TokenType.PipePipe) {
-            return null;
-        }
-        startToken = advance(state);
-        isMove = true;
-    }
+            // Mut (for mut self or mut name: type)
+            this.eat(TokenType.Mut);
 
-    const params = [];
-    if (matchToken(state, TokenType.PipePipe)) {
-        // No parameters.
-    } else if (matchToken(state, TokenType.Pipe)) {
-        while (!check(state, TokenType.Pipe) && !isAtEnd(state)) {
-            const paramStart = peek(state);
-            if (
-                !isIdentifierToken(paramStart) &&
-                !isIdentifierValue(paramStart, "_")
-            ) {
-                addError(state, "Expected closure parameter name", paramStart, [
-                    "Identifier",
-                ]);
-                break;
-            }
-
-            const nameToken = advance(state);
-            let ty = null;
-            if (matchToken(state, TokenType.Colon)) {
-                ty = parseType(state);
-            }
-            params.push(
-                makeParam(
-                    spanFromToken(nameToken),
-                    nameToken.value ?? "_",
-                    ty,
-                    null,
-                    false,
-                    null,
-                ),
-            );
-
-            if (!matchToken(state, TokenType.Comma)) {
-                break;
-            }
-        }
-        expectToken(
-            state,
-            TokenType.Pipe,
-            "Expected | after closure parameters",
-        );
-    } else {
-        return null;
-    }
-
-    let returnType = null;
-    if (matchArrow(state)) {
-        returnType = parseType(state);
-    }
-
-    let body = null;
-    if (check(state, TokenType.OpenCurly)) {
-        body = parseBlockExpr(state);
-    } else {
-        body = parseExpr(state, 0);
-    }
-    if (!body) {
-        body = makeLiteralExpr(currentSpan(state), LiteralKind.Int, 0, "0");
-    }
-
-    const span = mergeSpans(spanFromToken(startToken), body.span);
-    return makeClosureExpr(span, params, returnType, body, isMove);
-}
-
-/**
- * @param {ParserState} state
- * @param {boolean} [allowStructLiteral=true]
- * @returns {Node | null}
- */
-function parsePrefix(
-    state: ParserState,
-    allowStructLiteral = true,
-): Node | null {
-    const token = peek(state);
-    if (
-        token.type === TokenType.PipePipe ||
-        token.type === TokenType.Pipe ||
-        (isIdentifierValue(token, "move") &&
-            (peek(state, 1).type === TokenType.Pipe ||
-                peek(state, 1).type === TokenType.PipePipe))
-    ) {
-        const closure = parseClosureExpr(state);
-        if (closure) return closure;
-    }
-    if (token.type === TokenType.Bang) {
-        advance(state);
-        const operand = parsePrefix(state, allowStructLiteral);
-        if (!operand) return null;
-        const span = mergeSpans(spanFromToken(token), operand.span);
-        return makeUnaryExpr(span, UnaryOp.Not, operand);
-    }
-    if (token.type === TokenType.Minus) {
-        advance(state);
-        const operand = parsePrefix(state, allowStructLiteral);
-        if (!operand) return null;
-        const span = mergeSpans(spanFromToken(token), operand.span);
-        return makeUnaryExpr(span, UnaryOp.Neg, operand);
-    }
-    if (token.type === TokenType.Star) {
-        advance(state);
-        const operand = parsePrefix(state, allowStructLiteral);
-        if (!operand) return null;
-        const span = mergeSpans(spanFromToken(token), operand.span);
-        return makeDerefExpr(span, operand);
-    }
-    if (token.type === TokenType.And) {
-        advance(state);
-        let mutability = Mutability.Immutable;
-        if (
-            check(state, TokenType.Mut) ||
-            isIdentifierValue(peek(state), "mut")
-        ) {
-            advance(state);
-            mutability = Mutability.Mutable;
-        }
-        const operand = parsePrefix(state, allowStructLiteral);
-        if (!operand) return null;
-        const span = mergeSpans(spanFromToken(token), operand.span);
-        return makeRefExpr(span, mutability, operand);
-    }
-    const atom = parseAtom(state, allowStructLiteral);
-    if (!atom) return null;
-    return parsePostfix(state, atom);
-}
-
-interface BinaryOpInfo { prec: number; op: BinaryOp; assoc: string }
-
-const binaryOps = new Map<number, BinaryOpInfo>([
-    [TokenType.PipePipe, { prec: 2, op: BinaryOp.Or, assoc: "left" }],
-    [TokenType.AndAnd, { prec: 3, op: BinaryOp.And, assoc: "left" }],
-    [TokenType.Pipe, { prec: 4, op: BinaryOp.BitOr, assoc: "left" }],
-    [TokenType.Caret, { prec: 5, op: BinaryOp.BitXor, assoc: "left" }],
-    [TokenType.And, { prec: 6, op: BinaryOp.BitAnd, assoc: "left" }],
-    [TokenType.EqEq, { prec: 7, op: BinaryOp.Eq, assoc: "left" }],
-    [TokenType.BangEq, { prec: 7, op: BinaryOp.Ne, assoc: "left" }],
-    [TokenType.Lt, { prec: 8, op: BinaryOp.Lt, assoc: "left" }],
-    [TokenType.LtEq, { prec: 8, op: BinaryOp.Le, assoc: "left" }],
-    [TokenType.Gt, { prec: 8, op: BinaryOp.Gt, assoc: "left" }],
-    [TokenType.GtEq, { prec: 8, op: BinaryOp.Ge, assoc: "left" }],
-    [TokenType.Plus, { prec: 9, op: BinaryOp.Add, assoc: "left" }],
-    [TokenType.Minus, { prec: 9, op: BinaryOp.Sub, assoc: "left" }],
-    [TokenType.Star, { prec: 10, op: BinaryOp.Mul, assoc: "left" }],
-    [TokenType.Slash, { prec: 10, op: BinaryOp.Div, assoc: "left" }],
-    [TokenType.Percent, { prec: 10, op: BinaryOp.Rem, assoc: "left" }],
-]);
-
-const compoundAssignOps = new Map<number, BinaryOp>([
-    [TokenType.PlusEq, BinaryOp.Add],
-    [TokenType.MinusEq, BinaryOp.Sub],
-    [TokenType.StarEq, BinaryOp.Mul],
-    [TokenType.SlashEq, BinaryOp.Div],
-    [TokenType.PercentEq, BinaryOp.Rem],
-    [TokenType.AndEq, BinaryOp.BitAnd],
-    [TokenType.PipeEq, BinaryOp.BitOr],
-    [TokenType.CaretEq, BinaryOp.BitXor],
-]);
-
-/**
- * @param {ParserState} state
- * @returns {{ token: Token, inclusive: boolean } | null}
- */
-function parseRangeOperator(
-    state: ParserState,
-): { token: Token; inclusive: boolean } | null {
-    if (check(state, TokenType.Dot) && peek(state, 1).type === TokenType.Dot) {
-        const startToken = advance(state);
-        advance(state);
-        const inclusive = matchToken(state, TokenType.Eq) !== null;
-        return { token: startToken, inclusive };
-    }
-    return null;
-}
-
-/**
- * @param {ParserState} state
- * @param {number} [minPrec=0]
- * @param {boolean} [allowStructLiteral=true]
- * @returns {Node | null}
- */
-function parseExpr(
-    state: ParserState,
-    minPrec = 0,
-    allowStructLiteral = true,
-): Node | null {
-    let left = parsePrefix(state, allowStructLiteral);
-    if (!left) return null;
-    while (true) {
-        const rangeOp = parseRangeOperator(state);
-        if (rangeOp) {
-            const endExpr =
-                check(state, TokenType.CloseParen) ||
-                check(state, TokenType.CloseSquare) ||
-                check(state, TokenType.CloseCurly) ||
-                check(state, TokenType.Comma) ||
-                check(state, TokenType.Semicolon) ||
-                check(state, TokenType.Eof)
-                    ? null
-                    : parseExpr(state, 0, allowStructLiteral);
-            const span = endExpr
-                ? mergeSpans(left.span, endExpr.span)
-                : mergeSpans(left.span, spanFromToken(rangeOp.token));
-            left = makeRangeExpr(span, left, endExpr, rangeOp.inclusive);
-            continue;
-        }
-
-        const compoundOp = compoundAssignOps.get(peek(state).type) ?? null;
-        if (
-            minPrec <= 1 &&
-            (check(state, TokenType.Eq) || compoundOp !== null)
-        ) {
-            advance(state);
-            const right = parseExpr(state, 1, allowStructLiteral);
-            if (!right) return left;
-            const value =
-                compoundOp !== null
-                    ? makeBinaryExpr(
-                          mergeSpans(left.span, right.span),
-                          compoundOp,
-                          left,
-                          right,
-                      )
-                    : right;
-            const span = mergeSpans(left.span, right.span);
-            left = makeAssignExpr(span, left, value);
-            continue;
-        }
-
-        const opInfo = binaryOps.get(peek(state).type);
-        if (!opInfo || opInfo.prec < minPrec) break;
-        advance(state);
-        const nextMinPrec =
-            opInfo.assoc === "left" ? opInfo.prec + 1 : opInfo.prec;
-        const right = parseExpr(state, nextMinPrec, allowStructLiteral);
-        if (!right) return left;
-        const span = mergeSpans(left.span, right.span);
-        left = makeBinaryExpr(span, opInfo.op, left, right);
-    }
-    return left;
-}
-
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
-function parseLetStmt(state: ParserState): Node {
-    const start =
-        expectToken(state, TokenType.Let, "Expected let") ?? peek(state);
-    const pat = parsePattern(state);
-    let ty = null;
-    let init = null;
-    if (matchToken(state, TokenType.Colon)) {
-        ty = parseType(state);
-    }
-    if (matchToken(state, TokenType.Eq)) {
-        init = parseExpr(state, 0);
-    }
-    const endToken =
-        expectToken(
-            state,
-            TokenType.Semicolon,
-            "Expected ; after let statement",
-        ) ?? peek(state);
-    const span = pat
-        ? mergeSpans(spanFromToken(start), spanFromToken(endToken))
-        : spanFromToken(start);
-    return makeLetStmt(
-        span,
-        pat ?? makeWildcardPat(spanFromToken(start)),
-        ty,
-        init,
-    );
-}
-
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
-function parseExprStmt(state: ParserState): Node {
-    const expr = parseExpr(state, 0);
-    const hasSemicolon = matchToken(state, TokenType.Semicolon) !== null;
-    const span = expr ? mergeSpans(expr.span, expr.span) : currentSpan(state);
-    return makeExprStmt(
-        span,
-        expr ?? makeLiteralExpr(span, LiteralKind.Int, 0, "0"),
-        hasSemicolon,
-    );
-}
-
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
-function parseStmt(state: ParserState): Node {
-    if (check(state, TokenType.Let)) {
-        return parseLetStmt(state);
-    }
-    if (
-        (peek(state).type === TokenType.Invalid && peek(state).value === "#") ||
-        check(state, TokenType.Pub) ||
-        check(state, TokenType.Fn) ||
-        check(state, TokenType.Struct) ||
-        check(state, TokenType.Enum) ||
-        check(state, TokenType.Trait) ||
-        check(state, TokenType.Mod) ||
-        check(state, TokenType.Use) ||
-        check(state, TokenType.Impl) ||
-        check(state, TokenType.Unsafe)
-    ) {
-        const beforePos = state.pos;
-        const beforeErrors = state.errors.length;
-        const item = parseItem(state);
-        if (item) {
-            return makeItemStmt(item.span, item);
-        }
-        if (state.pos === beforePos || state.errors.length > beforeErrors) {
-            const span = currentSpan(state);
-            return makeItemStmt(span, makeModule(span, "error", []));
-        }
-        // Inert attributes consumed with no item; parse the next statement.
-        return parseStmt(state);
-    }
-    return parseExprStmt(state);
-}
-
-/**
- * @param {ParserState} state
- * @param {{ allowReceiver?: boolean }} [options]
- * @returns {Node[]}
- */
-function parseParamList(
-    state: ParserState,
-    options: { allowReceiver?: boolean } = {},
-): Node[] {
-    const { allowReceiver = false } = options;
-    const params = [];
-    expectToken(state, TokenType.OpenParen, "Expected ( in parameter list");
-    if (!check(state, TokenType.CloseParen)) {
-        let paramIndex = 0;
-        while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
-            const startToken = peek(state);
-            let name = null;
-            let ty = null;
-            let isReceiver = false;
-            /** @type {"value" | "ref" | "ref_mut" | null} */
-            let receiverKind: "value" | "ref" | "ref_mut" | null = null;
-
-            const canBeReceiver =
-                allowReceiver &&
-                paramIndex === 0 &&
-                (startToken.type === TokenType.Self ||
-                    (startToken.type === TokenType.And &&
-                        (peek(state, 1).type === TokenType.Self ||
-                            (peek(state, 1).type === TokenType.Mut &&
-                                peek(state, 2).type === TokenType.Self))));
-            if (canBeReceiver) {
-                if (matchToken(state, TokenType.And)) {
-                    if (matchToken(state, TokenType.Mut)) {
-                        expectToken(
-                            state,
-                            TokenType.Self,
-                            "Expected self in receiver parameter",
-                        );
-                        receiverKind = "ref_mut";
-                        ty = makeRefType(
-                            spanFromToken(startToken),
-                            Mutability.Mutable,
-                            makeNamedType(
-                                spanFromToken(startToken),
-                                "Self",
-                                null,
-                            ),
-                        );
-                    } else {
-                        expectToken(
-                            state,
-                            TokenType.Self,
-                            "Expected self in receiver parameter",
-                        );
-                        receiverKind = "ref";
-                        ty = makeRefType(
-                            spanFromToken(startToken),
-                            Mutability.Immutable,
-                            makeNamedType(
-                                spanFromToken(startToken),
-                                "Self",
-                                null,
-                            ),
-                        );
-                    }
-                } else {
-                    expectToken(
-                        state,
-                        TokenType.Self,
-                        "Expected self receiver parameter",
-                    );
-                    receiverKind = "value";
-                    ty = makeNamedType(spanFromToken(startToken), "Self", null);
-                }
-                isReceiver = true;
-                name = "self";
+            // _ or name
+            let name: string;
+            if (this.check(TokenType.Identifier) || this.check(TokenType.Self)) {
+                name = this.advance().value;
             } else {
-                if (
-                    startToken.type === TokenType.Self ||
-                    startToken.type === TokenType.And
-                ) {
-                    addError(
-                        state,
-                        "Receiver parameter is only allowed as the first method parameter",
-                        startToken,
-                        null,
-                    );
-                    if (startToken.type === TokenType.Self) {
-                        name = advance(state).value;
-                    } else {
-                        advance(state);
-                        if (check(state, TokenType.Mut)) {
-                            advance(state);
-                        }
-                        if (check(state, TokenType.Self)) {
-                            advance(state);
-                            name = "self";
-                        }
-                    }
-                }
-                if (!name && isIdentifierToken(startToken)) {
-                    name = advance(state).value;
-                }
-                if (matchToken(state, TokenType.Colon)) {
-                    ty = parseType(state);
-                }
+                // Unexpected
+                break;
             }
 
-            const span = startToken
-                ? spanFromToken(startToken)
-                : currentSpan(state);
-            params.push(
-                makeParam(span, name, ty, null, isReceiver, receiverKind),
-            );
-            paramIndex += 1;
-            if (!matchToken(state, TokenType.Comma)) break;
-        }
-    }
-    expectToken(state, TokenType.CloseParen, "Expected ) after parameters");
-    return params;
-}
+            // If followed by colon, it's name: Type
+            if (!this.eat(TokenType.Colon)) {
+                // No colon; this might be just a type name used as a param.
+                // Treat it as a name with inferred type.
+                params.push({
+                    span: this.spanFrom(paramStart),
+                    name,
+                    ty: new NamedTypeNode(this.spanFrom(paramStart), "_"),
+                    isReceiver: false,
+                });
+                this.eat(TokenType.Comma);
+                continue;
+            }
 
-function parseFnItem(
-    state: ParserState,
-    isUnsafe: boolean,
-    isPub: boolean,
-    isConst = false,
-    allowReceiver = false,
-): Node {
-    const start =
-        expectToken(state, TokenType.Fn, "Expected fn") ?? peek(state);
-    const nameToken =
-        expectToken(state, TokenType.Identifier, "Expected function name") ??
-        peek(state);
-    const genericList = parseGenericParamList(state);
-    const genericParams = genericList ? genericList.genericParams : null;
-    const ignoredLifetimeParams = genericList
-        ? genericList.ignoredLifetimeParams
-        : [];
-    const generics = genericParams
-        ? genericParams.map((p: { name: string }) => p.name)
-        : null;
-    const params = parseParamList(state, { allowReceiver });
-    let returnType = null;
-    if (matchArrow(state)) {
-        returnType = parseType(state);
-    }
-    const whereClause = parseOptionalWhereClause(state);
-    let body = null;
-    if (check(state, TokenType.OpenCurly)) {
-        body = parseBlockExpr(state);
-    } else if (matchToken(state, TokenType.Semicolon)) {
-        body = null;
-    } else {
-        addError(state, "Expected function body", peek(state), []);
-    }
-    const endSpan = body ? body.span : spanFromToken(nameToken);
-    const span = mergeSpans(spanFromToken(start), endSpan);
-    return makeFnItem(
-        span,
-        nameToken.value,
-        generics,
-        params,
-        returnType,
-        body,
-        false,
-        isUnsafe,
-        isConst,
-        isPub,
-        genericParams,
-        whereClause,
-        ignoredLifetimeParams,
-        false,
-        null,
-    );
-}
-// FIXME: cleanup (this is a mess)
-function parseStructItem(state: ParserState, isPub: boolean): Node {
-    const start =
-        expectToken(state, TokenType.Struct, "Expected struct") ?? peek(state);
-    const nameToken =
-        expectToken(state, TokenType.Identifier, "Expected struct name") ??
-        peek(state);
-    const genericList = parseGenericParamList(state);
-    const genericParams = genericList?.genericParams;
-    const ignoredLifetimeParams = genericList?.ignoredLifetimeParams ?? [];
-    const generics = genericParams?.map((p) => p.name);
-    const fields = [];
-    let isTuple = false;
-    if (matchToken(state, TokenType.OpenCurly)) {
-        while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
-            const fieldIsPub = parseOptionalVisibility(state);
-            const fieldNameToken =
-                expectToken(
-                    state,
-                    TokenType.Identifier,
-                    "Expected field name",
-                ) ?? peek(state);
-            let ty: Node | null = null;
-            let defaultValue: Node | null = null;
-            if (matchToken(state, TokenType.Colon)) {
-                ty = parseType(state);
-            }
-            if (matchToken(state, TokenType.Eq)) {
-                defaultValue = parseExpr(state, 0) ?? undefined;
-            }
-            fields.push(
-                makeStructField(
-                    spanFromToken(fieldNameToken),
-                    fieldNameToken.value ?? "",
-                    ty!,
-                    defaultValue!,
-                    fieldIsPub,
-                ),
-            );
-            if (!matchToken(state, TokenType.Comma)) break;
-        }
-        expectToken(
-            state,
-            TokenType.CloseCurly,
-            "Expected } after struct body",
-        );
-    } else if (matchToken(state, TokenType.OpenParen)) {
-        isTuple = true;
-        if (!check(state, TokenType.CloseParen)) {
-            while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
-                const ty = parseType(state);
-                const span = ty ? ty.span : currentSpan(state);
-                fields.push(makeStructField(span, "", ty, null));
-                if (!matchToken(state, TokenType.Comma)) break;
-            }
-        }
-        expectToken(
-            state,
-            TokenType.CloseParen,
-            "Expected ) after tuple struct",
-        );
-        matchToken(state, TokenType.Semicolon);
-    } else {
-        matchToken(state, TokenType.Semicolon);
-    }
-    const endSpan =
-        fields.length > 0
-            ? fields[fields.length - 1].span
-            : spanFromToken(nameToken);
-    const span = mergeSpans(spanFromToken(start), endSpan);
-    return makeStructItem(
-        span,
-        nameToken.value,
-        generics ?? null,
-        fields,
-        isTuple,
-        isPub,
-        ignoredLifetimeParams,
-    );
-}
-// TODO: cleanup (this is SUCH a mess)
-function parseTraitItem(
-    state: ParserState,
-    isUnsafe: boolean,
-    isPub: boolean,
-): Node {
-    const start =
-        expectToken(state, TokenType.Trait, "Expected trait") ?? peek(state);
-    const nameToken =
-        expectToken(state, TokenType.Identifier, "Expected trait name") ??
-        peek(state);
-    const methods = [];
-    expectToken(state, TokenType.OpenCurly, "Expected { after trait name");
-    while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
-        parseOuterAttributes(state);
-        let methodIsConst = false;
-        if (matchToken(state, TokenType.Const)) {
-            methodIsConst = true;
-        }
-        if (check(state, TokenType.Fn)) {
-            const method = parseFnItem(
-                state,
-                false,
-                false,
-                methodIsConst,
-                true,
-            );
-            if (method.body) {
-                addError(
-                    state,
-                    "Default trait methods are not supported in this compiler model",
-                    previous(state),
-                    null,
-                );
-            }
-            methods.push({
-                ...method,
-                body: null,
+            const ty = this.parseTypeNode();
+            params.push({
+                span: this.spanFrom(paramStart),
+                name,
+                ty,
+                isReceiver: false,
             });
-            continue;
-        }
-        addError(
-            state,
-            "Only method signatures are supported in trait declarations",
-            peek(state),
-            null,
-        );
-        skipToRecovery(state, [TokenType.CloseCurly, TokenType.Fn]);
-    }
-    const endToken =
-        expectToken(
-            state,
-            TokenType.CloseCurly,
-            "Expected } after trait block",
-        ) ?? peek(state);
-    const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
-    return makeTraitItem(span, nameToken.value ?? "", methods, isUnsafe, isPub);
-}
 
-function parseImplItem(state: ParserState, isUnsafe: boolean): Node {
-    const start =
-        expectToken(state, TokenType.Impl, "Expected impl") ?? peek(state);
-    const genericList = parseGenericParamList(state);
-    const genericParams = genericList ? genericList.genericParams : null;
-    const ignoredLifetimeParams = genericList
-        ? genericList.ignoredLifetimeParams
-        : [];
-    const firstType = parseType(state);
-    let traitType: Node | null = null;
-    let targetType: Node = firstType;
-    if (matchToken(state, TokenType.For)) {
-        traitType = firstType;
-        targetType = parseType(state);
-    }
-    const methods = []; // FIXME: typesafety
-    expectToken(state, TokenType.OpenCurly, "Expected { after impl target");
-    while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
-        parseOuterAttributes(state);
-        let methodIsPub = false; // FIXME: code smell (to many bools)
-        let methodIsUnsafe = false;
-        let methodIsConst = false;
-        if (parseOptionalVisibility(state)) methodIsPub = true;
-        if (matchToken(state, TokenType.Unsafe)) methodIsUnsafe = true;
-        if (matchToken(state, TokenType.Const)) methodIsConst = true;
-        if (check(state, TokenType.Fn)) {
-            const method = parseFnItem(
-                state,
-                methodIsUnsafe,
-                methodIsPub,
-                methodIsConst,
-                true,
-            );
-            methods.push(method);
-            continue;
+            if (!this.eat(TokenType.Comma)) break;
         }
-        addError(
-            state,
-            "Expected method item in impl block",
-            peek(state),
-            null,
-        );
-        skipToRecovery(state, [
-            TokenType.CloseCurly,
-            TokenType.Fn,
-            TokenType.Pub,
-            TokenType.Unsafe,
-            TokenType.Const,
-        ]);
+
+        return params;
     }
-    const endToken =
-        expectToken(
-            state,
-            TokenType.CloseCurly,
-            "Expected } after impl block",
-        ) ?? peek(state);
-    const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
-    return makeImplItem(
-        span,
-        targetType ??
-            makeNamedType(spanFromToken(start), "__unresolved_type", null),
-        traitType ?? null,
-        methods,
-        isUnsafe,
-        genericParams,
-        ignoredLifetimeParams,
-    );
-}
-// FIXME: cleanup (huge mess)
-function parseEnumItem(state: ParserState, isPub: boolean): Node {
-    const start =
-        expectToken(state, TokenType.Enum, "Expected enum") ?? peek(state);
-    const nameToken =
-        expectToken(state, TokenType.Identifier, "Expected enum name") ??
-        peek(state);
-    const genericList = parseGenericParamList(state);
-    const genericParams = genericList ? genericList.genericParams : null;
-    const ignoredLifetimeParams = genericList
-        ? genericList.ignoredLifetimeParams
-        : [];
-    const generics = genericParams
-        ? genericParams.map(
-              (/** @type {{ name: string }} */ p: { name: string }) => p.name,
-          )
-        : null;
-    const variants = [];
-    expectToken(state, TokenType.OpenCurly, "Expected { after enum name");
-    while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
-        const variantNameToken =
-            expectToken(state, TokenType.Identifier, "Expected variant name") ??
-            peek(state);
-        const fields = [];
-        if (matchToken(state, TokenType.OpenParen)) {
-            while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
-                const ty = parseType(state);
-                const span = ty ? ty.span : currentSpan(state);
-                fields.push(makeStructField(span, "", ty, null));
-                if (!matchToken(state, TokenType.Comma)) break;
+
+    // -----------------------------------------------------------------------
+    // Struct item
+    // -----------------------------------------------------------------------
+
+    private parseStructBody(startTok: Token, derives: string[]): StructItem {
+        const name = this.expect(TokenType.Identifier).value;
+        this.skipGenericParams();
+        this.skipWhereClause();
+
+        const fields: StructFieldNode[] = [];
+
+        if (this.eat(TokenType.OpenCurly)) {
+            // Normal struct { field: Type, ... }
+            while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+                const fieldStart = this.peek();
+                this.eatPub();
+                const fieldName = this.expect(TokenType.Identifier).value;
+                this.expect(TokenType.Colon);
+                const ty = this.parseTypeNode();
+                fields.push({ span: this.spanFrom(fieldStart), name: fieldName, ty });
+                if (!this.eat(TokenType.Comma)) break;
             }
-            expectToken(
-                state,
-                TokenType.CloseParen,
-                "Expected ) after variant fields",
-            );
-        } else if (matchToken(state, TokenType.OpenCurly)) {
-            while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
-                const fieldNameToken =
-                    expectToken(
-                        state,
-                        TokenType.Identifier,
-                        "Expected field name",
-                    ) ?? peek(state);
-                /** @type {Node | null} */
-                let ty: Node | null = null;
-                if (matchToken(state, TokenType.Colon)) {
-                    ty = parseType(state);
+            this.expect(TokenType.CloseCurly);
+        } else if (this.eat(TokenType.OpenParen)) {
+            // Tuple struct Foo(A, B)
+            let idx = 0;
+            while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+                const fieldStart = this.peek();
+                this.eatPub();
+                const ty = this.parseTypeNode();
+                fields.push({ span: this.spanFrom(fieldStart), name: String(idx++), ty });
+                if (!this.eat(TokenType.Comma)) break;
+            }
+            this.expect(TokenType.CloseParen);
+        }
+        this.eat(TokenType.Semicolon);
+
+        return new StructItem(this.spanFrom(startTok), name, fields, derives);
+    }
+
+    // -----------------------------------------------------------------------
+    // Enum item
+    // -----------------------------------------------------------------------
+
+    private parseEnumBody(startTok: Token, derives: string[]): EnumItem {
+        const name = this.expect(TokenType.Identifier).value;
+        this.skipGenericParams();
+        this.skipWhereClause();
+
+        this.expect(TokenType.OpenCurly);
+        const variants: EnumVariantNode[] = [];
+
+        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+            variants.push(this.parseEnumVariant());
+            if (!this.eat(TokenType.Comma)) break;
+        }
+
+        this.expect(TokenType.CloseCurly);
+        return new EnumItem(this.spanFrom(startTok), name, variants, derives);
+    }
+
+    private parseEnumVariant(): EnumVariantNode {
+        const variantStart = this.peek();
+        const variantName = this.expect(TokenType.Identifier).value;
+        const fields = this.parseEnumVariantFields();
+        if (this.eat(TokenType.Eq)) {
+            this.skipUntil(TokenType.Comma, TokenType.CloseCurly);
+        }
+        return { span: this.spanFrom(variantStart), name: variantName, fields };
+    }
+
+    private parseEnumVariantFields(): StructFieldNode[] {
+        if (this.eat(TokenType.OpenParen)) {
+            return this.parseTupleFields(TokenType.CloseParen);
+        }
+        if (!this.eat(TokenType.OpenCurly)) return [];
+        const fields: StructFieldNode[] = [];
+        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+            const fs = this.peek();
+            const fieldName = this.expect(TokenType.Identifier).value;
+            this.expect(TokenType.Colon);
+            const ty = this.parseTypeNode();
+            fields.push({ span: this.spanFrom(fs), name: fieldName, ty });
+            if (!this.eat(TokenType.Comma)) break;
+        }
+        this.expect(TokenType.CloseCurly);
+        return fields;
+    }
+
+    private parseTupleFields(closeToken: TokenType): StructFieldNode[] {
+        const fields: StructFieldNode[] = [];
+        let index = 0;
+        while (!this.check(closeToken) && !this.check(TokenType.Eof)) {
+            const fieldStart = this.peek();
+            const ty = this.parseTypeNode();
+            fields.push({ span: this.spanFrom(fieldStart), name: String(index++), ty });
+            if (!this.eat(TokenType.Comma)) break;
+        }
+        this.expect(closeToken);
+        return fields;
+    }
+
+    // -----------------------------------------------------------------------
+    // Impl item
+    // -----------------------------------------------------------------------
+
+    private parseImplBody(startTok: Token): ImplItem {
+        this.skipGenericParams();
+        const typeA = this.parseTypeNode();
+
+        const { target, traitType } = this.parseImplTarget(typeA);
+
+        this.skipWhereClause();
+        this.expect(TokenType.OpenCurly);
+
+        const methods: FnItem[] = [];
+        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+            this.parseImplMember(methods);
+        }
+
+        this.expect(TokenType.CloseCurly);
+        return new ImplItem(this.spanFrom(startTok), target, methods, traitType);
+    }
+
+    private parseImplTarget(typeA: TypeNode): { target: TypeNode; traitType?: TypeNode } {
+        if (!this.check(TokenType.For)) {
+            return { target: typeA };
+        }
+        this.advance();
+        return { target: this.parseTypeNode(), traitType: typeA };
+    }
+
+    private parseImplMember(methods: FnItem[]): void {
+        const { derives } = this.parseAttributes();
+        this.eatPub();
+        this.eat(TokenType.Unsafe);
+        if (this.eat(TokenType.Fn)) {
+            methods.push(this.parseFnBody(this.peek(), derives));
+            return;
+        }
+        if (this.check(TokenType.Type) || this.check(TokenType.Const) || this.check(TokenType.Static)) {
+            this.advance();
+            this.skipUntil(TokenType.Semicolon, TokenType.CloseCurly);
+            this.eat(TokenType.Semicolon);
+            return;
+        }
+        this.reportUnexpectedImplToken();
+    }
+
+    private reportUnexpectedImplToken(): void {
+        const tok = this.peek();
+        if (tok.type !== TokenType.CloseCurly && tok.type !== TokenType.Eof) {
+            this.errors.push({
+                message: `Unexpected token in impl block: '${tok.value}'`,
+                line: tok.line,
+                column: tok.column,
+            });
+            this.advance();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Trait item
+    // -----------------------------------------------------------------------
+
+    private parseTraitBody(startTok: Token): TraitItem {
+        const name = this.expect(TokenType.Identifier).value;
+        this.skipGenericParams();
+
+        // Skip : Bounds
+        if (this.eat(TokenType.Colon)) {
+            while (!this.check(TokenType.OpenCurly) && !this.check(TokenType.Where) && !this.check(TokenType.Eof)) {
+                this.advance();
+            }
+        }
+
+        this.skipWhereClause();
+        this.expect(TokenType.OpenCurly);
+
+        const methods: FnItem[] = [];
+        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+            const { derives } = this.parseAttributes();
+            this.eatPub();
+            if (this.eat(TokenType.Unsafe)) {
+                // Consume
+            }
+            if (this.eat(TokenType.Fn)) {
+                const fnStart = this.peek();
+                methods.push(this.parseFnBody(fnStart, derives));
+            } else if (this.check(TokenType.Type)) {
+                while (!this.check(TokenType.Semicolon) && !this.check(TokenType.Eof) && !this.check(TokenType.CloseCurly)) {
+                    this.advance();
                 }
-                fields.push(
-                    makeStructField(
-                        spanFromToken(fieldNameToken),
-                        fieldNameToken.value ?? "",
-                        ty,
-                        null,
-                    ),
-                );
-                if (!matchToken(state, TokenType.Comma)) break;
-            }
-            expectToken(
-                state,
-                TokenType.CloseCurly,
-                "Expected } after variant fields",
-            );
-        }
-        /** @type {Node | null} */
-        let discriminant: Node | null = null;
-        if (matchToken(state, TokenType.Eq)) {
-            discriminant = parseExpr(state, 0);
-        }
-        const span = mergeSpans(
-            spanFromToken(variantNameToken),
-            discriminant ? discriminant.span : spanFromToken(variantNameToken),
-        );
-        variants.push(
-            makeEnumVariant(
-                span,
-                variantNameToken.value ?? "",
-                fields,
-                discriminant,
-            ),
-        );
-        matchToken(state, TokenType.Comma);
-    }
-    const endToken =
-        expectToken(state, TokenType.CloseCurly, "Expected } after enum") ??
-        peek(state);
-    const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
-    return makeEnumItem(
-        span,
-        nameToken.value ?? "",
-        generics,
-        variants,
-        isPub,
-        ignoredLifetimeParams,
-    );
-}
-
-/**
- * @param {ParserState} state
- * @param {boolean} isPub
- * @returns {Node}
- */
-function parseModItem(state: ParserState, isPub: boolean): Node {
-    const start =
-        expectToken(state, TokenType.Mod, "Expected mod") ?? peek(state);
-    const nameToken =
-        expectToken(state, TokenType.Identifier, "Expected module name") ??
-        peek(state);
-    /** @type {Node[]} */
-    const items: Node[] = [];
-    let isInline = false;
-    if (matchToken(state, TokenType.OpenCurly)) {
-        isInline = true;
-        while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
-            const item = parseItem(state);
-            if (item) items.push(item);
-            else
-                skipToRecovery(state, [
-                    TokenType.CloseCurly,
-                    TokenType.Fn,
-                    TokenType.Struct,
-                    TokenType.Enum,
-                    TokenType.Trait,
-                    TokenType.Mod,
-                    TokenType.Use,
-                    TokenType.Impl,
-                ]);
-        }
-        expectToken(state, TokenType.CloseCurly, "Expected } after module");
-    } else {
-        expectToken(state, TokenType.Semicolon, "Expected ; after module");
-    }
-    const endSpan =
-        items.length > 0
-            ? items[items.length - 1].span
-            : spanFromToken(nameToken);
-    const span = mergeSpans(spanFromToken(start), endSpan);
-    return makeModItem(span, nameToken.value ?? "", items, isInline, isPub);
-}
-
-/**
- * @param {ParserState} state
- * @returns {{ path: string[], hasWildcard: boolean }}
- */
-function parseUsePath(state: ParserState): {
-    path: string[];
-    hasWildcard: boolean;
-} {
-    /** @type {string[]} */
-    const path: string[] = [];
-    let hasWildcard = false;
-    const first = peek(state);
-    if (!isIdentifierToken(first)) {
-        addError(state, "Expected identifier", first, ["Identifier"]);
-        return { path, hasWildcard };
-    }
-    path.push(advance(state).value);
-    while (
-        check(state, TokenType.Colon) &&
-        peek(state, 1).type === TokenType.Colon
-    ) {
-        advance(state);
-        advance(state);
-        const next = peek(state);
-        if (next.type === TokenType.Star) {
-            hasWildcard = true;
-            addError(
-                state,
-                "Wildcard imports are not supported yet",
-                next,
-                null,
-            );
-            advance(state);
-            break;
-        }
-        // Stop if we encounter a grouped import { ... }
-        if (next.type === TokenType.OpenCurly) {
-            break;
-        }
-        if (!isIdentifierToken(next)) {
-            addError(state, "Expected identifier segment", next, [
-                "Identifier",
-            ]);
-            return { path, hasWildcard };
-        }
-        path.push(advance(state).value);
-    }
-    return { path, hasWildcard };
-}
-
-/**
- * @param {ParserState} state
- * @returns {Node}
- */
-function parseUseTree(state: ParserState): Node {
-    const startToken = peek(state);
-    /** @type {string[]} */
-    let path: string[] = [];
-    let hasWildcard = false;
-    const startsWithGroup = check(state, TokenType.OpenCurly);
-    if (!startsWithGroup) {
-        const parsed = parseUsePath(state);
-        path = parsed.path;
-        hasWildcard = parsed.hasWildcard;
-    }
-    /** @type {string | null} */
-    let alias: string | null = null;
-    if (!startsWithGroup && isIdentifierValue(peek(state), "as")) {
-        advance(state);
-        const aliasToken =
-            expectToken(state, TokenType.Identifier, "Expected alias name") ??
-            peek(state);
-        alias = aliasToken.value ?? null;
-    }
-    /** @type {Node[] | null} */
-    let children: Node[] | null = null;
-    if (matchToken(state, TokenType.OpenCurly)) {
-        children = [];
-        if (!check(state, TokenType.CloseCurly)) {
-            while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
-                const child = parseUseTree(state);
-                if (child) children.push(child);
-                if (!matchToken(state, TokenType.Comma)) break;
+                this.eat(TokenType.Semicolon);
+            } else {
+                const tok = this.peek();
+                if (tok.type !== TokenType.CloseCurly && tok.type !== TokenType.Eof) {
+                    this.advance();
+                }
             }
         }
-        expectToken(state, TokenType.CloseCurly, "Expected } in use tree");
+
+        this.expect(TokenType.CloseCurly);
+        return new TraitItem(this.spanFrom(startTok), name, methods);
     }
-    if (hasWildcard && children !== null) {
-        addError(
-            state,
-            "Cannot combine wildcard and grouped imports",
-            peek(state),
-            null,
+
+    // -----------------------------------------------------------------------
+    // Mod item
+    // -----------------------------------------------------------------------
+
+    private parseModBody(startTok: Token): ModItem {
+        const name = this.expect(TokenType.Identifier).value;
+
+        if (this.eat(TokenType.Semicolon)) {
+            // External mod — no body
+            return new ModItem(this.spanFrom(startTok), name, []);
+        }
+
+        this.expect(TokenType.OpenCurly);
+        const mod = this.parseModuleNode(name);
+        this.expect(TokenType.CloseCurly);
+        return new ModItem(this.spanFrom(startTok), name, mod.items);
+    }
+
+    // -----------------------------------------------------------------------
+    // Use item
+    // -----------------------------------------------------------------------
+
+    private parseUseBody(startTok: Token): UseItem[] {
+        const items = this.parseUsePath(startTok, []);
+        this.eat(TokenType.Semicolon);
+        return items;
+    }
+
+    private parseUsePath(startTok: Token, prefix: string[]): UseItem[] {
+        // Collect path segments
+        const segments: string[] = [...prefix];
+
+        // Crate:: or self:: or super::
+        if (this.check(TokenType.Identifier) || this.check(TokenType.Self)) {
+            segments.push(this.advance().value);
+        }
+
+        while (this.checkColonColon()) {
+            this.eatColonColon();
+
+            if (this.check(TokenType.OpenCurly)) {
+                // Use a::b::{ c, d }
+                this.advance(); // Consume {
+                const result: UseItem[] = [];
+                while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+                    result.push(...this.parseUsePath(startTok, segments));
+                    if (!this.eat(TokenType.Comma)) break;
+                }
+                this.expect(TokenType.CloseCurly);
+                return result;
+            }
+
+            if (this.check(TokenType.Star)) {
+                this.advance();
+                return [new UseItem(this.spanFrom(startTok), [...segments, "*"])];
+            }
+
+            if (this.check(TokenType.Identifier) || this.check(TokenType.Self)) {
+                segments.push(this.advance().value);
+            } else {
+                break;
+            }
+        }
+
+        // Optional `as alias`
+        if (this.check(TokenType.Identifier) && this.peek().value === "as") {
+            this.advance(); // Consume "as"
+            this.eat(TokenType.Identifier); // Consume alias (dropped)
+        }
+
+        if (segments.length === 0) return [];
+        return [new UseItem(this.spanFrom(startTok), segments)];
+    }
+
+    // -----------------------------------------------------------------------
+    // Block
+    // -----------------------------------------------------------------------
+
+    parseBlock(): BlockExpr {
+        const start = this.peek();
+        this.expect(TokenType.OpenCurly);
+        const stmts: Statement[] = [];
+        let tail: Expression | undefined;
+
+        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+            const stmt = this.parseStatement();
+            if (stmt === undefined) break;
+
+            if (stmt instanceof ExprStmt && stmt.isReturn) {
+                // Block-like expressions (if/match/loop/while/for/block) don't
+                // Need a trailing semicolon to appear as statements mid-block.
+                if (!this.check(TokenType.CloseCurly) && isBlockLikeExpr(stmt.expr)) {
+                    stmts.push(new ExprStmt(stmt.span, stmt.expr, false));
+                    continue;
+                }
+                tail = stmt.expr;
+                break;
+            }
+            stmts.push(stmt);
+        }
+
+        this.expect(TokenType.CloseCurly);
+        return new BlockExpr(this.spanFrom(start), stmts, tail);
+    }
+
+    private skipBlock(): void {
+        if (!this.eat(TokenType.OpenCurly)) return;
+        let depth = 1;
+        while (depth > 0 && !this.check(TokenType.Eof)) {
+            if (this.check(TokenType.OpenCurly)) depth++;
+            else if (this.check(TokenType.CloseCurly)) depth--;
+            this.advance();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Statements
+    // -----------------------------------------------------------------------
+
+    parseStatement(): Statement | undefined {
+        // Skip standalone semicolons
+        if (this.eat(TokenType.Semicolon)) return this.parseStatement();
+
+        const start = this.peek();
+        return (
+            this.parseLetStatement(start) ??
+            this.parseItemStatement(start) ??
+            this.parseExpressionStatement(start)
         );
     }
-    const endToken = previous(state);
-    const span = mergeSpans(spanFromToken(startToken), spanFromToken(endToken));
-    return makeUseTree(span, path, alias, children);
-}
 
-/**
- * @param {ParserState} state
- * @param {boolean} isPub
- * @returns {Node}
- */
-function parseUseItem(state: ParserState, isPub: boolean): Node {
-    const start =
-        expectToken(state, TokenType.Use, "Expected use") ?? peek(state);
-    const tree = parseUseTree(state);
-    const endToken =
-        expectToken(state, TokenType.Semicolon, "Expected ; after use") ??
-        peek(state);
-    const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
-    return makeUseItem(span, tree, isPub);
-}
-
-/**
- * @param {ParserState} state
- * @returns {Node | null}
- */
-function parseItem(state: ParserState): Node | null {
-    const { derives, isTest, expectedOutput, builtinName, consumedOnlyInert } =
-        parseOuterAttributes(state);
-    let isPub = false;
-    let isUnsafe = false;
-    let isConst = false;
-    isPub = parseOptionalVisibility(state);
-    if (matchToken(state, TokenType.Unsafe)) {
-        isUnsafe = true;
+    private parseLetStatement(start: Token): Statement | undefined {
+        if (!this.eat(TokenType.Let)) return undefined;
+        const pat = this.parsePattern();
+        let ty: TypeNode = new NamedTypeNode(this.spanFrom(start), "_");
+        if (this.eat(TokenType.Colon)) {
+            ty = this.parseTypeNode();
+        }
+        this.expect(TokenType.Eq);
+        const init = this.parseExpr(0);
+        this.eat(TokenType.Semicolon);
+        return new LetStmt(this.spanFrom(start), pat, ty, init);
     }
-    if (matchToken(state, TokenType.Const)) {
-        if (check(state, TokenType.Fn)) {
-            isConst = true;
-        } else {
-            addError(state, "Expected `fn` after `const`", peek(state), ["Fn"]);
-            return null;
+
+    private parseItemStatement(start: Token): Statement | undefined {
+        if (!this.isStatementItemStart()) return undefined;
+        const items = this.parseItems();
+        if (items.length > 0) {
+            return new ItemStmt(this.spanFrom(start), items[0]);
+        }
+        return undefined;
+    }
+
+    private parseExpressionStatement(start: Token): Statement | undefined {
+        if (!this.canStartExpression()) {
+            this.reportUnexpectedStatement();
+            return undefined;
+        }
+        const expr = this.parseExpr(0);
+        return new ExprStmt(this.spanFrom(start), expr, !this.eat(TokenType.Semicolon));
+    }
+
+    private isStatementItemStart(): boolean {
+        if (ITEM_START_TOKENS.has(this.peek().type)) return true;
+        return this.check(TokenType.Pub) && ITEM_START_TOKENS.has(this.peekAt(1).type);
+    }
+
+    private reportUnexpectedStatement(): void {
+        const tok = this.peek();
+        if (tok.type !== TokenType.CloseCurly && tok.type !== TokenType.Eof) {
+            this.errors.push({
+                message: `Unexpected token '${tok.value}' in statement`,
+                line: tok.line,
+                column: tok.column,
+            });
+            this.advance();
         }
     }
-    /** @type {Node | null} */
-    let item: Node | null = null;
-    if (check(state, TokenType.Fn))
-        item = parseFnItem(state, isUnsafe, isPub, isConst);
-    else if (check(state, TokenType.Struct))
-        item = parseStructItem(state, isPub);
-    else if (check(state, TokenType.Enum)) item = parseEnumItem(state, isPub);
-    else if (check(state, TokenType.Trait))
-        item = parseTraitItem(state, isUnsafe, isPub);
-    else if (check(state, TokenType.Mod)) item = parseModItem(state, isPub);
-    else if (check(state, TokenType.Use)) item = parseUseItem(state, isPub);
-    else if (check(state, TokenType.Impl))
-        item = parseImplItem(state, isUnsafe);
-    if (item) {
-        item.derives = derives;
-        if (item.kind === NodeKind.FnItem) {
-            if (isTest) {
-                item.isTest = true;
+
+    // -----------------------------------------------------------------------
+    // Types
+    // -----------------------------------------------------------------------
+
+    parseTypeNode(): TypeNode {
+        const start = this.peek();
+
+        if (this.check(TokenType.Lifetime)) {
+            this.advance();
+            return this.parseTypeNode();
+        }
+        return (
+            this.parseReferenceType(start) ??
+            this.parsePointerType(start) ??
+            this.parseParenType(start) ??
+            this.parseBracketType(start) ??
+            this.parseFnType(start) ??
+            this.parseNamedType(start) ??
+            this.parseUnknownType(start)
+        );
+    }
+
+    private parseReferenceType(start: Token): TypeNode | undefined {
+        if (!this.eat(TokenType.And)) return undefined;
+        if (this.check(TokenType.Lifetime)) this.advance();
+        const mut = this.eat(TokenType.Mut) !== undefined;
+        const inner = this.parseTypeNode();
+        return new RefTypeNode(
+            this.spanFrom(start),
+            mut ? Mutability.Mutable : Mutability.Immutable,
+            inner,
+        );
+    }
+
+    private parsePointerType(start: Token): TypeNode | undefined {
+        if (!this.eat(TokenType.Star)) return undefined;
+        const mut = this.eat(TokenType.Mut) !== undefined;
+        if (!mut) this.eat(TokenType.Const);
+        const inner = this.parseTypeNode();
+        return new PtrTypeNode(
+            this.spanFrom(start),
+            mut ? Mutability.Mutable : Mutability.Immutable,
+            inner,
+        );
+    }
+
+    private parseParenType(start: Token): TypeNode | undefined {
+        if (!this.eat(TokenType.OpenParen)) return undefined;
+        if (this.eat(TokenType.CloseParen)) {
+            return new TupleTypeNode(this.spanFrom(start), []);
+        }
+        const first = this.parseTypeNode();
+        if (this.eat(TokenType.CloseParen)) {
+            return first;
+        }
+        this.expect(TokenType.Comma);
+        const elements: TypeNode[] = [first];
+        while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+            elements.push(this.parseTypeNode());
+            if (!this.eat(TokenType.Comma)) break;
+        }
+        this.expect(TokenType.CloseParen);
+        return new TupleTypeNode(this.spanFrom(start), elements);
+    }
+
+    private parseBracketType(start: Token): TypeNode | undefined {
+        if (!this.eat(TokenType.OpenSquare)) return undefined;
+        const elem = this.parseTypeNode();
+        if (this.eat(TokenType.Semicolon)) {
+            const len = this.parseExpr(0);
+            this.expect(TokenType.CloseSquare);
+            return new ArrayTypeNode(this.spanFrom(start), elem, len);
+        }
+        this.expect(TokenType.CloseSquare);
+        return new NamedTypeNode(
+            this.spanFrom(start),
+            "slice",
+            new GenericArgsNode(this.spanFrom(start), [elem]),
+        );
+    }
+
+    private parseFnType(start: Token): TypeNode | undefined {
+        if (!this.eat(TokenType.Fn)) return undefined;
+        this.expect(TokenType.OpenParen);
+        const params: TypeNode[] = [];
+        while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+            if (
+                (this.check(TokenType.Identifier) || this.check(TokenType.Self)) &&
+                this.peekAt(1).type === TokenType.Colon
+            ) {
+                this.advance();
+                this.advance();
             }
-            if (expectedOutput !== null) {
-                item.expectedOutput = expectedOutput;
-            }
-            if (builtinName !== null) {
-                item.isBuiltin = true;
-                item.builtinName =
-                    builtinName === "__attribute_builtin__"
-                        ? item.name
-                        : builtinName;
-            }
-        } else if (builtinName !== null) {
-            addError(
-                state,
-                "#[builtin(...)] is only valid on function items",
-                peek(state),
-                null,
-            );
-        } else if (expectedOutput !== null) {
-            addError(
-                state,
-                "#[expect_output(...)] is only valid on function items",
-                peek(state),
-                null,
-            );
+            params.push(this.parseTypeNode());
+            if (!this.eat(TokenType.Comma)) break;
         }
-        return item;
-    }
-    if (consumedOnlyInert) {
-        return null;
-    }
-    addError(state, "Expected item", peek(state), []);
-    return null;
-}
-
-function parsePattern(state: ParserState): Node {
-    const alternatives = [];
-    const first = parsePatternAtom(state);
-    if (first) alternatives.push(first);
-    while (matchToken(state, TokenType.Pipe)) {
-        const next = parsePatternAtom(state);
-        if (next) alternatives.push(next);
-    }
-    if (alternatives.length === 1) return alternatives[0];
-    const span = mergeSpans(
-        alternatives[0].span,
-        alternatives[alternatives.length - 1].span,
-    );
-    return makeOrPat(span, alternatives);
-}
-
-function parsePatternAtom(state: ParserState): Node {
-    const token = peek(state);
-    if (token.type === TokenType.Identifier && token.value === "_") {
-        advance(state);
-        return makeWildcardPat(spanFromToken(token));
-    }
-    // Handle `mut` keyword for mutable patterns
-    if (token.type === TokenType.Mut) {
-        const mutToken = advance(state);
-        const nameToken = peek(state);
-        if (isIdentifierToken(nameToken)) {
-            const name = advance(state).value;
-            return makeIdentPat(
-                mergeSpans(spanFromToken(mutToken), spanFromToken(nameToken)),
-                name,
-                Mutability.Mutable,
-                false,
-                null,
-            );
+        this.expect(TokenType.CloseParen);
+        let retType: TypeNode = new TupleTypeNode(this.spanFrom(start), []);
+        if (this.eatThinArrow()) {
+            retType = this.parseTypeNode();
         }
-        // If `mut` is not followed by an identifier, treat it as an error
-        addError(state, "Expected identifier after `mut`", nameToken, [
-            "Identifier",
-        ]);
-        return makeWildcardPat(spanFromToken(mutToken));
+        return new FnTypeNode(this.spanFrom(start), params, retType);
     }
-    if (token.type === TokenType.Identifier || token.type === TokenType.Self) {
-        const startToken = token;
-        const segments = parsePathSegments(state);
-        const name = segments[segments.length - 1];
 
-        // Check if this is a qualified path (e.g., Color::Red)
-        if (segments.length > 1) {
-            // This is a qualified path like Color::Red - could be enum variant or struct
-            const endToken = previous(state);
-            const path = makePathExpr(
-                mergeSpans(spanFromToken(startToken), spanFromToken(endToken)),
-                segments,
-            );
-            if (check(state, TokenType.OpenCurly)) {
-                return parseStructPattern(state, path, startToken);
+    private parseNamedType(start: Token): TypeNode | undefined {
+        if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) return undefined;
+        let name = this.advance().value;
+        while (this.checkColonColon()) {
+            const next2 = this.peekAt(2).type;
+            if (next2 === TokenType.Lt) {
+                this.eatColonColon();
+                break;
             }
-            if (check(state, TokenType.OpenParen)) {
-                return parseEnumTupleVariantPattern(state, path, startToken);
+            if (next2 !== TokenType.Identifier && next2 !== TokenType.Self) break;
+            this.eatColonColon();
+            name += `::${this.advance().value}`;
+        }
+        const args = this.check(TokenType.Lt) ? this.parseGenericArgs() : undefined;
+        return new NamedTypeNode(this.spanFrom(start), name, args);
+    }
+
+    private parseUnknownType(start: Token): TypeNode {
+        const errTok = this.peek();
+        this.errors.push({
+            message: `Expected type, got '${errTok.value}'`,
+            line: errTok.line,
+            column: errTok.column,
+        });
+        return new NamedTypeNode(this.spanFrom(start), "_");
+    }
+
+    private parseGenericArgs(): GenericArgsNode {
+        const start = this.peek();
+        this.expect(TokenType.Lt);
+        const args: TypeNode[] = [];
+        while (!this.check(TokenType.Gt) && !this.check(TokenType.Eof)) {
+            args.push(this.parseTypeNode());
+            if (!this.eat(TokenType.Comma)) break;
+        }
+        this.expect(TokenType.Gt);
+        return new GenericArgsNode(this.spanFrom(start), args);
+    }
+
+    // -----------------------------------------------------------------------
+    // Patterns
+    // -----------------------------------------------------------------------
+
+    parsePattern(): Pattern {
+        const start = this.peek();
+        const pat = this.parsePatternAtom();
+
+        // Or pattern
+        if (this.check(TokenType.Pipe)) {
+            const alts: Pattern[] = [pat];
+            while (this.eat(TokenType.Pipe)) {
+                alts.push(this.parsePatternAtom());
             }
-            return makeStructPat(path.span, path, [], false);
+            return new OrPattern(this.spanFrom(start), alts);
         }
 
-        if (matchInvalidSymbol(state, "@")) {
-            const inner = parsePattern(state);
-            const span = inner
-                ? mergeSpans(spanFromToken(startToken), inner.span)
-                : spanFromToken(startToken);
-            return makeBindingPat(
-                span,
-                name,
-                inner ?? makeWildcardPat(spanFromToken(startToken)),
-            );
+        return pat;
+    }
+
+    private parsePatternAtom(): Pattern {
+        const start = this.peek();
+        return (
+            this.parseWildcardPattern(start) ??
+            this.parseMutablePattern(start) ??
+            this.parseNumericPattern(start) ??
+            this.parseBooleanPattern(start) ??
+            this.parseStringPattern(start) ??
+            this.parseTuplePatternNode(start) ??
+            this.parseSlicePatternNode(start) ??
+            this.parsePathPattern(start) ??
+            this.parseUnknownPattern()
+        );
+    }
+
+    private parseWildcardPattern(start: Token): Pattern | undefined {
+        if (!this.check(TokenType.Identifier) || this.peek().value !== "_") return undefined;
+        this.advance();
+        return new WildcardPattern(this.spanFrom(start));
+    }
+
+    private parseMutablePattern(start: Token): Pattern | undefined {
+        if (!this.eat(TokenType.Mut)) return undefined;
+        const name = this.expect(TokenType.Identifier).value;
+        if (this.eat(TokenType.At)) {
+            const subPat = this.parsePatternAtom();
+            return new BindingPattern(this.spanFrom(start), name, Mutability.Mutable, subPat);
         }
-        if (check(state, TokenType.OpenCurly)) {
-            const path = makePathExpr(spanFromToken(startToken), [name]);
-            return parseStructPattern(state, path, startToken);
-        }
-        if (check(state, TokenType.OpenParen)) {
-            return parseTuplePattern(state, startToken, name);
-        }
-        return makeIdentPat(
-            spanFromToken(startToken),
+        return new IdentPattern(
+            this.spanFrom(start),
             name,
-            Mutability.Immutable,
-            false,
-            null,
+            Mutability.Mutable,
+            new NamedTypeNode(this.spanFrom(start), "_"),
         );
     }
-    if (token.type === TokenType.OpenParen) {
-        return parseTuplePattern(state, token, null);
-    }
-    if (token.type === TokenType.OpenSquare) {
-        return parseSlicePattern(state);
-    }
-    const literal = parseLiteralPat(state);
-    if (literal) {
-        if (
-            check(state, TokenType.Dot) &&
-            peek(state, 1).type === TokenType.Dot
-        ) {
-            matchDouble(state, TokenType.Dot);
-            const inclusive = matchToken(state, TokenType.Eq) !== null;
-            const end = parseLiteralPat(state);
-            if (!end) {
-                addError(
-                    state,
-                    "Expected end of range pattern",
-                    peek(state),
-                    null,
-                );
-                return literal;
-            }
-            const span = mergeSpans(literal.span, end.span);
-            return makeRangePat(span, literal, end, inclusive);
+
+    private parseNumericPattern(start: Token): Pattern | undefined {
+        const literal = this.tryParseNumericLiteralPattern(start);
+        if (literal === undefined) return undefined;
+        if (this.checkDotDotEq()) {
+            this.eatDotDotEq();
+            return new RangePattern(this.spanFrom(start), literal, this.parseLiteralPatternEnd());
+        }
+        if (this.checkDotDot()) {
+            this.eatDotDot();
+            return new RangePattern(this.spanFrom(start), literal, this.parseLiteralPatternEnd());
         }
         return literal;
     }
-    addError(state, "Expected pattern", token, []);
-    advance(state);
-    return makeWildcardPat(spanFromToken(token));
-}
 
-function parseLiteralPat(state: ParserState): Node | null {
-    const token = peek(state);
-    if (token.type === TokenType.Integer) {
-        advance(state);
-        const value = parseIntegerToken(token);
-        return makeLiteralPat(spanFromToken(token), LiteralKind.Int, value);
-    }
-    if (token.type === TokenType.Float) {
-        advance(state);
-        const value = parseFloatToken(token);
-        return makeLiteralPat(spanFromToken(token), LiteralKind.Float, value);
-    }
-    if (token.type === TokenType.String) {
-        advance(state);
-        if (token.value.startsWith("'")) {
-            const value = parseCharToken(token, state);
-            return makeLiteralPat(
-                spanFromToken(token),
-                LiteralKind.Char,
-                value,
-            );
+    private tryParseNumericLiteralPattern(start: Token): LiteralPattern | undefined {
+        let isNegative = false;
+        const saved = this.pos;
+        if (this.eat(TokenType.Minus)) {
+            isNegative = true;
         }
-        const value = parseStringToken(token);
-        return makeLiteralPat(spanFromToken(token), LiteralKind.String, value);
-    }
-    if (token.type === TokenType.True || token.type === TokenType.False) {
-        advance(state);
-        return makeLiteralPat(
-            spanFromToken(token),
-            LiteralKind.Bool,
-            token.type === TokenType.True,
+        if (!this.check(TokenType.Integer) && !this.check(TokenType.Float)) {
+            this.pos = saved;
+            return undefined;
+        }
+        const tok = this.advance();
+        if (this.check(TokenType.Identifier) && isTypeSuffix(this.peek().value)) {
+            this.advance();
+        }
+        const isFloat = tok.type === TokenType.Float;
+        const rawValue = isFloat ? Number.parseFloat(tok.value) : parseIntValue(tok.value);
+        const value = isNegative ? -rawValue : rawValue;
+        return new LiteralPattern(
+            this.spanFrom(start),
+            isFloat ? LiteralKind.Float : LiteralKind.Int,
+            value,
         );
     }
-    return null;
-}
 
-function parseStructPattern(
-    state: ParserState,
-    path: Node,
-    startToken: Token,
-): Node {
-    const fields = [];
-    let rest = false;
-    expectToken(state, TokenType.OpenCurly, "Expected { in struct pattern");
-    while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
-        if (
-            check(state, TokenType.Dot) &&
-            peek(state, 1).type === TokenType.Dot
+    private parseBooleanPattern(start: Token): Pattern | undefined {
+        if (!this.check(TokenType.True) && !this.check(TokenType.False)) return undefined;
+        const tok = this.advance();
+        return new LiteralPattern(
+            this.spanFrom(start),
+            LiteralKind.Bool,
+            tok.type === TokenType.True,
+        );
+    }
+
+    private parseStringPattern(start: Token): Pattern | undefined {
+        if (!this.check(TokenType.String)) return undefined;
+        const tok = this.advance();
+        return new LiteralPattern(
+            this.spanFrom(start),
+            isCharLiteral(tok.value) ? LiteralKind.Char : LiteralKind.String,
+            processStringValue(tok.value),
+        );
+    }
+
+    private parseTuplePatternNode(start: Token): Pattern | undefined {
+        if (!this.eat(TokenType.OpenParen)) return undefined;
+        if (this.eat(TokenType.CloseParen)) {
+            return new TuplePattern(this.spanFrom(start), []);
+        }
+        const elements: Pattern[] = [];
+        do {
+            elements.push(this.parsePattern());
+        } while (this.eat(TokenType.Comma) && !this.check(TokenType.CloseParen));
+        this.expect(TokenType.CloseParen);
+        return new TuplePattern(this.spanFrom(start), elements);
+    }
+
+    private parseSlicePatternNode(start: Token): Pattern | undefined {
+        if (!this.eat(TokenType.OpenSquare)) return undefined;
+        const elements: Pattern[] = [];
+        let rest: Pattern | undefined;
+        while (!this.check(TokenType.CloseSquare) && !this.check(TokenType.Eof)) {
+            if (this.checkDotDot()) {
+                this.eatDotDot();
+                if (!this.check(TokenType.CloseSquare) && !this.check(TokenType.Comma)) {
+                    rest = this.parsePatternAtom();
+                }
+                this.eat(TokenType.Comma);
+                break;
+            }
+            elements.push(this.parsePatternAtom());
+            if (!this.eat(TokenType.Comma)) break;
+        }
+        this.expect(TokenType.CloseSquare);
+        return new SlicePattern(this.spanFrom(start), elements, rest);
+    }
+
+    private parsePathPattern(start: Token): Pattern | undefined {
+        if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) return undefined;
+        const { lastName, pathExpr } = this.parsePatternPath(start);
+        if (this.eat(TokenType.OpenCurly)) {
+            return this.finishStructPattern(start, pathExpr);
+        }
+        if (this.eat(TokenType.OpenParen)) {
+            return this.finishTupleStructPattern(start, pathExpr);
+        }
+        if (this.eat(TokenType.At)) {
+            return new BindingPattern(
+                this.spanFrom(start),
+                lastName,
+                Mutability.Immutable,
+                this.parsePatternAtom(),
+            );
+        }
+        return new IdentPattern(
+            this.spanFrom(start),
+            lastName,
+            Mutability.Immutable,
+            new NamedTypeNode(this.spanFrom(start), "_"),
+        );
+    }
+
+    private parsePatternPath(start: Token): { lastName: string; pathExpr: Expression } {
+        const firstName = this.advance().value;
+        const segments: string[] = [firstName];
+        while (
+            this.checkColonColon() &&
+            (this.peekAt(2).type === TokenType.Identifier || this.peekAt(2).type === TokenType.Self)
         ) {
-            matchDouble(state, TokenType.Dot);
-            rest = true;
+            this.eatColonColon();
+            segments.push(this.advance().value);
+        }
+        const lastName = segments[segments.length - 1];
+        return {
+            lastName,
+            pathExpr:
+                segments.length > 1
+                    ? new PathExpr(this.spanFrom(start), segments)
+                    : new IdentifierExpr(this.spanFrom(start), lastName),
+        };
+    }
+
+    private finishStructPattern(start: Token, pathExpr: Expression): Pattern {
+        const fields: StructPatternField[] = [];
+        let hasRest = false;
+        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+            if (this.checkDotDot()) {
+                this.eatDotDot();
+                hasRest = true;
+                break;
+            }
+            const fieldName = this.expect(TokenType.Identifier).value;
+            const pattern = this.eat(TokenType.Colon)
+                ? this.parsePattern()
+                : new IdentPattern(
+                    this.spanFrom(start),
+                    fieldName,
+                    Mutability.Immutable,
+                    new NamedTypeNode(this.spanFrom(start), "_"),
+                );
+            fields.push({ name: fieldName, pattern });
+            if (!this.eat(TokenType.Comma)) break;
+        }
+        this.expect(TokenType.CloseCurly);
+        return new StructPattern(this.spanFrom(start), pathExpr, fields, hasRest);
+    }
+
+    private finishTupleStructPattern(start: Token, pathExpr: Expression): Pattern {
+        const elems: Pattern[] = [];
+        while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+            elems.push(this.parsePattern());
+            if (!this.eat(TokenType.Comma)) break;
+        }
+        this.expect(TokenType.CloseParen);
+        const fields: StructPatternField[] = elems.map((pattern, index) => ({
+            name: String(index),
+            pattern,
+        }));
+        return new StructPattern(this.spanFrom(start), pathExpr, fields, false);
+    }
+
+    private parseUnknownPattern(): Pattern {
+        const tok = this.peek();
+        this.errors.push({
+            message: `Expected pattern, got '${tok.value}'`,
+            line: tok.line,
+            column: tok.column,
+        });
+        if (tok.type !== TokenType.Eof && tok.type !== TokenType.CloseCurly) {
+            this.advance();
+        }
+        return new WildcardPattern(this.makeSpan(tok));
+    }
+
+    private parseLiteralPatternEnd(): LiteralPattern {
+        const start = this.peek();
+        const hasMinus = this.eat(TokenType.Minus) !== undefined;
+        if (this.check(TokenType.Integer) || this.check(TokenType.Float)) {
+            const tok = this.advance();
+            if (this.check(TokenType.Identifier) && isTypeSuffix(this.peek().value)) {
+                this.advance();
+            }
+            const isFloat = tok.type === TokenType.Float;
+            const rawVal = isFloat ? Number.parseFloat(tok.value) : parseIntValue(tok.value);
+            const v = hasMinus ? -rawVal : rawVal;
+            return new LiteralPattern(
+                this.spanFrom(start),
+                isFloat ? LiteralKind.Float : LiteralKind.Int,
+                v,
+            );
+        }
+        if (this.check(TokenType.String)) {
+            const tok = this.advance();
+            return new LiteralPattern(
+                this.spanFrom(start),
+                isCharLiteral(tok.value) ? LiteralKind.Char : LiteralKind.String,
+                processStringValue(tok.value),
+            );
+        }
+        return new LiteralPattern(this.spanFrom(start), LiteralKind.Int, ERROR_LITERAL_VALUE);
+    }
+
+    // -----------------------------------------------------------------------
+    // Expressions — Pratt parser
+    // -----------------------------------------------------------------------
+
+    parseExpr(minPrec: number, noStructLiteral = false): Expression {
+        let left = this.parsePrefix(noStructLiteral);
+
+        for (;;) {
+            const nextLeft = this.parsePostfixExpr(left, minPrec);
+            if (nextLeft === undefined) break;
+            left = nextLeft;
+        }
+
+        for (;;) {
+            const prec = this.getInfixPrec();
+            if (prec <= minPrec) break;
+            left = this.parseInfix(left, prec, noStructLiteral);
+        }
+
+        return left;
+    }
+
+    private parsePostfixExpr(left: Expression, minPrec: number): Expression | undefined {
+        if (minPrec >= POSTFIX_PRECEDENCE) return undefined;
+        return (
+            this.parseDotPostfix(left) ??
+            this.parseCallPostfix(left) ??
+            this.parseIndexPostfix(left) ??
+            this.parseTryPostfix(left) ??
+            this.parseTurbofishPostfix(left) ??
+            this.parseCastPostfix(left)
+        );
+    }
+
+    private parseDotPostfix(left: Expression): Expression | undefined {
+        if (!this.check(TokenType.Dot) || this.checkDotDot() || this.checkDotDotEq()) return undefined;
+        this.advance();
+        if (this.check(TokenType.Integer)) {
+            const idxTok = this.advance();
+            return new FieldExpr(this.spanFrom(idxTok), left, idxTok.value);
+        }
+        const fieldTok = this.peek();
+        const field = this.expect(TokenType.Identifier).value;
+        let typeArgs: TypeNode[] | undefined;
+        if (this.checkColonColon() && this.peekAt(2).type === TokenType.Lt) {
+            this.eatColonColon();
+            typeArgs = this.parseGenericArgs().args;
+        }
+        if (!this.eat(TokenType.OpenParen)) {
+            return new FieldExpr(this.spanFrom(fieldTok), left, field);
+        }
+        const args = this.parseArgList();
+        this.expect(TokenType.CloseParen);
+        const fieldExpr = new FieldExpr(this.spanFrom(fieldTok), left, field);
+        return new CallExpr(this.spanFrom(fieldTok), fieldExpr, args, typeArgs);
+    }
+
+    private parseCallPostfix(left: Expression): Expression | undefined {
+        if (!this.check(TokenType.OpenParen)) return undefined;
+        const callStart = this.peek();
+        this.advance();
+        const args = this.parseArgList();
+        this.expect(TokenType.CloseParen);
+        return new CallExpr(this.spanFrom(callStart), left, args);
+    }
+
+    private parseIndexPostfix(left: Expression): Expression | undefined {
+        if (!this.check(TokenType.OpenSquare)) return undefined;
+        const idxStart = this.peek();
+        this.advance();
+        const index = this.parseExpr(0);
+        this.expect(TokenType.CloseSquare);
+        return new IndexExpr(this.spanFrom(idxStart), left, index);
+    }
+
+    private parseTryPostfix(left: Expression): Expression | undefined {
+        if (!this.check(TokenType.Question)) return undefined;
+        this.advance();
+        return left;
+    }
+
+    private parseTurbofishPostfix(left: Expression): Expression | undefined {
+        if (!this.checkColonColon() || this.peekAt(2).type !== TokenType.Lt) return undefined;
+        this.eatColonColon();
+        const ga = this.parseGenericArgs();
+        if (!this.eat(TokenType.OpenParen)) return left;
+        const args = this.parseArgList();
+        this.expect(TokenType.CloseParen);
+        return new CallExpr(ga.span, left, args, ga.args);
+    }
+
+    private parseCastPostfix(left: Expression): Expression | undefined {
+        if (!this.check(TokenType.Identifier) || this.peek().value !== "as") return undefined;
+        this.advance();
+        this.parseTypeNode();
+        return left;
+    }
+
+    private getInfixPrec(): number {
+        const tok = this.peek().type;
+        if (tok === TokenType.Dot) {
+            return this.checkDotDot() || this.checkDotDotEq() ? RANGE_PRECEDENCE : 0;
+        }
+        if (tok === TokenType.Lt) {
+            return this.peekAt(1).type === TokenType.Lt ? ADDITIVE_PRECEDENCE : COMPARISON_PRECEDENCE;
+        }
+        if (tok === TokenType.Gt) {
+            return this.peekAt(1).type === TokenType.Gt ? ADDITIVE_PRECEDENCE : COMPARISON_PRECEDENCE;
+        }
+        return INFIX_PRECEDENCE.get(tok) ?? 0;
+    }
+
+    private parseInfix(left: Expression, prec: number, noStructLiteral: boolean): Expression {
+        const start = this.peek();
+        return (
+            this.parseRangeInfix(start, left, noStructLiteral) ??
+            this.parseAssignmentInfix(start, left, prec, noStructLiteral) ??
+            this.parseShiftInfix(start, left, prec, noStructLiteral) ??
+            this.parseBinaryInfix(start, left, prec, noStructLiteral) ??
+            this.parseInvalidInfix(start, left)
+        );
+    }
+
+    private parseRangeInfix(
+        start: Token,
+        left: Expression,
+        noStructLiteral: boolean,
+    ): Expression | undefined {
+        if (this.checkDotDotEq()) {
+            this.eatDotDotEq();
+            return this.finishRangeInfix(start, left, noStructLiteral, true);
+        }
+        if (!this.checkDotDot()) return undefined;
+        this.eatDotDot();
+        return this.finishRangeInfix(start, left, noStructLiteral, false);
+    }
+
+    private finishRangeInfix(
+        start: Token,
+        left: Expression,
+        noStructLiteral: boolean,
+        inclusive: boolean,
+    ): Expression {
+        if (this.canStartExpression()) {
+            const right = this.parseExpr(RANGE_PRECEDENCE, noStructLiteral);
+            return new RangeExpr(this.spanFrom(start), left, right, inclusive);
+        }
+        return new RangeExpr(this.spanFrom(start), left, undefined, inclusive);
+    }
+
+    private parseAssignmentInfix(
+        start: Token,
+        left: Expression,
+        prec: number,
+        noStructLiteral: boolean,
+    ): Expression | undefined {
+        if (this.check(TokenType.Eq)) {
+            this.advance();
+            return new AssignExpr(
+                this.spanFrom(start),
+                left,
+                this.parseExpr(prec - 1, noStructLiteral),
+            );
+        }
+        const compoundOp = COMPOUND_ASSIGNMENT_OPERATORS[this.peek().type];
+        if (compoundOp === undefined) return undefined;
+        this.advance();
+        const right = this.parseExpr(prec - 1, noStructLiteral);
+        return new AssignExpr(
+            this.spanFrom(start),
+            left,
+            new BinaryExpr(this.spanFrom(start), compoundOp, left, right),
+        );
+    }
+
+    private parseShiftInfix(
+        start: Token,
+        left: Expression,
+        prec: number,
+        noStructLiteral: boolean,
+    ): Expression | undefined {
+        if (this.check(TokenType.Lt) && this.peekAt(1).type === TokenType.Lt) {
+            this.advance();
+            this.advance();
+            return new BinaryExpr(
+                this.spanFrom(start),
+                BinaryOp.Shl,
+                left,
+                this.parseExpr(prec, noStructLiteral),
+            );
+        }
+        if (!this.check(TokenType.Gt) || this.peekAt(1).type !== TokenType.Gt) return undefined;
+        this.advance();
+        this.advance();
+        return new BinaryExpr(
+            this.spanFrom(start),
+            BinaryOp.Shr,
+            left,
+            this.parseExpr(prec, noStructLiteral),
+        );
+    }
+
+    private parseBinaryInfix(
+        start: Token,
+        left: Expression,
+        prec: number,
+        noStructLiteral: boolean,
+    ): Expression | undefined {
+        const op = BINARY_OPERATORS[this.peek().type];
+        if (op === undefined) return undefined;
+        this.advance();
+        return new BinaryExpr(this.spanFrom(start), op, left, this.parseExpr(prec, noStructLiteral));
+    }
+
+    private parseInvalidInfix(start: Token, left: Expression): Expression {
+        this.errors.push({
+            message: `Unexpected infix token '${start.value}'`,
+            line: start.line,
+            column: start.column,
+        });
+        this.advance();
+        return left;
+    }
+
+    private parsePrefix(noStructLiteral: boolean): Expression {
+        const start = this.peek();
+        return (
+            this.parseLiteralPrefix(start) ??
+            this.parseRangePrefix(start, noStructLiteral) ??
+            this.parseControlFlowPrefix(start, noStructLiteral) ??
+            this.parseUnaryPrefix(start, noStructLiteral) ??
+            this.parseGroupingPrefix(start) ??
+            this.parseArrayPrefix(start) ??
+            this.parseClosurePrefix(start) ??
+            this.parsePathPrefix(start, noStructLiteral) ??
+            this.parseInvalidPrefix(start)
+        );
+    }
+
+    private parseIdentifierExpr(startTok: Token, noStructLiteral: boolean): Expression {
+        const { baseExpr, lastName } = this.parsePathExpression(startTok);
+        const macroExpr = this.parseMacroExpr(startTok, lastName);
+        if (macroExpr !== undefined) return macroExpr;
+        if (!noStructLiteral && this.check(TokenType.OpenCurly)) {
+            return this.parseStructExpr(startTok, baseExpr);
+        }
+        return baseExpr;
+    }
+
+    private parseLiteralPrefix(start: Token): Expression | undefined {
+        if (this.check(TokenType.Integer)) {
+            const tok = this.advance();
+            if (this.check(TokenType.Identifier) && isTypeSuffix(this.peek().value)) {
+                this.advance();
+            }
+            return new LiteralExpr(this.spanFrom(start), LiteralKind.Int, parseIntValue(tok.value));
+        }
+        if (this.check(TokenType.Float)) {
+            const tok = this.advance();
+            if (this.check(TokenType.Identifier) && isTypeSuffix(this.peek().value)) {
+                this.advance();
+            }
+            return new LiteralExpr(this.spanFrom(start), LiteralKind.Float, Number.parseFloat(tok.value));
+        }
+        if (this.check(TokenType.True) || this.check(TokenType.False)) {
+            const tok = this.advance();
+            return new LiteralExpr(this.spanFrom(start), LiteralKind.Bool, tok.type === TokenType.True);
+        }
+        if (!this.check(TokenType.String)) return undefined;
+        const tok = this.advance();
+        return new LiteralExpr(
+            this.spanFrom(start),
+            isCharLiteral(tok.value) ? LiteralKind.Char : LiteralKind.String,
+            processStringValue(tok.value),
+        );
+    }
+
+    private parseRangePrefix(start: Token, noStructLiteral: boolean): Expression | undefined {
+        if (this.checkDotDotEq()) {
+            this.eatDotDotEq();
+            return this.finishPrefixRange(start, noStructLiteral, true);
+        }
+        if (!this.checkDotDot()) return undefined;
+        this.eatDotDot();
+        return this.finishPrefixRange(start, noStructLiteral, false);
+    }
+
+    private finishPrefixRange(start: Token, noStructLiteral: boolean, inclusive: boolean): Expression {
+        if (this.canStartExpression()) {
+            const end = this.parseExpr(RANGE_PRECEDENCE, noStructLiteral);
+            return new RangeExpr(this.spanFrom(start), undefined, end, inclusive);
+        }
+        return new RangeExpr(this.spanFrom(start), undefined, undefined, inclusive);
+    }
+
+    private parseControlFlowPrefix(start: Token, noStructLiteral: boolean): Expression | undefined {
+        if (this.check(TokenType.OpenCurly)) return this.parseBlock();
+        if (this.eat(TokenType.If)) return this.parseIfExpr(start);
+        if (this.eat(TokenType.Match)) return this.parseMatchExpr(start);
+        if (this.eat(TokenType.Return)) {
+            const value = this.canStartExpression() ? this.parseExpr(0, noStructLiteral) : undefined;
+            return new ReturnExpr(this.spanFrom(start), value);
+        }
+        if (this.eat(TokenType.Break)) {
+            if (this.check(TokenType.Lifetime)) this.advance();
+            const value = this.canStartExpression() ? this.parseExpr(0, noStructLiteral) : undefined;
+            return new BreakExpr(this.spanFrom(start), value);
+        }
+        if (this.eat(TokenType.Continue)) {
+            if (this.check(TokenType.Lifetime)) this.advance();
+            return new ContinueExpr(this.spanFrom(start));
+        }
+        if (this.eat(TokenType.Loop)) {
+            return new LoopExpr(this.spanFrom(start), this.parseBlock());
+        }
+        if (this.eat(TokenType.While)) {
+            return new WhileExpr(this.spanFrom(start), this.parseExpr(0, true), this.parseBlock());
+        }
+        if (!this.eat(TokenType.For)) return undefined;
+        const pat = this.parsePattern();
+        this.consumeForInToken();
+        return new ForExpr(this.spanFrom(start), pat, this.parseExpr(0, true), this.parseBlock());
+    }
+
+    private consumeForInToken(): void {
+        if (this.check(TokenType.In)) {
+            this.advance();
+            return;
+        }
+        if (this.check(TokenType.Identifier) && this.peek().value === "in") {
+            this.advance();
+            return;
+        }
+        this.expect(TokenType.In);
+    }
+
+    private parseUnaryPrefix(start: Token, noStructLiteral: boolean): Expression | undefined {
+        if (this.eat(TokenType.And)) {
+            if (this.check(TokenType.Lifetime)) this.advance();
+            const mut = this.eat(TokenType.Mut) !== undefined;
+            const inner = this.parseExpr(POSTFIX_PRECEDENCE, noStructLiteral);
+            return new RefExpr(
+                this.spanFrom(start),
+                mut ? Mutability.Mutable : Mutability.Immutable,
+                inner,
+            );
+        }
+        if (this.eat(TokenType.Star)) {
+            return new DerefExpr(
+                this.spanFrom(start),
+                this.parseExpr(POSTFIX_PRECEDENCE, noStructLiteral),
+            );
+        }
+        if (this.eat(TokenType.Minus)) {
+            return new UnaryExpr(
+                this.spanFrom(start),
+                UnaryOp.Neg,
+                this.parseExpr(POSTFIX_PRECEDENCE, noStructLiteral),
+            );
+        }
+        if (!this.eat(TokenType.Bang)) return undefined;
+        return new UnaryExpr(
+            this.spanFrom(start),
+            UnaryOp.Not,
+            this.parseExpr(POSTFIX_PRECEDENCE, noStructLiteral),
+        );
+    }
+
+    private parseGroupingPrefix(start: Token): Expression | undefined {
+        if (!this.eat(TokenType.OpenParen)) return undefined;
+        if (this.eat(TokenType.CloseParen)) {
+            return new LiteralExpr(this.spanFrom(start), LiteralKind.Int, UNIT_LITERAL_VALUE);
+        }
+        const first = this.parseExpr(0);
+        if (this.eat(TokenType.CloseParen)) return first;
+        this.expect(TokenType.Comma);
+        const elems: Expression[] = [first];
+        while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+            elems.push(this.parseExpr(0));
+            if (!this.eat(TokenType.Comma)) break;
+        }
+        this.expect(TokenType.CloseParen);
+        return new MacroExpr(this.spanFrom(start), "tuple", elems);
+    }
+
+    private parseArrayPrefix(start: Token): Expression | undefined {
+        if (!this.eat(TokenType.OpenSquare)) return undefined;
+        const elems: Expression[] = [];
+        while (!this.check(TokenType.CloseSquare) && !this.check(TokenType.Eof)) {
+            elems.push(this.parseExpr(0));
+            if (!this.eat(TokenType.Comma)) break;
+        }
+        this.expect(TokenType.CloseSquare);
+        return new MacroExpr(this.spanFrom(start), "vec", elems);
+    }
+
+    private parseClosurePrefix(start: Token): Expression | undefined {
+        if (!this.check(TokenType.Pipe) && !this.check(TokenType.PipePipe)) return undefined;
+        return this.parseClosureExpr(start);
+    }
+
+    private parsePathPrefix(start: Token, noStructLiteral: boolean): Expression | undefined {
+        if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) return undefined;
+        return this.parseIdentifierExpr(start, noStructLiteral);
+    }
+
+    private parseInvalidPrefix(start: Token): Expression {
+        const tok = this.peek();
+        this.errors.push({
+            message: `Unexpected token '${tok.value}' in expression`,
+            line: tok.line,
+            column: tok.column,
+        });
+        if (tok.type !== TokenType.Eof) this.advance();
+        return new LiteralExpr(this.spanFrom(start), LiteralKind.Int, ERROR_LITERAL_VALUE);
+    }
+
+    private parsePathExpression(startTok: Token): { baseExpr: Expression; lastName: string } {
+        const firstName = this.advance().value;
+        const segments: string[] = [firstName];
+        while (this.checkColonColon()) {
+            const next2Type = this.peekAt(2).type;
+            if (next2Type !== TokenType.Identifier && next2Type !== TokenType.Self) break;
+            this.eatColonColon();
+            segments.push(this.advance().value);
+        }
+        const lastName = segments[segments.length - 1];
+        return {
+            baseExpr:
+                segments.length > 1
+                    ? new PathExpr(this.spanFrom(startTok), segments)
+                    : new IdentifierExpr(this.spanFrom(startTok), lastName),
+            lastName,
+        };
+    }
+
+    private parseMacroExpr(startTok: Token, macroName: string): Expression | undefined {
+        if (!this.check(TokenType.Bang) || this.peekAt(1).type === TokenType.Eq) return undefined;
+        this.advance();
+        const args = this.parseDelimitedMacroArgs();
+        return new MacroExpr(this.spanFrom(startTok), macroName, args);
+    }
+
+    private parseDelimitedMacroArgs(): Expression[] {
+        if (this.eat(TokenType.OpenParen)) {
+            return this.parseMacroArgsUntil(TokenType.CloseParen, false);
+        }
+        if (this.eat(TokenType.OpenSquare)) {
+            return this.parseMacroArgsUntil(TokenType.CloseSquare, false);
+        }
+        if (this.eat(TokenType.OpenCurly)) {
+            return this.parseMacroArgsUntil(TokenType.CloseCurly, true);
+        }
+        return [];
+    }
+
+    private parseMacroArgsUntil(closeToken: TokenType, allowSemicolon: boolean): Expression[] {
+        const args: Expression[] = [];
+        while (!this.check(closeToken) && !this.check(TokenType.Eof)) {
+            args.push(this.parseExpr(0));
+            if (this.eat(TokenType.Comma)) continue;
+            if (allowSemicolon && this.eat(TokenType.Semicolon)) continue;
             break;
         }
-        const fieldNameToken =
-            expectToken(state, TokenType.Identifier, "Expected field name") ??
-            peek(state);
-        /** @type {Node | null} */
-        let pat: Node | null = null;
-        if (matchToken(state, TokenType.Colon)) {
-            pat = parsePattern(state);
-        } else {
-            pat = makeIdentPat(
-                spanFromToken(fieldNameToken),
-                fieldNameToken.value ?? "",
-                Mutability.Immutable,
-                false,
-                null,
-            );
-        }
-        fields.push({ name: fieldNameToken.value ?? "", pat });
-        if (!matchToken(state, TokenType.Comma)) break;
+        this.expect(closeToken);
+        return args;
     }
-    const endToken =
-        expectToken(
-            state,
-            TokenType.CloseCurly,
-            "Expected } after struct pattern",
-        ) ?? peek(state);
-    const span = mergeSpans(spanFromToken(startToken), spanFromToken(endToken));
-    return makeStructPat(span, path, fields, rest);
-}
 
-function parseEnumTupleVariantPattern(
-    state: ParserState,
-    path: Node,
-    startToken: Token,
-): Node {
-    const elements = [];
-    expectToken(
-        state,
-        TokenType.OpenParen,
-        "Expected ( in enum variant pattern",
-    );
-    if (!check(state, TokenType.CloseParen)) {
-        while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
-            const pat = parsePattern(state);
-            if (pat) elements.push(pat);
-            if (!matchToken(state, TokenType.Comma)) break;
-        }
-    }
-    const endToken =
-        expectToken(
-            state,
-            TokenType.CloseParen,
-            "Expected ) in enum variant pattern",
-        ) ?? peek(state);
-    const fields = elements.map((pat, i) => ({ name: String(i), pat }));
-    const span = mergeSpans(spanFromToken(startToken), spanFromToken(endToken));
-    return makeStructPat(span, path, fields, false);
-}
+    private parseStructExpr(startTok: Token, path: Expression): StructExpr {
+        this.expect(TokenType.OpenCurly);
+        const fields = new Map<string, Expression>();
 
-function parseTuplePattern(
-    state: ParserState,
-    startToken: Token,
-    name: string | null,
-): Node {
-    const elements = [];
-    expectToken(state, TokenType.OpenParen, "Expected ( in tuple pattern");
-    let hasComma = false;
-    if (!check(state, TokenType.CloseParen)) {
-        while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
-            const pat = parsePattern(state);
-            if (pat) elements.push(pat);
-            if (matchToken(state, TokenType.Comma)) {
-                hasComma = true;
+        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+            // Rest: ..expr
+            if (this.checkDotDot()) {
+                this.eatDotDot();
+                this.parseExpr(0); // Spread; ignored for now.
+                break;
+            }
+
+            const fieldName = this.expect(TokenType.Identifier).value;
+            if (this.eat(TokenType.Colon)) {
+                fields.set(fieldName, this.parseExpr(0));
             } else {
-                break;
+                // Shorthand: field name = variable with same name
+                fields.set(fieldName, new IdentifierExpr(this.spanFrom(startTok), fieldName));
             }
+            if (!this.eat(TokenType.Comma)) break;
         }
-    }
-    const endToken =
-        expectToken(
-            state,
-            TokenType.CloseParen,
-            "Expected ) in tuple pattern",
-        ) ?? peek(state);
-    if (!hasComma && elements.length === 1 && name) {
-        return makeIdentPat(
-            spanFromToken(startToken),
-            name,
-            Mutability.Immutable,
-            false,
-            null,
-        );
-    }
-    const span = mergeSpans(spanFromToken(startToken), spanFromToken(endToken));
-    return makeTuplePat(span, elements);
-}
 
-function parseSlicePattern(state: ParserState): Node {
-    const startToken =
-        expectToken(
-            state,
-            TokenType.OpenSquare,
-            "Expected [ in slice pattern",
-        ) ?? peek(state);
-    const elements = [];
-    /** @type {Node | null} */
-    let rest: Node | null = null;
-    if (!check(state, TokenType.CloseSquare)) {
-        while (!check(state, TokenType.CloseSquare) && !isAtEnd(state)) {
-            if (
-                check(state, TokenType.Dot) &&
-                peek(state, 1).type === TokenType.Dot
-            ) {
-                matchDouble(state, TokenType.Dot);
-                rest = makeWildcardPat(spanFromToken(previous(state)));
-                break;
-            }
-            const pat = parsePattern(state);
-            if (pat) elements.push(pat);
-            if (!matchToken(state, TokenType.Comma)) break;
-        }
+        this.expect(TokenType.CloseCurly);
+        return new StructExpr(this.spanFrom(startTok), path, fields);
     }
-    const endToken =
-        expectToken(
-            state,
-            TokenType.CloseSquare,
-            "Expected ] in slice pattern",
-        ) ?? peek(state);
-    const span = mergeSpans(spanFromToken(startToken), spanFromToken(endToken));
-    return makeSlicePat(span, elements, rest);
-}
 
-function parseType(state: ParserState): Node {
-    const token = peek(state);
-    if (token.type === TokenType.And) {
-        const start = advance(state);
-        let ignoredLifetimeName = null;
-        if (check(state, TokenType.Lifetime)) {
-            ignoredLifetimeName = advance(state).value ?? null;
-        }
-        let mutability = Mutability.Immutable;
-        if (
-            check(state, TokenType.Mut) ||
-            isIdentifierValue(peek(state), "mut")
-        ) {
-            advance(state);
-            mutability = Mutability.Mutable;
-        }
-        const inner = parseType(state);
-        const span = inner
-            ? mergeSpans(spanFromToken(start), inner.span)
-            : spanFromToken(start);
-        return makeRefType(
-            span,
-            mutability,
-            inner ?? makeNamedType(span, "__unresolved_type", null),
-            ignoredLifetimeName,
-        );
-    }
-    if (token.type === TokenType.Star) {
-        const start = advance(state);
-        let mutability = Mutability.Immutable;
-        if (matchToken(state, TokenType.Const)) {
-            mutability = Mutability.Immutable;
-        } else if (
-            check(state, TokenType.Mut) ||
-            isIdentifierValue(peek(state), "mut")
-        ) {
-            advance(state);
-            mutability = Mutability.Mutable;
-        }
-        const inner = parseType(state);
-        const span = inner
-            ? mergeSpans(spanFromToken(start), inner.span)
-            : spanFromToken(start);
-        return makePtrType(
-            span,
-            mutability,
-            inner ?? makeNamedType(span, "__unresolved_type", null),
-        );
-    }
-    if (
-        token.type === TokenType.Fn ||
-        token.type === TokenType.Unsafe ||
-        token.type === TokenType.Const
-    ) {
-        let isUnsafe = false;
-        if (matchToken(state, TokenType.Unsafe)) {
-            isUnsafe = true;
-        }
-        let isConst = false;
-        if (matchToken(state, TokenType.Const)) {
-            isConst = true;
-        }
-        const start =
-            expectToken(state, TokenType.Fn, "Expected fn type") ?? token;
-        const params = [];
-        expectToken(state, TokenType.OpenParen, "Expected ( in fn type");
-        if (!check(state, TokenType.CloseParen)) {
-            while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
-                if (
-                    isIdentifierToken(peek(state)) &&
-                    peek(state, 1).type === TokenType.Colon &&
-                    peek(state, 2).type !== TokenType.Colon
-                ) {
-                    advance(state);
-                    advance(state);
-                }
-                const paramType = parseType(state);
-                if (paramType) params.push(paramType);
-                if (!matchToken(state, TokenType.Comma)) break;
-            }
-        }
-        expectToken(state, TokenType.CloseParen, "Expected ) in fn type");
-        let returnType = null;
-        if (matchArrow(state)) {
-            returnType = parseType(state);
-        }
-        const endSpan = returnType ? returnType.span : spanFromToken(start);
-        const span = mergeSpans(spanFromToken(start), endSpan);
-        return makeFnType(span, params, returnType, isUnsafe, isConst);
-    }
-    if (token.type === TokenType.OpenParen) {
-        const start = advance(state);
-        const elements = [];
-        let hasComma = false;
-        if (!check(state, TokenType.CloseParen)) {
-            while (!check(state, TokenType.CloseParen) && !isAtEnd(state)) {
-                const element = parseType(state);
-                if (element) elements.push(element);
-                if (matchToken(state, TokenType.Comma)) {
-                    hasComma = true;
+    private parseClosureExpr(startTok: Token): ClosureExpr {
+        const params: ParamNode[] = [];
+
+        if (this.eat(TokenType.PipePipe)) {
+            // || — no params
+        } else {
+            this.expect(TokenType.Pipe);
+            while (!this.check(TokenType.Pipe) && !this.check(TokenType.Eof)) {
+                const paramStart = this.peek();
+                this.eat(TokenType.Mut); // Consume optional mut
+
+                if (this.check(TokenType.Pipe)) break;
+
+                let name: string;
+                if (this.check(TokenType.Identifier) || this.check(TokenType.Self)) {
+                    name = this.advance().value;
+                } else if (this.check(TokenType.And)) {
+                    // &self or &mut self in closure
+                    this.advance();
+                    this.eat(TokenType.Mut);
+                    if (this.check(TokenType.Self)) {
+                        this.advance();
+                    }
+                    this.eat(TokenType.Comma);
+                    continue;
                 } else {
                     break;
                 }
+
+                let ty: TypeNode | undefined;
+                if (this.eat(TokenType.Colon)) {
+                    ty = this.parseTypeNode();
+                }
+
+                params.push({
+                    span: this.spanFrom(paramStart),
+                    name,
+                    ty: ty ?? new NamedTypeNode(this.spanFrom(paramStart), "_"),
+                    isReceiver: false,
+                });
+
+                if (!this.eat(TokenType.Comma)) break;
+            }
+            this.expect(TokenType.Pipe);
+        }
+
+        let returnType: TypeNode = new TupleTypeNode(this.spanFrom(startTok), []);
+        if (this.eatThinArrow()) {
+            returnType = this.parseTypeNode();
+        }
+
+        const body = this.parseExpr(0);
+        return new ClosureExpr(this.spanFrom(startTok), params, returnType, body);
+    }
+
+    private parseIfExpr(startTok: Token): IfExpr {
+        // Handle `if let pat = expr`
+        if (this.eat(TokenType.Let)) {
+            const _pat = this.parsePattern();
+            this.expect(TokenType.Eq);
+            const _val = this.parseExpr(0, true);
+            // Represent as a synthetic true condition (if-let not lowered)
+            const cond = new LiteralExpr(this.spanFrom(startTok), LiteralKind.Bool, true);
+            const thenBranch = this.parseBlock();
+            const elseBranch = this.parseElseBranch();
+            return new IfExpr(this.spanFrom(startTok), cond, thenBranch, elseBranch);
+        }
+
+        const cond = this.parseExpr(0, true);
+        const thenBranch = this.parseBlock();
+        const elseBranch = this.parseElseBranch();
+        return new IfExpr(this.spanFrom(startTok), cond, thenBranch, elseBranch);
+    }
+
+    private parseElseBranch(): Expression | undefined {
+        if (!this.eat(TokenType.Else)) return undefined;
+        return this.eat(TokenType.If)
+            ? this.parseIfExpr(this.tokens[this.pos - 1])
+            : this.parseBlock();
+    }
+
+    private parseMatchExpr(startTok: Token): MatchExpr {
+        const scrutinee = this.parseExpr(0, true);
+        this.expect(TokenType.OpenCurly);
+        const arms: MatchArmNode[] = [];
+
+        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+            const armStart = this.peek();
+
+            // Leading | in pattern
+            this.eat(TokenType.Pipe);
+
+            const pat = this.parsePattern();
+            let guard: Expression | undefined;
+            if (this.eat(TokenType.If)) {
+                guard = this.parseExpr(0, true);
+            }
+            this.expect(TokenType.FatArrow);
+            const body = this.parseExpr(0);
+
+            arms.push(new MatchArmNode(this.spanFrom(armStart), pat, body, guard));
+
+            // Trailing comma: required unless body is a block
+            if (!this.eat(TokenType.Comma)) {
+                // If the body wasn't a block, we still need to stop
+                if (!(body instanceof BlockExpr)) break;
             }
         }
-        const endToken =
-            expectToken(
-                state,
-                TokenType.CloseParen,
-                "Expected ) in tuple type",
-            ) ?? start;
-        // Empty parens () is unit type
-        if (elements.length === 0) {
-            return makeNamedType(
-                mergeSpans(spanFromToken(start), spanFromToken(endToken)),
-                "()",
-                null,
-            );
-        }
-        if (!hasComma && elements.length === 1) {
-            return elements[0];
-        }
-        const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
-        return makeTupleType(span, elements);
+
+        this.expect(TokenType.CloseCurly);
+        return new MatchExpr(this.spanFrom(startTok), scrutinee, arms);
     }
-    if (token.type === TokenType.OpenSquare) {
-        const start = advance(state);
-        const element = parseType(state);
-        let length = null;
-        if (matchToken(state, TokenType.Semicolon)) {
-            length = parseExpr(state, 0);
+
+    private parseArgList(): Expression[] {
+        const args: Expression[] = [];
+        while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+            args.push(this.parseExpr(0));
+            if (!this.eat(TokenType.Comma)) break;
         }
-        const endToken =
-            expectToken(
-                state,
-                TokenType.CloseSquare,
-                "Expected ] in array type",
-            ) ?? start;
-        const span = element
-            ? mergeSpans(spanFromToken(start), spanFromToken(endToken))
-            : spanFromToken(start);
-        return makeArrayType(
-            span,
-            element ?? makeNamedType(span, "__unresolved_type", null),
-            length,
-        );
+        return args;
     }
-    if (isIdentifierToken(token)) {
-        const pathType = parsePathTypeNode(state);
-        if (pathType) {
-            return pathType;
-        }
-    }
-    addError(state, "Expected type", token, []);
-    advance(state);
-    return makeNamedType(spanFromToken(token), "__unresolved_type", null);
 }
-
-function parseIfExpr(state: ParserState): Node {
-    const start =
-        expectToken(state, TokenType.If, "Expected if") ?? peek(state);
-    const condition = parseExpr(state, 0);
-    const thenBranch = parseBlockExpr(state);
-    /** @type {Node | null} */
-    let elseBranch: Node | null = null;
-    if (matchToken(state, TokenType.Else)) {
-        if (check(state, TokenType.If)) {
-            elseBranch = parseIfExpr(state);
-        } else {
-            elseBranch = parseBlockExpr(state);
-        }
-    }
-    const endSpan = elseBranch ? elseBranch.span : thenBranch.span;
-    const span = mergeSpans(spanFromToken(start), endSpan);
-    return makeIfExpr(
-        span,
-        condition ??
-            makeLiteralExpr(
-                spanFromToken(start),
-                LiteralKind.Bool,
-                false,
-                "false",
-            ),
-        thenBranch,
-        elseBranch,
-    );
-}
-
-function parseMatchExpr(state: ParserState): Node {
-    const start =
-        expectToken(state, TokenType.Match, "Expected match") ?? peek(state);
-    const scrutinee = parseExpr(state, 0, false);
-    expectToken(state, TokenType.OpenCurly, "Expected { after match");
-    const arms = [];
-    while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
-        const pat = parsePattern(state);
-        /** @type {Node | null} */
-        let guard: Node | null = null;
-        if (matchToken(state, TokenType.If)) {
-            guard = parseExpr(state, 0);
-        }
-        if (!matchFatArrow(state)) {
-            addError(state, "Expected => in match arm", peek(state), []);
-        }
-        const body = check(state, TokenType.OpenCurly)
-            ? parseBlockExpr(state)
-            : parseExpr(state, 0);
-        const span = body ? mergeSpans(pat.span, body.span) : pat.span;
-        arms.push(
-            makeMatchArm(
-                span,
-                pat,
-                guard,
-                body ?? makeLiteralExpr(pat.span, LiteralKind.Int, 0, "0"),
-            ),
-        );
-        matchToken(state, TokenType.Comma);
-    }
-    const endToken =
-        expectToken(state, TokenType.CloseCurly, "Expected } after match") ??
-        peek(state);
-    const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
-    return makeMatchExpr(
-        span,
-        scrutinee ??
-            makeLiteralExpr(spanFromToken(start), LiteralKind.Int, 0, "0"),
-        arms,
-    );
-}
-
-function parseBlockExpr(state: ParserState): Node {
-    const start =
-        expectToken(state, TokenType.OpenCurly, "Expected {") ?? peek(state);
-    const stmts = [];
-    /** @type {Node | null} */
-    let expr: Node | null = null;
-    while (!check(state, TokenType.CloseCurly) && !isAtEnd(state)) {
-        if (check(state, TokenType.Let)) {
-            stmts.push(parseLetStmt(state));
-            continue;
-        }
-        if (
-            (peek(state).type === TokenType.Invalid &&
-                peek(state).value === "#") ||
-            check(state, TokenType.Pub) ||
-            check(state, TokenType.Fn) ||
-            check(state, TokenType.Struct) ||
-            check(state, TokenType.Enum) ||
-            check(state, TokenType.Trait) ||
-            check(state, TokenType.Mod) ||
-            check(state, TokenType.Use) ||
-            check(state, TokenType.Impl) ||
-            check(state, TokenType.Unsafe)
-        ) {
-            const beforePos = state.pos;
-            const beforeErrors = state.errors.length;
-            const item = parseItem(state);
-            if (item) {
-                stmts.push(makeItemStmt(item.span, item));
-            } else if (
-                state.pos === beforePos ||
-                state.errors.length > beforeErrors
-            ) {
-                skipToRecovery(state, [
-                    TokenType.CloseCurly,
-                    TokenType.Fn,
-                    TokenType.Struct,
-                    TokenType.Enum,
-                    TokenType.Trait,
-                    TokenType.Mod,
-                    TokenType.Use,
-                    TokenType.Impl,
-                ]);
-            }
-            continue;
-        }
-        const expression = parseExpr(state, 0);
-        if (expression && matchToken(state, TokenType.Semicolon)) {
-            stmts.push(makeExprStmt(expression.span, expression, true));
-            continue;
-        }
-        expr = expression;
-        break;
-    }
-    const endToken =
-        expectToken(state, TokenType.CloseCurly, "Expected }") ?? peek(state);
-    const span = mergeSpans(spanFromToken(start), spanFromToken(endToken));
-    return makeBlockExpr(span, stmts, expr);
-}
-
-function parseLoopExpr(state: ParserState): Node {
-    const start =
-        expectToken(state, TokenType.Loop, "Expected loop") ?? peek(state);
-    const body = parseBlockExpr(state);
-    const span = mergeSpans(spanFromToken(start), body.span);
-    return makeLoopExpr(span, null, body);
-}
-
-function parseWhileExpr(state: ParserState): Node {
-    const start =
-        expectToken(state, TokenType.While, "Expected while") ?? peek(state);
-    const condition = parseExpr(state, 0);
-    const body = parseBlockExpr(state);
-    const span = mergeSpans(spanFromToken(start), body.span);
-    return makeWhileExpr(
-        span,
-        null,
-        condition ??
-            makeLiteralExpr(
-                spanFromToken(start),
-                LiteralKind.Bool,
-                false,
-                "false",
-            ),
-        body,
-    );
-}
-
-function parseForExpr(state: ParserState): Node {
-    const start =
-        expectToken(state, TokenType.For, "Expected for") ?? peek(state);
-    const pat = parsePattern(state);
-    if (!isIdentifierValue(peek(state), "in")) {
-        addError(state, "Expected in", peek(state), ["in"]);
-    } else {
-        advance(state);
-    }
-    const iter = parseExpr(state, 0);
-    const body = parseBlockExpr(state);
-    const span = mergeSpans(spanFromToken(start), body.span);
-    return makeForExpr(
-        span,
-        null,
-        pat,
-        iter ?? makeLiteralExpr(spanFromToken(start), LiteralKind.Int, 0, "0"),
-        body,
-    );
-}
-
-function parseModuleFromState(state: ParserState): Node {
-    const items = [];
-    while (!isAtEnd(state)) {
-        if (check(state, TokenType.Eof)) break;
-        const item = parseItem(state);
-        if (item) {
-            items.push(item);
-        } else {
-            skipToRecovery(state, [
-                TokenType.Fn,
-                TokenType.Struct,
-                TokenType.Enum,
-                TokenType.Trait,
-                TokenType.Mod,
-                TokenType.Use,
-                TokenType.Impl,
-                TokenType.Invalid,
-                TokenType.Eof,
-            ]);
-            if (check(state, TokenType.Eof)) break;
-        }
-    }
-    const span =
-        items.length > 0 ? items[items.length - 1].span : currentSpan(state);
-    return makeModule(span, "root", items);
-}
-
-function buildResult(state: ParserState, value: Node | null): ParseResult {
-    if (state.errors.length > 0) {
-        return err(state.errors);
-    }
-    if (value === null) {
-        return err([
-            {
-                message: "Parser produced no node",
-                span: currentSpan(state),
-                expected: [],
-                found: "",
-            },
-        ]);
-    }
-    return ok(value);
-}
-
-function parseModule(source: string): ParseResult {
-    const tokens = tokenize(source);
-    const state = createState(tokens);
-    const module = parseModuleFromState(state);
-    return buildResult(state, module);
-}
-
-function parseExpression(source: string): ParseResult {
-    const tokens = tokenize(source);
-    const state = createState(tokens);
-    const expr = parseExpr(state, 0);
-    return buildResult(state, expr);
-}
-
-function parseStatement(source: string): ParseResult {
-    const tokens = tokenize(source);
-    const state = createState(tokens);
-    const stmt = parseStmt(state);
-    return buildResult(state, stmt);
-}
-
-function parsePatternSource(source: string): ParseResult {
-    const tokens = tokenize(source);
-    const state = createState(tokens);
-    const pat = parsePattern(state);
-    return buildResult(state, pat);
-}
-
-function parseTypeSource(source: string): ParseResult {
-    const tokens = tokenize(source);
-    const state = createState(tokens);
-    const ty = parseType(state);
-    return buildResult(state, ty);
-}
-
-export {
-    parseModule,
-    parseExpression,
-    parseStatement,
-    parsePatternSource as parsePattern,
-    parseTypeSource as parseType,
-    NodeKind,
-};
