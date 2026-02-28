@@ -89,6 +89,7 @@ export enum BuiltinType {
     Unit = 17,
     Never = 18,
 }
+
 /**
  * Will be implemented by other classes (e.g.: for type-checking)
  */
@@ -332,6 +333,11 @@ export class MatchExpr extends Expression {
         this.matchOn = matchOn;
         this.arms = arms;
     }
+
+    get scrutinee(): Expression {
+        return this.matchOn;
+    }
+
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
         return visitor.visitMatchExpr(this, ctx);
     }
@@ -339,9 +345,9 @@ export class MatchExpr extends Expression {
 
 export class BlockExpr extends Expression {
     readonly stmts: Statement[];
-    readonly expr: Expression; // NOTE: unsure what this means??
+    readonly expr?: Expression; // Optional tail expression
 
-    constructor(span: Span, stmts: Statement[], expr: Expression) {
+    constructor(span: Span, stmts: Statement[], expr?: Expression) {
         super(span);
         this.stmts = stmts;
         this.expr = expr;
@@ -353,9 +359,9 @@ export class BlockExpr extends Expression {
 }
 
 export class ReturnExpr extends Expression {
-    readonly value: Expression;
+    readonly value?: Expression;
 
-    constructor(span: Span, value: Expression) {
+    constructor(span: Span, value?: Expression) {
         super(span);
         this.value = value;
     }
@@ -444,6 +450,7 @@ export class ForExpr extends Expression {
 export class StructExpr extends Expression {
     readonly path: Expression;
     readonly fields: Map<string, Expression>;
+    readonly spread?: Expression;
 
     constructor(span: Span, path: Expression, fields: Map<string, Expression>) {
         super(span);
@@ -458,11 +465,13 @@ export class StructExpr extends Expression {
 export class RangeExpr extends Expression {
     readonly start?: Expression;
     readonly end?: Expression;
+    readonly inclusive: boolean;
 
-    constructor(span: Span, start?: Expression, end?: Expression) {
+    constructor(span: Span, start?: Expression, end?: Expression, inclusive = false) {
         super(span);
         this.start = start;
         this.end = end;
+        this.inclusive = inclusive;
     }
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
         return visitor.visitRangeExpr(this, ctx);
@@ -510,13 +519,13 @@ export class MacroExpr extends Expression {
 }
 
 export class ClosureExpr extends Expression {
-    readonly params: Pattern[];
-    readonly returnType: TypeNode; // TODO: Default assign unit
+    readonly params: ParamNode[];
+    readonly returnType: TypeNode;
     readonly body: Expression;
 
     constructor(
         span: Span,
-        params: Expression[],
+        params: ParamNode[],
         returnType: TypeNode,
         body: Expression,
     ) {
@@ -576,46 +585,30 @@ export class ItemStmt extends Statement {
         return visitor.visitItemStmt(this, ctx);
     }
 }
-export interface GenericParam {
-    name: string;
-    bounds: TypeNode[];
-}
-
-enum FnAttributes {
-    unsafeFn = 0,
-    asyncFn = 1,
-    constFn = 2,
-    testFn = 3,
-    builtin = 4,
-}
-
-/**
- * TODO: take generics into account
- */
 export class FnItem extends Item {
     readonly name: string;
-    readonly params: Map<string, TypeNode>;
+    readonly params: ParamNode[];
     readonly returnType: TypeNode;
-    readonly body: BlockExpr;
-    readonly attributes: FnAttributes[] = [];
+    readonly body?: BlockExpr;
     readonly derives: string[] = [];
+    builtinName?: string;
 
     constructor(
         span: Span,
         name: string,
-        params: Map<string, TypeNode>,
+        params: ParamNode[],
         returnType: TypeNode,
-        body: BlockExpr,
-        attributes: FnAttributes[] = [],
+        body?: BlockExpr,
         derives: string[] = [],
+        builtinName?: string,
     ) {
         super(span);
         this.name = name;
         this.params = params;
         this.returnType = returnType;
         this.body = body;
-        this.attributes = attributes;
         this.derives = derives;
+        this.builtinName = builtinName;
     }
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
         return visitor.visitFnItem(this, ctx);
@@ -624,13 +617,13 @@ export class FnItem extends Item {
 
 export class StructItem extends Item {
     readonly name: string;
-    readonly fields: Map<string, TypeNode>;
+    readonly fields: StructFieldNode[];
     readonly derives: string[] = [];
 
     constructor(
         span: Span,
         name: string,
-        fields: Map<string, TypeNode>,
+        fields: StructFieldNode[],
         derives: string[] = [],
     ) {
         super(span);
@@ -645,13 +638,13 @@ export class StructItem extends Item {
 
 export class EnumItem extends Item {
     readonly name: string;
-    readonly variants: Map<string, TypeNode>; // TODO: change this
+    readonly variants: EnumVariantNode[];
     readonly derives: string[];
 
     constructor(
         span: Span,
         name: string,
-        variants: Map<string, TypeNode>,
+        variants: EnumVariantNode[],
         derives: string[] = [],
     ) {
         super(span);
@@ -767,11 +760,13 @@ export class TraitImplItem extends Item {
 export class ImplItem extends Item {
     readonly target: TypeNode;
     readonly methods: FnItem[];
+    readonly traitType?: TypeNode;
 
-    constructor(span: Span, target: TypeNode, methods: FnItem[]) {
+    constructor(span: Span, target: TypeNode, methods: FnItem[], traitType?: TypeNode) {
         super(span);
         this.target = target;
         this.methods = methods;
+        this.traitType = traitType;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
@@ -883,11 +878,18 @@ export class TuplePattern extends Pattern {
 
 export class MatchArmNode extends Node {
     readonly pattern: Pattern;
+    readonly guard?: Expression;
     readonly body: Expression;
 
-    constructor(span: Span, pattern: Pattern, body: Expression) {
+    constructor(
+        span: Span,
+        pattern: Pattern,
+        body: Expression,
+        guard?: Expression,
+    ) {
         super(span);
         this.pattern = pattern;
+        this.guard = guard;
         this.body = body;
     }
 
@@ -898,9 +900,9 @@ export class MatchArmNode extends Node {
 
 export class NamedTypeNode extends TypeNode {
     readonly name: string;
-    readonly args: GenericArgsNode | null;
+    readonly args?: GenericArgsNode;
 
-    constructor(span: Span, name: string, args: GenericArgsNode | null) {
+    constructor(span: Span, name: string, args?: GenericArgsNode) {
         super(span);
         this.name = name;
         this.args = args;
@@ -926,9 +928,9 @@ export class TupleTypeNode extends TypeNode {
 
 export class ArrayTypeNode extends TypeNode {
     readonly element: TypeNode;
-    readonly length: Expression | null;
+    readonly length?: Expression;
 
-    constructor(span: Span, element: TypeNode, length: Expression | null) {
+    constructor(span: Span, element: TypeNode, length?: Expression) {
         super(span);
         this.element = element;
         this.length = length;
@@ -1035,20 +1037,139 @@ export function walkAst(node: Node, fn: (node: Node) => void): void {
             for (const item of value) {
                 walkValue(item);
             }
-        } else if (value !== null && typeof value === "object") {
-            for (const v of Object.values(value as Record<string, unknown>)) {
-                walkValue(v);
+        } else if (value && typeof value === "object") {
+            for (const key in value) {
+                if (!Object.hasOwn(value, key)) {
+                    continue;
+                }
+                walkValue(Reflect.get(value, key));
             }
         }
     };
-    const obj = node as unknown as Record<string, unknown>;
-    for (const key of Object.keys(obj)) {
+    for (const [key, value] of Object.entries(node)) {
         if (key === "span" || key === "node") continue;
-
-        walkValue(obj[key]);
+        walkValue(value);
     }
 }
 
 export function mergeSpans(spanA: Span, spanB: Span): Span {
     return new Span(spanA.line, spanA.column, spanA.start, spanB.end);
+}
+
+export interface StructFieldNode {
+    span: Span;
+    name: string;
+    ty?: TypeNode;
+    defaultValue?: Expression;
+}
+
+export interface EnumVariantNode {
+    span: Span;
+    name: string;
+    fields: StructFieldNode[];
+    discriminant?: Expression;
+}
+
+export interface ParamNode {
+    span: Span;
+    name?: string;
+    ty?: TypeNode;
+    defaultValue?: Expression;
+    isReceiver: boolean;
+    receiverKind?: "value" | "ref" | "ref_mut";
+}
+
+export class PathExpr extends IdentifierExpr {
+    readonly segments: string[];
+
+    constructor(span: Span, segments: string[]) {
+        super(span, segments.join("::"));
+        this.segments = segments;
+    }
+}
+
+export class UseTreeNode extends Node {
+    readonly path: string[];
+    readonly alias?: string;
+    readonly children?: UseTreeNode[];
+
+    constructor(
+        span: Span,
+        path: string[],
+        alias?: string,
+        children?: UseTreeNode[],
+    ) {
+        super(span);
+        this.path = path;
+        this.alias = alias;
+        this.children = children;
+    }
+
+    accept<R, C>(_visitor: AstVisitor<R, C>, _ctx: C): R {
+        throw new Error("UseTreeNode does not participate in visitor dispatch");
+    }
+}
+
+export class SlicePattern extends Pattern {
+    readonly elements: Pattern[];
+    readonly rest?: Pattern;
+
+    constructor(span: Span, elements: Pattern[], rest?: Pattern) {
+        super(span);
+        this.elements = elements;
+        this.rest = rest;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitTuplePat(
+            new TuplePattern(this.span, this.elements),
+            ctx,
+        );
+    }
+}
+
+export class OrPattern extends Pattern {
+    readonly alternatives: Pattern[];
+
+    constructor(span: Span, alternatives: Pattern[]) {
+        super(span);
+        this.alternatives = alternatives;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        if (this.alternatives.length > 0) {
+            return this.alternatives[0].accept(visitor, ctx);
+        }
+        return visitor.visitWildcardPat(new WildcardPattern(this.span), ctx);
+    }
+}
+
+export class BindingPattern extends Pattern {
+    readonly name: string;
+    readonly mutability: Mutability;
+    readonly pattern: Pattern;
+
+    constructor(
+        span: Span,
+        name: string,
+        mutability: Mutability,
+        pat: Pattern,
+    ) {
+        super(span);
+        this.name = name;
+        this.mutability = mutability;
+        this.pattern = pat;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitIdentPat(
+            new IdentPattern(
+                this.span,
+                this.name,
+                this.mutability,
+                new NamedTypeNode(this.span, "_"),
+            ),
+            ctx,
+        );
+    }
 }
