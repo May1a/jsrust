@@ -1,19 +1,21 @@
-import { IRTermKind } from "./ir";
-import type { ValueId, BlockId, IRTerm } from "./ir";
+import {
+    type BlockId,
+    type IRTerm,
+    IRTermKind,
+    type ValueId,
+    RetTerm,
+    BrTerm,
+    BrIfTerm,
+    SwitchTerm,
+    UnreachableTerm,
+} from "./ir";
 
-export function makeRet(value: ValueId | null): IRTerm {
-    return {
-        kind: IRTermKind.Ret,
-        value,
-    };
+export function makeRet(value?: ValueId): IRTerm {
+    return new RetTerm(value);
 }
 
 export function makeBr(target: BlockId, args?: ValueId[]): IRTerm {
-    return {
-        kind: IRTermKind.Br,
-        target,
-        args: args ?? [],
-    };
+    return new BrTerm(target, args ?? []);
 }
 
 export function makeBrIf(
@@ -23,18 +25,17 @@ export function makeBrIf(
     elseBlock: BlockId,
     elseArgs: ValueId[] | undefined,
 ): IRTerm {
-    return {
-        kind: IRTermKind.BrIf,
+    return new BrIfTerm(
         cond,
         thenBlock,
-        thenArgs: thenArgs ?? [],
         elseBlock,
-        elseArgs: elseArgs ?? [],
-    };
+        thenArgs ?? [],
+        elseArgs ?? [],
+    );
 }
 
 export interface SwitchCase {
-    value: any;
+    value: number;
     target: BlockId;
     args: ValueId[];
 }
@@ -45,17 +46,11 @@ export function makeSwitch(
     defaultBlock: BlockId,
     defaultArgs?: ValueId[],
 ): IRTerm {
-    return {
-        kind: IRTermKind.Switch,
-        value,
-        cases,
-        defaultBlock,
-        defaultArgs: defaultArgs ?? [],
-    };
+    return new SwitchTerm(value, defaultBlock, defaultArgs ?? [], cases);
 }
 
 export function makeSwitchCase(
-    value: any,
+    value: number,
     target: BlockId,
     args?: ValueId[],
 ): SwitchCase {
@@ -67,16 +62,22 @@ export function makeSwitchCase(
 }
 
 export function makeUnreachable(): IRTerm {
-    return {
-        kind: IRTermKind.Unreachable,
-    };
+    return new UnreachableTerm();
 }
 
-export function isIRTerminator(node: any): node is IRTerm {
+export function isIRTerminator(node: unknown): node is IRTerm {
+    const termKinds = new Set<number>([
+        IRTermKind.Ret,
+        IRTermKind.Br,
+        IRTermKind.BrIf,
+        IRTermKind.Switch,
+        IRTermKind.Unreachable,
+    ]);
     return (
-        node &&
+        typeof node === "object" &&
+        node !== null &&
+        "kind" in node &&
         typeof node.kind === "number" &&
-        node.kind >= IRTermKind.Ret &&
-        node.kind <= IRTermKind.Unreachable
+        termKinds.has(node.kind)
     );
 }

@@ -59,7 +59,7 @@ export abstract class IRType {
 
     abstract accept<R, C>(visitor: IRTypeVisitor<R, C>, ctx: C): R;
 
-    abstract typeEq<T extends IRType>(cmpType: T): boolean;
+    abstract typeEq(cmpType: IRType): boolean;
 }
 
 export class IntType extends IRType {
@@ -73,7 +73,7 @@ export class IntType extends IRType {
     accept<R, C>(visitor: IRTypeVisitor<R, C>, ctx: C): R {
         return visitor.visitIntType(this, ctx);
     }
-    typeEq<T extends IRType>(cmpType: T): boolean {
+    typeEq(cmpType: IRType): boolean {
         if (cmpType instanceof IntType) {
             if (this.width === cmpType.width) return true;
         }
@@ -92,7 +92,7 @@ export class FloatType extends IRType {
     accept<R, C>(visitor: IRTypeVisitor<R, C>, ctx: C): R {
         return visitor.visitFloatType(this, ctx);
     }
-    typeEq<T extends IRType>(cmpType: T): boolean {
+    typeEq(cmpType: IRType): boolean {
         if (cmpType instanceof FloatType) {
             if (this.width === cmpType.width) return true;
         }
@@ -108,7 +108,7 @@ export class BoolType extends IRType {
     accept<R, C>(visitor: IRTypeVisitor<R, C>, ctx: C): R {
         return visitor.visitBoolType(this, ctx);
     }
-    typeEq<T extends IRType>(cmpType: T): boolean {
+    typeEq(cmpType: IRType): boolean {
         if (cmpType instanceof BoolType) return true;
         return false;
     }
@@ -125,7 +125,7 @@ export class PtrType extends IRType {
     accept<R, C>(visitor: IRTypeVisitor<R, C>, ctx: C): R {
         return visitor.visitPtrType(this, ctx);
     }
-    typeEq<T extends IRType>(cmpType: T): boolean {
+    typeEq(cmpType: IRType): boolean {
         if (cmpType instanceof PtrType) {
             return cmpType.inner.typeEq(this.inner);
         }
@@ -147,7 +147,7 @@ export class UnitType extends IRType {
     accept<R, C>(visitor: IRTypeVisitor<R, C>, ctx: C): R {
         return visitor.visitUnitType(this, ctx);
     }
-    typeEq<T extends IRType>(cmpType: T): boolean {
+    typeEq(cmpType: IRType): boolean {
         if (cmpType instanceof UnitType) return true;
         return false;
     }
@@ -166,7 +166,7 @@ export class StructType extends IRType {
     accept<R, C>(visitor: IRTypeVisitor<R, C>, ctx: C): R {
         return visitor.visitStructType(this, ctx);
     }
-    typeEq<T extends IRType>(cmpType: T): boolean {
+    typeEq(cmpType: IRType): boolean {
         if (cmpType instanceof StructType) {
             if (cmpType.name !== this.name) return false;
             if (cmpType.fields.length !== this.fields.length) return false;
@@ -192,7 +192,7 @@ export class EnumType extends IRType {
     accept<R, C>(visitor: IRTypeVisitor<R, C>, ctx: C): R {
         return visitor.visitEnumType(this, ctx);
     }
-    typeEq<T extends IRType>(cmpType: T): boolean {
+    typeEq(cmpType: IRType): boolean {
         if (!(cmpType instanceof EnumType)) return false;
         if (this.name !== cmpType.name) return false;
         if (this.variants.length !== cmpType.variants.length) return false;
@@ -221,7 +221,7 @@ export class ArrayType extends IRType {
     accept<R, C>(visitor: IRTypeVisitor<R, C>, ctx: C): R {
         return visitor.visitArrayType(this, ctx);
     }
-    typeEq<T extends IRType>(cmpType: T): boolean {
+    typeEq(cmpType: IRType): boolean {
         if (cmpType instanceof ArrayType) {
             if (this.length !== cmpType.length) return false;
             return this.element.typeEq(cmpType.element);
@@ -243,7 +243,7 @@ export class FnType extends IRType {
     accept<R, C>(visitor: IRTypeVisitor<R, C>, ctx: C): R {
         return visitor.visitFnType(this, ctx);
     }
-    typeEq<T extends IRType>(cmpType: T): boolean {
+    typeEq(cmpType: IRType): boolean {
         if (cmpType instanceof FnType) {
             if (this.params.length !== cmpType.params.length) return false;
             for (let i = 0; i < this.params.length; i++) {
@@ -1217,9 +1217,9 @@ export abstract class IRTerm {
 }
 
 export class RetTerm extends IRTerm {
-    readonly value: ValueId | null;
+    readonly value: ValueId | undefined;
 
-    constructor(value: ValueId | null) {
+    constructor(value?: ValueId) {
         super(IRTermKind.Ret);
         this.value = value;
     }

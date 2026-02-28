@@ -1,523 +1,323 @@
-import { freshValueId, makeIRPtrType } from "./ir";
 import {
-    type ValueId,
-    type LocalId,
-    type IRType,
-    type IRInst,
-    type IcmpOp,
+    AllocaInst,
+    BconstInst,
+    BitcastInst,
+    CallDynInst,
+    CallInst,
+    EnumCreateInst,
+    EnumGetDataInst,
+    EnumGetTagInst,
+    FaddInst,
+    FcmpInst,
+    FconstInst,
+    FdivInst,
+    FmulInst,
+    FnegInst,
+    FptosiInst,
+    FptouiInst,
+    FsubInst,
+    GepInst,
+    IaddInst,
+    IandInst,
+    IcmpInst,
+    IconstInst,
+    IdivInst,
+    ImodInst,
+    ImulInst,
+    InegInst,
+    IorInst,
+    IshlInst,
+    IshrInst,
+    IsubInst,
+    IxorInst,
+    LoadInst,
+    MemcpyInst,
+    NullInst,
+    PtraddInst,
+    SconstInst,
+    SextInst,
+    SitofpInst,
+    StoreInst,
+    StructCreateInst,
+    StructGetInst,
+    TruncInst,
+    UitofpInst,
+    ZextInst,
+    FloatWidth,
+    FloatType,
+    IntType,
+    IntWidth,
+    makeIRFloatType,
     type FcmpOp,
-    IRInstKind,
+    type FnType,
+    type IcmpOp,
+    type IRInst,
+    type IRType,
+    StructType,
+    freshValueId,
+    makeIREnumType,
+    makeIRFnType,
+    makeIRIntType,
+    makeIRPtrType,
+    makeIRStructType,
+    makeIRUnitType,
 } from "./ir";
-import { type FloatWidth, type IntWidth } from "./types";
 
-export function makeIRInst(
-    kind: IRInstKind,
-    id: ValueId | null,
-    ty: IRType,
-): IRInst {
-    return { kind, id, ty } as IRInst;
+function asIntType(type: IRType): IntType {
+    if (type instanceof IntType) {
+        return type;
+    }
+    return makeIRIntType(IntWidth.I32);
+}
+
+function asFloatType(type: IRType): FloatType {
+    if (type instanceof FloatType) {
+        return type;
+    }
+    return makeIRFloatType(FloatWidth.F64);
+}
+
+function asStructType(type: IRType): StructType {
+    if (type instanceof StructType) {
+        return type;
+    }
+    return makeIRStructType("__anon_struct", []);
+}
+
+function unknownEnumType(): ReturnType<typeof makeIREnumType> {
+    return makeIREnumType("__anon_enum", []);
+}
+
+function callType(returnType: IRType): FnType {
+    return makeIRFnType([], returnType);
 }
 
 export function makeIconst(value: number, width: IntWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Iconst,
-        id,
-        ty: { kind: 0, width },
-        value,
-    } as IRInst;
+    return new IconstInst(freshValueId(), makeIRIntType(width), value);
 }
 
 export function makeFconst(value: number, width: FloatWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Fconst,
-        id,
-        ty: { kind: 1, width },
-        value,
-    } as IRInst;
+    return new FconstInst(freshValueId(), makeIRFloatType(width), value);
 }
 
 export function makeBconst(value: boolean): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Bconst,
-        id,
-        ty: { kind: 2 },
-        value,
-    } as IRInst;
+    return new BconstInst(freshValueId(), value);
 }
 
-export function makeNull(ty: IRType): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Null,
-        id,
-        ty: { kind: 3, inner: ty },
-    } as IRInst;
+export function makeNull(type: IRType): IRInst {
+    return new NullInst(freshValueId(), makeIRPtrType(type));
 }
 
-export function makeIadd(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Iadd,
-        id,
-        ty: { kind: 0, width },
-        a,
-        b,
-    } as IRInst;
+export function makeSconst(literalId: number): IRInst {
+    return new SconstInst(freshValueId(), literalId);
 }
 
-export function makeIsub(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Isub,
-        id,
-        ty: { kind: 0, width },
-        a,
-        b,
-    } as IRInst;
+export function makeIadd(a: number, b: number, width: IntWidth): IRInst {
+    return new IaddInst(freshValueId(), makeIRIntType(width), a, b);
 }
 
-export function makeImul(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Imul,
-        id,
-        ty: { kind: 0, width },
-        a,
-        b,
-    } as IRInst;
+export function makeIsub(a: number, b: number, width: IntWidth): IRInst {
+    return new IsubInst(freshValueId(), makeIRIntType(width), a, b);
 }
 
-export function makeIdiv(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Idiv,
-        id,
-        ty: { kind: 0, width },
-        a,
-        b,
-    } as IRInst;
+export function makeImul(a: number, b: number, width: IntWidth): IRInst {
+    return new ImulInst(freshValueId(), makeIRIntType(width), a, b);
 }
 
-export function makeImod(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Imod,
-        id,
-        ty: { kind: 0, width },
-        a,
-        b,
-    } as IRInst;
+export function makeIdiv(a: number, b: number, width: IntWidth): IRInst {
+    return new IdivInst(freshValueId(), makeIRIntType(width), a, b);
 }
 
-export function makeFadd(a: ValueId, b: ValueId, width: FloatWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Fadd,
-        id,
-        ty: { kind: 1, width },
-        a,
-        b,
-    } as IRInst;
+export function makeImod(a: number, b: number, width: IntWidth): IRInst {
+    return new ImodInst(freshValueId(), makeIRIntType(width), a, b);
 }
 
-export function makeFsub(a: ValueId, b: ValueId, width: FloatWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Fsub,
-        id,
-        ty: { kind: 1, width },
-        a,
-        b,
-    } as IRInst;
+export function makeFadd(a: number, b: number, width: FloatWidth): IRInst {
+    return new FaddInst(freshValueId(), makeIRFloatType(width), a, b);
 }
 
-export function makeFmul(a: ValueId, b: ValueId, width: FloatWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Fmul,
-        id,
-        ty: { kind: 1, width },
-        a,
-        b,
-    } as IRInst;
+export function makeFsub(a: number, b: number, width: FloatWidth): IRInst {
+    return new FsubInst(freshValueId(), makeIRFloatType(width), a, b);
 }
 
-export function makeFdiv(a: ValueId, b: ValueId, width: FloatWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Fdiv,
-        id,
-        ty: { kind: 1, width },
-        a,
-        b,
-    } as IRInst;
+export function makeFmul(a: number, b: number, width: FloatWidth): IRInst {
+    return new FmulInst(freshValueId(), makeIRFloatType(width), a, b);
 }
 
-export function makeIneg(a: ValueId, width: IntWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Ineg,
-        id,
-        ty: { kind: 0, width },
-        a,
-    } as IRInst;
+export function makeFdiv(a: number, b: number, width: FloatWidth): IRInst {
+    return new FdivInst(freshValueId(), makeIRFloatType(width), a, b);
 }
 
-export function makeFneg(a: ValueId, width: FloatWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Fneg,
-        id,
-        ty: { kind: 1, width },
-        a,
-    } as IRInst;
+export function makeIneg(a: number, width: IntWidth): IRInst {
+    return new InegInst(freshValueId(), makeIRIntType(width), a);
 }
 
-export function makeIand(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Iand,
-        id,
-        ty: { kind: 0, width },
-        a,
-        b,
-    } as IRInst;
+export function makeFneg(a: number, width: FloatWidth): IRInst {
+    return new FnegInst(freshValueId(), makeIRFloatType(width), a);
 }
 
-export function makeIor(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Ior,
-        id,
-        ty: { kind: 0, width },
-        a,
-        b,
-    } as IRInst;
+export function makeIand(a: number, b: number, width: IntWidth): IRInst {
+    return new IandInst(freshValueId(), makeIRIntType(width), a, b);
 }
 
-export function makeIxor(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Ixor,
-        id,
-        ty: { kind: 0, width },
-        a,
-        b,
-    } as IRInst;
+export function makeIor(a: number, b: number, width: IntWidth): IRInst {
+    return new IorInst(freshValueId(), makeIRIntType(width), a, b);
 }
 
-export function makeIshl(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Ishl,
-        id,
-        ty: { kind: 0, width },
-        a,
-        b,
-    } as IRInst;
+export function makeIxor(a: number, b: number, width: IntWidth): IRInst {
+    return new IxorInst(freshValueId(), makeIRIntType(width), a, b);
 }
 
-export function makeIshr(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Ishr,
-        id,
-        ty: { kind: 0, width },
-        a,
-        b,
-    } as IRInst;
+export function makeIshl(a: number, b: number, width: IntWidth): IRInst {
+    return new IshlInst(freshValueId(), makeIRIntType(width), a, b);
 }
 
-export function makeIcmp(op: IcmpOp, a: ValueId, b: ValueId): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Icmp,
-        id,
-        ty: { kind: 2 },
-        op,
-        a,
-        b,
-    } as IRInst;
+export function makeIshr(a: number, b: number, width: IntWidth): IRInst {
+    return new IshrInst(freshValueId(), makeIRIntType(width), a, b);
 }
 
-export function makeFcmp(op: FcmpOp, a: ValueId, b: ValueId): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Fcmp,
-        id,
-        ty: { kind: 2 },
-        op,
-        a,
-        b,
-    } as IRInst;
+export function makeIcmp(op: IcmpOp, a: number, b: number): IRInst {
+    return new IcmpInst(freshValueId(), op, a, b);
 }
 
-export function makeAlloca(ty: IRType, localId: LocalId | null): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Alloca,
-        id,
-        ty: { kind: 3, inner: ty },
-        localId,
-    } as IRInst;
+export function makeFcmp(op: FcmpOp, a: number, b: number): IRInst {
+    return new FcmpInst(freshValueId(), op, a, b);
 }
 
-export function makeLoad(ptr: ValueId, ty: IRType): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Load,
-        id,
-        ty,
-        ptr,
-    } as IRInst;
+export function makeAlloca(type: IRType, _localId?: number): IRInst {
+    return new AllocaInst(freshValueId(), type);
 }
 
-export function makeStore(ptr: ValueId, value: ValueId, ty: IRType): IRInst {
-    return {
-        kind: IRInstKind.Store,
-        id: null,
-        ty: { kind: 4 },
-        ptr,
-        value,
-        valueType: ty,
-    } as IRInst;
+export function makeLoad(ptr: number, type: IRType): IRInst {
+    return new LoadInst(freshValueId(), ptr, type);
 }
 
-export function makeMemcpy(dest: ValueId, src: ValueId, size: ValueId): IRInst {
-    return {
-        kind: IRInstKind.Memcpy,
-        id: null,
-        ty: { kind: 4 },
-        dest,
-        src,
-        size,
-    } as IRInst;
+export function makeStore(ptr: number, value: number, _type: IRType): IRInst {
+    return new StoreInst(freshValueId(), value, ptr);
 }
 
-export function makeGep(
-    ptr: ValueId,
-    indices: ValueId[],
-    resultTy: IRType,
-): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Gep,
-        id,
-        ty: makeIRPtrType(resultTy),
-        ptr,
-        indices,
-    } as IRInst;
+export function makeMemcpy(dest: number, src: number, size: number): IRInst {
+    return new MemcpyInst(freshValueId(), dest, src, size);
 }
 
-export function makePtradd(ptr: ValueId, offset: ValueId): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Ptradd,
-        id,
-        ty: { kind: 3 },
-        ptr,
-        offset,
-    } as IRInst;
+export function makeGep(ptr: number, indices: number[], resultType: IRType): IRInst {
+    return new GepInst(freshValueId(), ptr, indices, resultType);
 }
 
-export function makeTrunc(val: ValueId, fromTy: IRType, toTy: IRType): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Trunc,
-        id,
-        ty: toTy,
-        val,
-        fromTy,
-    } as IRInst;
+export function makePtradd(ptr: number, offset: number): IRInst {
+    return new PtraddInst(freshValueId(), ptr, offset);
 }
 
-export function makeSext(val: ValueId, fromTy: IRType, toTy: IRType): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Sext,
-        id,
-        ty: toTy,
-        val,
-        fromTy,
-    } as IRInst;
+export function makeTrunc(value: number, toType: IRType): IRInst {
+    const target = asIntType(toType);
+    return new TruncInst(freshValueId(), value, target, target);
 }
 
-export function makeZext(val: ValueId, fromTy: IRType, toTy: IRType): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Zext,
-        id,
-        ty: toTy,
-        val,
-        fromTy,
-    } as IRInst;
+export function makeSext(value: number, toType: IRType): IRInst {
+    const target = asIntType(toType);
+    return new SextInst(freshValueId(), value, target, target);
 }
 
-export function makeFptoui(val: ValueId, toTy: IRType): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Fptoui,
-        id,
-        ty: toTy,
-        val,
-    } as IRInst;
+export function makeZext(value: number, toType: IRType): IRInst {
+    const target = asIntType(toType);
+    return new ZextInst(freshValueId(), value, target, target);
 }
 
-export function makeFptosi(val: ValueId, toTy: IRType): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Fptosi,
-        id,
-        ty: toTy,
-        val,
-    } as IRInst;
+export function makeFptoui(value: number, toType: IRType): IRInst {
+    const target = asIntType(toType);
+    return new FptouiInst(freshValueId(), value, asFloatType(toType), target);
 }
 
-export function makeUitofp(val: ValueId, toTy: IRType): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Uitofp,
-        id,
-        ty: toTy,
-        val,
-    } as IRInst;
+export function makeFptosi(value: number, toType: IRType): IRInst {
+    const target = asIntType(toType);
+    return new FptosiInst(freshValueId(), value, asFloatType(toType), target);
 }
 
-export function makeSitofp(val: ValueId, toTy: IRType): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Sitofp,
-        id,
-        ty: toTy,
-        val,
-    } as IRInst;
+export function makeUitofp(value: number, toType: IRType): IRInst {
+    const source = asIntType(toType);
+    return new UitofpInst(freshValueId(), value, source, asFloatType(toType));
 }
 
-export function makeBitcast(val: ValueId, toTy: IRType): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Bitcast,
-        id,
-        ty: toTy,
-        val,
-    } as IRInst;
+export function makeSitofp(value: number, toType: IRType): IRInst {
+    const source = asIntType(toType);
+    return new SitofpInst(freshValueId(), value, source, asFloatType(toType));
+}
+
+export function makeBitcast(value: number, toType: IRType): IRInst {
+    return new BitcastInst(freshValueId(), value, makeIRIntType(IntWidth.I64), toType);
 }
 
 export function makeCall(
-    fn: ValueId,
-    args: ValueId[],
-    returnType: IRType | null,
+    fn: number,
+    args: number[],
+    returnType?: IRType,
 ): IRInst {
-    const id = returnType ? freshValueId() : null;
-    return {
-        kind: IRInstKind.Call,
-        id,
-        ty: returnType ?? { kind: 4 },
+    const effectiveReturn = returnType ?? makeIRUnitType();
+    return new CallInst(
+        freshValueId(),
         fn,
         args,
-    } as IRInst;
+        callType(effectiveReturn),
+        effectiveReturn,
+    );
 }
 
 export function makeCallDyn(
-    fn: ValueId,
-    args: ValueId[],
-    returnType: IRType | null,
+    fn: number,
+    args: number[],
+    returnType?: IRType,
 ): IRInst {
-    const id = returnType ? freshValueId() : null;
-    return {
-        kind: IRInstKind.CallDyn,
-        id,
-        ty: returnType ?? { kind: 4 },
+    const effectiveReturn = returnType ?? makeIRUnitType();
+    return new CallDynInst(
+        freshValueId(),
         fn,
         args,
-    } as IRInst;
+        callType(effectiveReturn),
+        effectiveReturn,
+    );
 }
 
-export function makeStructCreate(fields: ValueId[], ty: IRType): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.StructCreate,
-        id,
-        ty,
-        fields,
-    } as IRInst;
+export function makeStructCreate(fields: number[], type: IRType): IRInst {
+    return new StructCreateInst(freshValueId(), fields, asStructType(type));
 }
 
 export function makeStructGet(
-    struct: ValueId,
+    struct: number,
     fieldIndex: number,
-    fieldTy: IRType,
+    fieldType: IRType,
 ): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.StructGet,
-        id,
-        ty: fieldTy,
+    return new StructGetInst(
+        freshValueId(),
         struct,
         fieldIndex,
-    } as IRInst;
+        makeIRStructType("__anon_struct", []),
+        fieldType,
+    );
 }
 
 export function makeEnumCreate(
     variant: number,
-    data: ValueId | null,
-    ty: IRType,
+    data: number | null,
+    type: IRType,
 ): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.EnumCreate,
-        id,
-        ty,
-        variant,
-        data,
-    } as IRInst;
+    const enumType = type instanceof StructType ? unknownEnumType() : unknownEnumType();
+    return new EnumCreateInst(freshValueId(), variant, data, enumType);
 }
 
-export function makeEnumGetTag(enum_: ValueId): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.EnumGetTag,
-        id,
-        ty: { kind: 0, width: 6 },
-        enum: enum_,
-    } as IRInst;
+export function makeEnumGetTag(enumValue: number): IRInst {
+    return new EnumGetTagInst(freshValueId(), enumValue, unknownEnumType());
 }
 
 export function makeEnumGetData(
-    enum_: ValueId,
-    variant: number,
-    index: number,
-    dataTy: IRType,
+    enumValue: number,
+    _variant: number,
+    _index: number,
+    dataType: IRType,
 ): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.EnumGetData,
-        id,
-        ty: dataTy,
-        enum: enum_,
-        variant,
-        index,
-    } as IRInst;
-}
-
-export function makeSconst(literalId: number): IRInst {
-    const id = freshValueId();
-    return {
-        kind: IRInstKind.Sconst,
-        id,
-        ty: { kind: 3, inner: null },
-        literalId,
-    } as IRInst;
-}
-
-export function isIRInst(node: any): boolean {
-    return (
-        node &&
-        typeof node.kind === "number" &&
-        node.kind >= IRInstKind.Iconst &&
-        node.kind <= IRInstKind.CallDyn
+    return new EnumGetDataInst(
+        freshValueId(),
+        enumValue,
+        unknownEnumType(),
+        dataType,
     );
 }

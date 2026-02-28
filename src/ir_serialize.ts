@@ -1,7 +1,60 @@
 import {
     IRTypeKind,
-    IRInstKind,
     IRTermKind,
+    type IntType,
+    type FloatType,
+    type PtrType,
+    type StructType,
+    type EnumType,
+    type ArrayType,
+    type FnType,
+    type IconstInst,
+    type FconstInst,
+    type BconstInst,
+    type SconstInst,
+    type IaddInst,
+    type IsubInst,
+    type ImulInst,
+    type IdivInst,
+    type ImodInst,
+    type FaddInst,
+    type FsubInst,
+    type FmulInst,
+    type FdivInst,
+    type InegInst,
+    type FnegInst,
+    type IandInst,
+    type IorInst,
+    type IxorInst,
+    type IshlInst,
+    type IshrInst,
+    type IcmpInst,
+    type FcmpInst,
+    type AllocaInst,
+    type LoadInst,
+    type StoreInst,
+    type MemcpyInst,
+    type GepInst,
+    type PtraddInst,
+    type TruncInst,
+    type SextInst,
+    type ZextInst,
+    type FptouiInst,
+    type FptosiInst,
+    type UitofpInst,
+    type SitofpInst,
+    type BitcastInst,
+    type CallInst,
+    type CallDynInst,
+    type StructCreateInst,
+    type StructGetInst,
+    type EnumCreateInst,
+    type EnumGetTagInst,
+    type EnumGetDataInst,
+    type RetTerm,
+    type BrTerm,
+    type BrIfTerm,
+    type SwitchTerm,
     type IRType,
     type IRModule,
     type IRFunction,
@@ -11,64 +64,6 @@ import {
     type IRTypeVisitor,
     type IRInstVisitor,
     type IRTermVisitor,
-    IntType,
-    FloatType,
-    BoolType,
-    PtrType,
-    UnitType,
-    StructType,
-    EnumType,
-    ArrayType,
-    FnType,
-    IconstInst,
-    FconstInst,
-    BconstInst,
-    NullInst,
-    SconstInst,
-    IaddInst,
-    IsubInst,
-    ImulInst,
-    IdivInst,
-    ImodInst,
-    FaddInst,
-    FsubInst,
-    FmulInst,
-    FdivInst,
-    InegInst,
-    FnegInst,
-    IandInst,
-    IorInst,
-    IxorInst,
-    IshlInst,
-    IshrInst,
-    IcmpInst,
-    FcmpInst,
-    AllocaInst,
-    LoadInst,
-    StoreInst,
-    MemcpyInst,
-    GepInst,
-    PtraddInst,
-    TruncInst,
-    SextInst,
-    ZextInst,
-    FptouiInst,
-    FptosiInst,
-    UitofpInst,
-    SitofpInst,
-    BitcastInst,
-    CallInst,
-    CallDynInst,
-    StructCreateInst,
-    StructGetInst,
-    EnumCreateInst,
-    EnumGetTagInst,
-    EnumGetDataInst,
-    RetTerm,
-    BrTerm,
-    BrIfTerm,
-    SwitchTerm,
-    UnreachableTerm,
 } from "./ir";
 
 // Magic bytes: "JSRS" (0x4A 0x53 0x52 0x53)
@@ -91,6 +86,18 @@ export const SectionId = {
 
 // Special value for "no value" in terminators
 export const NO_VALUE = 0xff_ff_ff_ff;
+
+const BYTE_WIDTH = 1;
+const HEADER_FIELD_COUNT = 3;
+const SECTION_OFFSET_COUNT = 5;
+const U32_BYTE_WIDTH = 4;
+const U64_BYTE_WIDTH = 8;
+const HEADER_BYTE_WIDTH =
+    (SECTION_OFFSET_COUNT + HEADER_FIELD_COUNT) * U32_BYTE_WIDTH;
+const TAG_AND_U32_WIDTH = BYTE_WIDTH + U32_BYTE_WIDTH;
+const TWO_U32_WIDTH = U32_BYTE_WIDTH * 2;
+const THREE_U32_WIDTH = TWO_U32_WIDTH + U32_BYTE_WIDTH;
+const TWO_U32_AND_TAG_WIDTH = TWO_U32_WIDTH + BYTE_WIDTH;
 
 /**
  * String table for deduplicating strings during serialization
@@ -155,7 +162,7 @@ export class IRSerializer {
         const functionsSize = this.calculateFunctionsSize(module);
 
         // Calculate offsets (header is 32 bytes: magic + version + flags + 5 section offsets)
-        const headerSize = 32;
+        const headerSize = HEADER_BYTE_WIDTH;
         const stringTableOffset = headerSize;
         const typesOffset = stringTableOffset + stringTableSize;
         const literalsOffset = typesOffset + typesSize;
@@ -243,13 +250,21 @@ export class IRSerializer {
      */
     private collectTypeStrings(ty: IRType): void {
         const visitor: IRTypeVisitor<void, void> = {
-            visitIntType: (): void => {},
-            visitFloatType: (): void => {},
-            visitBoolType: (): void => {},
+            visitIntType(): void {
+                return;
+            },
+            visitFloatType(): void {
+                return;
+            },
+            visitBoolType(): void {
+                return;
+            },
             visitPtrType: (ptrTy: PtrType): void => {
                 this.collectTypeStrings(ptrTy.inner);
             },
-            visitUnitType: (): void => {},
+            visitUnitType(): void {
+                return;
+            },
             visitStructType: (structTy: StructType): void => {
                 this.strings.addString(structTy.name);
             },
@@ -266,7 +281,7 @@ export class IRSerializer {
                 this.collectTypeStrings(fnTy.returnType);
             },
         };
-        ty.accept(visitor);
+        ty.accept(visitor, undefined);
     }
 
     /**
@@ -275,41 +290,93 @@ export class IRSerializer {
     private collectInstStrings(inst: IRInst): void {
         this.collectTypeStrings(inst.irType);
         const visitor: IRInstVisitor<void, void> = {
-            visitIconstInst: (): void => {},
-            visitFconstInst: (): void => {},
-            visitBconstInst: (): void => {},
-            visitNullInst: (): void => {},
-            visitSconstInst: (): void => {},
-            visitIaddInst: (): void => {},
-            visitIsubInst: (): void => {},
-            visitImulInst: (): void => {},
-            visitIdivInst: (): void => {},
-            visitImodInst: (): void => {},
-            visitFaddInst: (): void => {},
-            visitFsubInst: (): void => {},
-            visitFmulInst: (): void => {},
-            visitFdivInst: (): void => {},
-            visitInegInst: (): void => {},
-            visitFnegInst: (): void => {},
-            visitIandInst: (): void => {},
-            visitIorInst: (): void => {},
-            visitIxorInst: (): void => {},
-            visitIshlInst: (): void => {},
-            visitIshrInst: (): void => {},
-            visitIcmpInst: (): void => {},
-            visitFcmpInst: (): void => {},
+            visitIconstInst(): void {
+                return;
+            },
+            visitFconstInst(): void {
+                return;
+            },
+            visitBconstInst(): void {
+                return;
+            },
+            visitNullInst(): void {
+                return;
+            },
+            visitSconstInst(): void {
+                return;
+            },
+            visitIaddInst(): void {
+                return;
+            },
+            visitIsubInst(): void {
+                return;
+            },
+            visitImulInst(): void {
+                return;
+            },
+            visitIdivInst(): void {
+                return;
+            },
+            visitImodInst(): void {
+                return;
+            },
+            visitFaddInst(): void {
+                return;
+            },
+            visitFsubInst(): void {
+                return;
+            },
+            visitFmulInst(): void {
+                return;
+            },
+            visitFdivInst(): void {
+                return;
+            },
+            visitInegInst(): void {
+                return;
+            },
+            visitFnegInst(): void {
+                return;
+            },
+            visitIandInst(): void {
+                return;
+            },
+            visitIorInst(): void {
+                return;
+            },
+            visitIxorInst(): void {
+                return;
+            },
+            visitIshlInst(): void {
+                return;
+            },
+            visitIshrInst(): void {
+                return;
+            },
+            visitIcmpInst(): void {
+                return;
+            },
+            visitFcmpInst(): void {
+                return;
+            },
             visitAllocaInst: (alloca: AllocaInst): void => {
                 this.collectTypeStrings(alloca.allocType);
             },
             visitLoadInst: (load: LoadInst): void => {
                 this.collectTypeStrings(load.loadType);
             },
-            visitStoreInst: (): void => {},
-            visitMemcpyInst: (): void => {},
+            visitStoreInst(): void {
+                return;
+            },
+            visitMemcpyInst(): void {
+                return;
+            },
             visitGepInst: (gep: GepInst): void => {
                 this.collectTypeStrings(gep.resultType);
             },
-            visitPtraddInst: (): void => {},
+            visitPtraddInst(): void {
+                return;
+            },
             visitTruncInst: (trunc: TruncInst): void => {
                 this.collectTypeStrings(trunc.fromType);
                 this.collectTypeStrings(trunc.toType);
@@ -366,7 +433,7 @@ export class IRSerializer {
                 this.collectTypeStrings(egd.dataType);
             },
         };
-        inst.accept(visitor);
+        inst.accept(visitor, undefined);
     }
 
     // ========================================================================
@@ -378,9 +445,9 @@ export class IRSerializer {
      */
     private calculateStringTableSize(): number {
         const strings = this.strings.getStrings();
-        let size = 4; // count
+        let size = U32_BYTE_WIDTH; // Count
         for (const str of strings) {
-            size += 4; // length
+            size += U32_BYTE_WIDTH; // Length
             size += this.utf8ByteLength(str);
         }
         return size;
@@ -390,20 +457,20 @@ export class IRSerializer {
      * Calculate the size of the types section
      */
     private calculateTypesSize(module: IRModule): number {
-        let size = 4; // struct count
+        let size = U32_BYTE_WIDTH; // Struct count
         for (const struct of module.structs.values()) {
-            size += 4; // name string id
-            size += 4; // field count
+            size += U32_BYTE_WIDTH; // Name string id
+            size += U32_BYTE_WIDTH; // Field count
             for (const field of struct.fields) {
                 size += this.calculateTypeSize(field);
             }
         }
-        size += 4; // enum count
+        size += U32_BYTE_WIDTH; // Enum count
         for (const enum_ of module.enums.values()) {
-            size += 4; // name string id
-            size += 4; // variant count
+            size += U32_BYTE_WIDTH; // Name string id
+            size += U32_BYTE_WIDTH; // Variant count
             for (const variant of enum_.variants) {
-                size += 4; // field count
+                size += U32_BYTE_WIDTH; // Field count
                 for (const field of variant) {
                     size += this.calculateTypeSize(field);
                 }
@@ -416,9 +483,9 @@ export class IRSerializer {
      * Calculate the size of the string literal section.
      */
     private calculateStringLiteralsSize(module: IRModule): number {
-        let size = 4; // count
+        let size = U32_BYTE_WIDTH; // Count
         for (const literal of module.stringLiterals) {
-            size += 4; // byte length
+            size += U32_BYTE_WIDTH; // Byte length
             size += this.utf8ByteLength(literal);
         }
         return size;
@@ -429,18 +496,17 @@ export class IRSerializer {
      */
     private calculateTypeSize(ty: IRType): number {
         const visitor: IRTypeVisitor<number, void> = {
-            visitIntType: (): number => 2, // tag + width
-            visitFloatType: (): number => 2, // tag + width
-            visitBoolType: (): number => 1, // tag only
-            visitPtrType: (): number => 1, // tag only
-            visitUnitType: (): number => 1, // tag only
-            visitStructType: (): number => 5, // tag + name string id
-            visitEnumType: (): number => 5, // tag + name string id
-            visitArrayType: (arrayTy: ArrayType): number => {
-                return 5 + this.calculateTypeSize(arrayTy.element); // tag + length + element
-            },
+            visitIntType: (): number => 2, // Tag + width
+            visitFloatType: (): number => 2, // Tag + width
+            visitBoolType: (): number => 1, // Tag only
+            visitPtrType: (): number => 1, // Tag only
+            visitUnitType: (): number => 1, // Tag only
+            visitStructType: (): number => TAG_AND_U32_WIDTH, // Tag + name string id
+            visitEnumType: (): number => TAG_AND_U32_WIDTH, // Tag + name string id
+            visitArrayType: (arrayTy: ArrayType): number =>
+                TAG_AND_U32_WIDTH + this.calculateTypeSize(arrayTy.element),
             visitFnType: (fnTy: FnType): number => {
-                let s = 5; // tag + param count
+                let s = TAG_AND_U32_WIDTH; // Tag + param count
                 for (const param of fnTy.params) {
                     s += this.calculateTypeSize(param);
                 }
@@ -448,22 +514,22 @@ export class IRSerializer {
                 return s;
             },
         };
-        return ty.accept(visitor);
+        return ty.accept(visitor, undefined);
     }
 
     /**
      * Calculate the size of the globals section
      */
     private calculateGlobalsSize(module: IRModule): number {
-        let size = 4; // count
+        let size = U32_BYTE_WIDTH; // Count
         for (const global of module.globals) {
-            size += 4; // name string id
+            size += U32_BYTE_WIDTH; // Name string id
             size += this.calculateTypeSize(global.ty);
             if (global.init !== undefined) {
-                size += 1; // has_init = 1
+                size += BYTE_WIDTH; // Has_init = 1
                 size += this.calculateConstantSize(global.init);
             } else {
-                size += 1; // has_init = 0
+                size += BYTE_WIDTH; // Has_init = 0
             }
         }
         return size;
@@ -474,12 +540,13 @@ export class IRSerializer {
      */
     private calculateConstantSize(value: unknown): number {
         if (typeof value === "bigint") {
-            return 8;
+            return U64_BYTE_WIDTH;
         }
         if (typeof value === "number") {
-            return 8; // Use 64-bit for all numbers
-        } else if (typeof value === "boolean") {
-            return 1;
+            return U64_BYTE_WIDTH; // Use 64-bit for all numbers
+        }
+        if (typeof value === "boolean") {
+            return BYTE_WIDTH;
         }
         return 0;
     }
@@ -488,21 +555,21 @@ export class IRSerializer {
      * Calculate the size of the functions section
      */
     private calculateFunctionsSize(module: IRModule): number {
-        let size = 4; // count
+        let size = U32_BYTE_WIDTH; // Count
         for (const fn of module.functions) {
-            size += 4; // name string id
-            size += 4; // param count
+            size += U32_BYTE_WIDTH; // Name string id
+            size += U32_BYTE_WIDTH; // Param count
             for (const param of fn.params) {
                 size += this.calculateTypeSize(param.ty);
-                size += 4; // id
+                size += U32_BYTE_WIDTH; // Id
             }
             size += this.calculateTypeSize(fn.returnType);
-            size += 4; // local count
+            size += U32_BYTE_WIDTH; // Local count
             for (const local of fn.locals) {
                 size += this.calculateTypeSize(local.ty);
-                size += 4; // id
+                size += U32_BYTE_WIDTH; // Id
             }
-            size += 4; // block count
+            size += U32_BYTE_WIDTH; // Block count
             for (const block of fn.blocks) {
                 size += this.calculateBlockSize(block);
             }
@@ -514,13 +581,13 @@ export class IRSerializer {
      * Calculate the encoded size of a block
      */
     private calculateBlockSize(block: IRBlock): number {
-        let size = 4; // block id
-        size += 4; // param count
+        let size = U32_BYTE_WIDTH; // Block id
+        size += U32_BYTE_WIDTH; // Param count
         for (const param of block.params) {
             size += this.calculateTypeSize(param.ty);
-            size += 4; // id
+            size += U32_BYTE_WIDTH; // Id
         }
-        size += 4; // instruction count
+        size += U32_BYTE_WIDTH; // Instruction count
         for (const inst of block.instructions) {
             size += this.calculateInstructionSize(inst);
         }
@@ -532,164 +599,164 @@ export class IRSerializer {
      * Calculate the encoded size of an instruction
      */
     private calculateInstructionSize(inst: IRInst): number {
-        let size = 1; // opcode
-        size += 4; // dest value id
+        let size = BYTE_WIDTH; // Opcode
+        size += U32_BYTE_WIDTH; // Dest value id
         size += this.calculateTypeSize(inst.irType);
 
         const visitor: IRInstVisitor<number, void> = {
-            visitIconstInst: (): number => 8, // value (i64)
-            visitFconstInst: (): number => 8, // value (f64)
-            visitBconstInst: (): number => 1, // value (bool)
+            visitIconstInst: (): number => U64_BYTE_WIDTH, // Value (i64)
+            visitFconstInst: (): number => U64_BYTE_WIDTH, // Value (f64)
+            visitBconstInst: (): number => BYTE_WIDTH, // Value (bool)
             visitNullInst: (): number => 0, // No additional data
-            visitSconstInst: (): number => 4, // stringId
-            visitIaddInst: (): number => 4 + 4, // left, right
-            visitIsubInst: (): number => 4 + 4, // left, right
-            visitImulInst: (): number => 4 + 4, // left, right
-            visitIdivInst: (): number => 4 + 4, // left, right
-            visitImodInst: (): number => 4 + 4, // left, right
-            visitFaddInst: (): number => 4 + 4, // left, right
-            visitFsubInst: (): number => 4 + 4, // left, right
-            visitFmulInst: (): number => 4 + 4, // left, right
-            visitFdivInst: (): number => 4 + 4, // left, right
-            visitInegInst: (): number => 4, // operand
-            visitFnegInst: (): number => 4, // operand
-            visitIandInst: (): number => 4 + 4, // left, right
-            visitIorInst: (): number => 4 + 4, // left, right
-            visitIxorInst: (): number => 4 + 4, // left, right
-            visitIshlInst: (): number => 4 + 4, // left, right
-            visitIshrInst: (): number => 4 + 4, // left, right
-            visitIcmpInst: (): number => 4 + 4 + 1, // left, right, op
-            visitFcmpInst: (): number => 4 + 4 + 1, // left, right, op
+            visitSconstInst: (): number => U32_BYTE_WIDTH, // StringId
+            visitIaddInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitIsubInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitImulInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitIdivInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitImodInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitFaddInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitFsubInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitFmulInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitFdivInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitInegInst: (): number => U32_BYTE_WIDTH, // Operand
+            visitFnegInst: (): number => U32_BYTE_WIDTH, // Operand
+            visitIandInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitIorInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitIxorInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitIshlInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitIshrInst: (): number => TWO_U32_WIDTH, // Left, right
+            visitIcmpInst: (): number => TWO_U32_AND_TAG_WIDTH, // Left, right, op
+            visitFcmpInst: (): number => TWO_U32_AND_TAG_WIDTH, // Left, right, op
             visitAllocaInst: (alloca: AllocaInst): number => {
                 let s = this.calculateTypeSize(alloca.allocType);
-                s += 1; // has alignment
+                s += BYTE_WIDTH; // Has alignment
                 if (alloca.alignment !== undefined) {
-                    s += 4; // alignment
+                    s += U32_BYTE_WIDTH; // Alignment
                 }
                 return s;
             },
             visitLoadInst: (load: LoadInst): number => {
-                let s = 4; // ptr
+                let s = U32_BYTE_WIDTH; // Ptr
                 s += this.calculateTypeSize(load.loadType);
-                s += 1; // has alignment
+                s += BYTE_WIDTH; // Has alignment
                 if (load.alignment !== undefined) {
-                    s += 4; // alignment
+                    s += U32_BYTE_WIDTH; // Alignment
                 }
                 return s;
             },
             visitStoreInst: (store: StoreInst): number => {
-                let s = 4 + 4; // value, ptr
-                s += 1; // has alignment
+                let s = TWO_U32_WIDTH; // Value, ptr
+                s += BYTE_WIDTH; // Has alignment
                 if (store.alignment !== undefined) {
-                    s += 4; // alignment
+                    s += U32_BYTE_WIDTH; // Alignment
                 }
                 return s;
             },
-            visitMemcpyInst: (): number => 4 + 4 + 4, // dest, src, size
+            visitMemcpyInst: (): number => THREE_U32_WIDTH, // Dest, src, size
             visitGepInst: (gep: GepInst): number => {
-                let s = 4; // ptr
-                s += 4; // index count
-                s += 4 * gep.indices.length; // indices
+                let s = U32_BYTE_WIDTH; // Ptr
+                s += U32_BYTE_WIDTH; // Index count
+                s += U32_BYTE_WIDTH * gep.indices.length; // Indices
                 s += this.calculateTypeSize(gep.resultType);
                 return s;
             },
-            visitPtraddInst: (): number => 4 + 4, // ptr, offset
+            visitPtraddInst: (): number => TWO_U32_WIDTH, // Ptr, offset
             visitTruncInst: (trunc: TruncInst): number => {
-                let s = 4; // operand
+                let s = U32_BYTE_WIDTH; // Operand
                 s += this.calculateTypeSize(trunc.fromType);
                 s += this.calculateTypeSize(trunc.toType);
                 return s;
             },
             visitSextInst: (sext: SextInst): number => {
-                let s = 4; // operand
+                let s = U32_BYTE_WIDTH; // Operand
                 s += this.calculateTypeSize(sext.fromType);
                 s += this.calculateTypeSize(sext.toType);
                 return s;
             },
             visitZextInst: (zext: ZextInst): number => {
-                let s = 4; // operand
+                let s = U32_BYTE_WIDTH; // Operand
                 s += this.calculateTypeSize(zext.fromType);
                 s += this.calculateTypeSize(zext.toType);
                 return s;
             },
             visitFptouiInst: (fptoui: FptouiInst): number => {
-                let s = 4; // operand
+                let s = U32_BYTE_WIDTH; // Operand
                 s += this.calculateTypeSize(fptoui.fromType);
                 s += this.calculateTypeSize(fptoui.toType);
                 return s;
             },
             visitFptosiInst: (fptosi: FptosiInst): number => {
-                let s = 4; // operand
+                let s = U32_BYTE_WIDTH; // Operand
                 s += this.calculateTypeSize(fptosi.fromType);
                 s += this.calculateTypeSize(fptosi.toType);
                 return s;
             },
             visitUitofpInst: (uitofp: UitofpInst): number => {
-                let s = 4; // operand
+                let s = U32_BYTE_WIDTH; // Operand
                 s += this.calculateTypeSize(uitofp.fromType);
                 s += this.calculateTypeSize(uitofp.toType);
                 return s;
             },
             visitSitofpInst: (sitofp: SitofpInst): number => {
-                let s = 4; // operand
+                let s = U32_BYTE_WIDTH; // Operand
                 s += this.calculateTypeSize(sitofp.fromType);
                 s += this.calculateTypeSize(sitofp.toType);
                 return s;
             },
             visitBitcastInst: (bitcast: BitcastInst): number => {
-                let s = 4; // operand
+                let s = U32_BYTE_WIDTH; // Operand
                 s += this.calculateTypeSize(bitcast.fromType);
                 s += this.calculateTypeSize(bitcast.toType);
                 return s;
             },
             visitCallInst: (call: CallInst): number => {
-                let s = 4; // callee
-                s += 4; // arg count
-                s += 4 * call.args.length; // args
+                let s = U32_BYTE_WIDTH; // Callee
+                s += U32_BYTE_WIDTH; // Arg count
+                s += U32_BYTE_WIDTH * call.args.length; // Args
                 s += this.calculateTypeSize(call.calleeType);
                 return s;
             },
             visitCallDynInst: (callDyn: CallDynInst): number => {
-                let s = 4; // callee (value id)
-                s += 4; // arg count
-                s += 4 * callDyn.args.length; // args
+                let s = U32_BYTE_WIDTH; // Callee (value id)
+                s += U32_BYTE_WIDTH; // Arg count
+                s += U32_BYTE_WIDTH * callDyn.args.length; // Args
                 s += this.calculateTypeSize(callDyn.calleeType);
                 return s;
             },
             visitStructCreateInst: (sc: StructCreateInst): number => {
-                let s = 4; // field count
-                s += 4 * sc.fields.length; // fields
+                let s = U32_BYTE_WIDTH; // Field count
+                s += U32_BYTE_WIDTH * sc.fields.length; // Fields
                 s += this.calculateTypeSize(sc.structType);
                 return s;
             },
             visitStructGetInst: (sg: StructGetInst): number => {
-                let s = 4; // struct
-                s += 4; // index
+                let s = U32_BYTE_WIDTH; // Struct
+                s += U32_BYTE_WIDTH; // Index
                 s += this.calculateTypeSize(sg.structType);
                 return s;
             },
             visitEnumCreateInst: (ec: EnumCreateInst): number => {
-                let s = 4; // tag
-                s += 1; // has_data
-                if (ec.data !== null) {
-                    s += 4; // data
+                let s = U32_BYTE_WIDTH; // Tag
+                s += BYTE_WIDTH; // Has_data
+                if (typeof ec.data === "number") {
+                    s += U32_BYTE_WIDTH; // Data
                 }
                 s += this.calculateTypeSize(ec.enumType);
                 return s;
             },
             visitEnumGetTagInst: (egt: EnumGetTagInst): number => {
-                let s = 4; // enum_
+                let s = U32_BYTE_WIDTH; // Enum_
                 s += this.calculateTypeSize(egt.enumType);
                 return s;
             },
             visitEnumGetDataInst: (egd: EnumGetDataInst): number => {
-                let s = 4; // enum_
+                let s = U32_BYTE_WIDTH; // Enum_
                 s += this.calculateTypeSize(egd.enumType);
                 s += this.calculateTypeSize(egd.dataType);
                 return s;
             },
         };
-        size += inst.accept(visitor);
+        size += inst.accept(visitor, undefined);
         return size;
     }
 
@@ -697,50 +764,50 @@ export class IRSerializer {
      * Calculate the encoded size of a terminator
      */
     private calculateTerminatorSize(term: IRTerm | undefined): number {
-        if (!term) return 1; // just tag (unreachable)
+        if (!term) return BYTE_WIDTH; // Just tag (unreachable)
 
         const visitor: IRTermVisitor<number, void> = {
             visitRetTerm: (ret: RetTerm): number => {
-                let size = 1; // has_value flag
-                if (ret.value !== null) {
-                    size += 4; // value
+                let size = BYTE_WIDTH; // Has_value flag
+                if (typeof ret.value === "number") {
+                    size += U32_BYTE_WIDTH; // Value
                 }
                 return size;
             },
             visitBrTerm: (br: BrTerm): number => {
-                let size = 4; // target
-                size += 4; // arg count
-                size += 4 * br.args.length; // args
+                let size = U32_BYTE_WIDTH; // Target
+                size += U32_BYTE_WIDTH; // Arg count
+                size += U32_BYTE_WIDTH * br.args.length; // Args
                 return size;
             },
             visitBrIfTerm: (brIf: BrIfTerm): number => {
-                let size = 4; // condition
-                size += 4; // thenBranch
-                size += 4; // thenArgs count
-                size += 4 * brIf.thenArgs.length; // then args
-                size += 4; // elseBranch
-                size += 4; // elseArgs count
-                size += 4 * brIf.elseArgs.length; // else args
+                let size = U32_BYTE_WIDTH; // Condition
+                size += U32_BYTE_WIDTH; // ThenBranch
+                size += U32_BYTE_WIDTH; // ThenArgs count
+                size += U32_BYTE_WIDTH * brIf.thenArgs.length; // Then args
+                size += U32_BYTE_WIDTH; // ElseBranch
+                size += U32_BYTE_WIDTH; // ElseArgs count
+                size += U32_BYTE_WIDTH * brIf.elseArgs.length; // Else args
                 return size;
             },
             visitSwitchTerm: (sw: SwitchTerm): number => {
-                let size = 4; // value
-                size += 4; // case count
+                let size = U32_BYTE_WIDTH; // Value
+                size += U32_BYTE_WIDTH; // Case count
                 for (const c of sw.cases) {
-                    size += 8; // case value (i64)
-                    size += 4; // target
-                    size += 4; // arg count
-                    size += 4 * c.args.length; // args
+                    size += U64_BYTE_WIDTH; // Case value (i64)
+                    size += U32_BYTE_WIDTH; // Target
+                    size += U32_BYTE_WIDTH; // Arg count
+                    size += U32_BYTE_WIDTH * c.args.length; // Args
                 }
-                size += 4; // defaultBranch
-                size += 4; // defaultArgs count
-                size += 4 * sw.defaultArgs.length; // default args
+                size += U32_BYTE_WIDTH; // DefaultBranch
+                size += U32_BYTE_WIDTH; // DefaultArgs count
+                size += U32_BYTE_WIDTH * sw.defaultArgs.length; // Default args
                 return size;
             },
             visitUnreachableTerm: (): number => 0, // No additional data
         };
 
-        return 1 + term.accept(visitor); // tag + additional data
+        return BYTE_WIDTH + term.accept(visitor, undefined); // Tag + additional data
     }
 
     // ========================================================================
@@ -875,13 +942,13 @@ export class IRSerializer {
             visitFloatType: (floatTy: FloatType): void => {
                 this.writeU8(floatTy.width);
             },
-            visitBoolType: (): void => {
+            visitBoolType(): void {
                 // No additional data
             },
-            visitPtrType: (): void => {
+            visitPtrType(): void {
                 // No additional data
             },
-            visitUnitType: (): void => {
+            visitUnitType(): void {
                 // No additional data
             },
             visitStructType: (structTy: StructType): void => {
@@ -902,7 +969,7 @@ export class IRSerializer {
                 this.writeType(fnTy.returnType);
             },
         };
-        ty.accept(visitor);
+        ty.accept(visitor, undefined);
     }
 
     // ========================================================================
@@ -1006,7 +1073,7 @@ export class IRSerializer {
             visitBconstInst: (i: BconstInst): void => {
                 this.writeU8(i.value ? 1 : 0);
             },
-            visitNullInst: (): void => {
+            visitNullInst(): void {
                 // No additional data
             },
             visitSconstInst: (i: SconstInst): void => {
@@ -1200,7 +1267,7 @@ export class IRSerializer {
             },
             visitEnumCreateInst: (i: EnumCreateInst): void => {
                 this.writeU32(i.tag);
-                if (i.data !== null) {
+                if (typeof i.data === "number") {
                     this.writeU8(1);
                     this.writeU32(i.data);
                 } else {
@@ -1218,7 +1285,7 @@ export class IRSerializer {
                 this.writeType(i.dataType);
             },
         };
-        inst.accept(visitor);
+        inst.accept(visitor, undefined);
     }
 
     // ========================================================================
@@ -1235,7 +1302,7 @@ export class IRSerializer {
 
         const visitor: IRTermVisitor<void, void> = {
             visitRetTerm: (t: RetTerm): void => {
-                if (t.value !== null) {
+                if (typeof t.value === "number") {
                     this.writeU8(1);
                     this.writeU32(t.value);
                 } else {
@@ -1283,11 +1350,11 @@ export class IRSerializer {
                     this.writeU32(arg);
                 }
             },
-            visitUnreachableTerm: (): void => {
+            visitUnreachableTerm(): void {
                 // No additional data
             },
         };
-        term.accept(visitor);
+        term.accept(visitor, undefined);
     }
 
     // ========================================================================
