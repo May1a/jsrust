@@ -9,3 +9,4 @@ backend/tests/tmp_*.txt
 .vscode/
 out/
 dist/
+.DS_Store
