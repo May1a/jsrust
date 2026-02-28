@@ -2,17 +2,16 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { parseModule, NodeKind } from "./src/parser";
+import { parseModule } from "./src/parser";
+import { FnItem, ModuleNode } from "./src/ast";
 import { TypeContext } from "./src/type_context";
 import { inferModule } from "./src/inference";
 import { checkBorrowLite } from "./src/borrow";
-import { lowerModule } from "./src/lowering";
 import { resolveModuleTree } from "./src/module_resolver";
 import { expandDerives } from "./src/derive_expand";
-import { lowerHirToSsa } from "./src/hir_to_ssa";
+import { lowerAstModuleToSsa } from "./src/ast_to_ssa";
 import { printModule as printIRModule } from "./src/ir_printer";
-import { makeIRModule, addIRFunction, resetIRIds } from "./src/ir";
-import { HItemKind } from "./src/hir";
+import { resetIRIds } from "./src/ir";
 import { validateFunction as validateIRFunction } from "./src/ir_validate";
 import { serializeModule } from "./src/ir_serialize";
 import { runBackendCodegenWasm, runBackendWasm } from "./src/backend_runner";
@@ -27,7 +26,6 @@ const STDLIB_BUILTIN_SOURCE = `pub enum Option<T> {
 /**
  * @typedef {object} CompileOptions
  * @property {boolean} [emitAst=false]
- * @property {boolean} [emitHir=false]
  * @property {boolean} [emitIR=true]
  * @property {boolean} [validate=true]
  * @property {string} [outputFile]
@@ -44,7 +42,6 @@ const STDLIB_BUILTIN_SOURCE = `pub enum Option<T> {
  * @property {CompileDiagnostic[]} errors
  * @property {string} [ir]
  * @property {object} [ast]
- * @property {object} [hir]
  * @property {import('./src/ir.js').IRModule} [module]
  */
 
@@ -65,13 +62,12 @@ const STDLIB_BUILTIN_SOURCE = `pub enum Option<T> {
 /**
  * Compile a Rust source string to SSA IR module
  * @param {string} source
- * @param {{ emitAst?: boolean, emitHir?: boolean, validate?: boolean, sourcePath?: string }} [options={}]
+ * @param {{ emitAst?: boolean, validate?: boolean, sourcePath?: string }} [options={}]
  * @returns {CompileResult}
  */
 function compileToIRModule(source, options = {}) {
     const {
         emitAst = false,
-        emitHir = false,
         validate = true,
         sourcePath,
     } = options;
@@ -83,7 +79,7 @@ function compileToIRModule(source, options = {}) {
 
     const parseResult = parseModule(source);
     if (!parseResult.ok) {
-        for (const err of parseResult.errors) {
+        for (const err of parseResult.error) {
             errors.push({
                 message: err.message,
                 span: err.span,
@@ -94,14 +90,15 @@ function compileToIRModule(source, options = {}) {
     }
 
     const ast = parseResult.value;
-    if (!ast || ast.kind !== NodeKind.Module) {
+    if (!(ast instanceof ModuleNode)) {
         errors.push({
             message: "Internal parser error: missing module AST",
             kind: "internal",
         });
         return { ok: false, errors };
     }
-    const moduleAst = /** @type {import("./src/module_resolver").ModuleNode} */ (ast);
+    const moduleAst =
+        /** @type {import("./src/module_resolver").ModuleNode} */ (ast);
     const stdlibInjectResult = injectStdlibItems(moduleAst);
     if (!stdlibInjectResult.ok) {
         for (const err of stdlibInjectResult.errors) {
@@ -138,6 +135,13 @@ function compileToIRModule(source, options = {}) {
     const inferResult = inferModule(typeCtx, expandedAst);
     if (!inferResult.ok) {
         for (const err of inferResult.error) {
+            if (!err) {
+                errors.push({
+                    message: "Type inference failed",
+                    kind: "type",
+                });
+                continue;
+            }
             errors.push({
                 message: err.message,
                 span: err.span,
@@ -159,58 +163,36 @@ function compileToIRModule(source, options = {}) {
         return { ok: false, errors };
     }
 
-    const hirResult = lowerModule(expandedAst, typeCtx);
-    if (!hirResult.module) {
-        for (const err of hirResult.errors) {
-            errors.push({
-                message: err.message,
-                span: err.span,
-                kind: "lower",
-            });
-        }
+    /** @type {import("./src/ir.js").IRModule | null} */
+    let irModule = null;
+    try {
+        irModule = lowerAstModuleToSsa(expandedAst);
+    } catch (e) {
+        errors.push({
+            message: `Lowering to SSA failed: ${e instanceof Error ? e.message : String(e)}`,
+            kind: "lower",
+        });
         return { ok: false, errors };
     }
 
-    const hirModule = hirResult.module;
-    const irModule = makeIRModule(hirModule.name || "main");
+    if (!irModule) {
+        errors.push({
+            message: "Lowering to SSA did not produce an IR module",
+            kind: "lower",
+        });
+        return { ok: false, errors };
+    }
 
-    for (const item of hirModule.items) {
-        if (item.kind === HItemKind.Fn) {
-            if (!item.body) {
-                continue;
-            }
-            try {
-                const irFn = lowerHirToSsa(
-                    /** @type {import('./src/hir.js').HFnDecl} */ (item),
-                    { irModule },
-                );
-                if (!irFn.ok) {
+    if (validate) {
+        for (const fn of irModule.functions) {
+            const validationResult = validateIRFunction(fn);
+            if (!validationResult.ok) {
+                for (const valErr of validationResult.errors || []) {
                     errors.push({
-                        message: `lowering function \`${item.name}\` failed`,
-                        kind: "lower",
+                        message: `in function \`${fn.name}\`: ${valErr.message}`,
+                        kind: "validation",
                     });
-                    continue;
                 }
-
-                if (validate) {
-                    const validationResult = validateIRFunction(irFn.value);
-                    if (!validationResult.ok) {
-                        for (const valErr of validationResult.errors || []) {
-                            errors.push({
-                                message: `in function \`${item.name}\`: ${valErr.message}`,
-                                span: /** @type {any} */ (valErr).span,
-                                kind: "validation",
-                            });
-                        }
-                    }
-                }
-
-                addIRFunction(irModule, irFn.value);
-            } catch (e) {
-                errors.push({
-                    message: `lowering function \`${item.name}\`: ${e instanceof Error ? e.message : String(e)}`,
-                    kind: "lower",
-                });
             }
         }
     }
@@ -224,10 +206,6 @@ function compileToIRModule(source, options = {}) {
 
     if (emitAst) {
         result.ast = expandedAst;
-    }
-
-    if (emitHir) {
-        result.hir = hirModule;
     }
 
     return result;
@@ -259,8 +237,8 @@ function injectStdlibItems(ast) {
     const stdlibParse = parseModule(
         `${STDLIB_BUILTIN_SOURCE}\n${stdlibSource}`,
     );
-    if (!stdlibParse.ok || !stdlibParse.value) {
-        for (const err of stdlibParse.errors) {
+    if (!stdlibParse.ok) {
+        for (const err of stdlibParse.error) {
             errors.push({
                 message: `In stdlib vec_core.rs: ${err.message}`,
                 span: err.span,
@@ -297,7 +275,7 @@ function compile(source, options = {}) {
 /**
  * Compile a Rust source string to binary IR.
  * @param {string} source
- * @param {{ emitAst?: boolean, emitHir?: boolean, validate?: boolean }} [options={}]
+ * @param {{ emitAst?: boolean, validate?: boolean }} [options={}]
  * @returns {BinaryCompileResult}
  */
 function compileToBinary(source, options = {}) {
@@ -339,7 +317,7 @@ function compileToBinary(source, options = {}) {
 /**
  * Compile a file to SSA IR module
  * @param {string} filePath
- * @param {{ emitAst?: boolean, emitHir?: boolean, validate?: boolean }} [options={}]
+ * @param {{ emitAst?: boolean, validate?: boolean }} [options={}]
  * @returns {CompileResult}
  */
 function compileFileToIRModule(filePath, options = {}) {
@@ -367,7 +345,7 @@ function compileFileToIRModule(filePath, options = {}) {
 /**
  * Compile a file to binary IR.
  * @param {string} filePath
- * @param {{ emitAst?: boolean, emitHir?: boolean, validate?: boolean }} [options={}]
+ * @param {{ emitAst?: boolean, validate?: boolean }} [options={}]
  * @returns {BinaryCompileResult}
  */
 function compileFileToBinary(filePath, options = {}) {
@@ -511,7 +489,6 @@ function printCompileHelp(exitCode = 0) {
     console.log("");
     console.log("Compile options:");
     console.log("  --emit-ast    Print the AST");
-    console.log("  --emit-hir    Print the HIR");
     console.log("  --no-ir       Don't print the IR");
     console.log("  --no-validate Skip IR validation");
     console.log("  -o <file>     Write output to file");
@@ -592,7 +569,6 @@ function runCompileCli(args) {
     /** @type {CompileOptions} */
     const options = {
         emitAst: false,
-        emitHir: false,
         emitIR: true,
         validate: true,
     };
@@ -604,8 +580,6 @@ function runCompileCli(args) {
         const arg = args[i];
         if (arg === "--emit-ast") {
             options.emitAst = true;
-        } else if (arg === "--emit-hir") {
-            options.emitHir = true;
         } else if (arg === "--no-ir") {
             options.emitIR = false;
         } else if (arg === "--no-validate") {
@@ -652,11 +626,6 @@ function runCompileCli(args) {
     if (options.emitAst && result.ast) {
         output += "=== AST ===\n";
         output += JSON.stringify(result.ast, null, 2) + "\n\n";
-    }
-
-    if (options.emitHir && result.hir) {
-        output += "=== HIR ===\n";
-        output += JSON.stringify(result.hir, null, 2) + "\n\n";
     }
 
     if (options.emitIR && result.ir) {
@@ -781,81 +750,49 @@ function runTestCli(args) {
         }
     })();
 
-    // Compile to get the HIR with test functions
     const parseResult = parseModule(source);
     if (!parseResult.ok) {
-        for (const err of parseResult.errors) {
-            console.error(`error: ${err.message} at line ${err.span.line}`);
+        for (const parseError of parseResult.error) {
+            console.error(
+                `error: ${parseError.message} at line ${parseError.span.line}`,
+            );
         }
         return 1;
     }
-    const parsedAst = parseResult.value;
-    if (!parsedAst || parsedAst.kind !== NodeKind.Module) {
+    if (!(parseResult.value instanceof ModuleNode)) {
         console.error("error: internal parser error: missing module AST");
         return 1;
     }
-    /** @type {import("./src/module_resolver").ModuleNode} */
-    const ast = /** @type {import("./src/module_resolver").ModuleNode} */ (parsedAst);
-    const stdlibInjectResult = injectStdlibItems(ast);
+
+    const preAst = parseResult.value;
+    const stdlibInjectResult = injectStdlibItems(preAst);
     if (!stdlibInjectResult.ok) {
-        for (const err of stdlibInjectResult.errors) {
-            console.error(`error: ${err.message}`);
+        for (const injectError of stdlibInjectResult.errors) {
+            console.error(`error: ${injectError.message}`);
         }
         return 1;
     }
-    const resolveResult = resolveModuleTree(ast, {
-        sourcePath: inputFile,
-    });
+    const resolveResult = resolveModuleTree(preAst, { sourcePath: inputFile });
     if (!resolveResult.ok || !resolveResult.module) {
-        for (const err of resolveResult.errors || []) {
-            console.error(`error: ${err.message}`);
+        for (const resolveError of resolveResult.errors || []) {
+            console.error(`error: ${resolveError.message}`);
         }
         return 1;
     }
-
-    const resolvedAst = resolveResult.module;
-    const deriveResult = expandDerives(resolvedAst);
+    const deriveResult = expandDerives(resolveResult.module);
     if (!deriveResult.ok || !deriveResult.module) {
-        for (const err of deriveResult.errors || []) {
-            console.error(`error: ${err.message}`);
+        for (const deriveError of deriveResult.errors || []) {
+            console.error(`error: ${deriveError.message}`);
         }
         return 1;
     }
-
     const expandedAst = deriveResult.module;
 
-    const typeCtx = new TypeContext();
-    const inferResult = inferModule(typeCtx, expandedAst);
-    if (!inferResult.ok) {
-        for (const err of inferResult.error) {
-            console.error(`error: ${err.message}`);
-        }
-        return 1;
-    }
-
-    const borrowResult = checkBorrowLite(expandedAst, typeCtx);
-    if (!borrowResult.ok) {
-        for (const err of borrowResult.errors || []) {
-            console.error(`error: ${err.message}`);
-        }
-        return 1;
-    }
-
-    const hirResult = lowerModule(expandedAst, typeCtx);
-    if (!hirResult.module) {
-        for (const err of hirResult.errors) {
-            console.error(`error: ${err.message}`);
-        }
-        return 1;
-    }
-
-    const hirModule = hirResult.module;
-
-    // Find all test functions
+    // Find all test functions from class-AST items.
     /** @type {{ name: string, expectedOutput: string | null }[]} */
     const testFns = [];
-    for (const item of hirModule.items || []) {
-        if (item.kind === HItemKind.Fn && item.isTest) {
+    for (const item of expandedAst.items || []) {
+        if (item instanceof FnItem && item.isTest) {
             testFns.push({
                 name: item.name,
                 expectedOutput: item.expectedOutput ?? null,
@@ -868,47 +805,12 @@ function runTestCli(args) {
         return 0;
     }
 
-    // Compile to binary IR
-    const irModule = makeIRModule(hirModule.name || "main");
-    for (const item of hirModule.items || []) {
-        if (item.kind === HItemKind.Fn) {
-            if (!item.body) {
-                continue;
-            }
-            try {
-                const irFn = lowerHirToSsa(
-                    /** @type {import('./src/hir.js').HFnDecl} */ (item),
-                    { irModule },
-                );
-                if (!irFn.ok) throw "assert";
-                if (validate) {
-                    const validationResult = validateIRFunction(irFn.value);
-                    if (!validationResult.ok) {
-                        for (const err of validationResult.errors || []) {
-                            console.error(
-                                `error: in function \`${item.name}\`: ${err.message}`,
-                            );
-                        }
-                    }
-                }
-                addIRFunction(irModule, irFn.value);
-            } catch (e) {
-                console.error(
-                    `error: lowering function \`${item.name}\`: ${e instanceof Error ? e.message : String(e)}`,
-                );
-            }
-        }
-    }
-
-    let bytes;
-    try {
-        bytes = serializeModule(irModule);
-    } catch (e) {
-        printOneLineError(
-            `failed to serialize IR module: ${e instanceof Error ? e.message : String(e)}`,
-        );
+    const binaryResult = compileFileToBinary(inputFile, { validate });
+    if (!binaryResult.ok || !binaryResult.bytes) {
+        printRustcStyleErrors(binaryResult.errors || [], inputFile, source);
         return 1;
     }
+    const bytes = binaryResult.bytes;
 
     // Run each test
     let passed = 0;

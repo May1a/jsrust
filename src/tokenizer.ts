@@ -25,7 +25,13 @@ export enum TokenType {
     Where,
     Self,
     Mut,
+    Break,
+    Continue,
+    In,
     FatArrow,
+    Hash,
+    Question,
+    At,
     OpenParen,
     CloseParen,
     OpenCurly,
@@ -112,6 +118,9 @@ const Keywords: Record<string, TokenType> = {
     where: TokenType.Where,
     self: TokenType.Self,
     mut: TokenType.Mut,
+    break: TokenType.Break,
+    continue: TokenType.Continue,
+    in: TokenType.In,
 };
 
 function initState(source: string): LexerState {
@@ -381,6 +390,9 @@ function readOperatorOrDelimiter(state: LexerState): Token | undefined {
         "|": TokenType.Pipe,
         "=": TokenType.Eq,
         "&": TokenType.And,
+        "#": TokenType.Hash,
+        "?": TokenType.Question,
+        "@": TokenType.At,
     };
 
     const twoCharTokens: Record<string, TokenTypeValue> = {

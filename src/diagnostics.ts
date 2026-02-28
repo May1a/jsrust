@@ -159,21 +159,42 @@ function withRelated(
     span: SourceSpan,
     message: string,
 ): Diagnostic {
-    const related = diag.related ?? [];
+    const related = diag.related === undefined ? [] : [...diag.related];
     related.push({ span, message });
-    return { ...diag, related };
+    return {
+        level: diag.level,
+        message: diag.message,
+        span: diag.span,
+        code: diag.code,
+        related,
+        hint: diag.hint,
+    };
 }
 /**
  * Add an error code to a diagnostic
  */
 function withCode(diag: Diagnostic, code: string): Diagnostic {
-    return { ...diag, code };
+    return {
+        level: diag.level,
+        message: diag.message,
+        span: diag.span,
+        code,
+        related: diag.related,
+        hint: diag.hint,
+    };
 }
 /**
  * Add a hint to a diagnostic
  */
 function withHint(diag: Diagnostic, hint: string): Diagnostic {
-    return { ...diag, hint };
+    return {
+        level: diag.level,
+        message: diag.message,
+        span: diag.span,
+        code: diag.code,
+        related: diag.related,
+        hint,
+    };
 }
 // ============================================================================
 // Task 13.4: Error Collection
@@ -524,7 +545,7 @@ function renderRelated(
 
 /**
  * Render a diagnostic to a string
- * @param {boolean} [options.color=true] - Whether to use ANSI colors
+ * @param {boolean} [options.color] - Whether to use ANSI colors (defaults to true)
  */
 function renderDiagnostic(
     diag: Diagnostic,
