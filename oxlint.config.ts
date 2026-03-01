@@ -19,6 +19,7 @@ const disabledRules: DummyRuleMap = {
     "unicorn/number-literal-case": "off",
     "init-declarations": "off",
     "typescript/consistent-type-definitions": "off",
+    "oxc/no-rest-spread-properties": "off",
 };
 
 const stricterRules: DummyRuleMap = {
@@ -46,7 +47,6 @@ export default defineConfig({
     ignorePatterns: [
         "tests/**",
         "dist/**",
-        "main.js",
         "oxlint.config.ts",
         "third_party/**",
         "docs/**",
