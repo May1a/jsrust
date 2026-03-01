@@ -597,8 +597,6 @@ export class FnItem extends Item {
     readonly body?: BlockExpr;
     readonly derives: string[] = [];
     builtinName?: string;
-    isTest?: boolean;
-    expectedOutput?: string;
 
     constructor(
         span: Span,
@@ -619,6 +617,22 @@ export class FnItem extends Item {
     }
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
         return visitor.visitFnItem(this, ctx);
+    }
+}
+
+export class TestFnItem extends FnItem {
+    readonly expectedOutput?: string;
+
+    constructor(
+        span: Span,
+        name: string,
+        params: ParamNode[],
+        returnType: TypeNode,
+        body?: BlockExpr,
+        expectedOutput?: string,
+    ) {
+        super(span, name, params, returnType, body);
+        this.expectedOutput = expectedOutput;
     }
 }
 

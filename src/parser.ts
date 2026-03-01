@@ -16,6 +16,7 @@ import {
     ExprStmt,
     FieldExpr,
     FnItem,
+    TestFnItem,
     FnTypeNode,
     ForExpr,
     GenericArgsNode,
@@ -465,8 +466,9 @@ class Parser {
     // Attributes
     // -----------------------------------------------------------------------
 
-    parseAttributes(): { derives: string[] } {
+    parseAttributes(): { derives: string[]; isTest: boolean } {
         const derives: string[] = [];
+        let isTest = false;
 
         while (this.check(TokenType.Hash)) {
             this.advance(); // Consume #
@@ -490,12 +492,20 @@ class Parser {
                     this.eat(TokenType.CloseParen);
                 }
                 this.expect(TokenType.CloseSquare);
+            } else if (
+                !isBang &&
+                this.check(TokenType.Identifier) &&
+                this.peek().value === "test"
+            ) {
+                this.advance(); // Consume "test"
+                this.expect(TokenType.CloseSquare);
+                isTest = true;
             } else {
                 this.skipBracketContent(); // Consumes until and including ]
             }
         }
 
-        return { derives };
+        return { derives, isTest };
     }
 
     // -----------------------------------------------------------------------
@@ -524,21 +534,21 @@ class Parser {
         // Skip standalone semicolons
         if (this.eat(TokenType.Semicolon)) return [];
 
-        const { derives } = this.parseAttributes();
+        const { derives, isTest } = this.parseAttributes();
         this.eatPub();
 
         const start = this.peek();
         return (
-            this.parseDirectItem(start, derives) ??
-            this.parseUnsafeItem(start, derives) ??
+            this.parseDirectItem(start, derives, isTest) ??
+            this.parseUnsafeItem(start, derives, isTest) ??
             this.parseTypeAliasItem() ??
             this.parseStaticOrConstItem() ??
             this.parseUnexpectedItem()
         );
     }
 
-    private parseDirectItem(start: Token, derives: string[]): Item[] | undefined {
-        if (this.eat(TokenType.Fn)) return [this.parseFnBody(start, derives)];
+    private parseDirectItem(start: Token, derives: string[], isTest: boolean): Item[] | undefined {
+        if (this.eat(TokenType.Fn)) return [this.parseFnBody(start, derives, isTest)];
         if (this.eat(TokenType.Struct)) return [this.parseStructBody(start, derives)];
         if (this.eat(TokenType.Enum)) return [this.parseEnumBody(start, derives)];
         if (this.eat(TokenType.Impl)) return [this.parseImplBody(start)];
@@ -548,9 +558,9 @@ class Parser {
         return undefined;
     }
 
-    private parseUnsafeItem(start: Token, derives: string[]): Item[] | undefined {
+    private parseUnsafeItem(start: Token, derives: string[], isTest: boolean): Item[] | undefined {
         if (!this.eat(TokenType.Unsafe)) return undefined;
-        if (this.eat(TokenType.Fn)) return [this.parseFnBody(start, derives)];
+        if (this.eat(TokenType.Fn)) return [this.parseFnBody(start, derives, isTest)];
         if (this.eat(TokenType.Impl)) return [this.parseImplBody(start)];
         if (this.eat(TokenType.Trait)) return [this.parseTraitBody(start)];
         if (this.check(TokenType.OpenCurly)) {
@@ -595,7 +605,7 @@ class Parser {
     // Fn item
     // -----------------------------------------------------------------------
 
-    private parseFnBody(startTok: Token, derives: string[]): FnItem {
+    private parseFnBody(startTok: Token, derives: string[], isTest: boolean): FnItem {
         this.skipGenericParams();
         const name = this.expect(TokenType.Identifier).value;
         this.skipGenericParams(); // Generics after name
@@ -618,6 +628,10 @@ class Parser {
             body = this.parseBlock();
         } else {
             this.eat(TokenType.Semicolon);
+        }
+
+        if (isTest) {
+            return new TestFnItem(this.spanFrom(startTok), name, params, returnType, body);
         }
 
         return new FnItem(this.spanFrom(startTok), name, params, returnType, body, derives);
@@ -835,7 +849,7 @@ class Parser {
         this.eatPub();
         this.eat(TokenType.Unsafe);
         if (this.eat(TokenType.Fn)) {
-            methods.push(this.parseFnBody(this.peek(), derives));
+            methods.push(this.parseFnBody(this.peek(), derives, false));
             return;
         }
         if (this.check(TokenType.Type) || this.check(TokenType.Const) || this.check(TokenType.Static)) {
@@ -886,7 +900,7 @@ class Parser {
             }
             if (this.eat(TokenType.Fn)) {
                 const fnStart = this.peek();
-                methods.push(this.parseFnBody(fnStart, derives));
+                methods.push(this.parseFnBody(fnStart, derives, false));
             } else if (this.check(TokenType.Type)) {
                 while (!this.check(TokenType.Semicolon) && !this.check(TokenType.Eof) && !this.check(TokenType.CloseCurly)) {
                     this.advance();

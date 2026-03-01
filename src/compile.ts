@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseModule } from "./parser";
-import { FnItem, type ModuleNode, type Span } from "./ast";
+import { TestFnItem, type ModuleNode, type Span } from "./ast";
 import { TypeContext } from "./type_context";
 import { inferModule } from "./inference";
 import { checkBorrowLite } from "./borrow";
@@ -332,7 +332,7 @@ export function discoverTestFunctions(
 
     const tests: TestFn[] = [];
     for (const item of prepResult.module.items) {
-        if (item instanceof FnItem && item.isTest) {
+        if (item instanceof TestFnItem) {
             tests.push({ name: item.name, expectedOutput: item.expectedOutput });
         }
     }
