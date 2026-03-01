@@ -13,6 +13,7 @@
         /* Strictness */
         "strict": true,
         "noImplicitOverride": true,
+        "types": ["bun"],
 
         /* If transpiling with TypeScript: */
         "module": "preserve",
@@ -25,6 +26,6 @@
         "rootDir": ".",
 
         /* If your code doesn't run in the DOM: */
-        "lib": ["es2022", "DOM", "ESNext.Object", "ESNext"],
+        "lib": ["es2023", "DOM", "ESNext.Object", "ESNext"],
     },
 }
