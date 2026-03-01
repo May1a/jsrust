@@ -2,22 +2,17 @@
     "type": "module",
     "scripts": {
         "test": "bun test",
-        "compile": "bun build main.js > out/main.js",
+        "compile": "bun build main.js --minify --target=bun --outdir dist",
         "typecheck": "bunx oxlint --type-aware --type-check",
-        "fixtures:backend": "bun scripts/generate_backend_fixtures.js",
-        "format": "npx prettier -w ."
+        "format": "bunx prettier -w ."
     },
     "devDependencies": {
-        "@eslint/eslintrc": "^3.3.4",
-        "@eslint/js": "^10.0.1",
         "@types/bun": "^1.3.9",
         "@types/node": "^25.3.0",
-        "eslint": "^10.0.2",
         "globals": "^17.3.0",
         "oxlint": "^1.50.0",
         "oxlint-tsgolint": "^0.15.0",
-        "typescript": "^5.9.3",
-        "typescript-eslint": "^8.56.1"
+        "typescript": "^6.0.0-beta"
     },
     "prettier": {
         "tabWidth": 4
