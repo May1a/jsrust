@@ -22,7 +22,9 @@ const STDLIB_BUILTIN_SOURCE = `pub enum Option<T> {
 
 function injectStdlibItems(ast: ModuleNode): void {
     const stdlibSource = fs.readFileSync(STDLIB_PATH, "utf-8");
-    const stdlibParse = parseModule(`${STDLIB_BUILTIN_SOURCE}\n${stdlibSource}`);
+    const stdlibParse = parseModule(
+        `${STDLIB_BUILTIN_SOURCE}\n${stdlibSource}`,
+    );
     if (!stdlibParse.ok) {
         const msgs = stdlibParse.errors.map((e) => e.message).join("; ");
         throw new Error(`Failed to parse stdlib: ${msgs}`);
@@ -45,14 +47,18 @@ export function compileToIR(source: string): string {
 
     const resolveResult = resolveModuleTree(ast);
     if (!resolveResult.ok || !resolveResult.module) {
-        const msgs = (resolveResult.errors ?? []).map((e) => e.message).join("; ");
+        const msgs = (resolveResult.errors ?? [])
+            .map((e) => e.message)
+            .join("; ");
         throw new Error(`Resolve error: ${msgs}`);
     }
     const resolvedAst = resolveResult.module;
 
     const deriveResult = expandDerives(resolvedAst);
     if (!deriveResult.ok || !deriveResult.module) {
-        const msgs = (deriveResult.errors ?? []).map((e) => e.message).join("; ");
+        const msgs = (deriveResult.errors ?? [])
+            .map((e) => e.message)
+            .join("; ");
         throw new Error(`Derive expand error: ${msgs}`);
     }
     const expandedAst = deriveResult.module;
@@ -69,7 +75,9 @@ export function compileToIR(source: string): string {
 
     const borrowResult = checkBorrowLite(expandedAst, typeCtx);
     if (!borrowResult.ok) {
-        const msgs = (borrowResult.errors ?? []).map((e) => e.message).join("; ");
+        const msgs = (borrowResult.errors ?? [])
+            .map((e) => e.message)
+            .join("; ");
         throw new Error(`Borrow check error: ${msgs}`);
     }
 
@@ -87,7 +95,9 @@ export function compileToIR(source: string): string {
         const result = validateFunction(fn);
         if (!result.ok) {
             for (const err of result.errors ?? []) {
-                validationErrors.push(`in function \`${fn.name}\`: ${err.message}`);
+                validationErrors.push(
+                    `in function \`${fn.name}\`: ${err.message}`,
+                );
             }
         }
     }

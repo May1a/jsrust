@@ -4,9 +4,6 @@
 
 import type { Span } from "./ast";
 
-const ZERO = 0;
-const ONE = 1;
-
 // ============================================================================
 // Task 13.1: Source Location
 // ============================================================================
@@ -30,10 +27,6 @@ interface SourceSpan {
 
 /**
  * Create a source location
- * @param {number} line - 1-based line number
- * @param {number} column - 1-based column number
- * @param {string} [file] - Optional file path
- * @returns {SourceLocation}
  */
 function makeSourceLocation(
     line: number,
@@ -89,7 +82,6 @@ function makeSourceSpanFromLC(
 
 /**
  * Diagnostic severity level
- * @enum {number}
  */
 enum Level {
     Error,
@@ -387,7 +379,7 @@ function combineResults$1<T, E>(results: Result<T, E>[]): Result<T[], E[]> {
             errors.push(result.error);
         }
     }
-    if (errors.length > ZERO) {
+    if (errors.length > 0) {
         return err$1(errors);
     }
     return ok$1(values);
@@ -419,10 +411,10 @@ class SourceContext {
      * Get a specific line (1-based)
      */
     getLine(lineNum: number): string | undefined {
-        if (lineNum < ONE || lineNum > this.lines.length) {
+        if (lineNum < 1 || lineNum > this.lines.length) {
             return undefined;
         }
-        return this.lines[lineNum - ONE];
+        return this.lines[lineNum - 1];
     }
     /**
      * Get the total number of lines
@@ -439,17 +431,17 @@ class SourceContext {
         if (!startLine || !endLine) return undefined;
         if (span.start.line === span.end.line) {
             return startLine.substring(
-                span.start.column - ONE,
-                span.end.column - ONE,
+                span.start.column - 1,
+                span.end.column - 1,
             );
         }
         // Multi-line span
-        const parts = [startLine.substring(span.start.column - ONE)];
-        for (let i = span.start.line + ONE; i < span.end.line; i++) {
+        const parts = [startLine.substring(span.start.column - 1)];
+        for (let i = span.start.line + 1; i < span.end.line; i++) {
             const line = this.getLine(i);
             if (line) parts.push(line);
         }
-        parts.push(endLine.substring(ZERO, span.end.column - ONE));
+        parts.push(endLine.substring(0, span.end.column - 1));
         return parts.join("\n");
     }
 
@@ -524,7 +516,7 @@ function renderRelated(
     lines: string[],
     color: boolean | undefined,
 ): void {
-    if (diag.related && diag.related.length > ZERO) {
+    if (diag.related && diag.related.length > 0) {
         for (const rel of diag.related) {
             lines.push("");
             const noteColor = color ? LEVEL_COLORS[Level.Note] || "" : "";
@@ -593,8 +585,8 @@ function renderSnippet(
     const startLine = span.start.line;
     const endLine = span.end.line;
     // Calculate display range (show context around the span)
-    const contextLines = ONE;
-    const displayStart = Math.max(ONE, startLine - contextLines);
+    const contextLines = 1;
+    const displayStart = Math.max(1, startLine - contextLines);
     const displayEnd = Math.min(ctx.lineCount, endLine + contextLines);
     for (let lineNum = displayStart; lineNum <= displayEnd; lineNum++) {
         const line = ctx.getLine(lineNum);
@@ -605,13 +597,13 @@ function renderSnippet(
             // This line is part of the span
             lines.push(`${gutter} ${line}`);
             // Add underline/caret
-            let underlineStart = ZERO;
+            let underlineStart = 0;
             let underlineEnd = line.length;
             if (lineNum === startLine) {
-                underlineStart = span.start.column - ONE;
+                underlineStart = span.start.column - 1;
             }
             if (lineNum === endLine) {
-                underlineEnd = span.end.column - ONE;
+                underlineEnd = span.end.column - 1;
             }
             // Build the underline
             const underline = buildUnderline(
@@ -636,7 +628,7 @@ function buildUnderline(start: number, end: number, color = true): string {
     const bold = color ? BOLD : "";
     const blue = color ? BLUE : "";
     const spaces = " ".repeat(start);
-    const carets = "^".repeat(Math.max(ONE, end - start));
+    const carets = "^".repeat(Math.max(1, end - start));
     return `${spaces}${blue}${bold}${carets}${reset}`;
 }
 /**
@@ -699,10 +691,8 @@ function formatArityMismatch(
     found: number,
     span: SourceSpan,
 ): Diagnostic {
-    const SIGLE_ARG = 1;
-    const expectedStr =
-        expected === SIGLE_ARG ? "1 argument" : `${expected} arguments`;
-    const foundStr = found === SIGLE_ARG ? "1 argument" : `${found} arguments`;
+    const expectedStr = expected === 1 ? "1 argument" : `${expected} arguments`;
+    const foundStr = found === 1 ? "1 argument" : `${found} arguments`;
     return error(`Expected ${expectedStr}, found ${foundStr}`, span);
 }
 /**
@@ -787,6 +777,8 @@ function formatMoveError(
     }
     return diag;
 }
+
+export type { Diagnostic, SourceSpan, SourceLocation };
 
 export {
     // Source Location

@@ -127,7 +127,7 @@ describe("expressions", () => {
         expect(result.value).toBeInstanceOf(IfExpr);
         const ifExpr = result.value as IfExpr;
         expect(ifExpr.condition).toBeInstanceOf(IdentifierExpr);
-        expect(ifExpr.elseExpr).not.toBeNull();
+        expect(ifExpr.elseBranch).not.toBeNull();
     });
 
     test("closure", () => {

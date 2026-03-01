@@ -53,18 +53,18 @@ export interface BindingInfo {
     refOrigin?: RefOrigin;
 }
 
-export interface BorrowLiteError {
+export interface BorrowError {
     message: string;
-    span?: { line: number; column: number; start: number; end: number };
+    span: Span;
 }
 
 export interface FnEnv {
     scopeStack: string[][];
     bindings: Map<string, BindingInfo[]>;
-    errors: BorrowLiteError[];
+    errors: BorrowError[];
 }
 
-function makeBorrowError(message: string, span?: Span): BorrowLiteError {
+function makeBorrowError(message: string, span: Span): BorrowError {
     return { message, span };
 }
 
@@ -103,7 +103,10 @@ function lookupBinding(env: FnEnv, name: string): BindingInfo | undefined {
     return stack && stack.length > 0 ? stack[stack.length - 1] : undefined;
 }
 
-function collectPatternBindings(pattern: Pattern | undefined, out: string[]): void {
+function collectPatternBindings(
+    pattern: Pattern | undefined,
+    out: string[],
+): void {
     if (!pattern) {
         return;
     }
@@ -136,7 +139,9 @@ function collectPatternBindings(pattern: Pattern | undefined, out: string[]): vo
     }
 }
 
-function getSingleSegmentPathName(expr: IdentifierExpr | PathExpr): string | undefined {
+function getSingleSegmentPathName(
+    expr: IdentifierExpr | PathExpr,
+): string | undefined {
     if (expr instanceof PathExpr) {
         return expr.segments.length === 1 ? expr.segments[0] : undefined;
     }
@@ -216,7 +221,10 @@ function getPlaceOrigin(
     return undefined;
 }
 
-function getBindingPlaceOrigin(env: FnEnv, name: string): RefOrigin | undefined {
+function getBindingPlaceOrigin(
+    env: FnEnv,
+    name: string,
+): RefOrigin | undefined {
     const binding = lookupBinding(env, name);
     if (!binding) {
         return undefined;
@@ -363,7 +371,11 @@ function checkClosureExpr(expr: ClosureExpr, env: FnEnv): void {
         if (!param.name || param.name === "_") {
             continue;
         }
-        defineBinding(env, param.name, createBinding("local", currentDepth(env)));
+        defineBinding(
+            env,
+            param.name,
+            createBinding("local", currentDepth(env)),
+        );
     }
     if (expr.body instanceof BlockExpr) {
         checkBlock(expr.body, env, false);
@@ -461,7 +473,29 @@ function checkLeafExpr(expr: ExpressionLike, env: FnEnv): boolean {
     return false;
 }
 
-type ExpressionLike = AssignExpr | BinaryExpr | BlockExpr | CallExpr | ClosureExpr | DerefExpr | FieldExpr | ForExpr | IdentifierExpr | IfExpr | IndexExpr | LoopExpr | MacroExpr | MatchExpr | PathExpr | RangeExpr | RefExpr | ReturnExpr | StructExpr | UnaryExpr | WhileExpr | undefined;
+type ExpressionLike =
+    | AssignExpr
+    | BinaryExpr
+    | BlockExpr
+    | CallExpr
+    | ClosureExpr
+    | DerefExpr
+    | FieldExpr
+    | ForExpr
+    | IdentifierExpr
+    | IfExpr
+    | IndexExpr
+    | LoopExpr
+    | MacroExpr
+    | MatchExpr
+    | PathExpr
+    | RangeExpr
+    | RefExpr
+    | ReturnExpr
+    | StructExpr
+    | UnaryExpr
+    | WhileExpr
+    | undefined;
 
 function checkExpr(expr: ExpressionLike, env: FnEnv): void {
     if (!expr) {
@@ -550,7 +584,10 @@ function checkBlock(
     }
     if (block.expr) {
         checkExpr(block.expr, env);
-        if (checkTailAsReturn && isInvalidReturnOrigin(getRefOrigin(block.expr, env))) {
+        if (
+            checkTailAsReturn &&
+            isInvalidReturnOrigin(getRefOrigin(block.expr, env))
+        ) {
             env.errors.push(
                 makeBorrowError(
                     "Cannot return reference to local data or temporary",
@@ -562,7 +599,7 @@ function checkBlock(
     popScope(env);
 }
 
-function checkFnItem(fnItem: FnItem): BorrowLiteError[] {
+function checkFnItem(fnItem: FnItem): BorrowError[] {
     if (!fnItem.body) {
         return [];
     }
@@ -583,7 +620,7 @@ function checkFnItem(fnItem: FnItem): BorrowLiteError[] {
     return env.errors;
 }
 
-function checkItem(item: Item | undefined, errors: BorrowLiteError[]): void {
+function checkItem(item: Item | undefined, errors: BorrowError[]): void {
     if (!item) {
         return;
     }
@@ -607,11 +644,11 @@ function checkItem(item: Item | undefined, errors: BorrowLiteError[]): void {
 export function checkBorrowLite(
     moduleAst: unknown,
     _typeCtx: TypeContext,
-): { ok: boolean; errors?: BorrowLiteError[] } {
+): { ok: boolean; errors?: BorrowError[] } {
     if (!(moduleAst instanceof ModuleNode)) {
         return { ok: true };
     }
-    const errors: BorrowLiteError[] = [];
+    const errors: BorrowError[] = [];
     for (const item of moduleAst.items) {
         checkItem(item, errors);
     }

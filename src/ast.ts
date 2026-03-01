@@ -467,7 +467,12 @@ export class RangeExpr extends Expression {
     readonly end?: Expression;
     readonly inclusive: boolean;
 
-    constructor(span: Span, start?: Expression, end?: Expression, inclusive = false) {
+    constructor(
+        span: Span,
+        start?: Expression,
+        end?: Expression,
+        inclusive = false,
+    ) {
         super(span);
         this.start = start;
         this.end = end;
@@ -592,6 +597,8 @@ export class FnItem extends Item {
     readonly body?: BlockExpr;
     readonly derives: string[] = [];
     builtinName?: string;
+    isTest?: boolean;
+    expectedOutput?: string;
 
     constructor(
         span: Span,
@@ -762,7 +769,12 @@ export class ImplItem extends Item {
     readonly methods: FnItem[];
     readonly traitType?: TypeNode;
 
-    constructor(span: Span, target: TypeNode, methods: FnItem[], traitType?: TypeNode) {
+    constructor(
+        span: Span,
+        target: TypeNode,
+        methods: FnItem[],
+        traitType?: TypeNode,
+    ) {
         super(span);
         this.target = target;
         this.methods = methods;
@@ -1001,7 +1013,7 @@ export class GenericArgsNode extends TypeNode {
 
 export class ModuleNode extends Node {
     readonly name: string;
-    readonly items: Item[];
+    items: Item[];
 
     constructor(span: Span, name: string, items: Item[]) {
         super(span);
