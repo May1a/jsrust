@@ -18,6 +18,7 @@ const disabledRules: DummyRuleMap = {
     "prefer-readonly-parameter-types": "off",
     "unicorn/number-literal-case": "off",
     "init-declarations": "off",
+    "typescript/consistent-type-definitions": "off",
 };
 
 const stricterRules: DummyRuleMap = {
