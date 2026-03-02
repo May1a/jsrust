@@ -1,22 +1,29 @@
 module main {
 
+  strings {
+    s0 = "{}"
+  }
+
   fn f0 test_example() -> () {
     b0 (entry):
       v1: bool = bconst true
       br_if v1, then: b1, else: b2
   
     b1 (if_then):
-      v2: i32 = iconst 1
-      br b3
+      v3: i32 = iconst 1
+      br b3(v3)
   
     b2 (if_else):
-      v3: i32 = iconst 2
-      br b3
+      v4: i32 = iconst 2
+      br b3(v4)
   
-    b3 (if_merge):
-      v4: i8            = iconst 0
-      v5: ptr<struct _> = alloca struct _
-      store v4 -> v5
+    b3(v2: i32) (if_merge):
+      v5: ptr<i32> = alloca i32
+      store v2 -> v5
+      v7: ptr      = sconst s0
+      v8: i32      = load v5
+      v9: i64      = iconst 1
+      call f862609(v7, v9, v8)
       ret
   }
 
