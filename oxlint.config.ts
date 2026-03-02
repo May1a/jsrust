@@ -20,6 +20,7 @@ const disabledRules: DummyRuleMap = {
     "init-declarations": "off",
     "typescript/consistent-type-definitions": "off",
     "oxc/no-rest-spread-properties": "off",
+    "no-implicit-coercion": "off",
 };
 
 const stricterRules: DummyRuleMap = {
