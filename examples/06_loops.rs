@@ -5,4 +5,5 @@ fn test_example() {
     while i < 3 {
         i += 1;
     }
+    println!("{}", i);
 }
