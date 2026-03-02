@@ -16,6 +16,9 @@ import {
     ExprStmt,
     FieldExpr,
     FnItem,
+    GenericFnItem,
+    type GenericParamNode,
+    GenericStructItem,
     TestFnItem,
     FnTypeNode,
     ForExpr,
@@ -418,15 +421,53 @@ class Parser {
         }
     }
 
-    private skipGenericParams(): void {
-        if (!this.check(TokenType.Lt)) return;
-        let depth = 1;
+    private parseGenericParams(): GenericParamNode[] {
+        if (!this.check(TokenType.Lt)) return [];
         this.advance(); // Consume <
-        while (depth > 0 && !this.check(TokenType.Eof)) {
-            if (this.check(TokenType.Lt)) depth++;
-            else if (this.check(TokenType.Gt)) depth--;
-            this.advance();
+        const params: GenericParamNode[] = [];
+        while (!this.check(TokenType.Gt) && !this.check(TokenType.Eof)) {
+            // Skip lifetime parameters ('a)
+            if (this.check(TokenType.Lifetime)) {
+                this.advance();
+                // Skip lifetime bounds: 'a: 'b + 'c
+                if (this.eat(TokenType.Colon)) {
+                    while (this.check(TokenType.Lifetime)) {
+                        this.advance();
+                        if (!this.eat(TokenType.Plus)) break;
+                    }
+                }
+                if (!this.eat(TokenType.Comma)) break;
+                continue;
+            }
+
+            const paramStart = this.peek();
+            if (!this.check(TokenType.Identifier)) break;
+            const name = this.advance().value;
+
+            // Parse optional trait bounds: T: Display + Clone
+            const bounds: TypeNode[] = [];
+            if (this.eat(TokenType.Colon)) {
+                bounds.push(this.parseTypeNode());
+                while (this.eat(TokenType.Plus)) {
+                    // Skip lifetime bounds in trait bound position
+                    if (this.check(TokenType.Lifetime)) {
+                        this.advance();
+                        continue;
+                    }
+                    bounds.push(this.parseTypeNode());
+                }
+            }
+
+            params.push({
+                span: this.spanFrom(paramStart),
+                name,
+                bounds,
+            });
+
+            if (!this.eat(TokenType.Comma)) break;
         }
+        this.expect(TokenType.Gt);
+        return params;
     }
 
     private skipWhereClause(): void {
@@ -572,7 +613,7 @@ class Parser {
     private parseTypeAliasItem(): Item[] | undefined {
         if (!this.eat(TokenType.Type)) return undefined;
         this.eat(TokenType.Identifier);
-        this.skipGenericParams();
+        this.parseGenericParams();
         if (this.eat(TokenType.Eq)) {
             this.skipUntil(TokenType.Semicolon);
         }
@@ -605,10 +646,9 @@ class Parser {
     // Fn item
     // -----------------------------------------------------------------------
 
-    private parseFnBody(startTok: Token, derives: string[], isTest: boolean): FnItem {
-        this.skipGenericParams();
+    private parseFnBody(startTok: Token, derives: string[], isTest: boolean): FnItem | GenericFnItem {
         const name = this.expect(TokenType.Identifier).value;
-        this.skipGenericParams(); // Generics after name
+        const genericParams = this.parseGenericParams();
 
         this.expect(TokenType.OpenParen);
         const params = this.parseFnParams();
@@ -628,6 +668,10 @@ class Parser {
             body = this.parseBlock();
         } else {
             this.eat(TokenType.Semicolon);
+        }
+
+        if (genericParams.length > 0 && !isTest) {
+            return new GenericFnItem(this.spanFrom(startTok), name, genericParams, params, returnType, body, derives);
         }
 
         if (isTest) {
@@ -716,9 +760,9 @@ class Parser {
     // Struct item
     // -----------------------------------------------------------------------
 
-    private parseStructBody(startTok: Token, derives: string[]): StructItem {
+    private parseStructBody(startTok: Token, derives: string[]): StructItem | GenericStructItem {
         const name = this.expect(TokenType.Identifier).value;
-        this.skipGenericParams();
+        const genericParams = this.parseGenericParams();
         this.skipWhereClause();
 
         const fields: StructFieldNode[] = [];
@@ -749,6 +793,9 @@ class Parser {
         }
         this.eat(TokenType.Semicolon);
 
+        if (genericParams.length > 0) {
+            return new GenericStructItem(this.spanFrom(startTok), name, genericParams, fields, derives);
+        }
         return new StructItem(this.spanFrom(startTok), name, fields, derives);
     }
 
@@ -758,7 +805,7 @@ class Parser {
 
     private parseEnumBody(startTok: Token, derives: string[]): EnumItem {
         const name = this.expect(TokenType.Identifier).value;
-        this.skipGenericParams();
+        this.parseGenericParams();
         this.skipWhereClause();
 
         this.expect(TokenType.OpenCurly);
@@ -819,7 +866,7 @@ class Parser {
     // -----------------------------------------------------------------------
 
     private parseImplBody(startTok: Token): ImplItem {
-        this.skipGenericParams();
+        this.parseGenericParams();
         const typeA = this.parseTypeNode();
 
         const { target, traitType } = this.parseImplTarget(typeA);
@@ -827,7 +874,7 @@ class Parser {
         this.skipWhereClause();
         this.expect(TokenType.OpenCurly);
 
-        const methods: FnItem[] = [];
+        const methods: (FnItem | GenericFnItem)[] = [];
         while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
             this.parseImplMember(methods);
         }
@@ -844,7 +891,7 @@ class Parser {
         return { target: this.parseTypeNode(), traitType: typeA };
     }
 
-    private parseImplMember(methods: FnItem[]): void {
+    private parseImplMember(methods: (FnItem | GenericFnItem)[]): void {
         const { derives } = this.parseAttributes();
         this.eatPub();
         this.eat(TokenType.Unsafe);
@@ -879,7 +926,7 @@ class Parser {
 
     private parseTraitBody(startTok: Token): TraitItem {
         const name = this.expect(TokenType.Identifier).value;
-        this.skipGenericParams();
+        this.parseGenericParams();
 
         // Skip : Bounds
         if (this.eat(TokenType.Colon)) {
@@ -891,7 +938,7 @@ class Parser {
         this.skipWhereClause();
         this.expect(TokenType.OpenCurly);
 
-        const methods: FnItem[] = [];
+        const methods: (FnItem | GenericFnItem)[] = [];
         while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
             const { derives } = this.parseAttributes();
             this.eatPub();

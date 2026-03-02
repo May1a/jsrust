@@ -144,6 +144,8 @@ export interface AstVisitor<R, C> {
     visitModuleNode(node: ModuleNode, ctx: C): R;
     visitMatchArmNode(node: MatchArmNode, ctx: C): R;
     visitTraitMethod(node: TraitMethod, ctx: C): R;
+    visitGenericFnItem(node: GenericFnItem, ctx: C): R;
+    visitGenericStructItem(node: GenericStructItem, ctx: C): R;
 }
 
 export abstract class Node {
@@ -636,6 +638,68 @@ export class TestFnItem extends FnItem {
     }
 }
 
+export interface GenericParamNode {
+    span: Span;
+    name: string;
+    bounds: TypeNode[];
+}
+
+export class GenericFnItem extends Item {
+    readonly name: string;
+    readonly genericParams: GenericParamNode[];
+    readonly params: ParamNode[];
+    readonly returnType: TypeNode;
+    readonly body?: BlockExpr;
+    readonly derives: string[] = [];
+
+    constructor(
+        span: Span,
+        name: string,
+        genericParams: GenericParamNode[],
+        params: ParamNode[],
+        returnType: TypeNode,
+        body?: BlockExpr,
+        derives: string[] = [],
+    ) {
+        super(span);
+        this.name = name;
+        this.genericParams = genericParams;
+        this.params = params;
+        this.returnType = returnType;
+        this.body = body;
+        this.derives = derives;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitGenericFnItem(this, ctx);
+    }
+}
+
+export class GenericStructItem extends Item {
+    readonly name: string;
+    readonly genericParams: GenericParamNode[];
+    readonly fields: StructFieldNode[];
+    readonly derives: string[] = [];
+
+    constructor(
+        span: Span,
+        name: string,
+        genericParams: GenericParamNode[],
+        fields: StructFieldNode[],
+        derives: string[] = [],
+    ) {
+        super(span);
+        this.name = name;
+        this.genericParams = genericParams;
+        this.fields = fields;
+        this.derives = derives;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitGenericStructItem(this, ctx);
+    }
+}
+
 export class StructItem extends Item {
     readonly name: string;
     readonly fields: StructFieldNode[];
@@ -740,9 +804,9 @@ export class TraitMethod extends Item {
 
 export class TraitItem extends Item {
     readonly name: string;
-    readonly methods: TraitMethod[];
+    readonly methods: (TraitMethod | FnItem | GenericFnItem)[];
 
-    constructor(span: Span, name: string, methods: FnItem[]) {
+    constructor(span: Span, name: string, methods: (FnItem | GenericFnItem)[]) {
         super(span);
         this.name = name;
         this.methods = methods;
@@ -780,13 +844,13 @@ export class TraitImplItem extends Item {
 
 export class ImplItem extends Item {
     readonly target: TypeNode;
-    readonly methods: FnItem[];
+    readonly methods: (FnItem | GenericFnItem)[];
     readonly traitType?: TypeNode;
 
     constructor(
         span: Span,
         target: TypeNode,
-        methods: FnItem[],
+        methods: (FnItem | GenericFnItem)[],
         traitType?: TypeNode,
     ) {
         super(span);
