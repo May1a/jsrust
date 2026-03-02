@@ -235,7 +235,8 @@ const INSTRUCTION_READERS: Partial<Record<IRInstKind, InstructionReader>> = {
         deserializer.readNegInstruction(IRInstKind.Fneg, id, ty),
     [IRInstKind.Alloca]: (deserializer, id) =>
         deserializer.readAllocaInstruction(id),
-    [IRInstKind.Load]: (deserializer, id) => deserializer.readLoadInstruction(id),
+    [IRInstKind.Load]: (deserializer, id) =>
+        deserializer.readLoadInstruction(id),
     [IRInstKind.Store]: (deserializer, id) =>
         deserializer.readStoreInstruction(id),
     [IRInstKind.Memcpy]: (deserializer, id) =>
@@ -581,7 +582,12 @@ class IRDeserializer {
             return returnResult;
         }
 
-        const fn = makeIRFunction(0, nameResult.value, params, returnResult.value);
+        const fn = makeIRFunction(
+            0,
+            nameResult.value,
+            params,
+            returnResult.value,
+        );
 
         const localCount = this.readU32();
         for (let i = 0; i < localCount; i++) {
@@ -730,7 +736,10 @@ class IRDeserializer {
 
     addTypesToModule(
         module: IRModule,
-        types: { structs: Map<string, StructType>; enums: Map<string, EnumType> },
+        types: {
+            structs: Map<string, StructType>;
+            enums: Map<string, EnumType>;
+        },
     ): void {
         for (const [name, struct] of types.structs) {
             addIRStruct(module, name, struct);
@@ -863,7 +872,10 @@ class IRDeserializer {
         return ok(new FconstInst(id, ty, this.readF64()));
     }
 
-    readNullInstruction(id: number, ty: IRType): Result<IRInst, DeserializeError> {
+    readNullInstruction(
+        id: number,
+        ty: IRType,
+    ): Result<IRInst, DeserializeError> {
         if (!isIRPtrType(ty)) {
             return this.invalidInstructionType(IRInstKind.Null, ty);
         }
@@ -1022,7 +1034,10 @@ class IRDeserializer {
         if (!toTypeResult.ok) {
             return toTypeResult;
         }
-        if (!isIRIntType(fromTypeResult.value) || !isIRIntType(toTypeResult.value)) {
+        if (
+            !isIRIntType(fromTypeResult.value) ||
+            !isIRIntType(toTypeResult.value)
+        ) {
             return this.invalidInstructionType(opcode, ty);
         }
         return ok(
@@ -1077,9 +1092,13 @@ class IRDeserializer {
             return this.invalidInstructionType(opcode, calleeTypeResult.value);
         }
         if (opcode === IRInstKind.Call) {
-            return ok(new CallInst(id, callee, args, calleeTypeResult.value, ty));
+            return ok(
+                new CallInst(id, callee, args, calleeTypeResult.value, ty),
+            );
         }
-        return ok(new CallDynInst(id, callee, args, calleeTypeResult.value, ty));
+        return ok(
+            new CallDynInst(id, callee, args, calleeTypeResult.value, ty),
+        );
     }
 
     readStructCreateInstruction(id: number): Result<IRInst, DeserializeError> {
@@ -1117,7 +1136,9 @@ class IRDeserializer {
                 structTypeResult.value,
             );
         }
-        return ok(new StructGetInst(id, struct, index, structTypeResult.value, ty));
+        return ok(
+            new StructGetInst(id, struct, index, structTypeResult.value, ty),
+        );
     }
 
     readEnumCreateInstruction(id: number): Result<IRInst, DeserializeError> {
@@ -1439,12 +1460,8 @@ class IRDeserializer {
         }
     }
 
-    readMissingEnumData(): number | null {
-        const missingMatch = /value/.exec("");
-        if (missingMatch) {
-            return 0;
-        }
-        return missingMatch;
+    readMissingEnumData(): undefined {
+        return undefined;
     }
 }
 

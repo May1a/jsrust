@@ -421,19 +421,11 @@ export class IRBuilder {
     // Call Instruction
     // ============================================================================
 
-    call(
-        fn: ValueId,
-        args: ValueId[],
-        returnType?: IRType,
-    ): IRInst {
+    call(fn: ValueId, args: ValueId[], returnType?: IRType): IRInst {
         return this.appendInstruction(makeCall(fn, args, returnType));
     }
 
-    callDyn(
-        fn: ValueId,
-        args: ValueId[],
-        returnType?: IRType,
-    ): IRInst {
+    callDyn(fn: ValueId, args: ValueId[], returnType?: IRType): IRInst {
         return this.appendInstruction(makeCallDyn(fn, args, returnType));
     }
 
@@ -446,10 +438,12 @@ export class IRBuilder {
     }
 
     structGet(struct: ValueId, fieldIndex: number, fieldTy: IRType): IRInst {
-        return this.appendInstruction(makeStructGet(struct, fieldIndex, fieldTy));
+        return this.appendInstruction(
+            makeStructGet(struct, fieldIndex, fieldTy),
+        );
     }
 
-    enumCreate(variant: number, data: ValueId | null, ty: IRType): IRInst {
+    enumCreate(variant: number, data: ValueId | undefined, ty: IRType): IRInst {
         return this.appendInstruction(makeEnumCreate(variant, data, ty));
     }
 

@@ -1090,13 +1090,13 @@ export class StructGetInst extends IRInst {
 
 export class EnumCreateInst extends IRInst {
     readonly tag: number;
-    readonly data: ValueId | null;
+    readonly data: ValueId | undefined;
     readonly enumType: EnumType;
 
     constructor(
         id: ValueId,
         tag: number,
-        data: ValueId | null,
+        data: ValueId | undefined,
         enumType: EnumType,
     ) {
         super(IRInstKind.EnumCreate, id, enumType);

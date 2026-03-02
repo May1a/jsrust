@@ -200,7 +200,11 @@ export function makeMemcpy(dest: number, src: number, size: number): IRInst {
     return new MemcpyInst(freshValueId(), dest, src, size);
 }
 
-export function makeGep(ptr: number, indices: number[], resultType: IRType): IRInst {
+export function makeGep(
+    ptr: number,
+    indices: number[],
+    resultType: IRType,
+): IRInst {
     return new GepInst(freshValueId(), ptr, indices, resultType);
 }
 
@@ -244,7 +248,12 @@ export function makeSitofp(value: number, toType: IRType): IRInst {
 }
 
 export function makeBitcast(value: number, toType: IRType): IRInst {
-    return new BitcastInst(freshValueId(), value, makeIRIntType(IntWidth.I64), toType);
+    return new BitcastInst(
+        freshValueId(),
+        value,
+        makeIRIntType(IntWidth.I64),
+        toType,
+    );
 }
 
 export function makeCall(
@@ -297,10 +306,11 @@ export function makeStructGet(
 
 export function makeEnumCreate(
     variant: number,
-    data: number | null,
+    data: number | undefined,
     type: IRType,
 ): IRInst {
-    const enumType = type instanceof StructType ? unknownEnumType() : unknownEnumType();
+    const enumType =
+        type instanceof StructType ? unknownEnumType() : unknownEnumType();
     return new EnumCreateInst(freshValueId(), variant, data, enumType);
 }
 

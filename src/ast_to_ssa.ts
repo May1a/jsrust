@@ -9,6 +9,7 @@ import {
     type ClosureExpr,
     type ContinueExpr,
     type DerefExpr,
+    EnumItem,
     ExprStmt,
     type Expression,
     FieldExpr,
@@ -27,6 +28,7 @@ import {
     LiteralKind,
     type LoopExpr,
     type MacroExpr,
+    type MatchArmNode,
     type MatchExpr,
     ModItem,
     type ModuleNode,
@@ -87,6 +89,7 @@ type ExpressionVisitor<T> = Pick<
     | "visitMatchExpr"
 >;
 import {
+    addIREnum,
     addIRFunction,
     FcmpOp,
     FloatWidth,
@@ -95,6 +98,7 @@ import {
     internIRStringLiteral,
     IRTypeKind,
     makeIRBoolType,
+    makeIREnumType,
     makeIRFloatType,
     makeIRIntType,
     makeIRModule,
@@ -196,6 +200,7 @@ export class AstToSsaCtx {
     private readonly locals: Map<string, LocalBinding>;
     private readonly functionIds: Map<string, number>;
     private readonly structFieldNames: Map<string, string[]>;
+    private readonly enumVariantTags: Map<string, number>;
     private readonly monoRegistry?: MonomorphizationRegistry;
     private loopStack: LoopFrame[];
     private currentReturnType: IRType;
@@ -204,6 +209,7 @@ export class AstToSsaCtx {
         options: {
             irModule?: IRModule;
             structFieldNames?: Map<string, string[]>;
+            enumVariantTags?: Map<string, number>;
             monoRegistry?: MonomorphizationRegistry;
         } = {},
     ) {
@@ -212,6 +218,7 @@ export class AstToSsaCtx {
         this.locals = new Map();
         this.functionIds = new Map();
         this.structFieldNames = options.structFieldNames ?? new Map();
+        this.enumVariantTags = options.enumVariantTags ?? new Map();
         this.monoRegistry = options.monoRegistry;
         this.loopStack = [];
         this.currentReturnType = makeIRUnitType();
@@ -573,9 +580,33 @@ export class AstToSsaCtx {
             return AstToSsaCtx.handleInstructionId(loadInst.id);
         }
 
+        const variantTag = this.enumVariantTags.get(expr.name);
+        if (variantTag !== undefined) {
+            const enumType = this.resolveEnumTypeForVariant(expr.name);
+            const inst = this.builder.enumCreate(
+                variantTag,
+                undefined,
+                enumType,
+            );
+            return AstToSsaCtx.handleInstructionId(inst.id);
+        }
+
         const fnId = this.resolveFunctionId(expr.name);
         const constInst = this.builder.iconst(fnId, IntWidth.I64);
         return AstToSsaCtx.handleInstructionId(constInst.id);
+    }
+
+    private resolveEnumTypeForVariant(variantPath: string): IRType {
+        const colonColon = "::";
+        const sepIndex = variantPath.indexOf(colonColon);
+        if (sepIndex !== -1) {
+            const enumName = variantPath.slice(0, sepIndex);
+            const found = this.irModule.enums.get(enumName);
+            if (found !== undefined) {
+                return found;
+            }
+        }
+        return makeIRUnitType();
     }
 
     private lowerAssign(expr: AssignExpr): Result<ValueId, LoweringError> {
@@ -1518,9 +1549,9 @@ export class AstToSsaCtx {
         const armBlocks: BlockId[] = expr.arms.map((_, index) =>
             this.builder.createBlock(`match_arm_${index}`),
         );
-        const merge = this.builder.createBlock("match_merge");
         const cases: { value: number; target: BlockId; args: ValueId[] }[] = [];
-        let defaultBlock = merge;
+        let defaultArmIndex: number | undefined;
+        let usesEnumPatterns = false;
 
         for (let index = 0; index < expr.arms.length; index++) {
             const arm = expr.arms[index];
@@ -1528,26 +1559,100 @@ export class AstToSsaCtx {
                 const raw = arm.pattern.value;
                 const value = typeof raw === "number" ? raw : Number(raw);
                 cases.push({ value, target: armBlocks[index], args: [] });
+            } else if (arm.pattern instanceof IdentPattern) {
+                const tag = this.enumVariantTags.get(arm.pattern.name);
+                if (tag !== undefined) {
+                    cases.push({
+                        value: tag,
+                        target: armBlocks[index],
+                        args: [],
+                    });
+                    usesEnumPatterns = true;
+                } else {
+                    defaultArmIndex = index;
+                }
             } else {
-                defaultBlock = armBlocks[index];
+                defaultArmIndex = index;
             }
         }
 
-        this.builder.switch(scrutinee.value, cases, defaultBlock, []);
+        const switchValue = usesEnumPatterns
+            ? this.builder.enumGetTag(scrutinee.value).id
+            : scrutinee.value;
 
-        for (let index = 0; index < expr.arms.length; index++) {
-            const arm = expr.arms[index];
+        let defaultBlock: BlockId;
+        if (defaultArmIndex !== undefined) {
+            defaultBlock = armBlocks[defaultArmIndex];
+        } else if (armBlocks.length > 0) {
+            const [firstArmBlock] = armBlocks;
+            defaultBlock = firstArmBlock;
+        } else {
+            defaultBlock = this.builder.createBlock("match_default");
+        }
+
+        this.builder.switch(switchValue, cases, defaultBlock, []);
+
+        return this.lowerMatchArms(expr.arms, armBlocks);
+    }
+
+    private lowerMatchArms(
+        arms: MatchArmNode[],
+        armBlocks: BlockId[],
+    ): Result<ValueId, LoweringError> {
+        const armValues: (ValueId | undefined)[] = [];
+
+        for (let index = 0; index < arms.length; index++) {
+            const arm = arms[index];
             this.builder.switchToBlock(armBlocks[index]);
             const body = this.lowerExpression(arm.body);
             if (!body.ok) {
                 return body;
             }
+            armValues.push(
+                this.isCurrentBlockTerminated() ? undefined : body.value,
+            );
+        }
+
+        const allProduceValues = armValues.every((v) => v !== undefined);
+        const [firstArmValue] = armValues;
+        const resultType =
+            allProduceValues && firstArmValue !== undefined
+                ? (this.resolveValueType(firstArmValue) ?? undefined)
+                : undefined;
+
+        const mergeId =
+            resultType !== undefined
+                ? this.builder.createBlock("match_merge", [resultType])
+                : this.builder.createBlock("match_merge");
+
+        for (let index = 0; index < arms.length; index++) {
+            this.builder.switchToBlock(armBlocks[index]);
             if (!this.isCurrentBlockTerminated()) {
-                this.builder.br(merge);
+                const armValue = armValues[index];
+                this.builder.br(
+                    mergeId,
+                    armValue !== undefined && resultType !== undefined
+                        ? [armValue]
+                        : [],
+                );
             }
         }
 
-        this.builder.switchToBlock(merge);
+        this.builder.switchToBlock(mergeId);
+
+        if (resultType !== undefined) {
+            const currentFn = this.builder.currentFunction;
+            if (currentFn !== undefined) {
+                const mergeBlock = currentFn.blocks.find(
+                    (b) => b.id === mergeId,
+                );
+                if (mergeBlock !== undefined) {
+                    const [param] = mergeBlock.params;
+                    return ok(param.id);
+                }
+            }
+        }
+
         return ok(this.unitValue());
     }
 
@@ -2165,6 +2270,30 @@ function seedStructMetadata(
     }
 }
 
+function seedEnumMetadata(
+    moduleNode: ModuleNode,
+    irModule: IRModule,
+    enumVariantTags: Map<string, number>,
+): void {
+    for (const item of moduleNode.items) {
+        if (!(item instanceof EnumItem)) {
+            continue;
+        }
+        const variantTypes: IRType[][] = item.variants.map(() => []);
+        const enumType = makeIREnumType(item.name, variantTypes);
+        if (!irModule.enums.has(item.name)) {
+            addIREnum(irModule, item.name, enumType);
+        }
+        for (let index = 0; index < item.variants.length; index++) {
+            const variant = item.variants[index];
+            // Register both the short name (for pattern matching) and the
+            // Fully-qualified name (for expression lowering)
+            enumVariantTags.set(variant.name, index);
+            enumVariantTags.set(`${item.name}::${variant.name}`, index);
+        }
+    }
+}
+
 function collectFunctionIds(moduleNode: ModuleNode): Map<string, number> {
     const fnIdMap = new Map<string, number>();
     for (const item of moduleNode.items) {
@@ -2235,10 +2364,16 @@ function lowerOwnedFunction(
     fnItem: FnItem,
     irModule: IRModule,
     structFieldNames: Map<string, string[]>,
+    enumVariantTags: Map<string, number>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
 ): void {
-    const ctx = new AstToSsaCtx({ irModule, structFieldNames, monoRegistry });
+    const ctx = new AstToSsaCtx({
+        irModule,
+        structFieldNames,
+        enumVariantTags,
+        monoRegistry,
+    });
     ctx.seedFunctionIds(fnIdMap);
     const lowered = ctx.lowerFunction(fnItem);
     if (!lowered.ok) {
@@ -2302,6 +2437,7 @@ function lowerImplMethods(
     item: ImplItem,
     irModule: IRModule,
     structFieldNames: Map<string, string[]>,
+    enumVariantTags: Map<string, number>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
 ): void {
@@ -2322,6 +2458,7 @@ function lowerImplMethods(
             rewriteNewMethodReturnType(method, implTarget),
             irModule,
             structFieldNames,
+            enumVariantTags,
             fnIdMap,
             monoRegistry,
         );
@@ -2332,6 +2469,7 @@ function lowerModuleItem(
     item: ModuleNode["items"][number],
     irModule: IRModule,
     structFieldNames: Map<string, string[]>,
+    enumVariantTags: Map<string, number>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
 ): void {
@@ -2343,6 +2481,7 @@ function lowerModuleItem(
             item,
             irModule,
             structFieldNames,
+            enumVariantTags,
             fnIdMap,
             monoRegistry,
         );
@@ -2353,6 +2492,7 @@ function lowerModuleItem(
             item,
             irModule,
             structFieldNames,
+            enumVariantTags,
             fnIdMap,
             monoRegistry,
         );
@@ -2365,6 +2505,7 @@ function lowerModuleItem(
                     method,
                     irModule,
                     structFieldNames,
+                    enumVariantTags,
                     fnIdMap,
                     monoRegistry,
                 );
@@ -2379,6 +2520,7 @@ function lowerModuleItem(
                     modItem,
                     irModule,
                     structFieldNames,
+                    enumVariantTags,
                     fnIdMap,
                     monoRegistry,
                 );
@@ -2390,7 +2532,9 @@ function lowerModuleItem(
 export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
     const irModule = makeIRModule(moduleNode.name);
     const structFieldNames = new Map<string, string[]>();
+    const enumVariantTags = new Map<string, number>();
     seedStructMetadata(moduleNode, irModule, structFieldNames);
+    seedEnumMetadata(moduleNode, irModule, enumVariantTags);
 
     // Collect generic items and generate monomorphized specializations
     const registry = new MonomorphizationRegistry();
@@ -2405,12 +2549,26 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
 
     // Lower regular items (pass registry so calls to generics get rewritten)
     for (const item of moduleNode.items) {
-        lowerModuleItem(item, irModule, structFieldNames, fnIdMap, registry);
+        lowerModuleItem(
+            item,
+            irModule,
+            structFieldNames,
+            enumVariantTags,
+            fnIdMap,
+            registry,
+        );
     }
 
     // Lower monomorphized specializations
     for (const spec of specializations) {
-        lowerOwnedFunction(spec, irModule, structFieldNames, fnIdMap, registry);
+        lowerOwnedFunction(
+            spec,
+            irModule,
+            structFieldNames,
+            enumVariantTags,
+            fnIdMap,
+            registry,
+        );
     }
 
     return irModule;

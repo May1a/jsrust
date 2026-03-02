@@ -458,7 +458,7 @@ class InstPrinterVisitor implements IRInstVisitor<InstLine, IRModule> {
     }
 
     visitEnumCreateInst(inst: EnumCreateInst, _mod: IRModule): InstLine {
-        const data = inst.data !== null ? `, data: ${val(inst.data)}` : "";
+        const data = inst.data !== undefined ? `, data: ${val(inst.data)}` : "";
         return this.mkDef(
             inst,
             `enum_create ${inst.enumType.name} tag=${inst.tag}${data}`,
