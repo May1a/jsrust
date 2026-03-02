@@ -239,7 +239,7 @@ function substituteSecondary(
     if (expr instanceof ClosureExpr) {
         const newParams: ParamNode[] = expr.params.map((p) => ({
             ...p,
-            ty: p.ty !== undefined ? substituteType(p.ty, subs) : undefined,
+            ty: substituteType(p.ty, subs),
         }));
         return new ClosureExpr(
             expr.span,
@@ -393,7 +393,7 @@ export function monomorphizeFn(
     const newParams: ParamNode[] = generic.params.map((p) => ({
         span: p.span,
         name: p.name,
-        ty: p.ty !== undefined ? substituteType(p.ty, subs) : undefined,
+        ty: substituteType(p.ty, subs),
         defaultValue: p.defaultValue,
         isReceiver: p.isReceiver,
         receiverKind: p.receiverKind,
@@ -424,7 +424,7 @@ export function monomorphizeStruct(
     const newFields: StructFieldNode[] = generic.fields.map((f) => ({
         span: f.span,
         name: f.name,
-        ty: f.ty !== undefined ? substituteType(f.ty, subs) : undefined,
+        ty: substituteType(f.ty, subs),
         defaultValue: f.defaultValue,
     }));
 
@@ -460,7 +460,7 @@ export function inferTypeArgs(
     for (let i = 0; i < params.length && i < argTypes.length; i++) {
         const paramTy = params[i].ty;
         const argTy = argTypes[i];
-        if (paramTy === undefined || argTy === undefined) continue;
+        if (argTy === undefined) continue;
 
         unifyTypes(paramTy, argTy, subs);
     }

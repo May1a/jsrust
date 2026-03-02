@@ -280,13 +280,6 @@ export class AstToSsaCtx {
             if (param.isReceiver) {
                 continue;
             }
-            if (!param.ty) {
-                return loweringError(
-                    LoweringErrorKind.UnsupportedNode,
-                    "Function parameter is missing a type",
-                    fnDecl.span,
-                );
-            }
             params.push({ name: param.name, ty: param.ty });
         }
         return ok(params);

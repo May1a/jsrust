@@ -1149,7 +1149,7 @@ export function mergeSpans(spanA: Span, spanB: Span): Span {
 export interface StructFieldNode {
     span: Span;
     name: string;
-    ty?: TypeNode;
+    ty: TypeNode;
     defaultValue?: Expression;
 }
 
@@ -1162,8 +1162,8 @@ export interface EnumVariantNode {
 
 export interface ParamNode {
     span: Span;
-    name?: string;
-    ty?: TypeNode;
+    name: string;
+    ty: TypeNode;
     defaultValue?: Expression;
     isReceiver: boolean;
     receiverKind?: "value" | "ref" | "ref_mut";

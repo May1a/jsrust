@@ -105,7 +105,10 @@ export function parseStatement(source: string): ParseResult<Statement> {
     const p = new Parser(tokenize(source));
     const value = p.parseStatement();
     if (value === undefined) {
-        return { ok: false, errors: [{ message: "Expected statement", line: 1, column: 1 }] };
+        return {
+            ok: false,
+            errors: [{ message: "Expected statement", line: 1, column: 1 }],
+        };
     }
     return p.errors.length > 0
         ? { ok: false, errors: p.errors }
@@ -133,9 +136,15 @@ export function parsePattern(source: string): ParseResult<Pattern> {
 // ---------------------------------------------------------------------------
 
 function parseIntValue(s: string): number {
-    if (s.startsWith("0x") || s.startsWith("0X")) return Number.parseInt(s.slice(2), 16);
-    if (s.startsWith("0o") || s.startsWith("0O")) return Number.parseInt(s.slice(2), 8);
-    if (s.startsWith("0b") || s.startsWith("0B")) return Number.parseInt(s.slice(2), 2);
+    if (s.startsWith("0x") || s.startsWith("0X")) {
+        return Number.parseInt(s.slice(2), 16);
+    }
+    if (s.startsWith("0o") || s.startsWith("0O")) {
+        return Number.parseInt(s.slice(2), 8);
+    }
+    if (s.startsWith("0b") || s.startsWith("0B")) {
+        return Number.parseInt(s.slice(2), 2);
+    }
     return Number.parseInt(s, 10);
 }
 
@@ -301,7 +310,9 @@ class Parser {
 
     peekAt(offset: number): Token {
         const idx = this.pos + offset;
-        if (idx >= this.tokens.length) return this.tokens[this.tokens.length - 1];
+        if (idx >= this.tokens.length) {
+            return this.tokens[this.tokens.length - 1];
+        }
         return this.tokens[idx];
     }
 
@@ -344,7 +355,10 @@ class Parser {
     // -----------------------------------------------------------------------
 
     checkThinArrow(): boolean {
-        return this.peek().type === TokenType.Minus && this.peekAt(1).type === TokenType.Gt;
+        return (
+            this.peek().type === TokenType.Minus &&
+            this.peekAt(1).type === TokenType.Gt
+        );
     }
 
     eatThinArrow(): boolean {
@@ -357,7 +371,10 @@ class Parser {
     }
 
     checkColonColon(): boolean {
-        return this.peek().type === TokenType.Colon && this.peekAt(1).type === TokenType.Colon;
+        return (
+            this.peek().type === TokenType.Colon &&
+            this.peekAt(1).type === TokenType.Colon
+        );
     }
 
     eatColonColon(): boolean {
@@ -474,7 +491,11 @@ class Parser {
         if (!this.check(TokenType.Where)) return;
         this.advance();
         // Consume until { or ;
-        while (!this.check(TokenType.OpenCurly) && !this.check(TokenType.Semicolon) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.OpenCurly) &&
+            !this.check(TokenType.Semicolon) &&
+            !this.check(TokenType.Eof)
+        ) {
             this.advance();
         }
     }
@@ -500,7 +521,10 @@ class Parser {
 
     private canStartExpression(): boolean {
         if (EXPRESSION_START_TOKENS.has(this.peek().type)) return true;
-        return this.peek().type === TokenType.Dot && (this.checkDotDot() || this.checkDotDotEq());
+        return (
+            this.peek().type === TokenType.Dot &&
+            (this.checkDotDot() || this.checkDotDotEq())
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -524,7 +548,10 @@ class Parser {
             ) {
                 this.advance(); // Consume "derive"
                 if (this.eat(TokenType.OpenParen)) {
-                    while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+                    while (
+                        !this.check(TokenType.CloseParen) &&
+                        !this.check(TokenType.Eof)
+                    ) {
                         if (this.check(TokenType.Identifier)) {
                             derives.push(this.advance().value);
                         }
@@ -557,7 +584,10 @@ class Parser {
         const start = this.peek();
         const items: Item[] = [];
 
-        while (!this.check(TokenType.Eof) && !this.check(TokenType.CloseCurly)) {
+        while (
+            !this.check(TokenType.Eof) &&
+            !this.check(TokenType.CloseCurly)
+        ) {
             const parsed = this.parseItems();
             for (const item of parsed) {
                 items.push(item);
@@ -588,10 +618,20 @@ class Parser {
         );
     }
 
-    private parseDirectItem(start: Token, derives: string[], isTest: boolean): Item[] | undefined {
-        if (this.eat(TokenType.Fn)) return [this.parseFnBody(start, derives, isTest)];
-        if (this.eat(TokenType.Struct)) return [this.parseStructBody(start, derives)];
-        if (this.eat(TokenType.Enum)) return [this.parseEnumBody(start, derives)];
+    private parseDirectItem(
+        start: Token,
+        derives: string[],
+        isTest: boolean,
+    ): Item[] | undefined {
+        if (this.eat(TokenType.Fn)) {
+            return [this.parseFnBody(start, derives, isTest)];
+        }
+        if (this.eat(TokenType.Struct)) {
+            return [this.parseStructBody(start, derives)];
+        }
+        if (this.eat(TokenType.Enum)) {
+            return [this.parseEnumBody(start, derives)];
+        }
         if (this.eat(TokenType.Impl)) return [this.parseImplBody(start)];
         if (this.eat(TokenType.Trait)) return [this.parseTraitBody(start)];
         if (this.eat(TokenType.Mod)) return [this.parseModBody(start)];
@@ -599,9 +639,15 @@ class Parser {
         return undefined;
     }
 
-    private parseUnsafeItem(start: Token, derives: string[], isTest: boolean): Item[] | undefined {
+    private parseUnsafeItem(
+        start: Token,
+        derives: string[],
+        isTest: boolean,
+    ): Item[] | undefined {
         if (!this.eat(TokenType.Unsafe)) return undefined;
-        if (this.eat(TokenType.Fn)) return [this.parseFnBody(start, derives, isTest)];
+        if (this.eat(TokenType.Fn)) {
+            return [this.parseFnBody(start, derives, isTest)];
+        }
         if (this.eat(TokenType.Impl)) return [this.parseImplBody(start)];
         if (this.eat(TokenType.Trait)) return [this.parseTraitBody(start)];
         if (this.check(TokenType.OpenCurly)) {
@@ -622,7 +668,9 @@ class Parser {
     }
 
     private parseStaticOrConstItem(): Item[] | undefined {
-        if (!this.check(TokenType.Static) && !this.check(TokenType.Const)) return undefined;
+        if (!this.check(TokenType.Static) && !this.check(TokenType.Const)) {
+            return undefined;
+        }
         this.advance();
         this.skipUntil(TokenType.Semicolon, TokenType.CloseCurly);
         this.eat(TokenType.Semicolon);
@@ -646,7 +694,11 @@ class Parser {
     // Fn item
     // -----------------------------------------------------------------------
 
-    private parseFnBody(startTok: Token, derives: string[], isTest: boolean): FnItem | GenericFnItem {
+    private parseFnBody(
+        startTok: Token,
+        derives: string[],
+        isTest: boolean,
+    ): FnItem | GenericFnItem {
         const name = this.expect(TokenType.Identifier).value;
         const genericParams = this.parseGenericParams();
 
@@ -656,7 +708,10 @@ class Parser {
 
         this.skipWhereClause();
 
-        let returnType: TypeNode = new TupleTypeNode(this.spanFrom(startTok), []);
+        let returnType: TypeNode = new TupleTypeNode(
+            this.spanFrom(startTok),
+            [],
+        );
         if (this.eatThinArrow()) {
             returnType = this.parseTypeNode();
         }
@@ -671,20 +726,44 @@ class Parser {
         }
 
         if (genericParams.length > 0 && !isTest) {
-            return new GenericFnItem(this.spanFrom(startTok), name, genericParams, params, returnType, body, derives);
+            return new GenericFnItem(
+                this.spanFrom(startTok),
+                name,
+                genericParams,
+                params,
+                returnType,
+                body,
+                derives,
+            );
         }
 
         if (isTest) {
-            return new TestFnItem(this.spanFrom(startTok), name, params, returnType, body);
+            return new TestFnItem(
+                this.spanFrom(startTok),
+                name,
+                params,
+                returnType,
+                body,
+            );
         }
 
-        return new FnItem(this.spanFrom(startTok), name, params, returnType, body, derives);
+        return new FnItem(
+            this.spanFrom(startTok),
+            name,
+            params,
+            returnType,
+            body,
+            derives,
+        );
     }
 
     private parseFnParams(): ParamNode[] {
         const params: ParamNode[] = [];
 
-        while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseParen) &&
+            !this.check(TokenType.Eof)
+        ) {
             const paramStart = this.peek();
 
             // &self / &mut self
@@ -696,6 +775,11 @@ class Parser {
                         span: this.spanFrom(paramStart),
                         isReceiver: true,
                         receiverKind: isMut ? "ref_mut" : "ref",
+                        ty: new NamedTypeNode(
+                            this.spanFrom(paramStart),
+                            "Self",
+                        ),
+                        name: "Self",
                     });
                     this.eat(TokenType.Comma);
                     continue;
@@ -711,6 +795,8 @@ class Parser {
                     span: this.spanFrom(paramStart),
                     isReceiver: true,
                     receiverKind: "value",
+                    name: "Self",
+                    ty: new NamedTypeNode(this.spanFrom(paramStart), "Self"),
                 });
                 this.eat(TokenType.Comma);
                 continue;
@@ -721,7 +807,10 @@ class Parser {
 
             // _ or name
             let name: string;
-            if (this.check(TokenType.Identifier) || this.check(TokenType.Self)) {
+            if (
+                this.check(TokenType.Identifier) ||
+                this.check(TokenType.Self)
+            ) {
                 name = this.advance().value;
             } else {
                 // Unexpected
@@ -760,7 +849,10 @@ class Parser {
     // Struct item
     // -----------------------------------------------------------------------
 
-    private parseStructBody(startTok: Token, derives: string[]): StructItem | GenericStructItem {
+    private parseStructBody(
+        startTok: Token,
+        derives: string[],
+    ): StructItem | GenericStructItem {
         const name = this.expect(TokenType.Identifier).value;
         const genericParams = this.parseGenericParams();
         this.skipWhereClause();
@@ -769,24 +861,38 @@ class Parser {
 
         if (this.eat(TokenType.OpenCurly)) {
             // Normal struct { field: Type, ... }
-            while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+            while (
+                !this.check(TokenType.CloseCurly) &&
+                !this.check(TokenType.Eof)
+            ) {
                 const fieldStart = this.peek();
                 this.eatPub();
                 const fieldName = this.expect(TokenType.Identifier).value;
                 this.expect(TokenType.Colon);
                 const ty = this.parseTypeNode();
-                fields.push({ span: this.spanFrom(fieldStart), name: fieldName, ty });
+                fields.push({
+                    span: this.spanFrom(fieldStart),
+                    name: fieldName,
+                    ty,
+                });
                 if (!this.eat(TokenType.Comma)) break;
             }
             this.expect(TokenType.CloseCurly);
         } else if (this.eat(TokenType.OpenParen)) {
             // Tuple struct Foo(A, B)
             let idx = 0;
-            while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+            while (
+                !this.check(TokenType.CloseParen) &&
+                !this.check(TokenType.Eof)
+            ) {
                 const fieldStart = this.peek();
                 this.eatPub();
                 const ty = this.parseTypeNode();
-                fields.push({ span: this.spanFrom(fieldStart), name: String(idx++), ty });
+                fields.push({
+                    span: this.spanFrom(fieldStart),
+                    name: String(idx++),
+                    ty,
+                });
                 if (!this.eat(TokenType.Comma)) break;
             }
             this.expect(TokenType.CloseParen);
@@ -794,7 +900,13 @@ class Parser {
         this.eat(TokenType.Semicolon);
 
         if (genericParams.length > 0) {
-            return new GenericStructItem(this.spanFrom(startTok), name, genericParams, fields, derives);
+            return new GenericStructItem(
+                this.spanFrom(startTok),
+                name,
+                genericParams,
+                fields,
+                derives,
+            );
         }
         return new StructItem(this.spanFrom(startTok), name, fields, derives);
     }
@@ -811,7 +923,10 @@ class Parser {
         this.expect(TokenType.OpenCurly);
         const variants: EnumVariantNode[] = [];
 
-        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseCurly) &&
+            !this.check(TokenType.Eof)
+        ) {
             variants.push(this.parseEnumVariant());
             if (!this.eat(TokenType.Comma)) break;
         }
@@ -836,7 +951,10 @@ class Parser {
         }
         if (!this.eat(TokenType.OpenCurly)) return [];
         const fields: StructFieldNode[] = [];
-        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseCurly) &&
+            !this.check(TokenType.Eof)
+        ) {
             const fs = this.peek();
             const fieldName = this.expect(TokenType.Identifier).value;
             this.expect(TokenType.Colon);
@@ -854,7 +972,11 @@ class Parser {
         while (!this.check(closeToken) && !this.check(TokenType.Eof)) {
             const fieldStart = this.peek();
             const ty = this.parseTypeNode();
-            fields.push({ span: this.spanFrom(fieldStart), name: String(index++), ty });
+            fields.push({
+                span: this.spanFrom(fieldStart),
+                name: String(index++),
+                ty,
+            });
             if (!this.eat(TokenType.Comma)) break;
         }
         this.expect(closeToken);
@@ -875,15 +997,26 @@ class Parser {
         this.expect(TokenType.OpenCurly);
 
         const methods: (FnItem | GenericFnItem)[] = [];
-        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseCurly) &&
+            !this.check(TokenType.Eof)
+        ) {
             this.parseImplMember(methods);
         }
 
         this.expect(TokenType.CloseCurly);
-        return new ImplItem(this.spanFrom(startTok), target, methods, traitType);
+        return new ImplItem(
+            this.spanFrom(startTok),
+            target,
+            methods,
+            traitType,
+        );
     }
 
-    private parseImplTarget(typeA: TypeNode): { target: TypeNode; traitType?: TypeNode } {
+    private parseImplTarget(typeA: TypeNode): {
+        target: TypeNode;
+        traitType?: TypeNode;
+    } {
         if (!this.check(TokenType.For)) {
             return { target: typeA };
         }
@@ -899,7 +1032,11 @@ class Parser {
             methods.push(this.parseFnBody(this.peek(), derives, false));
             return;
         }
-        if (this.check(TokenType.Type) || this.check(TokenType.Const) || this.check(TokenType.Static)) {
+        if (
+            this.check(TokenType.Type) ||
+            this.check(TokenType.Const) ||
+            this.check(TokenType.Static)
+        ) {
             this.advance();
             this.skipUntil(TokenType.Semicolon, TokenType.CloseCurly);
             this.eat(TokenType.Semicolon);
@@ -930,7 +1067,11 @@ class Parser {
 
         // Skip : Bounds
         if (this.eat(TokenType.Colon)) {
-            while (!this.check(TokenType.OpenCurly) && !this.check(TokenType.Where) && !this.check(TokenType.Eof)) {
+            while (
+                !this.check(TokenType.OpenCurly) &&
+                !this.check(TokenType.Where) &&
+                !this.check(TokenType.Eof)
+            ) {
                 this.advance();
             }
         }
@@ -939,7 +1080,10 @@ class Parser {
         this.expect(TokenType.OpenCurly);
 
         const methods: (FnItem | GenericFnItem)[] = [];
-        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseCurly) &&
+            !this.check(TokenType.Eof)
+        ) {
             const { derives } = this.parseAttributes();
             this.eatPub();
             if (this.eat(TokenType.Unsafe)) {
@@ -949,13 +1093,20 @@ class Parser {
                 const fnStart = this.peek();
                 methods.push(this.parseFnBody(fnStart, derives, false));
             } else if (this.check(TokenType.Type)) {
-                while (!this.check(TokenType.Semicolon) && !this.check(TokenType.Eof) && !this.check(TokenType.CloseCurly)) {
+                while (
+                    !this.check(TokenType.Semicolon) &&
+                    !this.check(TokenType.Eof) &&
+                    !this.check(TokenType.CloseCurly)
+                ) {
                     this.advance();
                 }
                 this.eat(TokenType.Semicolon);
             } else {
                 const tok = this.peek();
-                if (tok.type !== TokenType.CloseCurly && tok.type !== TokenType.Eof) {
+                if (
+                    tok.type !== TokenType.CloseCurly &&
+                    tok.type !== TokenType.Eof
+                ) {
                     this.advance();
                 }
             }
@@ -1009,7 +1160,10 @@ class Parser {
                 // Use a::b::{ c, d }
                 this.advance(); // Consume {
                 const result: UseItem[] = [];
-                while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+                while (
+                    !this.check(TokenType.CloseCurly) &&
+                    !this.check(TokenType.Eof)
+                ) {
                     result.push(...this.parseUsePath(startTok, segments));
                     if (!this.eat(TokenType.Comma)) break;
                 }
@@ -1019,10 +1173,15 @@ class Parser {
 
             if (this.check(TokenType.Star)) {
                 this.advance();
-                return [new UseItem(this.spanFrom(startTok), [...segments, "*"])];
+                return [
+                    new UseItem(this.spanFrom(startTok), [...segments, "*"]),
+                ];
             }
 
-            if (this.check(TokenType.Identifier) || this.check(TokenType.Self)) {
+            if (
+                this.check(TokenType.Identifier) ||
+                this.check(TokenType.Self)
+            ) {
                 segments.push(this.advance().value);
             } else {
                 break;
@@ -1049,14 +1208,20 @@ class Parser {
         const stmts: Statement[] = [];
         let tail: Expression | undefined;
 
-        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseCurly) &&
+            !this.check(TokenType.Eof)
+        ) {
             const stmt = this.parseStatement();
             if (stmt === undefined) break;
 
             if (stmt instanceof ExprStmt && stmt.isReturn) {
                 // Block-like expressions (if/match/loop/while/for/block) don't
                 // Need a trailing semicolon to appear as statements mid-block.
-                if (!this.check(TokenType.CloseCurly) && isBlockLikeExpr(stmt.expr)) {
+                if (
+                    !this.check(TokenType.CloseCurly) &&
+                    isBlockLikeExpr(stmt.expr)
+                ) {
                     stmts.push(new ExprStmt(stmt.span, stmt.expr, false));
                     continue;
                 }
@@ -1124,12 +1289,19 @@ class Parser {
             return undefined;
         }
         const expr = this.parseExpr(0);
-        return new ExprStmt(this.spanFrom(start), expr, !this.eat(TokenType.Semicolon));
+        return new ExprStmt(
+            this.spanFrom(start),
+            expr,
+            !this.eat(TokenType.Semicolon),
+        );
     }
 
     private isStatementItemStart(): boolean {
         if (ITEM_START_TOKENS.has(this.peek().type)) return true;
-        return this.check(TokenType.Pub) && ITEM_START_TOKENS.has(this.peekAt(1).type);
+        return (
+            this.check(TokenType.Pub) &&
+            ITEM_START_TOKENS.has(this.peekAt(1).type)
+        );
     }
 
     private reportUnexpectedStatement(): void {
@@ -1201,7 +1373,10 @@ class Parser {
         }
         this.expect(TokenType.Comma);
         const elements: TypeNode[] = [first];
-        while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseParen) &&
+            !this.check(TokenType.Eof)
+        ) {
             elements.push(this.parseTypeNode());
             if (!this.eat(TokenType.Comma)) break;
         }
@@ -1229,9 +1404,13 @@ class Parser {
         if (!this.eat(TokenType.Fn)) return undefined;
         this.expect(TokenType.OpenParen);
         const params: TypeNode[] = [];
-        while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseParen) &&
+            !this.check(TokenType.Eof)
+        ) {
             if (
-                (this.check(TokenType.Identifier) || this.check(TokenType.Self)) &&
+                (this.check(TokenType.Identifier) ||
+                    this.check(TokenType.Self)) &&
                 this.peekAt(1).type === TokenType.Colon
             ) {
                 this.advance();
@@ -1249,7 +1428,9 @@ class Parser {
     }
 
     private parseNamedType(start: Token): TypeNode | undefined {
-        if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) return undefined;
+        if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) {
+            return undefined;
+        }
         let name = this.advance().value;
         while (this.checkColonColon()) {
             const next2 = this.peekAt(2).type;
@@ -1257,11 +1438,15 @@ class Parser {
                 this.eatColonColon();
                 break;
             }
-            if (next2 !== TokenType.Identifier && next2 !== TokenType.Self) break;
+            if (next2 !== TokenType.Identifier && next2 !== TokenType.Self) {
+                break;
+            }
             this.eatColonColon();
             name += `::${this.advance().value}`;
         }
-        const args = this.check(TokenType.Lt) ? this.parseGenericArgs() : undefined;
+        const args = this.check(TokenType.Lt)
+            ? this.parseGenericArgs()
+            : undefined;
         return new NamedTypeNode(this.spanFrom(start), name, args);
     }
 
@@ -1323,7 +1508,9 @@ class Parser {
     }
 
     private parseWildcardPattern(start: Token): Pattern | undefined {
-        if (!this.check(TokenType.Identifier) || this.peek().value !== "_") return undefined;
+        if (!this.check(TokenType.Identifier) || this.peek().value !== "_") {
+            return undefined;
+        }
         this.advance();
         return new WildcardPattern(this.spanFrom(start));
     }
@@ -1333,7 +1520,12 @@ class Parser {
         const name = this.expect(TokenType.Identifier).value;
         if (this.eat(TokenType.At)) {
             const subPat = this.parsePatternAtom();
-            return new BindingPattern(this.spanFrom(start), name, Mutability.Mutable, subPat);
+            return new BindingPattern(
+                this.spanFrom(start),
+                name,
+                Mutability.Mutable,
+                subPat,
+            );
         }
         return new IdentPattern(
             this.spanFrom(start),
@@ -1348,16 +1540,26 @@ class Parser {
         if (literal === undefined) return undefined;
         if (this.checkDotDotEq()) {
             this.eatDotDotEq();
-            return new RangePattern(this.spanFrom(start), literal, this.parseLiteralPatternEnd());
+            return new RangePattern(
+                this.spanFrom(start),
+                literal,
+                this.parseLiteralPatternEnd(),
+            );
         }
         if (this.checkDotDot()) {
             this.eatDotDot();
-            return new RangePattern(this.spanFrom(start), literal, this.parseLiteralPatternEnd());
+            return new RangePattern(
+                this.spanFrom(start),
+                literal,
+                this.parseLiteralPatternEnd(),
+            );
         }
         return literal;
     }
 
-    private tryParseNumericLiteralPattern(start: Token): LiteralPattern | undefined {
+    private tryParseNumericLiteralPattern(
+        start: Token,
+    ): LiteralPattern | undefined {
         let isNegative = false;
         const saved = this.pos;
         if (this.eat(TokenType.Minus)) {
@@ -1368,11 +1570,16 @@ class Parser {
             return undefined;
         }
         const tok = this.advance();
-        if (this.check(TokenType.Identifier) && isTypeSuffix(this.peek().value)) {
+        if (
+            this.check(TokenType.Identifier) &&
+            isTypeSuffix(this.peek().value)
+        ) {
             this.advance();
         }
         const isFloat = tok.type === TokenType.Float;
-        const rawValue = isFloat ? Number.parseFloat(tok.value) : parseIntValue(tok.value);
+        const rawValue = isFloat
+            ? Number.parseFloat(tok.value)
+            : parseIntValue(tok.value);
         const value = isNegative ? -rawValue : rawValue;
         return new LiteralPattern(
             this.spanFrom(start),
@@ -1382,7 +1589,9 @@ class Parser {
     }
 
     private parseBooleanPattern(start: Token): Pattern | undefined {
-        if (!this.check(TokenType.True) && !this.check(TokenType.False)) return undefined;
+        if (!this.check(TokenType.True) && !this.check(TokenType.False)) {
+            return undefined;
+        }
         const tok = this.advance();
         return new LiteralPattern(
             this.spanFrom(start),
@@ -1409,7 +1618,10 @@ class Parser {
         const elements: Pattern[] = [];
         do {
             elements.push(this.parsePattern());
-        } while (this.eat(TokenType.Comma) && !this.check(TokenType.CloseParen));
+        } while (
+            this.eat(TokenType.Comma) &&
+            !this.check(TokenType.CloseParen)
+        );
         this.expect(TokenType.CloseParen);
         return new TuplePattern(this.spanFrom(start), elements);
     }
@@ -1418,10 +1630,16 @@ class Parser {
         if (!this.eat(TokenType.OpenSquare)) return undefined;
         const elements: Pattern[] = [];
         let rest: Pattern | undefined;
-        while (!this.check(TokenType.CloseSquare) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseSquare) &&
+            !this.check(TokenType.Eof)
+        ) {
             if (this.checkDotDot()) {
                 this.eatDotDot();
-                if (!this.check(TokenType.CloseSquare) && !this.check(TokenType.Comma)) {
+                if (
+                    !this.check(TokenType.CloseSquare) &&
+                    !this.check(TokenType.Comma)
+                ) {
                     rest = this.parsePatternAtom();
                 }
                 this.eat(TokenType.Comma);
@@ -1435,7 +1653,9 @@ class Parser {
     }
 
     private parsePathPattern(start: Token): Pattern | undefined {
-        if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) return undefined;
+        if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) {
+            return undefined;
+        }
         const { lastName, pathExpr } = this.parsePatternPath(start);
         if (this.eat(TokenType.OpenCurly)) {
             return this.finishStructPattern(start, pathExpr);
@@ -1459,12 +1679,16 @@ class Parser {
         );
     }
 
-    private parsePatternPath(start: Token): { lastName: string; pathExpr: Expression } {
+    private parsePatternPath(start: Token): {
+        lastName: string;
+        pathExpr: Expression;
+    } {
         const firstName = this.advance().value;
         const segments: string[] = [firstName];
         while (
             this.checkColonColon() &&
-            (this.peekAt(2).type === TokenType.Identifier || this.peekAt(2).type === TokenType.Self)
+            (this.peekAt(2).type === TokenType.Identifier ||
+                this.peekAt(2).type === TokenType.Self)
         ) {
             this.eatColonColon();
             segments.push(this.advance().value);
@@ -1482,7 +1706,10 @@ class Parser {
     private finishStructPattern(start: Token, pathExpr: Expression): Pattern {
         const fields: StructPatternField[] = [];
         let hasRest = false;
-        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseCurly) &&
+            !this.check(TokenType.Eof)
+        ) {
             if (this.checkDotDot()) {
                 this.eatDotDot();
                 hasRest = true;
@@ -1492,21 +1719,32 @@ class Parser {
             const pattern = this.eat(TokenType.Colon)
                 ? this.parsePattern()
                 : new IdentPattern(
-                    this.spanFrom(start),
-                    fieldName,
-                    Mutability.Immutable,
-                    new NamedTypeNode(this.spanFrom(start), "_"),
-                );
+                      this.spanFrom(start),
+                      fieldName,
+                      Mutability.Immutable,
+                      new NamedTypeNode(this.spanFrom(start), "_"),
+                  );
             fields.push({ name: fieldName, pattern });
             if (!this.eat(TokenType.Comma)) break;
         }
         this.expect(TokenType.CloseCurly);
-        return new StructPattern(this.spanFrom(start), pathExpr, fields, hasRest);
+        return new StructPattern(
+            this.spanFrom(start),
+            pathExpr,
+            fields,
+            hasRest,
+        );
     }
 
-    private finishTupleStructPattern(start: Token, pathExpr: Expression): Pattern {
+    private finishTupleStructPattern(
+        start: Token,
+        pathExpr: Expression,
+    ): Pattern {
         const elems: Pattern[] = [];
-        while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseParen) &&
+            !this.check(TokenType.Eof)
+        ) {
             elems.push(this.parsePattern());
             if (!this.eat(TokenType.Comma)) break;
         }
@@ -1536,11 +1774,16 @@ class Parser {
         const hasMinus = this.eat(TokenType.Minus) !== undefined;
         if (this.check(TokenType.Integer) || this.check(TokenType.Float)) {
             const tok = this.advance();
-            if (this.check(TokenType.Identifier) && isTypeSuffix(this.peek().value)) {
+            if (
+                this.check(TokenType.Identifier) &&
+                isTypeSuffix(this.peek().value)
+            ) {
                 this.advance();
             }
             const isFloat = tok.type === TokenType.Float;
-            const rawVal = isFloat ? Number.parseFloat(tok.value) : parseIntValue(tok.value);
+            const rawVal = isFloat
+                ? Number.parseFloat(tok.value)
+                : parseIntValue(tok.value);
             const v = hasMinus ? -rawVal : rawVal;
             return new LiteralPattern(
                 this.spanFrom(start),
@@ -1552,11 +1795,17 @@ class Parser {
             const tok = this.advance();
             return new LiteralPattern(
                 this.spanFrom(start),
-                isCharLiteral(tok.value) ? LiteralKind.Char : LiteralKind.String,
+                isCharLiteral(tok.value)
+                    ? LiteralKind.Char
+                    : LiteralKind.String,
                 processStringValue(tok.value),
             );
         }
-        return new LiteralPattern(this.spanFrom(start), LiteralKind.Int, ERROR_LITERAL_VALUE);
+        return new LiteralPattern(
+            this.spanFrom(start),
+            LiteralKind.Int,
+            ERROR_LITERAL_VALUE,
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1581,7 +1830,10 @@ class Parser {
         return left;
     }
 
-    private parsePostfixExpr(left: Expression, minPrec: number): Expression | undefined {
+    private parsePostfixExpr(
+        left: Expression,
+        minPrec: number,
+    ): Expression | undefined {
         if (minPrec >= POSTFIX_PRECEDENCE) return undefined;
         return (
             this.parseDotPostfix(left) ??
@@ -1594,7 +1846,13 @@ class Parser {
     }
 
     private parseDotPostfix(left: Expression): Expression | undefined {
-        if (!this.check(TokenType.Dot) || this.checkDotDot() || this.checkDotDotEq()) return undefined;
+        if (
+            !this.check(TokenType.Dot) ||
+            this.checkDotDot() ||
+            this.checkDotDotEq()
+        ) {
+            return undefined;
+        }
         this.advance();
         if (this.check(TokenType.Integer)) {
             const idxTok = this.advance();
@@ -1641,7 +1899,9 @@ class Parser {
     }
 
     private parseTurbofishPostfix(left: Expression): Expression | undefined {
-        if (!this.checkColonColon() || this.peekAt(2).type !== TokenType.Lt) return undefined;
+        if (!this.checkColonColon() || this.peekAt(2).type !== TokenType.Lt) {
+            return undefined;
+        }
         this.eatColonColon();
         const ga = this.parseGenericArgs();
         if (!this.eat(TokenType.OpenParen)) return left;
@@ -1651,7 +1911,9 @@ class Parser {
     }
 
     private parseCastPostfix(left: Expression): Expression | undefined {
-        if (!this.check(TokenType.Identifier) || this.peek().value !== "as") return undefined;
+        if (!this.check(TokenType.Identifier) || this.peek().value !== "as") {
+            return undefined;
+        }
         this.advance();
         this.parseTypeNode();
         return left;
@@ -1660,18 +1922,28 @@ class Parser {
     private getInfixPrec(): number {
         const tok = this.peek().type;
         if (tok === TokenType.Dot) {
-            return this.checkDotDot() || this.checkDotDotEq() ? RANGE_PRECEDENCE : 0;
+            return this.checkDotDot() || this.checkDotDotEq()
+                ? RANGE_PRECEDENCE
+                : 0;
         }
         if (tok === TokenType.Lt) {
-            return this.peekAt(1).type === TokenType.Lt ? ADDITIVE_PRECEDENCE : COMPARISON_PRECEDENCE;
+            return this.peekAt(1).type === TokenType.Lt
+                ? ADDITIVE_PRECEDENCE
+                : COMPARISON_PRECEDENCE;
         }
         if (tok === TokenType.Gt) {
-            return this.peekAt(1).type === TokenType.Gt ? ADDITIVE_PRECEDENCE : COMPARISON_PRECEDENCE;
+            return this.peekAt(1).type === TokenType.Gt
+                ? ADDITIVE_PRECEDENCE
+                : COMPARISON_PRECEDENCE;
         }
         return INFIX_PRECEDENCE.get(tok) ?? 0;
     }
 
-    private parseInfix(left: Expression, prec: number, noStructLiteral: boolean): Expression {
+    private parseInfix(
+        left: Expression,
+        prec: number,
+        noStructLiteral: boolean,
+    ): Expression {
         const start = this.peek();
         return (
             this.parseRangeInfix(start, left, noStructLiteral) ??
@@ -1750,7 +2022,9 @@ class Parser {
                 this.parseExpr(prec, noStructLiteral),
             );
         }
-        if (!this.check(TokenType.Gt) || this.peekAt(1).type !== TokenType.Gt) return undefined;
+        if (!this.check(TokenType.Gt) || this.peekAt(1).type !== TokenType.Gt) {
+            return undefined;
+        }
         this.advance();
         this.advance();
         return new BinaryExpr(
@@ -1770,7 +2044,12 @@ class Parser {
         const op = BINARY_OPERATORS[this.peek().type];
         if (op === undefined) return undefined;
         this.advance();
-        return new BinaryExpr(this.spanFrom(start), op, left, this.parseExpr(prec, noStructLiteral));
+        return new BinaryExpr(
+            this.spanFrom(start),
+            op,
+            left,
+            this.parseExpr(prec, noStructLiteral),
+        );
     }
 
     private parseInvalidInfix(start: Token, left: Expression): Expression {
@@ -1798,7 +2077,10 @@ class Parser {
         );
     }
 
-    private parseIdentifierExpr(startTok: Token, noStructLiteral: boolean): Expression {
+    private parseIdentifierExpr(
+        startTok: Token,
+        noStructLiteral: boolean,
+    ): Expression {
         const { baseExpr, lastName } = this.parsePathExpression(startTok);
         const macroExpr = this.parseMacroExpr(startTok, lastName);
         if (macroExpr !== undefined) return macroExpr;
@@ -1811,21 +2093,39 @@ class Parser {
     private parseLiteralPrefix(start: Token): Expression | undefined {
         if (this.check(TokenType.Integer)) {
             const tok = this.advance();
-            if (this.check(TokenType.Identifier) && isTypeSuffix(this.peek().value)) {
+            if (
+                this.check(TokenType.Identifier) &&
+                isTypeSuffix(this.peek().value)
+            ) {
                 this.advance();
             }
-            return new LiteralExpr(this.spanFrom(start), LiteralKind.Int, parseIntValue(tok.value));
+            return new LiteralExpr(
+                this.spanFrom(start),
+                LiteralKind.Int,
+                parseIntValue(tok.value),
+            );
         }
         if (this.check(TokenType.Float)) {
             const tok = this.advance();
-            if (this.check(TokenType.Identifier) && isTypeSuffix(this.peek().value)) {
+            if (
+                this.check(TokenType.Identifier) &&
+                isTypeSuffix(this.peek().value)
+            ) {
                 this.advance();
             }
-            return new LiteralExpr(this.spanFrom(start), LiteralKind.Float, Number.parseFloat(tok.value));
+            return new LiteralExpr(
+                this.spanFrom(start),
+                LiteralKind.Float,
+                Number.parseFloat(tok.value),
+            );
         }
         if (this.check(TokenType.True) || this.check(TokenType.False)) {
             const tok = this.advance();
-            return new LiteralExpr(this.spanFrom(start), LiteralKind.Bool, tok.type === TokenType.True);
+            return new LiteralExpr(
+                this.spanFrom(start),
+                LiteralKind.Bool,
+                tok.type === TokenType.True,
+            );
         }
         if (!this.check(TokenType.String)) return undefined;
         const tok = this.advance();
@@ -1836,7 +2136,10 @@ class Parser {
         );
     }
 
-    private parseRangePrefix(start: Token, noStructLiteral: boolean): Expression | undefined {
+    private parseRangePrefix(
+        start: Token,
+        noStructLiteral: boolean,
+    ): Expression | undefined {
         if (this.checkDotDotEq()) {
             this.eatDotDotEq();
             return this.finishPrefixRange(start, noStructLiteral, true);
@@ -1846,25 +2149,46 @@ class Parser {
         return this.finishPrefixRange(start, noStructLiteral, false);
     }
 
-    private finishPrefixRange(start: Token, noStructLiteral: boolean, inclusive: boolean): Expression {
+    private finishPrefixRange(
+        start: Token,
+        noStructLiteral: boolean,
+        inclusive: boolean,
+    ): Expression {
         if (this.canStartExpression()) {
             const end = this.parseExpr(RANGE_PRECEDENCE, noStructLiteral);
-            return new RangeExpr(this.spanFrom(start), undefined, end, inclusive);
+            return new RangeExpr(
+                this.spanFrom(start),
+                undefined,
+                end,
+                inclusive,
+            );
         }
-        return new RangeExpr(this.spanFrom(start), undefined, undefined, inclusive);
+        return new RangeExpr(
+            this.spanFrom(start),
+            undefined,
+            undefined,
+            inclusive,
+        );
     }
 
-    private parseControlFlowPrefix(start: Token, noStructLiteral: boolean): Expression | undefined {
+    private parseControlFlowPrefix(
+        start: Token,
+        noStructLiteral: boolean,
+    ): Expression | undefined {
         if (this.check(TokenType.OpenCurly)) return this.parseBlock();
         if (this.eat(TokenType.If)) return this.parseIfExpr(start);
         if (this.eat(TokenType.Match)) return this.parseMatchExpr(start);
         if (this.eat(TokenType.Return)) {
-            const value = this.canStartExpression() ? this.parseExpr(0, noStructLiteral) : undefined;
+            const value = this.canStartExpression()
+                ? this.parseExpr(0, noStructLiteral)
+                : undefined;
             return new ReturnExpr(this.spanFrom(start), value);
         }
         if (this.eat(TokenType.Break)) {
             if (this.check(TokenType.Lifetime)) this.advance();
-            const value = this.canStartExpression() ? this.parseExpr(0, noStructLiteral) : undefined;
+            const value = this.canStartExpression()
+                ? this.parseExpr(0, noStructLiteral)
+                : undefined;
             return new BreakExpr(this.spanFrom(start), value);
         }
         if (this.eat(TokenType.Continue)) {
@@ -1875,12 +2199,21 @@ class Parser {
             return new LoopExpr(this.spanFrom(start), this.parseBlock());
         }
         if (this.eat(TokenType.While)) {
-            return new WhileExpr(this.spanFrom(start), this.parseExpr(0, true), this.parseBlock());
+            return new WhileExpr(
+                this.spanFrom(start),
+                this.parseExpr(0, true),
+                this.parseBlock(),
+            );
         }
         if (!this.eat(TokenType.For)) return undefined;
         const pat = this.parsePattern();
         this.consumeForInToken();
-        return new ForExpr(this.spanFrom(start), pat, this.parseExpr(0, true), this.parseBlock());
+        return new ForExpr(
+            this.spanFrom(start),
+            pat,
+            this.parseExpr(0, true),
+            this.parseBlock(),
+        );
     }
 
     private consumeForInToken(): void {
@@ -1895,7 +2228,10 @@ class Parser {
         this.expect(TokenType.In);
     }
 
-    private parseUnaryPrefix(start: Token, noStructLiteral: boolean): Expression | undefined {
+    private parseUnaryPrefix(
+        start: Token,
+        noStructLiteral: boolean,
+    ): Expression | undefined {
         if (this.eat(TokenType.And)) {
             if (this.check(TokenType.Lifetime)) this.advance();
             const mut = this.eat(TokenType.Mut) !== undefined;
@@ -1930,13 +2266,20 @@ class Parser {
     private parseGroupingPrefix(start: Token): Expression | undefined {
         if (!this.eat(TokenType.OpenParen)) return undefined;
         if (this.eat(TokenType.CloseParen)) {
-            return new LiteralExpr(this.spanFrom(start), LiteralKind.Int, UNIT_LITERAL_VALUE);
+            return new LiteralExpr(
+                this.spanFrom(start),
+                LiteralKind.Int,
+                UNIT_LITERAL_VALUE,
+            );
         }
         const first = this.parseExpr(0);
         if (this.eat(TokenType.CloseParen)) return first;
         this.expect(TokenType.Comma);
         const elems: Expression[] = [first];
-        while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseParen) &&
+            !this.check(TokenType.Eof)
+        ) {
             elems.push(this.parseExpr(0));
             if (!this.eat(TokenType.Comma)) break;
         }
@@ -1947,7 +2290,10 @@ class Parser {
     private parseArrayPrefix(start: Token): Expression | undefined {
         if (!this.eat(TokenType.OpenSquare)) return undefined;
         const elems: Expression[] = [];
-        while (!this.check(TokenType.CloseSquare) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseSquare) &&
+            !this.check(TokenType.Eof)
+        ) {
             elems.push(this.parseExpr(0));
             if (!this.eat(TokenType.Comma)) break;
         }
@@ -1956,12 +2302,19 @@ class Parser {
     }
 
     private parseClosurePrefix(start: Token): Expression | undefined {
-        if (!this.check(TokenType.Pipe) && !this.check(TokenType.PipePipe)) return undefined;
+        if (!this.check(TokenType.Pipe) && !this.check(TokenType.PipePipe)) {
+            return undefined;
+        }
         return this.parseClosureExpr(start);
     }
 
-    private parsePathPrefix(start: Token, noStructLiteral: boolean): Expression | undefined {
-        if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) return undefined;
+    private parsePathPrefix(
+        start: Token,
+        noStructLiteral: boolean,
+    ): Expression | undefined {
+        if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) {
+            return undefined;
+        }
         return this.parseIdentifierExpr(start, noStructLiteral);
     }
 
@@ -1973,15 +2326,27 @@ class Parser {
             column: tok.column,
         });
         if (tok.type !== TokenType.Eof) this.advance();
-        return new LiteralExpr(this.spanFrom(start), LiteralKind.Int, ERROR_LITERAL_VALUE);
+        return new LiteralExpr(
+            this.spanFrom(start),
+            LiteralKind.Int,
+            ERROR_LITERAL_VALUE,
+        );
     }
 
-    private parsePathExpression(startTok: Token): { baseExpr: Expression; lastName: string } {
+    private parsePathExpression(startTok: Token): {
+        baseExpr: Expression;
+        lastName: string;
+    } {
         const firstName = this.advance().value;
         const segments: string[] = [firstName];
         while (this.checkColonColon()) {
             const next2Type = this.peekAt(2).type;
-            if (next2Type !== TokenType.Identifier && next2Type !== TokenType.Self) break;
+            if (
+                next2Type !== TokenType.Identifier &&
+                next2Type !== TokenType.Self
+            ) {
+                break;
+            }
             this.eatColonColon();
             segments.push(this.advance().value);
         }
@@ -1995,8 +2360,16 @@ class Parser {
         };
     }
 
-    private parseMacroExpr(startTok: Token, macroName: string): Expression | undefined {
-        if (!this.check(TokenType.Bang) || this.peekAt(1).type === TokenType.Eq) return undefined;
+    private parseMacroExpr(
+        startTok: Token,
+        macroName: string,
+    ): Expression | undefined {
+        if (
+            !this.check(TokenType.Bang) ||
+            this.peekAt(1).type === TokenType.Eq
+        ) {
+            return undefined;
+        }
         this.advance();
         const args = this.parseDelimitedMacroArgs();
         return new MacroExpr(this.spanFrom(startTok), macroName, args);
@@ -2015,7 +2388,10 @@ class Parser {
         return [];
     }
 
-    private parseMacroArgsUntil(closeToken: TokenType, allowSemicolon: boolean): Expression[] {
+    private parseMacroArgsUntil(
+        closeToken: TokenType,
+        allowSemicolon: boolean,
+    ): Expression[] {
         const args: Expression[] = [];
         while (!this.check(closeToken) && !this.check(TokenType.Eof)) {
             args.push(this.parseExpr(0));
@@ -2031,7 +2407,10 @@ class Parser {
         this.expect(TokenType.OpenCurly);
         const fields = new Map<string, Expression>();
 
-        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseCurly) &&
+            !this.check(TokenType.Eof)
+        ) {
             // Rest: ..expr
             if (this.checkDotDot()) {
                 this.eatDotDot();
@@ -2044,7 +2423,10 @@ class Parser {
                 fields.set(fieldName, this.parseExpr(0));
             } else {
                 // Shorthand: field name = variable with same name
-                fields.set(fieldName, new IdentifierExpr(this.spanFrom(startTok), fieldName));
+                fields.set(
+                    fieldName,
+                    new IdentifierExpr(this.spanFrom(startTok), fieldName),
+                );
             }
             if (!this.eat(TokenType.Comma)) break;
         }
@@ -2067,7 +2449,10 @@ class Parser {
                 if (this.check(TokenType.Pipe)) break;
 
                 let name: string;
-                if (this.check(TokenType.Identifier) || this.check(TokenType.Self)) {
+                if (
+                    this.check(TokenType.Identifier) ||
+                    this.check(TokenType.Self)
+                ) {
                     name = this.advance().value;
                 } else if (this.check(TokenType.And)) {
                     // &self or &mut self in closure
@@ -2099,13 +2484,21 @@ class Parser {
             this.expect(TokenType.Pipe);
         }
 
-        let returnType: TypeNode = new TupleTypeNode(this.spanFrom(startTok), []);
+        let returnType: TypeNode = new TupleTypeNode(
+            this.spanFrom(startTok),
+            [],
+        );
         if (this.eatThinArrow()) {
             returnType = this.parseTypeNode();
         }
 
         const body = this.parseExpr(0);
-        return new ClosureExpr(this.spanFrom(startTok), params, returnType, body);
+        return new ClosureExpr(
+            this.spanFrom(startTok),
+            params,
+            returnType,
+            body,
+        );
     }
 
     private parseIfExpr(startTok: Token): IfExpr {
@@ -2115,16 +2508,30 @@ class Parser {
             this.expect(TokenType.Eq);
             const _val = this.parseExpr(0, true);
             // Represent as a synthetic true condition (if-let not lowered)
-            const cond = new LiteralExpr(this.spanFrom(startTok), LiteralKind.Bool, true);
+            const cond = new LiteralExpr(
+                this.spanFrom(startTok),
+                LiteralKind.Bool,
+                true,
+            );
             const thenBranch = this.parseBlock();
             const elseBranch = this.parseElseBranch();
-            return new IfExpr(this.spanFrom(startTok), cond, thenBranch, elseBranch);
+            return new IfExpr(
+                this.spanFrom(startTok),
+                cond,
+                thenBranch,
+                elseBranch,
+            );
         }
 
         const cond = this.parseExpr(0, true);
         const thenBranch = this.parseBlock();
         const elseBranch = this.parseElseBranch();
-        return new IfExpr(this.spanFrom(startTok), cond, thenBranch, elseBranch);
+        return new IfExpr(
+            this.spanFrom(startTok),
+            cond,
+            thenBranch,
+            elseBranch,
+        );
     }
 
     private parseElseBranch(): Expression | undefined {
@@ -2139,7 +2546,10 @@ class Parser {
         this.expect(TokenType.OpenCurly);
         const arms: MatchArmNode[] = [];
 
-        while (!this.check(TokenType.CloseCurly) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseCurly) &&
+            !this.check(TokenType.Eof)
+        ) {
             const armStart = this.peek();
 
             // Leading | in pattern
@@ -2153,7 +2563,9 @@ class Parser {
             this.expect(TokenType.FatArrow);
             const body = this.parseExpr(0);
 
-            arms.push(new MatchArmNode(this.spanFrom(armStart), pat, body, guard));
+            arms.push(
+                new MatchArmNode(this.spanFrom(armStart), pat, body, guard),
+            );
 
             // Trailing comma: required unless body is a block
             if (!this.eat(TokenType.Comma)) {
@@ -2168,7 +2580,10 @@ class Parser {
 
     private parseArgList(): Expression[] {
         const args: Expression[] = [];
-        while (!this.check(TokenType.CloseParen) && !this.check(TokenType.Eof)) {
+        while (
+            !this.check(TokenType.CloseParen) &&
+            !this.check(TokenType.Eof)
+        ) {
             args.push(this.parseExpr(0));
             if (!this.eat(TokenType.Comma)) break;
         }

@@ -56,8 +56,8 @@ interface ParamWithType {
 function buildParamList(params: ParamNode[]): ParamWithType[] {
     const result: ParamWithType[] = [];
     for (const p of params) {
-        if (!p.isReceiver && p.ty !== undefined) {
-            result.push({ name: p.name ?? "_", ty: p.ty });
+        if (!p.isReceiver) {
+            result.push({ name: p.name, ty: p.ty });
         }
     }
     return result;
@@ -150,45 +150,29 @@ const COMPARISON_OPS = new Set([
     BinaryOp.Ge,
 ]);
 
-const LOGICAL_OPS = new Set([
-    BinaryOp.And,
-    BinaryOp.Or,
-]);
+const LOGICAL_OPS = new Set([BinaryOp.And, BinaryOp.Or]);
 
 // --- Item Registration ---
 
 function registerItemTypes(typeCtx: TypeContext, node: Node): void {
     if (node instanceof StructItem) {
-        typeCtx.registerNamedType(
-            node.name,
-            new TupleTypeNode(node.span, []),
-        );
+        typeCtx.registerNamedType(node.name, new TupleTypeNode(node.span, []));
         const fields: FieldWithType[] = [];
         for (const f of node.fields) {
-            if (f.ty !== undefined) {
-                fields.push({ name: f.name, ty: f.ty });
-            }
+            fields.push({ name: f.name, ty: f.ty });
         }
         typeCtx.registerStructFields(node.name, fields);
     }
 
     if (node instanceof EnumItem) {
-        typeCtx.registerNamedType(
-            node.name,
-            new TupleTypeNode(node.span, []),
-        );
+        typeCtx.registerNamedType(node.name, new TupleTypeNode(node.span, []));
     }
 
     if (node instanceof GenericStructItem) {
-        typeCtx.registerNamedType(
-            node.name,
-            new TupleTypeNode(node.span, []),
-        );
+        typeCtx.registerNamedType(node.name, new TupleTypeNode(node.span, []));
         const fields: FieldWithType[] = [];
         for (const f of node.fields) {
-            if (f.ty !== undefined) {
-                fields.push({ name: f.name, ty: f.ty });
-            }
+            fields.push({ name: f.name, ty: f.ty });
         }
         typeCtx.registerStructFields(node.name, fields);
     }
@@ -209,7 +193,8 @@ function registerItemTypes(typeCtx: TypeContext, node: Node): void {
     }
 
     if (node instanceof ImplItem) {
-        const targetName = node.target instanceof NamedTypeNode ? node.target.name : undefined;
+        const targetName =
+            node.target instanceof NamedTypeNode ? node.target.name : undefined;
         if (targetName !== undefined) {
             for (const method of node.methods) {
                 typeCtx.registerFnSignature(`${targetName}::${method.name}`, {
@@ -223,7 +208,11 @@ function registerItemTypes(typeCtx: TypeContext, node: Node): void {
 
 // --- Expression Type Inference ---
 
-function inferExprType(typeCtx: TypeContext, expr: Expression, errors: TypeError[]): TypeNode | undefined {
+function inferExprType(
+    typeCtx: TypeContext,
+    expr: Expression,
+    errors: TypeError[],
+): TypeNode | undefined {
     // Check if we already resolved this expression
     const cached = typeCtx.getExpressionType(expr);
     if (cached !== undefined) return cached;
@@ -235,7 +224,11 @@ function inferExprType(typeCtx: TypeContext, expr: Expression, errors: TypeError
     return resolved;
 }
 
-function inferExprTypeInner(typeCtx: TypeContext, expr: Expression, errors: TypeError[]): TypeNode | undefined {
+function inferExprTypeInner(
+    typeCtx: TypeContext,
+    expr: Expression,
+    errors: TypeError[],
+): TypeNode | undefined {
     if (expr instanceof LiteralExpr) {
         return inferLiteral(expr);
     }
@@ -314,7 +307,11 @@ function inferLiteral(expr: LiteralExpr): TypeNode {
     }
 }
 
-function inferIdentifier(typeCtx: TypeContext, expr: IdentifierExpr, _errors: TypeError[]): TypeNode | undefined {
+function inferIdentifier(
+    typeCtx: TypeContext,
+    expr: IdentifierExpr,
+    _errors: TypeError[],
+): TypeNode | undefined {
     const varTy = typeCtx.lookupVariable(expr.name);
     if (varTy !== undefined) return varTy;
 
@@ -331,7 +328,11 @@ function inferIdentifier(typeCtx: TypeContext, expr: IdentifierExpr, _errors: Ty
     return undefined;
 }
 
-function inferBinary(typeCtx: TypeContext, expr: BinaryExpr, errors: TypeError[]): TypeNode | undefined {
+function inferBinary(
+    typeCtx: TypeContext,
+    expr: BinaryExpr,
+    errors: TypeError[],
+): TypeNode | undefined {
     const leftTy = inferExprType(typeCtx, expr.left, errors);
     const rightTy = inferExprType(typeCtx, expr.right, errors);
 
@@ -342,7 +343,11 @@ function inferBinary(typeCtx: TypeContext, expr: BinaryExpr, errors: TypeError[]
 
     // Arithmetic/bitwise operators: check operands match, propagate type
     if (leftTy !== undefined && rightTy !== undefined) {
-        if (!isInferredPlaceholder(leftTy) && !isInferredPlaceholder(rightTy) && !typesEqual(leftTy, rightTy)) {
+        if (
+            !isInferredPlaceholder(leftTy) &&
+            !isInferredPlaceholder(rightTy) &&
+            !typesEqual(leftTy, rightTy)
+        ) {
             errors.push({
                 message: `Type mismatch in binary expression: \`${typeToString(leftTy)}\` and \`${typeToString(rightTy)}\``,
                 span: expr.span,
@@ -353,7 +358,11 @@ function inferBinary(typeCtx: TypeContext, expr: BinaryExpr, errors: TypeError[]
     return leftTy ?? rightTy;
 }
 
-function inferUnary(typeCtx: TypeContext, expr: UnaryExpr, errors: TypeError[]): TypeNode | undefined {
+function inferUnary(
+    typeCtx: TypeContext,
+    expr: UnaryExpr,
+    errors: TypeError[],
+): TypeNode | undefined {
     const operandTy = inferExprType(typeCtx, expr.operand, errors);
 
     if (expr.op === UnaryOp.Not) {
@@ -383,7 +392,11 @@ function inferUnary(typeCtx: TypeContext, expr: UnaryExpr, errors: TypeError[]):
     return operandTy;
 }
 
-function inferCall(typeCtx: TypeContext, expr: CallExpr, errors: TypeError[]): TypeNode | undefined {
+function inferCall(
+    typeCtx: TypeContext,
+    expr: CallExpr,
+    errors: TypeError[],
+): TypeNode | undefined {
     // Infer argument types for side effects (populates type context)
     const argTypes: (TypeNode | undefined)[] = [];
     for (const arg of expr.args) {
@@ -407,14 +420,21 @@ function inferCall(typeCtx: TypeContext, expr: CallExpr, errors: TypeError[]): T
     if (expr.callee instanceof FieldExpr) {
         const receiverTy = inferExprType(typeCtx, expr.callee.receiver, errors);
         if (receiverTy instanceof NamedTypeNode) {
-            const methodSig = typeCtx.lookupFnSignature(`${receiverTy.name}::${expr.callee.field}`);
+            const methodSig = typeCtx.lookupFnSignature(
+                `${receiverTy.name}::${expr.callee.field}`,
+            );
             if (methodSig !== undefined) {
                 return methodSig.returnType;
             }
         }
         // Try through references
-        if (receiverTy instanceof RefTypeNode && receiverTy.inner instanceof NamedTypeNode) {
-            const methodSig = typeCtx.lookupFnSignature(`${receiverTy.inner.name}::${expr.callee.field}`);
+        if (
+            receiverTy instanceof RefTypeNode &&
+            receiverTy.inner instanceof NamedTypeNode
+        ) {
+            const methodSig = typeCtx.lookupFnSignature(
+                `${receiverTy.inner.name}::${expr.callee.field}`,
+            );
             if (methodSig !== undefined) {
                 return methodSig.returnType;
             }
@@ -445,7 +465,7 @@ function resolveGenericCall(
     if (typeCtx.lookupFnSignature(specializedName) === undefined) {
         // Build the substituted return type
         const returnType = substituteTypeNode(generic.returnType, subs);
-        const params = buildParamList(generic.params).map(p => ({
+        const params = buildParamList(generic.params).map((p) => ({
             name: p.name,
             ty: substituteTypeNode(p.ty, subs),
         }));
@@ -455,22 +475,36 @@ function resolveGenericCall(
     return substituteTypeNode(generic.returnType, subs);
 }
 
-function substituteTypeNode(ty: TypeNode, subs: Map<string, TypeNode>): TypeNode {
+function substituteTypeNode(
+    ty: TypeNode,
+    subs: Map<string, TypeNode>,
+): TypeNode {
     if (ty instanceof NamedTypeNode) {
         const replacement = subs.get(ty.name);
         if (replacement !== undefined) return replacement;
         return ty;
     }
     if (ty instanceof RefTypeNode) {
-        return new RefTypeNode(ty.span, ty.mutability, substituteTypeNode(ty.inner, subs));
+        return new RefTypeNode(
+            ty.span,
+            ty.mutability,
+            substituteTypeNode(ty.inner, subs),
+        );
     }
     if (ty instanceof TupleTypeNode) {
-        return new TupleTypeNode(ty.span, ty.elements.map(el => substituteTypeNode(el, subs)));
+        return new TupleTypeNode(
+            ty.span,
+            ty.elements.map((el) => substituteTypeNode(el, subs)),
+        );
     }
     return ty;
 }
 
-function inferFieldAccess(typeCtx: TypeContext, expr: FieldExpr, errors: TypeError[]): TypeNode | undefined {
+function inferFieldAccess(
+    typeCtx: TypeContext,
+    expr: FieldExpr,
+    errors: TypeError[],
+): TypeNode | undefined {
     const receiverTy = inferExprType(typeCtx, expr.receiver, errors);
     if (receiverTy === undefined) return undefined;
 
@@ -487,8 +521,14 @@ function inferFieldAccess(typeCtx: TypeContext, expr: FieldExpr, errors: TypeErr
     }
 
     // Auto-deref through references
-    if (receiverTy instanceof RefTypeNode && receiverTy.inner instanceof NamedTypeNode) {
-        const fieldTy = typeCtx.lookupStructField(receiverTy.inner.name, expr.field);
+    if (
+        receiverTy instanceof RefTypeNode &&
+        receiverTy.inner instanceof NamedTypeNode
+    ) {
+        const fieldTy = typeCtx.lookupStructField(
+            receiverTy.inner.name,
+            expr.field,
+        );
         if (fieldTy !== undefined) return fieldTy;
 
         errors.push({
@@ -501,7 +541,11 @@ function inferFieldAccess(typeCtx: TypeContext, expr: FieldExpr, errors: TypeErr
     return undefined;
 }
 
-function inferStructLiteral(typeCtx: TypeContext, expr: StructExpr, errors: TypeError[]): TypeNode | undefined {
+function inferStructLiteral(
+    typeCtx: TypeContext,
+    expr: StructExpr,
+    errors: TypeError[],
+): TypeNode | undefined {
     if (!(expr.path instanceof IdentifierExpr)) return undefined;
 
     const structName = expr.path.name;
@@ -517,7 +561,10 @@ function inferStructLiteral(typeCtx: TypeContext, expr: StructExpr, errors: Type
 
     // Type-check each field initializer
     for (const [fieldName, fieldExpr] of expr.fields) {
-        const expectedFieldTy = typeCtx.lookupStructField(structName, fieldName);
+        const expectedFieldTy = typeCtx.lookupStructField(
+            structName,
+            fieldName,
+        );
         if (expectedFieldTy === undefined) {
             errors.push({
                 message: `Unknown field \`${fieldName}\` in struct \`${structName}\``,
@@ -527,7 +574,11 @@ function inferStructLiteral(typeCtx: TypeContext, expr: StructExpr, errors: Type
         }
 
         const actualTy = inferExprType(typeCtx, fieldExpr, errors);
-        if (actualTy !== undefined && !isInferredPlaceholder(expectedFieldTy) && !isInferredPlaceholder(actualTy)) {
+        if (
+            actualTy !== undefined &&
+            !isInferredPlaceholder(expectedFieldTy) &&
+            !isInferredPlaceholder(actualTy)
+        ) {
             if (!typesEqual(expectedFieldTy, actualTy)) {
                 errors.push({
                     message: `Type mismatch for field \`${fieldName}\` in struct \`${structName}\`: expected \`${typeToString(expectedFieldTy)}\`, found \`${typeToString(actualTy)}\``,
@@ -540,7 +591,11 @@ function inferStructLiteral(typeCtx: TypeContext, expr: StructExpr, errors: Type
     return new NamedTypeNode(expr.span, structName);
 }
 
-function inferBlock(typeCtx: TypeContext, block: BlockExpr, errors: TypeError[]): TypeNode | undefined {
+function inferBlock(
+    typeCtx: TypeContext,
+    block: BlockExpr,
+    errors: TypeError[],
+): TypeNode | undefined {
     typeCtx.pushScope();
     inferStatements(typeCtx, block.stmts, errors);
     let resultTy: TypeNode | undefined;
@@ -551,13 +606,21 @@ function inferBlock(typeCtx: TypeContext, block: BlockExpr, errors: TypeError[])
     return resultTy ?? new TupleTypeNode(block.span, []);
 }
 
-function inferIf(typeCtx: TypeContext, expr: IfExpr, errors: TypeError[]): TypeNode | undefined {
+function inferIf(
+    typeCtx: TypeContext,
+    expr: IfExpr,
+    errors: TypeError[],
+): TypeNode | undefined {
     inferExprType(typeCtx, expr.condition, errors);
     const thenTy = inferExprType(typeCtx, expr.thenBranch, errors);
     if (expr.elseBranch !== undefined) {
         const elseTy = inferExprType(typeCtx, expr.elseBranch, errors);
         // If both branches have types, check they match
-        if (thenTy !== undefined && elseTy !== undefined && !typesEqual(thenTy, elseTy)) {
+        if (
+            thenTy !== undefined &&
+            elseTy !== undefined &&
+            !typesEqual(thenTy, elseTy)
+        ) {
             errors.push({
                 message: `\`if\` and \`else\` have incompatible types: \`${typeToString(thenTy)}\` vs \`${typeToString(elseTy)}\``,
                 span: expr.span,
@@ -568,7 +631,11 @@ function inferIf(typeCtx: TypeContext, expr: IfExpr, errors: TypeError[]): TypeN
     return new TupleTypeNode(expr.span, []);
 }
 
-function inferRef(typeCtx: TypeContext, expr: RefExpr, errors: TypeError[]): TypeNode | undefined {
+function inferRef(
+    typeCtx: TypeContext,
+    expr: RefExpr,
+    errors: TypeError[],
+): TypeNode | undefined {
     const innerTy = inferExprType(typeCtx, expr.target, errors);
     if (innerTy !== undefined) {
         return new RefTypeNode(expr.span, expr.mutability, innerTy);
@@ -576,7 +643,11 @@ function inferRef(typeCtx: TypeContext, expr: RefExpr, errors: TypeError[]): Typ
     return undefined;
 }
 
-function inferMatch(typeCtx: TypeContext, expr: MatchExpr, errors: TypeError[]): TypeNode | undefined {
+function inferMatch(
+    typeCtx: TypeContext,
+    expr: MatchExpr,
+    errors: TypeError[],
+): TypeNode | undefined {
     inferExprType(typeCtx, expr.matchOn, errors);
     let armTy: TypeNode | undefined;
     for (const arm of expr.arms) {
@@ -595,13 +666,21 @@ function inferMatch(typeCtx: TypeContext, expr: MatchExpr, errors: TypeError[]):
 
 // --- Statement Inference ---
 
-function inferStatements(typeCtx: TypeContext, stmts: Statement[], errors: TypeError[]): void {
+function inferStatements(
+    typeCtx: TypeContext,
+    stmts: Statement[],
+    errors: TypeError[],
+): void {
     for (const stmt of stmts) {
         inferStatement(typeCtx, stmt, errors);
     }
 }
 
-function inferStatement(typeCtx: TypeContext, stmt: Statement, errors: TypeError[]): void {
+function inferStatement(
+    typeCtx: TypeContext,
+    stmt: Statement,
+    errors: TypeError[],
+): void {
     if (stmt instanceof LetStmt) {
         inferLetStmt(typeCtx, stmt, errors);
         return;
@@ -618,7 +697,11 @@ function inferStatement(typeCtx: TypeContext, stmt: Statement, errors: TypeError
     }
 }
 
-function inferLetStmt(typeCtx: TypeContext, stmt: LetStmt, errors: TypeError[]): void {
+function inferLetStmt(
+    typeCtx: TypeContext,
+    stmt: LetStmt,
+    errors: TypeError[],
+): void {
     const initTy = inferExprType(typeCtx, stmt.init, errors);
     const annotationTy = stmt.type;
     const hasAnnotation = !isInferredPlaceholder(annotationTy);
@@ -627,7 +710,10 @@ function inferLetStmt(typeCtx: TypeContext, stmt: LetStmt, errors: TypeError[]):
 
     if (hasAnnotation && initTy !== undefined) {
         // Both annotation and initializer present: check they agree
-        if (!isInferredPlaceholder(initTy) && !typesEqual(annotationTy, initTy)) {
+        if (
+            !isInferredPlaceholder(initTy) &&
+            !typesEqual(annotationTy, initTy)
+        ) {
             errors.push({
                 message: `Type mismatch: expected \`${typeToString(annotationTy)}\`, found \`${typeToString(initTy)}\``,
                 span: stmt.span,
@@ -650,7 +736,11 @@ function inferLetStmt(typeCtx: TypeContext, stmt: LetStmt, errors: TypeError[]):
 
 // --- Function Body Inference ---
 
-function inferFnBody(typeCtx: TypeContext, fnItem: FnItem | GenericFnItem, errors: TypeError[]): void {
+function inferFnBody(
+    typeCtx: TypeContext,
+    fnItem: FnItem | GenericFnItem,
+    errors: TypeError[],
+): void {
     if (fnItem.body === undefined) return;
 
     typeCtx.pushScope();
@@ -658,9 +748,7 @@ function inferFnBody(typeCtx: TypeContext, fnItem: FnItem | GenericFnItem, error
     // Bind parameters into scope
     for (const param of fnItem.params) {
         if (param.isReceiver) continue;
-        if (param.name !== undefined && param.ty !== undefined) {
-            typeCtx.setVariable(param.name, param.ty);
-        }
+        typeCtx.setVariable(param.name, param.ty);
     }
 
     // Infer body statements
@@ -669,7 +757,11 @@ function inferFnBody(typeCtx: TypeContext, fnItem: FnItem | GenericFnItem, error
     // If there's a tail expression, check it against the return type
     if (fnItem.body.expr !== undefined) {
         const tailTy = inferExprType(typeCtx, fnItem.body.expr, errors);
-        if (tailTy !== undefined && !isInferredPlaceholder(fnItem.returnType) && !isInferredPlaceholder(tailTy)) {
+        if (
+            tailTy !== undefined &&
+            !isInferredPlaceholder(fnItem.returnType) &&
+            !isInferredPlaceholder(tailTy)
+        ) {
             if (!typesEqual(fnItem.returnType, tailTy)) {
                 errors.push({
                     message: `Mismatched return type: expected \`${typeToString(fnItem.returnType)}\`, found \`${typeToString(tailTy)}\``,
@@ -718,12 +810,15 @@ function collectGenericParamNames(fnItem: FnItem | GenericFnItem): Set<string> {
     return names;
 }
 
-function validateFnTypes(typeCtx: TypeContext, fnItem: FnItem | GenericFnItem): TypeError[] {
+function validateFnTypes(
+    typeCtx: TypeContext,
+    fnItem: FnItem | GenericFnItem,
+): TypeError[] {
     const errors: TypeError[] = [];
     const genericNames = collectGenericParamNames(fnItem);
 
-    for (const param of fnItem.params.filter(p => !p.isReceiver)) {
-        const name = param.name ?? "_";
+    for (const param of fnItem.params.filter((p) => !p.isReceiver)) {
+        const { name } = param;
         const { ty } = param;
         if (ty instanceof NamedTypeNode) {
             const builtIn = isBuiltinTypeName(ty.name);
@@ -780,14 +875,20 @@ export function inferModule(
             inferFnBody(typeCtx, item, errors);
         }
         if (item instanceof ModItem) {
-            const nested = inferModule(typeCtx, new ModuleNode(item.span, item.name, item.items));
+            const nested = inferModule(
+                typeCtx,
+                new ModuleNode(item.span, item.name, item.items),
+            );
             if (!nested.ok) {
                 errors.push(...nested.error);
             }
         }
         if (item instanceof TraitItem) {
             for (const method of item.methods) {
-                if (method instanceof FnItem || method instanceof GenericFnItem) {
+                if (
+                    method instanceof FnItem ||
+                    method instanceof GenericFnItem
+                ) {
                     errors.push(...validateFnTypes(typeCtx, method));
                 }
             }
