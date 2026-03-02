@@ -5,8 +5,6 @@ module main {
     s1 = "{}"
   }
 
-  struct Vec { (), (), () }
-
   fn f0 test_example() -> () {
     b0 (entry):
       v1: ptr            = sconst s0

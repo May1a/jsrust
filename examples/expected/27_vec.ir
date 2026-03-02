@@ -1,6 +1,6 @@
 module main {
 
-  struct Vec { (), (), () }
+  struct Vec { i32, i32, i32 }
 
   fn f0 test_vec() -> () {
     b0 (entry):

@@ -1,7 +1,5 @@
 module main {
 
-  struct Vec { (), (), () }
-
   fn f0 add(v1 arg0: i32, v2 arg1: i32) -> i32 {
     b0 (entry):
       v3: ptr<i32> = alloca i32

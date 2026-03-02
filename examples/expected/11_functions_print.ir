@@ -4,8 +4,6 @@ module main {
     s0 = "Hello, world!"
   }
 
-  struct Vec { (), (), () }
-
   fn f0 test(v1 arg0: ptr<ptr<u8>>) -> () {
     b0 (entry):
       v2: ptr<ptr<ptr<u8>>> = alloca ptr<ptr<u8>>

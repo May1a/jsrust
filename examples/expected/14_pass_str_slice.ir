@@ -5,8 +5,6 @@ module main {
     s1 = "Hello, world!"
   }
 
-  struct Vec { (), (), () }
-
   fn f0 print_str_slice(v1 arg0: ptr<ptr<u8>>) -> () {
     b0 (entry):
       v2: ptr<ptr<ptr<u8>>> = alloca ptr<ptr<u8>>

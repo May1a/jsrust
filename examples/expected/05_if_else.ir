@@ -1,7 +1,5 @@
 module main {
 
-  struct Vec { (), (), () }
-
   fn f0 test_example() -> () {
     b0 (entry):
       v1: bool = bconst true

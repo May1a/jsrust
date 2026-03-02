@@ -4,8 +4,6 @@ module main {
     s0 = "hello"
   }
 
-  struct Vec { (), (), () }
-
   fn f0 test_example() -> () {
     b0 (entry):
       v1: i32            = iconst 42

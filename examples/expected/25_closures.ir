@@ -1,7 +1,5 @@
 module main {
 
-  struct Vec { (), (), () }
-
   fn f0 closure_as_parameter(v1 arg0: ()) -> () {
     b0 (entry):
       v2: ptr<()>       = alloca ()
