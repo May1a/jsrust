@@ -19,6 +19,7 @@ import {
     ImplItem,
     IdentPattern,
     IdentifierExpr,
+    InferredTypeNode,
     type IndexExpr,
     type IfExpr,
     LetStmt,
@@ -498,6 +499,7 @@ export class AstToSsaCtx {
             visitStructPat: () => unsupported("StructPattern"),
             visitTuplePat: () => unsupported("TuplePattern"),
             visitNamedTypeNode: () => unsupported("NamedTypeNode"),
+            visitInferredTypeNode: () => unsupported("InferredTypeNode"),
             visitTupleTypeNode: () => unsupported("TupleTypeNode"),
             visitArrayTypeNode: () => unsupported("ArrayTypeNode"),
             visitRefTypeNode: () => unsupported("RefTypeNode"),
@@ -1679,7 +1681,7 @@ export class AstToSsaCtx {
         return ok(this.unitValue());
     }
 
-    private static translateTypeNode(typeNode: TypeNode): IRType {
+    static translateTypeNode(typeNode: TypeNode): IRType {
         if (typeNode instanceof NamedTypeNode) {
             const builtin = AstToSsaCtx.namedBuiltin(typeNode.name);
             if (typeof builtin !== "undefined") {
@@ -1995,8 +1997,9 @@ export class AstToSsaCtx {
 
     private isImplicitUnitTypeNode(typeNode: TypeNode): boolean {
         return (
-            typeNode instanceof NamedTypeNode &&
-            typeNode.name.toLowerCase() === "unit"
+            typeNode instanceof InferredTypeNode ||
+            (typeNode instanceof NamedTypeNode &&
+                typeNode.name.toLowerCase() === "unit")
         );
     }
 
@@ -2082,14 +2085,14 @@ function seedStructMetadata(
     for (const item of moduleNode.items) {
         if (item instanceof StructItem) {
             const names = item.fields.map((f) => f.name);
+            const fieldTypes = item.fields.map((f) =>
+                AstToSsaCtx.translateTypeNode(f.ty),
+            );
             structFieldNames.set(item.name, names);
             if (!irModule.structs.has(item.name)) {
                 irModule.structs.set(
                     item.name,
-                    makeIRStructType(
-                        item.name,
-                        names.map(() => makeIRUnitType()),
-                    ),
+                    makeIRStructType(item.name, fieldTypes),
                 );
             }
             continue;
@@ -2097,14 +2100,14 @@ function seedStructMetadata(
         if (item instanceof GenericStructItem) {
             // Register generic struct field names for future monomorphization
             const names = item.fields.map((f) => f.name);
+            const fieldTypes = item.fields.map((f) =>
+                AstToSsaCtx.translateTypeNode(f.ty),
+            );
             structFieldNames.set(item.name, names);
             if (!irModule.structs.has(item.name)) {
                 irModule.structs.set(
                     item.name,
-                    makeIRStructType(
-                        item.name,
-                        names.map(() => makeIRUnitType()),
-                    ),
+                    makeIRStructType(item.name, fieldTypes),
                 );
             }
         }

@@ -135,6 +135,7 @@ export interface AstVisitor<R, C> {
     visitStructPat(node: StructPattern, ctx: C): R;
     visitTuplePat(node: TuplePattern, ctx: C): R;
     visitNamedTypeNode(node: NamedTypeNode, ctx: C): R;
+    visitInferredTypeNode(node: InferredTypeNode, ctx: C): R;
     visitTupleTypeNode(node: TupleTypeNode, ctx: C): R;
     visitArrayTypeNode(node: ArrayTypeNode, ctx: C): R;
     visitRefTypeNode(node: RefTypeNode, ctx: C): R;
@@ -1003,6 +1004,12 @@ export class NamedTypeNode extends TypeNode {
     }
 }
 
+export class InferredTypeNode extends TypeNode {
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitInferredTypeNode(this, ctx);
+    }
+}
+
 export class TupleTypeNode extends TypeNode {
     readonly elements: TypeNode[];
 
@@ -1257,7 +1264,7 @@ export class BindingPattern extends Pattern {
                 this.span,
                 this.name,
                 this.mutability,
-                new NamedTypeNode(this.span, "_"),
+                new InferredTypeNode(this.span),
             ),
             ctx,
         );

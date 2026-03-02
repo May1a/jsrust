@@ -13,6 +13,7 @@ import {
     IdentPattern,
     IdentifierExpr,
     IfExpr,
+    InferredTypeNode,
     ImplItem,
     ItemStmt,
     LetStmt,
@@ -99,7 +100,7 @@ function isBuiltinTypeName(name: string): boolean {
  * Check if a TypeNode represents an unresolved/inferred type placeholder.
  */
 function isInferredPlaceholder(ty: TypeNode): boolean {
-    return ty instanceof NamedTypeNode && ty.name === "_";
+    return ty instanceof InferredTypeNode;
 }
 
 /**
@@ -302,7 +303,7 @@ function inferLiteral(expr: LiteralExpr): TypeNode {
             return new NamedTypeNode(expr.span, "char");
         }
         default: {
-            return new NamedTypeNode(expr.span, "_");
+            return new InferredTypeNode(expr.span);
         }
     }
 }

@@ -27,6 +27,7 @@ import {
     IdentifierExpr,
     IfExpr,
     ImplItem,
+    InferredTypeNode,
     IndexExpr,
     ItemStmt,
     LetStmt,
@@ -824,7 +825,7 @@ class Parser {
                 params.push({
                     span: this.spanFrom(paramStart),
                     name,
-                    ty: new NamedTypeNode(this.spanFrom(paramStart), "_"),
+                    ty: new InferredTypeNode(this.spanFrom(paramStart)),
                     isReceiver: false,
                 });
                 this.eat(TokenType.Comma);
@@ -1264,7 +1265,7 @@ class Parser {
     private parseLetStatement(start: Token): Statement | undefined {
         if (!this.eat(TokenType.Let)) return undefined;
         const pat = this.parsePattern();
-        let ty: TypeNode = new NamedTypeNode(this.spanFrom(start), "_");
+        let ty: TypeNode = new InferredTypeNode(this.spanFrom(start));
         if (this.eat(TokenType.Colon)) {
             ty = this.parseTypeNode();
         }
@@ -1457,7 +1458,7 @@ class Parser {
             line: errTok.line,
             column: errTok.column,
         });
-        return new NamedTypeNode(this.spanFrom(start), "_");
+        return new InferredTypeNode(this.spanFrom(start));
     }
 
     private parseGenericArgs(): GenericArgsNode {
@@ -1531,7 +1532,7 @@ class Parser {
             this.spanFrom(start),
             name,
             Mutability.Mutable,
-            new NamedTypeNode(this.spanFrom(start), "_"),
+            new InferredTypeNode(this.spanFrom(start)),
         );
     }
 
@@ -1675,7 +1676,7 @@ class Parser {
             this.spanFrom(start),
             lastName,
             Mutability.Immutable,
-            new NamedTypeNode(this.spanFrom(start), "_"),
+            new InferredTypeNode(this.spanFrom(start)),
         );
     }
 
@@ -1722,7 +1723,7 @@ class Parser {
                       this.spanFrom(start),
                       fieldName,
                       Mutability.Immutable,
-                      new NamedTypeNode(this.spanFrom(start), "_"),
+                      new InferredTypeNode(this.spanFrom(start)),
                   );
             fields.push({ name: fieldName, pattern });
             if (!this.eat(TokenType.Comma)) break;
@@ -2475,7 +2476,7 @@ class Parser {
                 params.push({
                     span: this.spanFrom(paramStart),
                     name,
-                    ty: ty ?? new NamedTypeNode(this.spanFrom(paramStart), "_"),
+                    ty: ty ?? new InferredTypeNode(this.spanFrom(paramStart)),
                     isReceiver: false,
                 });
 
