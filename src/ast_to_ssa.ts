@@ -5,7 +5,7 @@ import {
     type BlockExpr,
     type BreakExpr,
     BuiltinType,
-    type CallExpr,
+    CallExpr,
     type ClosureExpr,
     type ContinueExpr,
     type DerefExpr,
@@ -14,6 +14,8 @@ import {
     FieldExpr,
     FnItem,
     type ForExpr,
+    GenericFnItem,
+    GenericStructItem,
     ImplItem,
     IdentPattern,
     IdentifierExpr,
@@ -44,7 +46,15 @@ import {
     UnaryOp,
     type WhileExpr,
     type AstVisitor,
+    Mutability,
+    walkAst,
 } from "./ast";
+import {
+    MonomorphizationRegistry,
+    inferTypeArgs,
+    mangledName,
+    type SubstitutionMap,
+} from "./monomorphize";
 import { type Result, err, ok, okVoid } from "./diagnostics";
 import { BUILTIN_SYMBOLS } from "./builtin_symbols";
 
@@ -188,6 +198,7 @@ export class AstToSsaCtx {
     private readonly locals: Map<string, LocalBinding>;
     private readonly functionIds: Map<string, number>;
     private readonly structFieldNames: Map<string, string[]>;
+    private readonly monoRegistry?: MonomorphizationRegistry;
     private loopStack: LoopFrame[];
     private currentReturnType: IRType;
 
@@ -195,6 +206,7 @@ export class AstToSsaCtx {
         options: {
             irModule?: IRModule;
             structFieldNames?: Map<string, string[]>;
+            monoRegistry?: MonomorphizationRegistry;
         } = {},
     ) {
         this.builder = new IRBuilder();
@@ -202,6 +214,7 @@ export class AstToSsaCtx {
         this.locals = new Map();
         this.functionIds = new Map();
         this.structFieldNames = options.structFieldNames ?? new Map();
+        this.monoRegistry = options.monoRegistry;
         this.loopStack = [];
         this.currentReturnType = makeIRUnitType();
     }
@@ -501,6 +514,8 @@ export class AstToSsaCtx {
             visitModuleNode: () => unsupported("ModuleNode"),
             visitMatchArmNode: () => unsupported("MatchArmNode"),
             visitTraitMethod: () => unsupported("TraitMethod"),
+            visitGenericFnItem: () => unsupported("GenericFnItem"),
+            visitGenericStructItem: () => unsupported("GenericStructItem"),
         };
     }
 
@@ -1036,6 +1051,11 @@ export class AstToSsaCtx {
 
         const retTy: IRType = makeIRIntType(IntWidth.I64);
         if (expr.callee instanceof IdentifierExpr) {
+            // Check if this is a call to a generic function
+            const resolvedName = this.resolveGenericCallName(expr);
+            if (resolvedName !== undefined) {
+                return this.lowerResolvedCall(resolvedName, args, retTy);
+            }
             return this.lowerIdentifierCall(expr.callee, args, retTy);
         }
 
@@ -1049,6 +1069,36 @@ export class AstToSsaCtx {
             retTy,
         );
         return ok(callDynInst.id);
+    }
+
+    private resolveGenericCallName(expr: CallExpr): string | undefined {
+        if (!this.monoRegistry) return undefined;
+        if (!(expr.callee instanceof IdentifierExpr)) return undefined;
+
+        const generic = this.monoRegistry.lookupGenericFn(expr.callee.name);
+        if (!generic) return undefined;
+
+        const subs = inferCallSiteTypeArgs(generic, expr);
+        if (!subs) return undefined;
+
+        return mangledName(generic.name, subs);
+    }
+
+    private lowerResolvedCall(
+        name: string,
+        args: ValueId[],
+        defaultReturnType: IRType,
+    ): Result<ValueId, LoweringError> {
+        const returnType = this.resolveNamedCallReturnType(
+            name,
+            defaultReturnType,
+        );
+        const callInst = this.builder.call(
+            this.resolveFunctionId(name),
+            args,
+            returnType,
+        );
+        return ok(callInst.id);
     }
 
     private lowerMethodCall(
@@ -2037,19 +2087,33 @@ function seedStructMetadata(
     structFieldNames: Map<string, string[]>,
 ): void {
     for (const item of moduleNode.items) {
-        if (!(item instanceof StructItem)) {
+        if (item instanceof StructItem) {
+            const names = item.fields.map((f) => f.name);
+            structFieldNames.set(item.name, names);
+            if (!irModule.structs.has(item.name)) {
+                irModule.structs.set(
+                    item.name,
+                    makeIRStructType(
+                        item.name,
+                        names.map(() => makeIRUnitType()),
+                    ),
+                );
+            }
             continue;
         }
-        const names = item.fields.map((f) => f.name);
-        structFieldNames.set(item.name, names);
-        if (!irModule.structs.has(item.name)) {
-            irModule.structs.set(
-                item.name,
-                makeIRStructType(
+        if (item instanceof GenericStructItem) {
+            // Register generic struct field names for future monomorphization
+            const names = item.fields.map((f) => f.name);
+            structFieldNames.set(item.name, names);
+            if (!irModule.structs.has(item.name)) {
+                irModule.structs.set(
                     item.name,
-                    names.map(() => makeIRUnitType()),
-                ),
-            );
+                    makeIRStructType(
+                        item.name,
+                        names.map(() => makeIRUnitType()),
+                    ),
+                );
+            }
         }
     }
 }
@@ -2066,6 +2130,13 @@ function collectItemFunctionIds(
     item: ModuleNode["items"][number],
     fnIdMap: Map<string, number>,
 ): void {
+    if (item instanceof GenericFnItem) {
+        // Generic functions are templates — skip lowering, but register the id
+        if (item.body) {
+            fnIdMap.set(item.name, hashName(item.name));
+        }
+        return;
+    }
     if (item instanceof FnItem && item.body) {
         fnIdMap.set(item.name, hashName(item.name));
         return;
@@ -2118,8 +2189,9 @@ function lowerOwnedFunction(
     irModule: IRModule,
     structFieldNames: Map<string, string[]>,
     fnIdMap: Map<string, number>,
+    monoRegistry?: MonomorphizationRegistry,
 ): void {
-    const ctx = new AstToSsaCtx({ irModule, structFieldNames });
+    const ctx = new AstToSsaCtx({ irModule, structFieldNames, monoRegistry });
     ctx.seedFunctionIds(fnIdMap);
     const lowered = ctx.lowerFunction(fnItem);
     if (!lowered.ok) {
@@ -2179,66 +2251,208 @@ function isUnitNamedTypeNode(typeNode: TypeNode): boolean {
     return typeNode instanceof NamedTypeNode && typeNode.name === "unit";
 }
 
-export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
-    const irModule = makeIRModule(moduleNode.name);
-    const structFieldNames = new Map<string, string[]>();
-    seedStructMetadata(moduleNode, irModule, structFieldNames);
-    const fnIdMap = collectFunctionIds(moduleNode);
-
-    for (const item of moduleNode.items) {
-        if (item instanceof FnItem && item.body) {
-            lowerOwnedFunction(item, irModule, structFieldNames, fnIdMap);
+function lowerImplMethods(
+    item: ImplItem,
+    irModule: IRModule,
+    structFieldNames: Map<string, string[]>,
+    fnIdMap: Map<string, number>,
+    monoRegistry?: MonomorphizationRegistry,
+): void {
+    const implTarget =
+        item.target instanceof NamedTypeNode ? item.target.name : "Self";
+    if (implTarget === "Vec") {
+        return;
+    }
+    for (const method of item.methods) {
+        if (method instanceof GenericFnItem) {
             continue;
         }
-        if (item instanceof ImplItem) {
-            const implTarget =
-                item.target instanceof NamedTypeNode
-                    ? item.target.name
-                    : "Self";
-            if (implTarget === "Vec") {
-                continue;
-            }
-            for (const method of item.methods) {
-                if (!method.body) {
-                    continue;
-                }
-                ensureImplStructMetadata(
-                    irModule,
-                    structFieldNames,
-                    implTarget,
-                );
+        if (!method.body) {
+            continue;
+        }
+        ensureImplStructMetadata(irModule, structFieldNames, implTarget);
+        lowerOwnedFunction(
+            rewriteNewMethodReturnType(method, implTarget),
+            irModule,
+            structFieldNames,
+            fnIdMap,
+            monoRegistry,
+        );
+    }
+}
+
+function lowerModuleItem(
+    item: ModuleNode["items"][number],
+    irModule: IRModule,
+    structFieldNames: Map<string, string[]>,
+    fnIdMap: Map<string, number>,
+    monoRegistry?: MonomorphizationRegistry,
+): void {
+    if (item instanceof GenericFnItem || item instanceof GenericStructItem) {
+        return;
+    }
+    if (item instanceof FnItem && item.body) {
+        lowerOwnedFunction(
+            item,
+            irModule,
+            structFieldNames,
+            fnIdMap,
+            monoRegistry,
+        );
+        return;
+    }
+    if (item instanceof ImplItem) {
+        lowerImplMethods(
+            item,
+            irModule,
+            structFieldNames,
+            fnIdMap,
+            monoRegistry,
+        );
+        return;
+    }
+    if (item instanceof TraitImplItem) {
+        for (const method of item.fnImpls) {
+            if (method.body) {
                 lowerOwnedFunction(
-                    rewriteNewMethodReturnType(method, implTarget),
+                    method,
                     irModule,
                     structFieldNames,
                     fnIdMap,
+                    monoRegistry,
                 );
             }
-            continue;
         }
-        if (item instanceof TraitImplItem) {
-            for (const method of item.fnImpls) {
-                if (!method.body) {
-                    continue;
-                }
-                lowerOwnedFunction(method, irModule, structFieldNames, fnIdMap);
-            }
-            continue;
-        }
-        if (item instanceof ModItem) {
-            for (const modItem of item.items) {
-                if (!(modItem instanceof FnItem) || !modItem.body) {
-                    continue;
-                }
+        return;
+    }
+    if (item instanceof ModItem) {
+        for (const modItem of item.items) {
+            if (modItem instanceof FnItem && modItem.body) {
                 lowerOwnedFunction(
                     modItem,
                     irModule,
                     structFieldNames,
                     fnIdMap,
+                    monoRegistry,
                 );
             }
         }
     }
+}
+
+export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
+    const irModule = makeIRModule(moduleNode.name);
+    const structFieldNames = new Map<string, string[]>();
+    seedStructMetadata(moduleNode, irModule, structFieldNames);
+
+    // Collect generic items and generate monomorphized specializations
+    const registry = new MonomorphizationRegistry();
+    collectGenericItems(moduleNode, registry);
+    const specializations = collectAndMonomorphize(moduleNode, registry);
+
+    // Register specialization function IDs
+    const fnIdMap = collectFunctionIds(moduleNode);
+    for (const spec of specializations) {
+        fnIdMap.set(spec.name, hashName(spec.name));
+    }
+
+    // Lower regular items (pass registry so calls to generics get rewritten)
+    for (const item of moduleNode.items) {
+        lowerModuleItem(item, irModule, structFieldNames, fnIdMap, registry);
+    }
+
+    // Lower monomorphized specializations
+    for (const spec of specializations) {
+        lowerOwnedFunction(spec, irModule, structFieldNames, fnIdMap, registry);
+    }
 
     return irModule;
+}
+
+function collectGenericItems(
+    moduleNode: ModuleNode,
+    registry: MonomorphizationRegistry,
+): void {
+    for (const item of moduleNode.items) {
+        if (item instanceof GenericFnItem) {
+            registry.registerGenericFn(item);
+        }
+        if (item instanceof GenericStructItem) {
+            registry.registerGenericStruct(item);
+        }
+    }
+}
+
+function collectAndMonomorphize(
+    moduleNode: ModuleNode,
+    registry: MonomorphizationRegistry,
+): FnItem[] {
+    // Walk all non-generic function bodies to find call sites
+    walkAst(moduleNode, (node) => {
+        if (!(node instanceof CallExpr)) return;
+        if (!(node.callee instanceof IdentifierExpr)) return;
+
+        const generic = registry.lookupGenericFn(node.callee.name);
+        if (generic === undefined) return;
+
+        // Infer type arguments from the call expression's explicit type args
+        // Use explicit args or infer from literals; full inference happens
+        // In the inference pass which stores substitutions on TypeContext
+        const subs = inferCallSiteTypeArgs(generic, node);
+        if (subs === undefined) return;
+
+        registry.getOrCreateFn(generic, subs);
+    });
+
+    return registry.allFnSpecializations();
+}
+
+function inferCallSiteTypeArgs(
+    generic: GenericFnItem,
+    call: CallExpr,
+): SubstitutionMap | undefined {
+    // Try explicit turbofish args first
+    if (call.genericArgs !== undefined && call.genericArgs.length > 0) {
+        return inferTypeArgs(generic, [], call.genericArgs);
+    }
+
+    // Infer from argument literal types
+    const argTypes: (TypeNode | undefined)[] = call.args.map((arg) =>
+        inferLiteralType(arg),
+    );
+    return inferTypeArgs(generic, argTypes, undefined);
+}
+
+function inferLiteralType(expr: Expression): TypeNode | undefined {
+    if (expr instanceof LiteralExpr) {
+        switch (expr.literalKind) {
+            case LiteralKind.Int: {
+                return new NamedTypeNode(expr.span, "i32");
+            }
+            case LiteralKind.Float: {
+                return new NamedTypeNode(expr.span, "f64");
+            }
+            case LiteralKind.Bool: {
+                return new NamedTypeNode(expr.span, "bool");
+            }
+            case LiteralKind.String: {
+                return new RefTypeNode(
+                    expr.span,
+                    Mutability.Immutable,
+                    new NamedTypeNode(expr.span, "str"),
+                );
+            }
+            case LiteralKind.Char: {
+                return new NamedTypeNode(expr.span, "char");
+            }
+            default: {
+                return undefined;
+            }
+        }
+    }
+    if (expr instanceof IdentifierExpr) {
+        // Cannot determine type without full context
+        return undefined;
+    }
+    return undefined;
 }
