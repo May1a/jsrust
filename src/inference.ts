@@ -1,19 +1,67 @@
 import {
+    BinaryExpr,
+    BinaryOp,
+    BlockExpr,
+    CallExpr,
+    ClosureExpr,
+    ExprStmt,
+    type Expression,
+    FieldExpr,
     FnItem,
+    GenericFnItem,
+    GenericStructItem,
+    IdentPattern,
+    IdentifierExpr,
+    IfExpr,
+    ImplItem,
+    ItemStmt,
+    LetStmt,
+    LiteralExpr,
+    LiteralKind,
+    MatchExpr,
     ModItem,
     ModuleNode,
+    Mutability,
     NamedTypeNode,
+    type Node,
+    type ParamNode,
+    RefExpr,
+    RefTypeNode,
+    type Span,
+    type Statement,
+    StructExpr,
     StructItem,
     EnumItem,
     TraitItem,
     TupleTypeNode,
-    walkAst,
-    type Node,
-    type Span,
     type TypeNode,
+    UnaryExpr,
+    UnaryOp,
+    walkAst,
 } from "./ast";
 import { type Result, err, okVoid } from "./diagnostics";
+import { inferTypeArgs, mangledName } from "./monomorphize";
 import type { TypeContext } from "./type_context";
+
+interface FieldWithType {
+    name: string;
+    ty: TypeNode;
+}
+
+interface ParamWithType {
+    name: string;
+    ty: TypeNode;
+}
+
+function buildParamList(params: ParamNode[]): ParamWithType[] {
+    const result: ParamWithType[] = [];
+    for (const p of params) {
+        if (!p.isReceiver && p.ty !== undefined) {
+            result.push({ name: p.name ?? "_", ty: p.ty });
+        }
+    }
+    return result;
+}
 
 export interface TypeError {
     message: string;
@@ -47,18 +95,594 @@ function isBuiltinTypeName(name: string): boolean {
     return BUILTIN_TYPE_NAMES.has(name);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null;
+/**
+ * Check if a TypeNode represents an unresolved/inferred type placeholder.
+ */
+function isInferredPlaceholder(ty: TypeNode): boolean {
+    return ty instanceof NamedTypeNode && ty.name === "_";
 }
 
+/**
+ * Get a human-readable name for a TypeNode.
+ */
+function typeToString(ty: TypeNode): string {
+    if (ty instanceof NamedTypeNode) {
+        return ty.name;
+    }
+    if (ty instanceof TupleTypeNode) {
+        if (ty.elements.length === 0) return "()";
+        return `(${ty.elements.map(typeToString).join(", ")})`;
+    }
+    if (ty instanceof RefTypeNode) {
+        const mutStr = ty.mutability === Mutability.Mutable ? "mut " : "";
+        return `&${mutStr}${typeToString(ty.inner)}`;
+    }
+    return "<unknown>";
+}
+
+/**
+ * Check if two types are structurally equivalent.
+ */
+function typesEqual(a: TypeNode, b: TypeNode): boolean {
+    if (isInferredPlaceholder(a) || isInferredPlaceholder(b)) {
+        return true;
+    }
+    if (a instanceof NamedTypeNode && b instanceof NamedTypeNode) {
+        return a.name === b.name;
+    }
+    if (a instanceof TupleTypeNode && b instanceof TupleTypeNode) {
+        if (a.elements.length !== b.elements.length) return false;
+        return a.elements.every((el, i) => typesEqual(el, b.elements[i]));
+    }
+    if (a instanceof RefTypeNode && b instanceof RefTypeNode) {
+        return a.mutability === b.mutability && typesEqual(a.inner, b.inner);
+    }
+    return false;
+}
+
+// --- Comparison and logical ops that return bool ---
+const COMPARISON_OPS = new Set([
+    BinaryOp.Eq,
+    BinaryOp.Ne,
+    BinaryOp.Lt,
+    BinaryOp.Le,
+    BinaryOp.Gt,
+    BinaryOp.Ge,
+]);
+
+const LOGICAL_OPS = new Set([
+    BinaryOp.And,
+    BinaryOp.Or,
+]);
+
+// --- Item Registration ---
+
 function registerItemTypes(typeCtx: TypeContext, node: Node): void {
-    if (node instanceof StructItem || node instanceof EnumItem) {
+    if (node instanceof StructItem) {
+        typeCtx.registerNamedType(
+            node.name,
+            new TupleTypeNode(node.span, []),
+        );
+        const fields: FieldWithType[] = [];
+        for (const f of node.fields) {
+            if (f.ty !== undefined) {
+                fields.push({ name: f.name, ty: f.ty });
+            }
+        }
+        typeCtx.registerStructFields(node.name, fields);
+    }
+
+    if (node instanceof EnumItem) {
         typeCtx.registerNamedType(
             node.name,
             new TupleTypeNode(node.span, []),
         );
     }
+
+    if (node instanceof GenericStructItem) {
+        typeCtx.registerNamedType(
+            node.name,
+            new TupleTypeNode(node.span, []),
+        );
+        const fields: FieldWithType[] = [];
+        for (const f of node.fields) {
+            if (f.ty !== undefined) {
+                fields.push({ name: f.name, ty: f.ty });
+            }
+        }
+        typeCtx.registerStructFields(node.name, fields);
+    }
+
+    if (node instanceof GenericFnItem) {
+        typeCtx.registerFnSignature(node.name, {
+            params: buildParamList(node.params),
+            returnType: node.returnType,
+        });
+        typeCtx.registerGenericFn(node.name, node);
+    }
+
+    if (node instanceof FnItem) {
+        typeCtx.registerFnSignature(node.name, {
+            params: buildParamList(node.params),
+            returnType: node.returnType,
+        });
+    }
+
+    if (node instanceof ImplItem) {
+        const targetName = node.target instanceof NamedTypeNode ? node.target.name : undefined;
+        if (targetName !== undefined) {
+            for (const method of node.methods) {
+                typeCtx.registerFnSignature(`${targetName}::${method.name}`, {
+                    params: buildParamList(method.params),
+                    returnType: method.returnType,
+                });
+            }
+        }
+    }
 }
+
+// --- Expression Type Inference ---
+
+function inferExprType(typeCtx: TypeContext, expr: Expression, errors: TypeError[]): TypeNode | undefined {
+    // Check if we already resolved this expression
+    const cached = typeCtx.getExpressionType(expr);
+    if (cached !== undefined) return cached;
+
+    const resolved = inferExprTypeInner(typeCtx, expr, errors);
+    if (resolved !== undefined) {
+        typeCtx.setExpressionType(expr, resolved);
+    }
+    return resolved;
+}
+
+function inferExprTypeInner(typeCtx: TypeContext, expr: Expression, errors: TypeError[]): TypeNode | undefined {
+    if (expr instanceof LiteralExpr) {
+        return inferLiteral(expr);
+    }
+
+    if (expr instanceof IdentifierExpr) {
+        return inferIdentifier(typeCtx, expr, errors);
+    }
+
+    if (expr instanceof BinaryExpr) {
+        return inferBinary(typeCtx, expr, errors);
+    }
+
+    if (expr instanceof UnaryExpr) {
+        return inferUnary(typeCtx, expr, errors);
+    }
+
+    if (expr instanceof CallExpr) {
+        return inferCall(typeCtx, expr, errors);
+    }
+
+    if (expr instanceof FieldExpr) {
+        return inferFieldAccess(typeCtx, expr, errors);
+    }
+
+    if (expr instanceof StructExpr) {
+        return inferStructLiteral(typeCtx, expr, errors);
+    }
+
+    if (expr instanceof BlockExpr) {
+        return inferBlock(typeCtx, expr, errors);
+    }
+
+    if (expr instanceof IfExpr) {
+        return inferIf(typeCtx, expr, errors);
+    }
+
+    if (expr instanceof RefExpr) {
+        return inferRef(typeCtx, expr, errors);
+    }
+
+    if (expr instanceof MatchExpr) {
+        return inferMatch(typeCtx, expr, errors);
+    }
+
+    if (expr instanceof ClosureExpr) {
+        return expr.returnType;
+    }
+
+    return undefined;
+}
+
+function inferLiteral(expr: LiteralExpr): TypeNode {
+    switch (expr.literalKind) {
+        case LiteralKind.Int: {
+            return new NamedTypeNode(expr.span, "i32");
+        }
+        case LiteralKind.Float: {
+            return new NamedTypeNode(expr.span, "f64");
+        }
+        case LiteralKind.Bool: {
+            return new NamedTypeNode(expr.span, "bool");
+        }
+        case LiteralKind.String: {
+            return new RefTypeNode(
+                expr.span,
+                Mutability.Immutable,
+                new NamedTypeNode(expr.span, "str"),
+            );
+        }
+        case LiteralKind.Char: {
+            return new NamedTypeNode(expr.span, "char");
+        }
+        default: {
+            return new NamedTypeNode(expr.span, "_");
+        }
+    }
+}
+
+function inferIdentifier(typeCtx: TypeContext, expr: IdentifierExpr, _errors: TypeError[]): TypeNode | undefined {
+    const varTy = typeCtx.lookupVariable(expr.name);
+    if (varTy !== undefined) return varTy;
+
+    // Could be a function name used as a value — not an error here
+    const fnSig = typeCtx.lookupFnSignature(expr.name);
+    if (fnSig !== undefined) return undefined;
+
+    // Could be a type name (e.g. enum variant)
+    const namedTy = typeCtx.lookupNamedType(expr.name);
+    if (namedTy !== undefined) return undefined;
+
+    // Only report error if it's clearly a variable reference, not a type/function path
+    // For now, don't report — leave that to a future name resolution pass
+    return undefined;
+}
+
+function inferBinary(typeCtx: TypeContext, expr: BinaryExpr, errors: TypeError[]): TypeNode | undefined {
+    const leftTy = inferExprType(typeCtx, expr.left, errors);
+    const rightTy = inferExprType(typeCtx, expr.right, errors);
+
+    // Comparison and logical operators always produce bool
+    if (COMPARISON_OPS.has(expr.op) || LOGICAL_OPS.has(expr.op)) {
+        return new NamedTypeNode(expr.span, "bool");
+    }
+
+    // Arithmetic/bitwise operators: check operands match, propagate type
+    if (leftTy !== undefined && rightTy !== undefined) {
+        if (!isInferredPlaceholder(leftTy) && !isInferredPlaceholder(rightTy) && !typesEqual(leftTy, rightTy)) {
+            errors.push({
+                message: `Type mismatch in binary expression: \`${typeToString(leftTy)}\` and \`${typeToString(rightTy)}\``,
+                span: expr.span,
+            });
+        }
+    }
+
+    return leftTy ?? rightTy;
+}
+
+function inferUnary(typeCtx: TypeContext, expr: UnaryExpr, errors: TypeError[]): TypeNode | undefined {
+    const operandTy = inferExprType(typeCtx, expr.operand, errors);
+
+    if (expr.op === UnaryOp.Not) {
+        // `!` on bool returns bool; on integers returns the integer type
+        if (operandTy instanceof NamedTypeNode && operandTy.name === "bool") {
+            return new NamedTypeNode(expr.span, "bool");
+        }
+        return operandTy;
+    }
+
+    if (expr.op === UnaryOp.Neg) {
+        return operandTy;
+    }
+
+    if (expr.op === UnaryOp.Ref) {
+        if (operandTy !== undefined) {
+            return new RefTypeNode(expr.span, Mutability.Immutable, operandTy);
+        }
+    }
+
+    if (expr.op === UnaryOp.Deref) {
+        if (operandTy instanceof RefTypeNode) {
+            return operandTy.inner;
+        }
+    }
+
+    return operandTy;
+}
+
+function inferCall(typeCtx: TypeContext, expr: CallExpr, errors: TypeError[]): TypeNode | undefined {
+    // Infer argument types for side effects (populates type context)
+    const argTypes: (TypeNode | undefined)[] = [];
+    for (const arg of expr.args) {
+        argTypes.push(inferExprType(typeCtx, arg, errors));
+    }
+
+    // Resolve the callee
+    if (expr.callee instanceof IdentifierExpr) {
+        const genericResult = resolveGenericCall(typeCtx, expr, argTypes);
+        if (genericResult !== undefined) {
+            return genericResult;
+        }
+
+        const sig = typeCtx.lookupFnSignature(expr.callee.name);
+        if (sig !== undefined) {
+            return sig.returnType;
+        }
+    }
+
+    // Method call: callee is a FieldExpr (e.g., `obj.method(...)`)
+    if (expr.callee instanceof FieldExpr) {
+        const receiverTy = inferExprType(typeCtx, expr.callee.receiver, errors);
+        if (receiverTy instanceof NamedTypeNode) {
+            const methodSig = typeCtx.lookupFnSignature(`${receiverTy.name}::${expr.callee.field}`);
+            if (methodSig !== undefined) {
+                return methodSig.returnType;
+            }
+        }
+        // Try through references
+        if (receiverTy instanceof RefTypeNode && receiverTy.inner instanceof NamedTypeNode) {
+            const methodSig = typeCtx.lookupFnSignature(`${receiverTy.inner.name}::${expr.callee.field}`);
+            if (methodSig !== undefined) {
+                return methodSig.returnType;
+            }
+        }
+    }
+
+    return undefined;
+}
+
+function resolveGenericCall(
+    typeCtx: TypeContext,
+    expr: CallExpr,
+    argTypes: (TypeNode | undefined)[],
+): TypeNode | undefined {
+    if (!(expr.callee instanceof IdentifierExpr)) return undefined;
+
+    const generic = typeCtx.lookupGenericFn(expr.callee.name);
+    if (generic === undefined) return undefined;
+
+    const subs = inferTypeArgs(generic, argTypes, expr.genericArgs);
+    if (subs === undefined) return undefined;
+
+    // Store the resolved substitution for use during SSA lowering
+    typeCtx.setCallSubstitution(expr, subs);
+
+    // Register the monomorphized specialization's signature
+    const specializedName = mangledName(generic.name, subs);
+    if (typeCtx.lookupFnSignature(specializedName) === undefined) {
+        // Build the substituted return type
+        const returnType = substituteTypeNode(generic.returnType, subs);
+        const params = buildParamList(generic.params).map(p => ({
+            name: p.name,
+            ty: substituteTypeNode(p.ty, subs),
+        }));
+        typeCtx.registerFnSignature(specializedName, { params, returnType });
+    }
+
+    return substituteTypeNode(generic.returnType, subs);
+}
+
+function substituteTypeNode(ty: TypeNode, subs: Map<string, TypeNode>): TypeNode {
+    if (ty instanceof NamedTypeNode) {
+        const replacement = subs.get(ty.name);
+        if (replacement !== undefined) return replacement;
+        return ty;
+    }
+    if (ty instanceof RefTypeNode) {
+        return new RefTypeNode(ty.span, ty.mutability, substituteTypeNode(ty.inner, subs));
+    }
+    if (ty instanceof TupleTypeNode) {
+        return new TupleTypeNode(ty.span, ty.elements.map(el => substituteTypeNode(el, subs)));
+    }
+    return ty;
+}
+
+function inferFieldAccess(typeCtx: TypeContext, expr: FieldExpr, errors: TypeError[]): TypeNode | undefined {
+    const receiverTy = inferExprType(typeCtx, expr.receiver, errors);
+    if (receiverTy === undefined) return undefined;
+
+    // Direct struct type
+    if (receiverTy instanceof NamedTypeNode) {
+        const fieldTy = typeCtx.lookupStructField(receiverTy.name, expr.field);
+        if (fieldTy !== undefined) return fieldTy;
+
+        errors.push({
+            message: `No field \`${expr.field}\` on type \`${receiverTy.name}\``,
+            span: expr.span,
+        });
+        return undefined;
+    }
+
+    // Auto-deref through references
+    if (receiverTy instanceof RefTypeNode && receiverTy.inner instanceof NamedTypeNode) {
+        const fieldTy = typeCtx.lookupStructField(receiverTy.inner.name, expr.field);
+        if (fieldTy !== undefined) return fieldTy;
+
+        errors.push({
+            message: `No field \`${expr.field}\` on type \`${typeToString(receiverTy)}\``,
+            span: expr.span,
+        });
+        return undefined;
+    }
+
+    return undefined;
+}
+
+function inferStructLiteral(typeCtx: TypeContext, expr: StructExpr, errors: TypeError[]): TypeNode | undefined {
+    if (!(expr.path instanceof IdentifierExpr)) return undefined;
+
+    const structName = expr.path.name;
+    const structFields = typeCtx.lookupStructFields(structName);
+
+    if (structFields === undefined) {
+        errors.push({
+            message: `Unknown struct \`${structName}\``,
+            span: expr.span,
+        });
+        return undefined;
+    }
+
+    // Type-check each field initializer
+    for (const [fieldName, fieldExpr] of expr.fields) {
+        const expectedFieldTy = typeCtx.lookupStructField(structName, fieldName);
+        if (expectedFieldTy === undefined) {
+            errors.push({
+                message: `Unknown field \`${fieldName}\` in struct \`${structName}\``,
+                span: fieldExpr.span,
+            });
+            continue;
+        }
+
+        const actualTy = inferExprType(typeCtx, fieldExpr, errors);
+        if (actualTy !== undefined && !isInferredPlaceholder(expectedFieldTy) && !isInferredPlaceholder(actualTy)) {
+            if (!typesEqual(expectedFieldTy, actualTy)) {
+                errors.push({
+                    message: `Type mismatch for field \`${fieldName}\` in struct \`${structName}\`: expected \`${typeToString(expectedFieldTy)}\`, found \`${typeToString(actualTy)}\``,
+                    span: fieldExpr.span,
+                });
+            }
+        }
+    }
+
+    return new NamedTypeNode(expr.span, structName);
+}
+
+function inferBlock(typeCtx: TypeContext, block: BlockExpr, errors: TypeError[]): TypeNode | undefined {
+    typeCtx.pushScope();
+    inferStatements(typeCtx, block.stmts, errors);
+    let resultTy: TypeNode | undefined;
+    if (block.expr !== undefined) {
+        resultTy = inferExprType(typeCtx, block.expr, errors);
+    }
+    typeCtx.popScope();
+    return resultTy ?? new TupleTypeNode(block.span, []);
+}
+
+function inferIf(typeCtx: TypeContext, expr: IfExpr, errors: TypeError[]): TypeNode | undefined {
+    inferExprType(typeCtx, expr.condition, errors);
+    const thenTy = inferExprType(typeCtx, expr.thenBranch, errors);
+    if (expr.elseBranch !== undefined) {
+        const elseTy = inferExprType(typeCtx, expr.elseBranch, errors);
+        // If both branches have types, check they match
+        if (thenTy !== undefined && elseTy !== undefined && !typesEqual(thenTy, elseTy)) {
+            errors.push({
+                message: `\`if\` and \`else\` have incompatible types: \`${typeToString(thenTy)}\` vs \`${typeToString(elseTy)}\``,
+                span: expr.span,
+            });
+        }
+        return thenTy;
+    }
+    return new TupleTypeNode(expr.span, []);
+}
+
+function inferRef(typeCtx: TypeContext, expr: RefExpr, errors: TypeError[]): TypeNode | undefined {
+    const innerTy = inferExprType(typeCtx, expr.target, errors);
+    if (innerTy !== undefined) {
+        return new RefTypeNode(expr.span, expr.mutability, innerTy);
+    }
+    return undefined;
+}
+
+function inferMatch(typeCtx: TypeContext, expr: MatchExpr, errors: TypeError[]): TypeNode | undefined {
+    inferExprType(typeCtx, expr.matchOn, errors);
+    let armTy: TypeNode | undefined;
+    for (const arm of expr.arms) {
+        const bodyTy = inferExprType(typeCtx, arm.body, errors);
+        if (armTy === undefined) {
+            armTy = bodyTy;
+        } else if (bodyTy !== undefined && !typesEqual(armTy, bodyTy)) {
+            errors.push({
+                message: `Match arms have incompatible types: \`${typeToString(armTy)}\` vs \`${typeToString(bodyTy)}\``,
+                span: arm.span,
+            });
+        }
+    }
+    return armTy;
+}
+
+// --- Statement Inference ---
+
+function inferStatements(typeCtx: TypeContext, stmts: Statement[], errors: TypeError[]): void {
+    for (const stmt of stmts) {
+        inferStatement(typeCtx, stmt, errors);
+    }
+}
+
+function inferStatement(typeCtx: TypeContext, stmt: Statement, errors: TypeError[]): void {
+    if (stmt instanceof LetStmt) {
+        inferLetStmt(typeCtx, stmt, errors);
+        return;
+    }
+
+    if (stmt instanceof ExprStmt) {
+        inferExprType(typeCtx, stmt.expr, errors);
+        return;
+    }
+
+    if (stmt instanceof ItemStmt) {
+        registerItemTypes(typeCtx, stmt.item);
+        return;
+    }
+}
+
+function inferLetStmt(typeCtx: TypeContext, stmt: LetStmt, errors: TypeError[]): void {
+    const initTy = inferExprType(typeCtx, stmt.init, errors);
+    const annotationTy = stmt.type;
+    const hasAnnotation = !isInferredPlaceholder(annotationTy);
+
+    let resolvedTy: TypeNode;
+
+    if (hasAnnotation && initTy !== undefined) {
+        // Both annotation and initializer present: check they agree
+        if (!isInferredPlaceholder(initTy) && !typesEqual(annotationTy, initTy)) {
+            errors.push({
+                message: `Type mismatch: expected \`${typeToString(annotationTy)}\`, found \`${typeToString(initTy)}\``,
+                span: stmt.span,
+            });
+        }
+        resolvedTy = annotationTy;
+    } else if (hasAnnotation) {
+        resolvedTy = annotationTy;
+    } else if (initTy !== undefined) {
+        resolvedTy = initTy;
+    } else {
+        resolvedTy = annotationTy; // Stays as "_"
+    }
+
+    // Bind the variable name from the pattern
+    if (stmt.pattern instanceof IdentPattern) {
+        typeCtx.setVariable(stmt.pattern.name, resolvedTy);
+    }
+}
+
+// --- Function Body Inference ---
+
+function inferFnBody(typeCtx: TypeContext, fnItem: FnItem | GenericFnItem, errors: TypeError[]): void {
+    if (fnItem.body === undefined) return;
+
+    typeCtx.pushScope();
+
+    // Bind parameters into scope
+    for (const param of fnItem.params) {
+        if (param.isReceiver) continue;
+        if (param.name !== undefined && param.ty !== undefined) {
+            typeCtx.setVariable(param.name, param.ty);
+        }
+    }
+
+    // Infer body statements
+    inferStatements(typeCtx, fnItem.body.stmts, errors);
+
+    // If there's a tail expression, check it against the return type
+    if (fnItem.body.expr !== undefined) {
+        const tailTy = inferExprType(typeCtx, fnItem.body.expr, errors);
+        if (tailTy !== undefined && !isInferredPlaceholder(fnItem.returnType) && !isInferredPlaceholder(tailTy)) {
+            if (!typesEqual(fnItem.returnType, tailTy)) {
+                errors.push({
+                    message: `Mismatched return type: expected \`${typeToString(fnItem.returnType)}\`, found \`${typeToString(tailTy)}\``,
+                    span: fnItem.body.expr.span,
+                });
+            }
+        }
+    }
+
+    typeCtx.popScope();
+}
+
+// --- Duplicate Function Checking ---
 
 function checkDuplicateFns(module: ModuleNode): TypeError[] {
     const names = new Map<string, Span>();
@@ -82,20 +706,21 @@ function checkDuplicateFns(module: ModuleNode): TypeError[] {
     return errors;
 }
 
-function validateFnTypes(typeCtx: TypeContext, fnItem: FnItem): TypeError[] {
-    const errors: TypeError[] = [];
-    const genericNames = new Set<string>();
-    const genericParams = Reflect.get(fnItem, "genericParams");
-    if (Array.isArray(genericParams)) {
-        for (const param of genericParams) {
-            if (isRecord(param)) {
-                const { name } = param;
-                if (typeof name === "string") {
-                    genericNames.add(name);
-                }
-            }
+// --- Type Validation for Function Signatures ---
+
+function collectGenericParamNames(fnItem: FnItem | GenericFnItem): Set<string> {
+    const names = new Set<string>();
+    if (fnItem instanceof GenericFnItem) {
+        for (const param of fnItem.genericParams) {
+            names.add(param.name);
         }
     }
+    return names;
+}
+
+function validateFnTypes(typeCtx: TypeContext, fnItem: FnItem | GenericFnItem): TypeError[] {
+    const errors: TypeError[] = [];
+    const genericNames = collectGenericParamNames(fnItem);
 
     for (const param of fnItem.params.filter(p => !p.isReceiver)) {
         const name = param.name ?? "_";
@@ -129,10 +754,13 @@ function validateFnTypes(typeCtx: TypeContext, fnItem: FnItem): TypeError[] {
     return errors;
 }
 
+// --- Module-Level Inference ---
+
 export function inferModule(
     typeCtx: TypeContext,
     moduleNode: ModuleNode,
 ): Result<void, TypeError[]> {
+    // Phase 1: Register all item types (structs, enums, functions, impls)
     walkAst(moduleNode, (node) => {
         registerItemTypes(typeCtx, node);
     });
@@ -140,9 +768,16 @@ export function inferModule(
     const errors: TypeError[] = [];
     errors.push(...checkDuplicateFns(moduleNode));
 
+    // Phase 2: Validate function signatures and infer function bodies
     for (const item of moduleNode.items) {
+        if (item instanceof GenericFnItem) {
+            errors.push(...validateFnTypes(typeCtx, item));
+            // Skip deep body inference for generic functions — type params aren't concrete
+            continue;
+        }
         if (item instanceof FnItem) {
             errors.push(...validateFnTypes(typeCtx, item));
+            inferFnBody(typeCtx, item, errors);
         }
         if (item instanceof ModItem) {
             const nested = inferModule(typeCtx, new ModuleNode(item.span, item.name, item.items));
@@ -152,9 +787,18 @@ export function inferModule(
         }
         if (item instanceof TraitItem) {
             for (const method of item.methods) {
-                if (method instanceof FnItem) {
+                if (method instanceof FnItem || method instanceof GenericFnItem) {
                     errors.push(...validateFnTypes(typeCtx, method));
                 }
+            }
+        }
+        if (item instanceof ImplItem) {
+            for (const method of item.methods) {
+                errors.push(...validateFnTypes(typeCtx, method));
+                if (method instanceof FnItem) {
+                    inferFnBody(typeCtx, method, errors);
+                }
+                // Skip deep body inference for generic methods
             }
         }
     }
