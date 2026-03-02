@@ -12,18 +12,6 @@ import { printModule as printIRModule } from "./ir_printer";
 import { type IRModule, resetIRIds } from "./ir";
 import { validateFunction as validateIRFunction } from "./ir_validate";
 import { serializeModule } from "./ir_serialize";
-import type { Result } from "./diagnostics";
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const STDLIB_VEC_CORE_PATH = path.resolve(process.cwd(), "stdlib/vec_core.rs");
-const STDLIB_BUILTIN_SOURCE = `pub enum Option<T> {
-    None,
-    Some(T),
-}
-`;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -67,38 +55,6 @@ function spanToDiagSpan(span?: Span): CompileDiagnostic["span"] {
     return { line: span.line, column: span.column, length: span.end - span.start };
 }
 
-function injectStdlibItems(ast: ModuleNode): Result<void, CompileDiagnostic[]> {
-    let stdlibSource: string;
-    try {
-        stdlibSource = fs.readFileSync(STDLIB_VEC_CORE_PATH, "utf8");
-    } catch (error) {
-        return {
-            ok: false,
-            error: [
-                {
-                    message: `Failed to read stdlib: ${STDLIB_VEC_CORE_PATH}: ${error instanceof Error ? error.message : String(error)}`,
-                    kind: "internal",
-                },
-            ],
-        };
-    }
-
-    const stdlibParse = parseModule(`${STDLIB_BUILTIN_SOURCE}\n${stdlibSource}`);
-    if (!stdlibParse.ok) {
-        return {
-            ok: false,
-            error: stdlibParse.errors.map((err) => ({
-                message: `In stdlib vec_core.rs: ${err.message}`,
-                span: { line: err.line, column: err.column },
-                kind: "parse" as const,
-            })),
-        };
-    }
-
-    ast.items = [...stdlibParse.value.items, ...ast.items];
-    return { ok: true, value: undefined };
-}
-
 type PreparedAst = { ok: true; module: ModuleNode } | { ok: false; errors: CompileDiagnostic[] };
 
 function prepareAst(source: string, options: { sourcePath?: string } = {}): PreparedAst {
@@ -112,11 +68,6 @@ function prepareAst(source: string, options: { sourcePath?: string } = {}): Prep
                 kind: "parse" as const,
             })),
         };
-    }
-
-    const stdlibResult = injectStdlibItems(parseResult.value);
-    if (!stdlibResult.ok) {
-        return { ok: false, errors: stdlibResult.error };
     }
 
     const resolveResult = resolveModuleTree(parseResult.value, { sourcePath: options.sourcePath });

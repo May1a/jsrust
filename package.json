@@ -16,5 +16,8 @@
     },
     "prettier": {
         "tabWidth": 4
+    },
+    "dependencies": {
+        "ts-pattern": "^5.9.0"
     }
 }

@@ -1,7 +1,4 @@
-import * as path from "path";
-import * as fs from "fs";
 import { parseModule } from "../src/parser";
-import type { ModuleNode } from "../src/ast";
 import { TypeContext } from "../src/type_context";
 import { inferModule } from "../src/inference";
 import { checkBorrowLite } from "../src/borrow";
@@ -11,26 +8,6 @@ import { lowerAstModuleToSsa } from "../src/ast_to_ssa";
 import { printModule } from "../src/ir_printer";
 import { resetIRIds } from "../src/ir";
 import { validateFunction } from "../src/ir_validate";
-
-const STDLIB_PATH = path.resolve(import.meta.dir, "../stdlib/vec_core.rs");
-
-const STDLIB_BUILTIN_SOURCE = `pub enum Option<T> {
-    None,
-    Some(T),
-}
-`;
-
-function injectStdlibItems(ast: ModuleNode): void {
-    const stdlibSource = fs.readFileSync(STDLIB_PATH, "utf-8");
-    const stdlibParse = parseModule(
-        `${STDLIB_BUILTIN_SOURCE}\n${stdlibSource}`,
-    );
-    if (!stdlibParse.ok) {
-        const msgs = stdlibParse.errors.map((e) => e.message).join("; ");
-        throw new Error(`Failed to parse stdlib: ${msgs}`);
-    }
-    ast.items = [...(stdlibParse.value.items ?? []), ...(ast.items ?? [])];
-}
 
 export function compileToIR(source: string): string {
     resetIRIds();
@@ -42,8 +19,6 @@ export function compileToIR(source: string): string {
     }
 
     const ast = parseResult.value;
-
-    injectStdlibItems(ast);
 
     const resolveResult = resolveModuleTree(ast);
     if (!resolveResult.ok || !resolveResult.module) {
