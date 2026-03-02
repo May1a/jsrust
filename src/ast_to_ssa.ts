@@ -160,9 +160,6 @@ const EMPTY_FORMAT = "";
 // Loop frame access
 const LAST_FRAME_INDEX = -1;
 
-const ZERO = 0;
-const ONE = 1;
-
 enum FormatTag {
     String = 0,
     Int = 1,
@@ -178,19 +175,19 @@ interface FormatTemplate {
 
 function hashName(name: string): number {
     // Keep in sync with backend/src/bytes.c: ByteSpan_hashFunctionId
-    let hash = ZERO;
+    let hash = 0;
     for (let i = 0; i < name.length; i++) {
-        hash = (Math.imul(hash, HASH_FACTOR) + name.charCodeAt(i)) | ZERO;
-        hash |= ZERO;
+        hash = (Math.imul(hash, HASH_FACTOR) + name.charCodeAt(i)) | 0;
+        hash |= 0;
     }
-    if (hash < ZERO) {
+    if (hash < 0) {
         hash = -hash;
     }
     return hash % HASH_MODULUS;
 }
 
 function zeroSpan(): Span {
-    return new Span(ZERO, ZERO, ZERO, ZERO);
+    return new Span(0, 0, 0, 0);
 }
 
 export class AstToSsaCtx {
@@ -1140,7 +1137,7 @@ export class AstToSsaCtx {
             }
             case "len": {
                 return AstToSsaCtx.handleInstructionId(
-                    this.builder.iconst(ZERO, IntWidth.I32).id,
+                    this.builder.iconst(0, IntWidth.I32).id,
                 );
             }
             case "capacity": {
@@ -1294,10 +1291,10 @@ export class AstToSsaCtx {
     private parseFormatTemplate(
         expr: MacroExpr,
     ): Result<FormatTemplate, LoweringError> {
-        if (expr.args.length === ZERO) {
+        if (expr.args.length === 0) {
             return ok({
                 literal: EMPTY_FORMAT,
-                placeholderCount: ZERO,
+                placeholderCount: 0,
             });
         }
         const [formatExpr, ...valueArgs] = expr.args;
@@ -1420,7 +1417,7 @@ export class AstToSsaCtx {
         const fieldOrder = this.structFieldNames.get(structName) ?? [
             ...expr.fields.keys(),
         ];
-        if (fieldOrder.length === ZERO) {
+        if (fieldOrder.length === 0) {
             return loweringError(
                 LoweringErrorKind.UnsupportedNode,
                 `Struct literal \`${structName}\` has no fields`,
@@ -1495,7 +1492,7 @@ export class AstToSsaCtx {
             );
         }
         const index = fieldNames.indexOf(expr.field);
-        if (index < ZERO) {
+        if (index === -1) {
             return loweringError(
                 LoweringErrorKind.UnsupportedNode,
                 `Unknown field \`${expr.field}\` on struct \`${structType.name}\``,
@@ -1913,26 +1910,26 @@ export class AstToSsaCtx {
     private static countFormatPlaceholders(
         literal: string,
     ): Result<number, string> {
-        let count = ZERO;
-        for (let index = ZERO; index < literal.length; index++) {
+        let count = 0;
+        for (let index = 0; index < literal.length; index++) {
             const byte = literal[index];
             if (byte === "{") {
-                const nextByte = literal[index + ONE];
+                const nextByte = literal[index + 1];
                 if (nextByte === "{") {
-                    index += ONE;
+                    index += 1;
                     continue;
                 }
                 if (nextByte === "}") {
-                    count += ONE;
-                    index += ONE;
+                    count += 1;
+                    index += 1;
                     continue;
                 }
                 return err("unsupported format token after `{`");
             }
             if (byte === "}") {
-                const nextByte = literal[index + ONE];
+                const nextByte = literal[index + 1];
                 if (nextByte === "}") {
-                    index += ONE;
+                    index += 1;
                     continue;
                 }
                 return err("unmatched `}` in format string");

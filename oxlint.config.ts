@@ -137,7 +137,7 @@ export default defineConfig({
                 ignoreTypeIndexes: true,
                 ignoreClassFieldInitialValues: true,
                 ignoreArrayIndexes: true,
-                ignore: [0, 1, 2],
+                ignore: [0, 1, 2, -1],
             },
         ],
     },
