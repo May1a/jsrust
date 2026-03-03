@@ -395,11 +395,10 @@ function combineResults$1<T, E>(results: Result<T, E>[]): Result<T[], E[]> {
 class SourceContext {
     source: string;
     file?: string;
-    #lines: string[];
+    #lines: string[] | undefined;
     constructor(source: string, file: string) {
         this.source = source;
         this.file = file;
-        this.#lines = [];
     }
     /**
      * Get source lines (lazy initialization)
