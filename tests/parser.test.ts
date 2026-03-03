@@ -14,6 +14,7 @@ import {
     IdentPattern,
     Mutability,
     NamedTypeNode,
+    InferredTypeNode,
     FnItem,
     StructItem,
     EnumItem,
@@ -147,9 +148,8 @@ describe("statements", () => {
         if (!result.ok) return;
         expect(result.value).toBeInstanceOf(LetStmt);
         const s = result.value as LetStmt;
-        // No type annotation: parser inserts a wildcard NamedTypeNode("_")
-        expect(s.type).toBeInstanceOf(NamedTypeNode);
-        expect((s.type as NamedTypeNode).name).toBe("_");
+        // No type annotation: parser inserts an InferredTypeNode
+        expect(s.type).toBeInstanceOf(InferredTypeNode);
     });
 
     test("let binding with type annotation", () => {
