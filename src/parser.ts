@@ -2236,7 +2236,10 @@ class Parser {
         if (this.eat(TokenType.And)) {
             if (this.check(TokenType.Lifetime)) this.advance();
             const mut = this.eat(TokenType.Mut) !== undefined;
-            const inner = this.parseExpr(POSTFIX_PRECEDENCE, noStructLiteral);
+            const inner = this.parseExpr(
+                MULTIPLICATIVE_PRECEDENCE,
+                noStructLiteral,
+            );
             return new RefExpr(
                 this.spanFrom(start),
                 mut ? Mutability.Mutable : Mutability.Immutable,
@@ -2246,21 +2249,21 @@ class Parser {
         if (this.eat(TokenType.Star)) {
             return new DerefExpr(
                 this.spanFrom(start),
-                this.parseExpr(POSTFIX_PRECEDENCE, noStructLiteral),
+                this.parseExpr(MULTIPLICATIVE_PRECEDENCE, noStructLiteral),
             );
         }
         if (this.eat(TokenType.Minus)) {
             return new UnaryExpr(
                 this.spanFrom(start),
                 UnaryOp.Neg,
-                this.parseExpr(POSTFIX_PRECEDENCE, noStructLiteral),
+                this.parseExpr(MULTIPLICATIVE_PRECEDENCE, noStructLiteral),
             );
         }
         if (!this.eat(TokenType.Bang)) return undefined;
         return new UnaryExpr(
             this.spanFrom(start),
             UnaryOp.Not,
-            this.parseExpr(POSTFIX_PRECEDENCE, noStructLiteral),
+            this.parseExpr(MULTIPLICATIVE_PRECEDENCE, noStructLiteral),
         );
     }
 
