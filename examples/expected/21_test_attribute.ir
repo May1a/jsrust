@@ -1,0 +1,36 @@
+module main {
+
+  strings {
+    s0 = "a = {}"
+    s1 = "x = {}"
+  }
+
+  fn f0 test_basic() -> () {
+    b0 (entry):
+      v1: i32      = iconst 1
+      v2: i32      = iconst 2
+      v3: i32      = iadd v1, v2
+      v4: ptr<i32> = alloca i32
+      store v3 -> v4
+      v6: ptr      = sconst s0
+      v7: i32      = load v4
+      v8: i64      = iconst 1
+      call f862609(v6, v8, v7)
+      ret
+  }
+
+  fn f10 test_multiplication() -> () {
+    b0 (entry):
+      v11: i32      = iconst 4
+      v12: i32      = iconst 5
+      v13: i32      = imul v11, v12
+      v14: ptr<i32> = alloca i32
+      store v13 -> v14
+      v16: ptr      = sconst s1
+      v17: i32      = load v14
+      v18: i64      = iconst 1
+      call f862609(v16, v18, v17)
+      ret
+  }
+
+}
