@@ -22,6 +22,7 @@ const disabledRules: DummyRuleMap = {
     "oxc/no-rest-spread-properties": "off",
     "no-implicit-coercion": "off",
     "default-case": "off",
+    "capitalized-comments": "off",
 };
 
 const stricterRules: DummyRuleMap = {
