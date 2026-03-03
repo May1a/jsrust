@@ -9,13 +9,17 @@ After working on a file run:
 ```bash
 bun typecheck <file>
 ```
+Code which does not pass the lints is **NOT** working code (it **is** a bug)
 
-DO NOT run the tests (or other various commands) **unless** instructed otherwise
+### IF YOU SEE A BUG:
+It does **NOT** matter if it is unrelated to your task
+You **HAVE** to fix it
 
 ## Frontend Type-Safety Constraints
 
 - Write typesafe code
 - **NEVER** use an `eslint-disable` comment (if you see one, **remove** it)
+- **NEVER** modify `oxlint.config.ts`
 
 ## Code quality
 
