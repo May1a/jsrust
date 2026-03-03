@@ -2358,41 +2358,52 @@ export function lowerAstToSsa(
     return ctx.lowerFunction(fnDecl);
 }
 
+function seedStructMetadataForItems(
+    items: ModuleNode["items"],
+    irModule: IRModule,
+    structFieldNames: Map<string, string[]>,
+    modulePrefix: string,
+): void {
+    const qualify = (name: string): string =>
+        modulePrefix ? `${modulePrefix}::${name}` : name;
+
+    const registerStruct = (name: string, fields: string[], fieldTypes: IRType[]): void => {
+        structFieldNames.set(name, fields);
+        if (!irModule.structs.has(name)) {
+            irModule.structs.set(name, makeIRStructType(name, fieldTypes));
+        }
+    };
+
+    for (const item of items) {
+        if (item instanceof StructItem || item instanceof GenericStructItem) {
+            const names = item.fields.map((f) => f.name);
+            const fieldTypes = item.fields.map((f) =>
+                AstToSsaCtx.translateTypeNode(f.ty),
+            );
+            const qualName = qualify(item.name);
+            registerStruct(qualName, names, fieldTypes);
+            if (modulePrefix) {
+                registerStruct(item.name, names, fieldTypes);
+            }
+            continue;
+        }
+        if (item instanceof ModItem) {
+            seedStructMetadataForItems(
+                item.items,
+                irModule,
+                structFieldNames,
+                qualify(item.name),
+            );
+        }
+    }
+}
+
 function seedStructMetadata(
     moduleNode: ModuleNode,
     irModule: IRModule,
     structFieldNames: Map<string, string[]>,
 ): void {
-    for (const item of moduleNode.items) {
-        if (item instanceof StructItem) {
-            const names = item.fields.map((f) => f.name);
-            const fieldTypes = item.fields.map((f) =>
-                AstToSsaCtx.translateTypeNode(f.ty),
-            );
-            structFieldNames.set(item.name, names);
-            if (!irModule.structs.has(item.name)) {
-                irModule.structs.set(
-                    item.name,
-                    makeIRStructType(item.name, fieldTypes),
-                );
-            }
-            continue;
-        }
-        if (item instanceof GenericStructItem) {
-            // Register generic struct field names for future monomorphization
-            const names = item.fields.map((f) => f.name);
-            const fieldTypes = item.fields.map((f) =>
-                AstToSsaCtx.translateTypeNode(f.ty),
-            );
-            structFieldNames.set(item.name, names);
-            if (!irModule.structs.has(item.name)) {
-                irModule.structs.set(
-                    item.name,
-                    makeIRStructType(item.name, fieldTypes),
-                );
-            }
-        }
-    }
+    seedStructMetadataForItems(moduleNode.items, irModule, structFieldNames, "");
 }
 
 function seedEnumMetadata(
@@ -2430,20 +2441,30 @@ function collectFunctionIds(moduleNode: ModuleNode): Map<string, number> {
 function collectItemFunctionIds(
     item: ModuleNode["items"][number],
     fnIdMap: Map<string, number>,
+    modulePrefix = "",
 ): void {
+    const qualify = (name: string): string =>
+        modulePrefix ? `${modulePrefix}::${name}` : name;
+
     if (item instanceof GenericFnItem) {
         // Generic functions are templates — skip lowering, but register the id
         if (item.body) {
             fnIdMap.set(item.name, hashName(item.name));
+            if (modulePrefix) {
+                fnIdMap.set(qualify(item.name), hashName(item.name));
+            }
         }
         return;
     }
     if (item instanceof FnItem && item.body) {
         fnIdMap.set(item.name, hashName(item.name));
+        if (modulePrefix) {
+            fnIdMap.set(qualify(item.name), hashName(item.name));
+        }
         return;
     }
     if (item instanceof ImplItem) {
-        collectImplFunctionIds(item, fnIdMap);
+        collectImplFunctionIds(item, fnIdMap, modulePrefix);
         return;
     }
     if (item instanceof TraitImplItem) {
@@ -2454,13 +2475,7 @@ function collectItemFunctionIds(
     }
     if (item instanceof ModItem) {
         for (const modItem of item.items) {
-            if (modItem instanceof FnItem && modItem.body) {
-                fnIdMap.set(modItem.name, hashName(modItem.name));
-                fnIdMap.set(
-                    `${item.name}::${modItem.name}`,
-                    hashName(modItem.name),
-                );
-            }
+            collectItemFunctionIds(modItem, fnIdMap, qualify(item.name));
         }
         return;
     }
@@ -2473,11 +2488,18 @@ function collectItemFunctionIds(
 function collectImplFunctionIds(
     item: ImplItem,
     fnIdMap: Map<string, number>,
+    modulePrefix = "",
 ): void {
     const implTarget = item.target.name;
+    const qualify = (name: string): string =>
+        modulePrefix ? `${modulePrefix}::${name}` : name;
+    const qImplTarget = qualify(implTarget);
     for (const method of item.methods) {
         fnIdMap.set(method.name, hashName(method.name));
         fnIdMap.set(`${implTarget}::${method.name}`, hashName(method.name));
+        if (qImplTarget !== implTarget) {
+            fnIdMap.set(`${qImplTarget}::${method.name}`, hashName(method.name));
+        }
     }
 }
 
@@ -2672,16 +2694,14 @@ function lowerModuleItem(
     }
     if (item instanceof ModItem) {
         for (const modItem of item.items) {
-            if (modItem instanceof FnItem && modItem.body) {
-                lowerOwnedFunction(
-                    modItem,
-                    irModule,
-                    structFieldNames,
-                    enumVariantTags,
-                    fnIdMap,
-                    monoRegistry,
-                );
-            }
+            lowerModuleItem(
+                modItem,
+                irModule,
+                structFieldNames,
+                enumVariantTags,
+                fnIdMap,
+                monoRegistry,
+            );
         }
     }
 }

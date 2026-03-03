@@ -24,7 +24,6 @@ import {
     ModuleNode,
     Mutability,
     NamedTypeNode,
-    type Node,
     type ParamNode,
     RefExpr,
     RefTypeNode,
@@ -38,7 +37,7 @@ import {
     type TypeNode,
     UnaryExpr,
     UnaryOp,
-    walkAst,
+    type Item,
 } from "./ast";
 import { type Result, err, okVoid } from "./diagnostics";
 import { inferTypeArgs, mangledName } from "./monomorphize";
@@ -155,54 +154,89 @@ const LOGICAL_OPS = new Set([BinaryOp.And, BinaryOp.Or]);
 
 // --- Item Registration ---
 
-function registerItemTypes(typeCtx: TypeContext, node: Node): void {
-    if (node instanceof StructItem) {
+function registerStructTypeWithPrefix(
+    typeCtx: TypeContext,
+    node: StructItem | GenericStructItem,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+): void {
+    const qualName = qualify(node.name);
+    const fields: FieldWithType[] = node.fields.map((f) => ({ name: f.name, ty: f.ty }));
+    typeCtx.registerNamedType(qualName, new TupleTypeNode(node.span, []));
+    typeCtx.registerStructFields(qualName, fields);
+    if (modulePrefix) {
         typeCtx.registerNamedType(node.name, new TupleTypeNode(node.span, []));
-        const fields: FieldWithType[] = [];
-        for (const f of node.fields) {
-            fields.push({ name: f.name, ty: f.ty });
-        }
         typeCtx.registerStructFields(node.name, fields);
     }
+}
 
-    if (node instanceof EnumItem) {
-        typeCtx.registerNamedType(node.name, new TupleTypeNode(node.span, []));
-    }
-
-    if (node instanceof GenericStructItem) {
-        typeCtx.registerNamedType(node.name, new TupleTypeNode(node.span, []));
-        const fields: FieldWithType[] = [];
-        for (const f of node.fields) {
-            fields.push({ name: f.name, ty: f.ty });
+function registerImplMethodsWithPrefix(
+    typeCtx: TypeContext,
+    node: ImplItem,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+): void {
+    const targetName =
+        node.target instanceof NamedTypeNode ? node.target.name : undefined;
+    if (targetName === undefined) return;
+    const qTarget = qualify(targetName);
+    for (const method of node.methods) {
+        typeCtx.registerFnSignature(`${qTarget}::${method.name}`, {
+            params: buildParamList(method.params),
+            returnType: method.returnType,
+        });
+        if (modulePrefix) {
+            typeCtx.registerFnSignature(`${targetName}::${method.name}`, {
+                params: buildParamList(method.params),
+                returnType: method.returnType,
+            });
         }
-        typeCtx.registerStructFields(node.name, fields);
     }
+}
 
-    if (node instanceof GenericFnItem) {
-        typeCtx.registerFnSignature(node.name, {
-            params: buildParamList(node.params),
-            returnType: node.returnType,
-        });
-        typeCtx.registerGenericFn(node.name, node);
-    }
+function registerItemTypesWithPrefix(
+    typeCtx: TypeContext,
+    items: Item[],
+    modulePrefix: string,
+): void {
+    const qualify = (name: string): string =>
+        modulePrefix ? `${modulePrefix}::${name}` : name;
 
-    if (node instanceof FnItem) {
-        typeCtx.registerFnSignature(node.name, {
-            params: buildParamList(node.params),
-            returnType: node.returnType,
-        });
-    }
-
-    if (node instanceof ImplItem) {
-        const targetName =
-            node.target instanceof NamedTypeNode ? node.target.name : undefined;
-        if (targetName !== undefined) {
-            for (const method of node.methods) {
-                typeCtx.registerFnSignature(`${targetName}::${method.name}`, {
-                    params: buildParamList(method.params),
-                    returnType: method.returnType,
-                });
+    for (const node of items) {
+        if (node instanceof StructItem || node instanceof GenericStructItem) {
+            registerStructTypeWithPrefix(typeCtx, node, qualify, modulePrefix);
+            continue;
+        }
+        if (node instanceof EnumItem) {
+            const qualName = qualify(node.name);
+            typeCtx.registerNamedType(qualName, new TupleTypeNode(node.span, []));
+            if (modulePrefix) {
+                typeCtx.registerNamedType(node.name, new TupleTypeNode(node.span, []));
             }
+            continue;
+        }
+        if (node instanceof GenericFnItem) {
+            const qualName = qualify(node.name);
+            typeCtx.registerFnSignature(qualName, {
+                params: buildParamList(node.params),
+                returnType: node.returnType,
+            });
+            typeCtx.registerGenericFn(qualName, node);
+            continue;
+        }
+        if (node instanceof FnItem) {
+            typeCtx.registerFnSignature(qualify(node.name), {
+                params: buildParamList(node.params),
+                returnType: node.returnType,
+            });
+            continue;
+        }
+        if (node instanceof ImplItem) {
+            registerImplMethodsWithPrefix(typeCtx, node, qualify, modulePrefix);
+            continue;
+        }
+        if (node instanceof ModItem) {
+            registerItemTypesWithPrefix(typeCtx, node.items, qualify(node.name));
         }
     }
 }
@@ -693,7 +727,7 @@ function inferStatement(
     }
 
     if (stmt instanceof ItemStmt) {
-        registerItemTypes(typeCtx, stmt.item);
+        registerItemTypesWithPrefix(typeCtx, [stmt.item], "");
         return;
     }
 }
@@ -896,9 +930,7 @@ export function inferModule(
     moduleNode: ModuleNode,
 ): Result<void, TypeError[]> {
     // Phase 1: Register all item types (structs, enums, functions, impls)
-    walkAst(moduleNode, (node) => {
-        registerItemTypes(typeCtx, node);
-    });
+    registerItemTypesWithPrefix(typeCtx, moduleNode.items, "");
 
     const errors: TypeError[] = [];
     errors.push(...checkDuplicateFns(moduleNode));
