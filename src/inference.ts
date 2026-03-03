@@ -32,6 +32,7 @@ import {
     StructExpr,
     StructItem,
     EnumItem,
+    TraitImplItem,
     TraitItem,
     TupleTypeNode,
     type TypeNode,
@@ -194,6 +195,30 @@ function registerImplMethodsWithPrefix(
     }
 }
 
+function registerTraitImplMethodsWithPrefix(
+    typeCtx: TypeContext,
+    node: TraitImplItem,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+): void {
+    const targetName =
+        node.target instanceof NamedTypeNode ? node.target.name : undefined;
+    if (targetName === undefined) return;
+    const qTarget = qualify(targetName);
+    for (const method of node.fnImpls) {
+        typeCtx.registerFnSignature(`${qTarget}::${method.name}`, {
+            params: buildParamList(method.params),
+            returnType: method.returnType,
+        });
+        if (modulePrefix) {
+            typeCtx.registerFnSignature(`${targetName}::${method.name}`, {
+                params: buildParamList(method.params),
+                returnType: method.returnType,
+            });
+        }
+    }
+}
+
 function registerItemTypesWithPrefix(
     typeCtx: TypeContext,
     items: Item[],
@@ -233,6 +258,15 @@ function registerItemTypesWithPrefix(
         }
         if (node instanceof ImplItem) {
             registerImplMethodsWithPrefix(typeCtx, node, qualify, modulePrefix);
+            continue;
+        }
+        if (node instanceof TraitImplItem) {
+            registerTraitImplMethodsWithPrefix(
+                typeCtx,
+                node,
+                qualify,
+                modulePrefix,
+            );
             continue;
         }
         if (node instanceof ModItem) {
@@ -363,6 +397,10 @@ function inferIdentifier(
     return undefined;
 }
 
+function derefType(ty: TypeNode): TypeNode {
+    return ty instanceof RefTypeNode ? ty.inner : ty;
+}
+
 function inferBinary(
     typeCtx: TypeContext,
     expr: BinaryExpr,
@@ -376,21 +414,24 @@ function inferBinary(
         return new NamedTypeNode(expr.span, "bool");
     }
 
-    // Arithmetic/bitwise operators: check operands match, propagate type
-    if (leftTy !== undefined && rightTy !== undefined) {
+    // Arithmetic/bitwise operators: auto-deref references (Rust coerces &T op &T → T op T → T)
+    const leftBase = leftTy !== undefined ? derefType(leftTy) : undefined;
+    const rightBase = rightTy !== undefined ? derefType(rightTy) : undefined;
+
+    if (leftBase !== undefined && rightBase !== undefined) {
         if (
-            !isInferredPlaceholder(leftTy) &&
-            !isInferredPlaceholder(rightTy) &&
-            !typesEqual(leftTy, rightTy)
+            !isInferredPlaceholder(leftBase) &&
+            !isInferredPlaceholder(rightBase) &&
+            !typesEqual(leftBase, rightBase)
         ) {
             errors.push({
-                message: `Type mismatch in binary expression: \`${typeToString(leftTy)}\` and \`${typeToString(rightTy)}\``,
+                message: `Type mismatch in binary expression: \`${typeToString(leftBase)}\` and \`${typeToString(rightBase)}\``,
                 span: expr.span,
             });
         }
     }
 
-    return leftTy ?? rightTy;
+    return leftBase ?? rightBase;
 }
 
 function inferUnary(
@@ -923,6 +964,26 @@ function inferImplItem(typeCtx: TypeContext, item: ImplItem): TypeError[] {
     return errors;
 }
 
+function inferTraitImplItem(
+    typeCtx: TypeContext,
+    item: TraitImplItem,
+): TypeError[] {
+    const errors: TypeError[] = [];
+    const selfTypeName =
+        item.target instanceof NamedTypeNode ? item.target.name : undefined;
+    if (selfTypeName) {
+        const targetFields = typeCtx.lookupStructFields(selfTypeName);
+        if (targetFields) {
+            typeCtx.registerStructFields("Self", targetFields);
+        }
+    }
+    for (const method of item.fnImpls) {
+        errors.push(...validateFnTypes(typeCtx, method));
+        inferFnBody(typeCtx, method, errors, selfTypeName);
+    }
+    return errors;
+}
+
 // --- Module-Level Inference ---
 
 export function inferModule(
@@ -967,6 +1028,9 @@ export function inferModule(
         }
         if (item instanceof ImplItem) {
             errors.push(...inferImplItem(typeCtx, item));
+        }
+        if (item instanceof TraitImplItem) {
+            errors.push(...inferTraitImplItem(typeCtx, item));
         }
     }
 

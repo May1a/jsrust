@@ -59,6 +59,7 @@ import {
     StructPattern,
     type StructPatternField,
     TraitItem,
+    TraitImplItem,
     TuplePattern,
     TupleTypeNode,
     UnaryExpr,
@@ -297,6 +298,7 @@ class Parser {
     private readonly tokens: Token[];
     private pos = 0;
     readonly errors: ParseDiagnostic[] = [];
+    private readonly parsedTraits = new Map<string, TraitItem>();
 
     constructor(tokens: Token[]) {
         this.tokens = tokens;
@@ -987,15 +989,57 @@ class Parser {
     // Impl item
     // -----------------------------------------------------------------------
 
-    private parseImplBody(startTok: Token): ImplItem {
+    private parseImplBody(startTok: Token): ImplItem | TraitImplItem {
         this.parseGenericParams();
-        const target = this.parseNamedType(this.peek());
-        if (!target) {
+        const firstType = this.parseNamedType(this.peek());
+        if (!firstType) {
             throw new Error("TODO: Replace this with a proper diagnostic");
         }
+
+        // impl Trait for Type { ... }
+        if (this.eat(TokenType.For)) {
+            const target = this.parseNamedType(this.peek());
+            if (!target) {
+                throw new Error("TODO: Replace this with a proper diagnostic");
+            }
+            this.skipWhereClause();
+            this.expect(TokenType.OpenCurly);
+
+            const allMethods: (FnItem | GenericFnItem)[] = [];
+            while (
+                !this.check(TokenType.CloseCurly) &&
+                !this.check(TokenType.Eof)
+            ) {
+                this.parseImplMember(allMethods);
+            }
+            this.expect(TokenType.CloseCurly);
+
+            const fnImpls = allMethods.filter(
+                (m): m is FnItem => m instanceof FnItem,
+            );
+            const traitName = firstType.name;
+            const traitItem =
+                this.parsedTraits.get(traitName) ??
+                new TraitItem(firstType.span, traitName, []);
+            if (!this.parsedTraits.has(traitName)) {
+                this.errors.push({
+                    message: `Trait \`${traitName}\` not found`,
+                    line: startTok.line,
+                    column: startTok.column,
+                });
+            }
+            return new TraitImplItem(
+                this.spanFrom(startTok),
+                traitName,
+                traitItem,
+                target,
+                fnImpls,
+            );
+        }
+
+        // impl Type { ... }
         this.skipWhereClause();
         this.expect(TokenType.OpenCurly);
-
         const methods: (FnItem | GenericFnItem)[] = [];
         while (
             !this.check(TokenType.CloseCurly) &&
@@ -1003,9 +1047,8 @@ class Parser {
         ) {
             this.parseImplMember(methods);
         }
-
         this.expect(TokenType.CloseCurly);
-        return new ImplItem(this.spanFrom(startTok), target, methods);
+        return new ImplItem(this.spanFrom(startTok), firstType, methods);
     }
 
     private parseImplMember(methods: (FnItem | GenericFnItem)[]): void {
@@ -1097,7 +1140,9 @@ class Parser {
         }
 
         this.expect(TokenType.CloseCurly);
-        return new TraitItem(this.spanFrom(startTok), name, methods);
+        const item = new TraitItem(this.spanFrom(startTok), name, methods);
+        this.parsedTraits.set(name, item);
+        return item;
     }
 
     // -----------------------------------------------------------------------

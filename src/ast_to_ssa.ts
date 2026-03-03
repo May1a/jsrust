@@ -1503,7 +1503,7 @@ export class AstToSsaCtx {
         valueId: ValueId,
     ): FormatTag | undefined {
         const valueType = this.resolveValueType(valueId);
-        if (valueType === undefined) {
+        if (!valueType) {
             return undefined;
         }
         if (valueType.kind === IRTypeKind.Bool) {
@@ -2367,7 +2367,11 @@ function seedStructMetadataForItems(
     const qualify = (name: string): string =>
         modulePrefix ? `${modulePrefix}::${name}` : name;
 
-    const registerStruct = (name: string, fields: string[], fieldTypes: IRType[]): void => {
+    const registerStruct = (
+        name: string,
+        fields: string[],
+        fieldTypes: IRType[],
+    ): void => {
         structFieldNames.set(name, fields);
         if (!irModule.structs.has(name)) {
             irModule.structs.set(name, makeIRStructType(name, fieldTypes));
@@ -2403,7 +2407,12 @@ function seedStructMetadata(
     irModule: IRModule,
     structFieldNames: Map<string, string[]>,
 ): void {
-    seedStructMetadataForItems(moduleNode.items, irModule, structFieldNames, "");
+    seedStructMetadataForItems(
+        moduleNode.items,
+        irModule,
+        structFieldNames,
+        "",
+    );
 }
 
 function seedEnumMetadata(
@@ -2468,8 +2477,15 @@ function collectItemFunctionIds(
         return;
     }
     if (item instanceof TraitImplItem) {
+        const targetName = item.target.name;
         for (const method of item.fnImpls) {
             fnIdMap.set(method.name, hashName(method.name));
+            if (targetName) {
+                fnIdMap.set(
+                    `${targetName}::${method.name}`,
+                    hashName(method.name),
+                );
+            }
         }
         return;
     }
@@ -2498,7 +2514,10 @@ function collectImplFunctionIds(
         fnIdMap.set(method.name, hashName(method.name));
         fnIdMap.set(`${implTarget}::${method.name}`, hashName(method.name));
         if (qImplTarget !== implTarget) {
-            fnIdMap.set(`${qImplTarget}::${method.name}`, hashName(method.name));
+            fnIdMap.set(
+                `${qImplTarget}::${method.name}`,
+                hashName(method.name),
+            );
         }
     }
 }
@@ -2620,11 +2639,7 @@ function lowerImplMethods(
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
 ): void {
-    const implTarget =
-        item.target instanceof NamedTypeNode ? item.target.name : "Self";
-    if (implTarget === "Vec") {
-        return;
-    }
+    const implTarget = item.target.name;
     for (const method of item.methods) {
         if (method instanceof GenericFnItem) {
             continue;
@@ -2678,17 +2693,19 @@ function lowerModuleItem(
         return;
     }
     if (item instanceof TraitImplItem) {
+        const implTarget =
+            item.target instanceof NamedTypeNode ? item.target.name : "Self";
         for (const method of item.fnImpls) {
-            if (method.body) {
-                lowerOwnedFunction(
-                    method,
-                    irModule,
-                    structFieldNames,
-                    enumVariantTags,
-                    fnIdMap,
-                    monoRegistry,
-                );
-            }
+            if (!method.body) continue;
+            ensureImplStructMetadata(irModule, structFieldNames, implTarget);
+            lowerOwnedFunction(
+                rewriteSelfInMethod(method, implTarget),
+                irModule,
+                structFieldNames,
+                enumVariantTags,
+                fnIdMap,
+                monoRegistry,
+            );
         }
         return;
     }

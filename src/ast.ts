@@ -820,7 +820,7 @@ export class TraitItem extends Item {
 
 export class TraitImplItem extends Item {
     readonly name: string;
-    readonly target: TypeNode;
+    readonly target: NamedTypeNode;
     readonly trait: TraitItem;
     readonly fnImpls: FnItem[];
 
@@ -828,7 +828,7 @@ export class TraitImplItem extends Item {
         span: Span,
         name: string,
         trait: TraitItem,
-        target: TypeNode,
+        target: NamedTypeNode,
         fnImpls: FnItem[],
     ) {
         super(span);
