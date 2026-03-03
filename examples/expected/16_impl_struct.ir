@@ -1,5 +1,9 @@
 module main {
 
+  strings {
+    s0 = "({}, {})"
+  }
+
   struct Point { i32, i32 }
 
   struct Self { i32, i32 }
@@ -69,6 +73,14 @@ module main {
       v55: struct Point      = call f96417(v46, v51)
       v56: ptr<struct Point> = alloca struct Point
       store v55 -> v56
+      v58: ptr               = sconst s0
+      v59: struct Point      = load v56
+      v60: i32               = struct_get v59.0
+      v61: i64               = iconst 1
+      v62: struct Point      = load v56
+      v63: i32               = struct_get v62.1
+      v64: i64               = iconst 1
+      call f862609(v58, v61, v60, v64, v63)
       ret
   }
 

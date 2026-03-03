@@ -737,10 +737,21 @@ function inferLetStmt(
 
 // --- Function Body Inference ---
 
+/**
+ * Resolve `Self` to the concrete impl target type, if known.
+ */
+function resolveSelf(ty: TypeNode, selfTypeName: string | undefined): TypeNode {
+    if (selfTypeName && ty instanceof NamedTypeNode && ty.name === "Self") {
+        return new NamedTypeNode(ty.span, selfTypeName);
+    }
+    return ty;
+}
+
 function inferFnBody(
     typeCtx: TypeContext,
     fnItem: FnItem | GenericFnItem,
     errors: TypeError[],
+    selfTypeName?: string,
 ): void {
     if (fnItem.body === undefined) return;
 
@@ -754,23 +765,28 @@ function inferFnBody(
     // Infer body statements
     inferStatements(typeCtx, fnItem.body.stmts, errors);
 
-    // If there's a tail expression, check it against the return type
-    if (fnItem.body.expr !== undefined) {
+    // If there's a tail expression, check it against the return type.
+    // Resolve `Self` to the concrete impl target type so that e.g.
+    // `-> Self` and a tail expression of type `Point` compare equal.
+    if (fnItem.body.expr) {
         const tailTy = inferExprType(typeCtx, fnItem.body.expr, errors);
+        const declaredReturnType = resolveSelf(fnItem.returnType, selfTypeName);
+        const resolvedTailTy = tailTy
+            ? resolveSelf(tailTy, selfTypeName)
+            : undefined;
         if (
-            tailTy !== undefined &&
-            !isInferredPlaceholder(fnItem.returnType) &&
-            !isInferredPlaceholder(tailTy)
+            resolvedTailTy &&
+            !isInferredPlaceholder(declaredReturnType) &&
+            !isInferredPlaceholder(resolvedTailTy)
         ) {
-            if (!typesEqual(fnItem.returnType, tailTy)) {
+            if (!typesEqual(declaredReturnType, resolvedTailTy)) {
                 errors.push({
-                    message: `Mismatched return type: expected \`${typeToString(fnItem.returnType)}\`, found \`${typeToString(tailTy)}\``,
+                    message: `Mismatched return type: expected \`${typeToString(declaredReturnType)}\`, found \`${typeToString(resolvedTailTy)}\``,
                     span: fnItem.body.expr.span,
                 });
             }
         }
     }
-
     typeCtx.popScope();
 }
 
@@ -849,6 +865,30 @@ function validateFnTypes(
     return errors;
 }
 
+// --- Impl Item Inference ---
+
+function inferImplItem(typeCtx: TypeContext, item: ImplItem): TypeError[] {
+    const errors: TypeError[] = [];
+
+    // Register 'Self' as an alias for the impl target struct so that
+    // 'Self { ... }' literals and 'Self' types within method bodies resolve correctly.
+    const selfTypeName = item.target.name;
+    const targetFields = typeCtx.lookupStructFields(selfTypeName);
+    if (targetFields) {
+        typeCtx.registerStructFields("Self", targetFields);
+    }
+
+    for (const method of item.methods) {
+        errors.push(...validateFnTypes(typeCtx, method));
+        if (method instanceof FnItem) {
+            inferFnBody(typeCtx, method, errors, selfTypeName);
+        }
+        // Skip deep body inference for generic methods
+    }
+
+    return errors;
+}
+
 // --- Module-Level Inference ---
 
 export function inferModule(
@@ -894,21 +934,7 @@ export function inferModule(
             }
         }
         if (item instanceof ImplItem) {
-            // Register 'Self' as an alias for the impl target struct so that
-            // 'Self { ... }' literals and 'Self' types within method bodies resolve correctly.
-            if (item.target instanceof NamedTypeNode) {
-                const targetFields = typeCtx.lookupStructFields(item.target.name);
-                if (targetFields !== undefined) {
-                    typeCtx.registerStructFields("Self", targetFields);
-                }
-            }
-            for (const method of item.methods) {
-                errors.push(...validateFnTypes(typeCtx, method));
-                if (method instanceof FnItem) {
-                    inferFnBody(typeCtx, method, errors);
-                }
-                // Skip deep body inference for generic methods
-            }
+            errors.push(...inferImplItem(typeCtx, item));
         }
     }
 
