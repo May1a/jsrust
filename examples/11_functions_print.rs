@@ -1,6 +1,6 @@
 
-pub fn test(_to_print: &str) {
-    println!("Hello, world!");
+pub fn test(to_print: &str) {
+    println!("{}", to_print);
 }
 
 #[test]

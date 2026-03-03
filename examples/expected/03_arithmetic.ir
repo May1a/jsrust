@@ -2,30 +2,30 @@ module main {
 
   fn f0 test_example() -> () {
     b0 (entry):
-      v1: i32            = iconst 10
-      v2: i32            = iconst 5
-      v3: i32            = iadd v1, v2
-      v4: ptr<struct _>  = alloca struct _
+      v1: i32       = iconst 10
+      v2: i32       = iconst 5
+      v3: i32       = iadd v1, v2
+      v4: ptr<i32>  = alloca i32
       store v3 -> v4
-      v6: struct _       = load v4
-      v7: i32            = iconst 2
-      v8: i32            = imul v6, v7
-      v9: ptr<struct _>  = alloca struct _
+      v6: i32       = load v4
+      v7: i32       = iconst 2
+      v8: i32       = imul v6, v7
+      v9: ptr<i32>  = alloca i32
       store v8 -> v9
-      v11: struct _      = load v9
-      v12: i32           = iconst 3
-      v13: i32           = isub v11, v12
-      v14: ptr<struct _> = alloca struct _
+      v11: i32      = load v9
+      v12: i32      = iconst 3
+      v13: i32      = isub v11, v12
+      v14: ptr<i32> = alloca i32
       store v13 -> v14
-      v16: struct _      = load v14
-      v17: i32           = iconst 2
-      v18: i32           = idiv v16, v17
-      v19: ptr<struct _> = alloca struct _
+      v16: i32      = load v14
+      v17: i32      = iconst 2
+      v18: i32      = idiv v16, v17
+      v19: ptr<i32> = alloca i32
       store v18 -> v19
-      v21: struct _      = load v19
-      v22: i32           = iconst 4
-      v23: i32           = imod v21, v22
-      v24: ptr<struct _> = alloca struct _
+      v21: i32      = load v19
+      v22: i32      = iconst 4
+      v23: i32      = imod v21, v22
+      v24: ptr<i32> = alloca i32
       store v23 -> v24
       ret
   }

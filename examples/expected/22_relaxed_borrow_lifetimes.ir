@@ -11,23 +11,23 @@ module main {
   fn f5 test_example() -> () {
     b0 (entry):
       v6: i32            = iconst 1
-      v7: ptr<struct _>  = alloca struct _
+      v7: ptr<i32>       = alloca i32
       store v6 -> v7
-      v9: struct _       = load v7
-      v10: ptr<struct _> = alloca struct _
+      v9: i32            = load v7
+      v10: ptr<ptr<i32>> = alloca ptr<i32>
       store v7 -> v10
-      v12: struct _      = load v7
-      v13: ptr<struct _> = alloca struct _
+      v12: i32           = load v7
+      v13: ptr<ptr<i32>> = alloca ptr<i32>
       store v7 -> v13
-      v15: struct _      = load v10
+      v15: ptr<i32>      = load v10
       v16: i64           = iconst 789996
       v17: i64           = load v16
       v18: i64           = call_dyn f17(v15)
-      v19: ptr<struct _> = alloca struct _
+      v19: ptr<i64>      = alloca i64
       store v18 -> v19
-      v21: struct _      = load v13
+      v21: ptr<i32>      = load v13
       v22: i64           = load v21
-      v23: ptr<struct _> = alloca struct _
+      v23: ptr<i64>      = alloca i64
       store v22 -> v23
       ret
   }

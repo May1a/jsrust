@@ -6,17 +6,17 @@ module main {
 
   fn f0 test_example() -> () {
     b0 (entry):
-      v1: i32            = iconst 42
-      v2: ptr<struct _>  = alloca struct _
+      v1: i32       = iconst 42
+      v2: ptr<i32>  = alloca i32
       store v1 -> v2
-      v4: f64            = fconst 3.14
-      v5: ptr<struct _>  = alloca struct _
+      v4: f64       = fconst 3.14
+      v5: ptr<f64>  = alloca f64
       store v4 -> v5
-      v7: bool           = bconst true
-      v8: ptr<struct _>  = alloca struct _
+      v7: bool      = bconst true
+      v8: ptr<bool> = alloca bool
       store v7 -> v8
-      v10: ptr           = sconst s0
-      v11: ptr<struct _> = alloca struct _
+      v10: ptr      = sconst s0
+      v11: ptr<ptr> = alloca ptr
       store v10 -> v11
       ret
   }

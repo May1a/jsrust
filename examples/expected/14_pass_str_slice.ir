@@ -18,11 +18,11 @@ module main {
 
   fn f8 test_example() -> () {
     b0 (entry):
-      v9: ptr            = sconst s1
-      v10: ptr<struct _> = alloca struct _
+      v9: ptr       = sconst s1
+      v10: ptr<ptr> = alloca ptr
       store v9 -> v10
-      v12: struct _      = load v10
-      v13: i64           = call f951474(v12)
+      v12: ptr      = load v10
+      v13: i64      = call f951474(v12)
       ret
   }
 

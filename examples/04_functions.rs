@@ -5,4 +5,5 @@ fn add(a: i32, b: i32) -> i32 {
 #[test]
 fn test_example() {
     let x = add(2, 3);
+    println!("{}", x);
 }

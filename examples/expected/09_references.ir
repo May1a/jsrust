@@ -3,14 +3,14 @@ module main {
   fn f0 test_example() -> () {
     b0 (entry):
       v1: i32           = iconst 10
-      v2: ptr<struct _> = alloca struct _
+      v2: ptr<i32>      = alloca i32
       store v1 -> v2
-      v4: struct _      = load v2
-      v5: ptr<struct _> = alloca struct _
+      v4: i32           = load v2
+      v5: ptr<ptr<i32>> = alloca ptr<i32>
       store v2 -> v5
-      v7: struct _      = load v5
+      v7: ptr<i32>      = load v5
       v8: i64           = load v7
-      v9: ptr<struct _> = alloca struct _
+      v9: ptr<i64>      = alloca i64
       store v8 -> v9
       ret
   }

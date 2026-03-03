@@ -7,40 +7,40 @@ module main {
 
   fn f0 test_example() -> () {
     b0 (entry):
-      v1: ptr            = sconst s0
-      v2: ptr<struct _>  = alloca struct _
+      v1: ptr        = sconst s0
+      v2: ptr<ptr>   = alloca ptr
       store v1 -> v2
-      v4: ptr            = sconst s1
-      v5: struct _       = load v2
-      v6: i64            = iconst 0
+      v4: ptr        = sconst s1
+      v5: ptr        = load v2
+      v6: i64        = iconst 0
       call f862609(v4, v6, v5)
-      v8: i32            = iconst 42
-      v9: ptr<struct _>  = alloca struct _
+      v8: i32        = iconst 42
+      v9: ptr<i32>   = alloca i32
       store v8 -> v9
-      v11: ptr           = sconst s1
-      v12: struct _      = load v9
-      v13: i64           = iconst 1
+      v11: ptr       = sconst s1
+      v12: i32       = load v9
+      v13: i64       = iconst 1
       call f862609(v11, v13, v12)
-      v15: f64           = fconst 3.14
-      v16: ptr<struct _> = alloca struct _
+      v15: f64       = fconst 3.14
+      v16: ptr<f64>  = alloca f64
       store v15 -> v16
-      v18: ptr           = sconst s1
-      v19: struct _      = load v16
-      v20: i64           = iconst 2
+      v18: ptr       = sconst s1
+      v19: f64       = load v16
+      v20: i64       = iconst 2
       call f862609(v18, v20, v19)
-      v22: bool          = bconst true
-      v23: ptr<struct _> = alloca struct _
+      v22: bool      = bconst true
+      v23: ptr<bool> = alloca bool
       store v22 -> v23
-      v25: ptr           = sconst s1
-      v26: struct _      = load v23
-      v27: i64           = iconst 3
+      v25: ptr       = sconst s1
+      v26: bool      = load v23
+      v27: i64       = iconst 3
       call f862609(v25, v27, v26)
-      v29: u32           = iconst 97
-      v30: ptr<struct _> = alloca struct _
+      v29: u32       = iconst 97
+      v30: ptr<u32>  = alloca u32
       store v29 -> v30
-      v32: ptr           = sconst s1
-      v33: struct _      = load v30
-      v34: i64           = iconst 4
+      v32: ptr       = sconst s1
+      v33: u32       = load v30
+      v34: i64       = iconst 4
       call f862609(v32, v34, v33)
       ret
   }

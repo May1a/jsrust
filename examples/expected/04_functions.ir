@@ -1,5 +1,9 @@
 module main {
 
+  strings {
+    s0 = "{}"
+  }
+
   fn f0 add(v1 arg0: i32, v2 arg1: i32) -> i32 {
     b0 (entry):
       v3: ptr<i32> = alloca i32
@@ -14,11 +18,15 @@ module main {
 
   fn f10 test_example() -> () {
     b0 (entry):
-      v11: i32           = iconst 2
-      v12: i32           = iconst 3
-      v13: i64           = call f96417(v11, v12)
-      v14: ptr<struct _> = alloca struct _
+      v11: i32      = iconst 2
+      v12: i32      = iconst 3
+      v13: i64      = call f96417(v11, v12)
+      v14: ptr<i64> = alloca i64
       store v13 -> v14
+      v16: ptr      = sconst s0
+      v17: i64      = load v14
+      v18: i64      = iconst 1
+      call f862609(v16, v18, v17)
       ret
   }
 

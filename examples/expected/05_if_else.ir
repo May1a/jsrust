@@ -10,16 +10,16 @@ module main {
       br_if v1, then: b1, else: b2
   
     b1 (if_then):
-      v3: i32 = iconst 1
-      br b3(v3)
+      v2: i32 = iconst 1
+      br b3(v2)
   
     b2 (if_else):
-      v4: i32 = iconst 2
-      br b3(v4)
+      v3: i32 = iconst 2
+      br b3(v3)
   
-    b3(v2: i32) (if_merge):
+    b3(v4: i32) (if_merge):
       v5: ptr<i32> = alloca i32
-      store v2 -> v5
+      store v4 -> v5
       v7: ptr      = sconst s0
       v8: i32      = load v5
       v9: i64      = iconst 1

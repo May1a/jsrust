@@ -1,28 +1,36 @@
 module main {
 
+  strings {
+    s0 = "{}"
+  }
+
   fn f0 test_example() -> () {
     b0 (entry):
-      v1: i32           = iconst 0
-      v2: ptr<struct _> = alloca struct _
+      v1: i32      = iconst 0
+      v2: ptr<i32> = alloca i32
       store v1 -> v2
       br b1
   
     b1 (while_header):
-      v4: struct _ = load v2
-      v5: i32      = iconst 3
-      v6: bool     = icmp.slt v4, v5
+      v4: i32  = load v2
+      v5: i32  = iconst 3
+      v6: bool = icmp.slt v4, v5
       br_if v6, then: b2, else: b3
   
     b2 (while_body):
-      v7: struct _ = load v2
-      v8: i32      = iconst 1
-      v9: i32      = iadd v7, v8
+      v7: i32 = load v2
+      v8: i32 = iconst 1
+      v9: i32 = iadd v7, v8
       store v9 -> v2
       br b1
   
     b3 (while_exit):
-      v11: i8 = iconst 0
-      ret v11
+      v11: i8  = iconst 0
+      v12: ptr = sconst s0
+      v13: i32 = load v2
+      v14: i64 = iconst 1
+      call f862609(v12, v14, v13)
+      ret
   }
 
 }
