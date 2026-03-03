@@ -49,6 +49,7 @@ const stricterRules: DummyRuleMap = {
     "unicorn/no-unreadable-iife": "error",
     "unicorn/no-useless-switch-case": "error",
     "unicorn/no-useless-undefined": ["error", { checkArguments: false }],
+    "no-self-compare": "error",
 };
 
 const categoriesEnable: RuleCategories = {
