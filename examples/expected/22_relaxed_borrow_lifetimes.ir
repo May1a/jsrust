@@ -20,7 +20,7 @@ module main {
       v13: ptr<ptr<i32>> = alloca ptr<i32>
       store v7 -> v13
       v15: ptr<i32>      = load v10
-      v16: i64           = call f789996(v15)
+      v16: ptr<i32>      = call f789996(v15)
       v17: i64           = load v16
       v18: ptr<i64>      = alloca i64
       store v17 -> v18

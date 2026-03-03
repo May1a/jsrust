@@ -844,20 +844,17 @@ export class TraitImplItem extends Item {
 }
 
 export class ImplItem extends Item {
-    readonly target: TypeNode;
+    readonly target: NamedTypeNode;
     readonly methods: (FnItem | GenericFnItem)[];
-    readonly traitType?: TypeNode;
 
     constructor(
         span: Span,
-        target: TypeNode,
+        target: NamedTypeNode,
         methods: (FnItem | GenericFnItem)[],
-        traitType?: TypeNode,
     ) {
         super(span);
         this.target = target;
         this.methods = methods;
-        this.traitType = traitType;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
@@ -1136,9 +1133,7 @@ export function walkAst(node: Node, fn: (node: Node) => void): void {
             }
         } else if (value && typeof value === "object") {
             for (const key in value) {
-                if (!Object.hasOwn(value, key)) {
-                    continue;
-                }
+                if (!Object.hasOwn(value, key)) continue;
                 walkValue(Reflect.get(value, key));
             }
         }
@@ -1173,7 +1168,7 @@ export interface ParamNode {
     ty: TypeNode;
     defaultValue?: Expression;
     isReceiver: boolean;
-    receiverKind?: "value" | "ref" | "ref_mut";
+    receiverKind?: ReceiverKind;
 }
 
 export class PathExpr extends IdentifierExpr {

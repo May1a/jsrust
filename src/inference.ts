@@ -746,9 +746,8 @@ function inferFnBody(
 
     typeCtx.pushScope();
 
-    // Bind parameters into scope
+    // Bind parameters into scope (including receiver params like `self`)
     for (const param of fnItem.params) {
-        if (param.isReceiver) continue;
         typeCtx.setVariable(param.name, param.ty);
     }
 
@@ -895,6 +894,14 @@ export function inferModule(
             }
         }
         if (item instanceof ImplItem) {
+            // Register 'Self' as an alias for the impl target struct so that
+            // 'Self { ... }' literals and 'Self' types within method bodies resolve correctly.
+            if (item.target instanceof NamedTypeNode) {
+                const targetFields = typeCtx.lookupStructFields(item.target.name);
+                if (targetFields !== undefined) {
+                    typeCtx.registerStructFields("Self", targetFields);
+                }
+            }
             for (const method of item.methods) {
                 errors.push(...validateFnTypes(typeCtx, method));
                 if (method instanceof FnItem) {

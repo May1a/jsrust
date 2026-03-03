@@ -441,7 +441,7 @@ export function monomorphizeStruct(
 export function inferTypeArgs(
     generic: GenericFnItem,
     argTypes: (TypeNode | undefined)[],
-    explicitTypeArgs: TypeNode[] | undefined,
+    explicitTypeArgs?: TypeNode[],
 ): SubstitutionMap | undefined {
     const subs: SubstitutionMap = new Map();
 

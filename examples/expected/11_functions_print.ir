@@ -22,7 +22,7 @@ module main {
       v10: ptr<ptr> = alloca ptr
       store v9 -> v10
       v12: ptr      = load v10
-      v13: i64      = call f556498(v12)
+      call f556498(v12)
       ret
   }
 

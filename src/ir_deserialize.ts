@@ -1,4 +1,4 @@
-import { type Result, err, ok } from "./diagnostics";
+import { type Result, err, ok, okVoid } from "./diagnostics";
 
 import {
     AllocaInst,
@@ -521,7 +521,7 @@ class IRDeserializer {
             });
         }
 
-        return ok(undefined);
+        return okVoid();
     }
 
     readConstant(
@@ -537,14 +537,26 @@ class IRDeserializer {
             case IRTypeKind.Bool: {
                 return ok(this.readU8() !== 0);
             }
-            default: {
-                return err({
-                    kind: DeserializeErrorKind.InvalidTypeTag,
-                    message: `Invalid constant type: ${ty.kind}`,
-                    pos: this.pos,
-                });
+            case IRTypeKind.Ptr: {
+                throw new Error("Not implemented yet: IRTypeKind.Ptr case");
+            }
+            case IRTypeKind.Unit: {
+                throw new Error("Not implemented yet: IRTypeKind.Unit case");
+            }
+            case IRTypeKind.Struct: {
+                throw new Error("Not implemented yet: IRTypeKind.Struct case");
+            }
+            case IRTypeKind.Enum: {
+                throw new Error("Not implemented yet: IRTypeKind.Enum case");
+            }
+            case IRTypeKind.Array: {
+                throw new Error("Not implemented yet: IRTypeKind.Array case");
+            }
+            case IRTypeKind.Fn: {
+                throw new Error("Not implemented yet: IRTypeKind.Fn case");
             }
         }
+        throw new Error("unreachable");
     }
 
     readFunctionsSection(module: IRModule): Result<void, DeserializeError> {
@@ -558,7 +570,7 @@ class IRDeserializer {
             addIRFunction(module, fnResult.value);
         }
 
-        return ok(undefined);
+        return okVoid();
     }
 
     readFunction(): Result<IRFunction, DeserializeError> {
@@ -643,7 +655,7 @@ class IRDeserializer {
     readInstruction(): Result<IRInst, DeserializeError> {
         const opcodeValue = this.readU8();
         const opcode = fromBinaryInstKind(opcodeValue);
-        if (typeof opcode === "undefined") {
+        if (opcode === undefined) {
             return err({
                 kind: DeserializeErrorKind.InvalidOpcode,
                 message: `Invalid instruction opcode: ${opcodeValue}`,
@@ -1381,7 +1393,7 @@ class IRDeserializer {
                 return new FdivInst(id, ty, left, right);
             }
             default: {
-                throw new Error(`Unsupported float opcode: ${opcode}`);
+                throw new Error("Assert: Instruction not implemented");
             }
         }
     }

@@ -33,6 +33,7 @@ import {
     ModItem,
     type ModuleNode,
     NamedTypeNode,
+    type ParamNode,
     PtrTypeNode,
     type RangeExpr,
     type RefExpr,
@@ -51,6 +52,7 @@ import {
     type AstVisitor,
     Mutability,
     walkAst,
+    ReceiverKind,
 } from "./ast";
 import {
     MonomorphizationRegistry,
@@ -217,8 +219,10 @@ export class AstToSsaCtx {
         this.irModule = options.irModule ?? makeIRModule("main");
         this.locals = new Map();
         this.functionIds = new Map();
-        this.structFieldNames = options.structFieldNames ?? new Map();
-        this.enumVariantTags = options.enumVariantTags ?? new Map();
+        this.structFieldNames =
+            options.structFieldNames ?? new Map<string, string[]>();
+        this.enumVariantTags =
+            options.enumVariantTags ?? new Map<string, number>();
         this.monoRegistry = options.monoRegistry;
         this.loopStack = [];
         this.currentReturnType = makeIRUnitType();
@@ -261,7 +265,7 @@ export class AstToSsaCtx {
         }
 
         if (!this.isCurrentBlockTerminated()) {
-            if (typeof bodyResult.value !== "undefined") {
+            if (bodyResult.value !== undefined) {
                 this.builder.ret(bodyResult.value);
             } else if (this.currentTypeKind() === IRTypeKind.Unit) {
                 this.builder.ret();
@@ -282,9 +286,6 @@ export class AstToSsaCtx {
     ): Result<{ name?: string; ty: TypeNode }[], LoweringError> {
         const params: { name?: string; ty: TypeNode }[] = [];
         for (const param of fnDecl.params) {
-            if (param.isReceiver) {
-                continue;
-            }
             params.push({ name: param.name, ty: param.ty });
         }
         return ok(params);
@@ -330,7 +331,7 @@ export class AstToSsaCtx {
             }
         }
 
-        if (typeof block.expr === "undefined") {
+        if (!block.expr) {
             return ok(undefined);
         }
 
@@ -370,7 +371,7 @@ export class AstToSsaCtx {
             let ty = AstToSsaCtx.translateTypeNode(stmt.type);
             if (this.isImplicitUnitTypeNode(stmt.type)) {
                 const inferred = this.resolveValueType(initResult.value);
-                if (typeof inferred !== "undefined") {
+                if (inferred !== undefined) {
                     ty = inferred;
                 }
             }
@@ -425,7 +426,7 @@ export class AstToSsaCtx {
                 if (!blockResult.ok) {
                     return blockResult;
                 }
-                if (typeof blockResult.value === "undefined") {
+                if (blockResult.value === undefined) {
                     return ok(this.unitValue());
                 }
                 return ok(blockResult.value);
@@ -575,7 +576,7 @@ export class AstToSsaCtx {
         expr: IdentifierExpr,
     ): Result<ValueId, LoweringError> {
         const binding = this.locals.get(expr.name);
-        if (typeof binding !== "undefined") {
+        if (binding !== undefined) {
             const loadInst = this.builder.load(binding.ptr, binding.ty);
             return AstToSsaCtx.handleInstructionId(loadInst.id);
         }
@@ -619,7 +620,7 @@ export class AstToSsaCtx {
         }
 
         const binding = this.locals.get(expr.target.name);
-        if (typeof binding === "undefined") {
+        if (binding === undefined) {
             return loweringError(
                 LoweringErrorKind.UnknownVariable,
                 `Unknown variable '${expr.target.name}'`,
@@ -740,6 +741,45 @@ export class AstToSsaCtx {
             case BinaryOp.Rem: {
                 return this.handleRemOperation(left, right);
             }
+            case BinaryOp.Eq: {
+                throw new Error("Not implemented yet: BinaryOp.Eq case");
+            }
+            case BinaryOp.Ne: {
+                throw new Error("Not implemented yet: BinaryOp.Ne case");
+            }
+            case BinaryOp.Lt: {
+                throw new Error("Not implemented yet: BinaryOp.Lt case");
+            }
+            case BinaryOp.Le: {
+                throw new Error("Not implemented yet: BinaryOp.Le case");
+            }
+            case BinaryOp.Gt: {
+                throw new Error("Not implemented yet: BinaryOp.Gt case");
+            }
+            case BinaryOp.Ge: {
+                throw new Error("Not implemented yet: BinaryOp.Ge case");
+            }
+            case BinaryOp.And: {
+                throw new Error("Not implemented yet: BinaryOp.And case");
+            }
+            case BinaryOp.Or: {
+                throw new Error("Not implemented yet: BinaryOp.Or case");
+            }
+            case BinaryOp.BitXor: {
+                throw new Error("Not implemented yet: BinaryOp.BitXor case");
+            }
+            case BinaryOp.BitAnd: {
+                throw new Error("Not implemented yet: BinaryOp.BitAnd case");
+            }
+            case BinaryOp.BitOr: {
+                throw new Error("Not implemented yet: BinaryOp.BitOr case");
+            }
+            case BinaryOp.Shl: {
+                throw new Error("Not implemented yet: BinaryOp.Shl case");
+            }
+            case BinaryOp.Shr: {
+                throw new Error("Not implemented yet: BinaryOp.Shr case");
+            }
             default: {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
@@ -775,6 +815,42 @@ export class AstToSsaCtx {
             case BinaryOp.Ge: {
                 return this.handleGeOperation(left, right, isFloat);
             }
+            case BinaryOp.Add: {
+                throw new Error("Not implemented yet: BinaryOp.Add case");
+            }
+            case BinaryOp.Sub: {
+                throw new Error("Not implemented yet: BinaryOp.Sub case");
+            }
+            case BinaryOp.Mul: {
+                throw new Error("Not implemented yet: BinaryOp.Mul case");
+            }
+            case BinaryOp.Div: {
+                throw new Error("Not implemented yet: BinaryOp.Div case");
+            }
+            case BinaryOp.Rem: {
+                throw new Error("Not implemented yet: BinaryOp.Rem case");
+            }
+            case BinaryOp.And: {
+                throw new Error("Not implemented yet: BinaryOp.And case");
+            }
+            case BinaryOp.Or: {
+                throw new Error("Not implemented yet: BinaryOp.Or case");
+            }
+            case BinaryOp.BitXor: {
+                throw new Error("Not implemented yet: BinaryOp.BitXor case");
+            }
+            case BinaryOp.BitAnd: {
+                throw new Error("Not implemented yet: BinaryOp.BitAnd case");
+            }
+            case BinaryOp.BitOr: {
+                throw new Error("Not implemented yet: BinaryOp.BitOr case");
+            }
+            case BinaryOp.Shl: {
+                throw new Error("Not implemented yet: BinaryOp.Shl case");
+            }
+            case BinaryOp.Shr: {
+                throw new Error("Not implemented yet: BinaryOp.Shr case");
+            }
             default: {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
@@ -807,6 +883,39 @@ export class AstToSsaCtx {
             }
             case BinaryOp.Shr: {
                 return this.handleShrOperation(left, right);
+            }
+            case BinaryOp.Add: {
+                throw new Error("Not implemented yet: BinaryOp.Add case");
+            }
+            case BinaryOp.Sub: {
+                throw new Error("Not implemented yet: BinaryOp.Sub case");
+            }
+            case BinaryOp.Mul: {
+                throw new Error("Not implemented yet: BinaryOp.Mul case");
+            }
+            case BinaryOp.Div: {
+                throw new Error("Not implemented yet: BinaryOp.Div case");
+            }
+            case BinaryOp.Rem: {
+                throw new Error("Not implemented yet: BinaryOp.Rem case");
+            }
+            case BinaryOp.Eq: {
+                throw new Error("Not implemented yet: BinaryOp.Eq case");
+            }
+            case BinaryOp.Ne: {
+                throw new Error("Not implemented yet: BinaryOp.Ne case");
+            }
+            case BinaryOp.Lt: {
+                throw new Error("Not implemented yet: BinaryOp.Lt case");
+            }
+            case BinaryOp.Le: {
+                throw new Error("Not implemented yet: BinaryOp.Le case");
+            }
+            case BinaryOp.Gt: {
+                throw new Error("Not implemented yet: BinaryOp.Gt case");
+            }
+            case BinaryOp.Ge: {
+                throw new Error("Not implemented yet: BinaryOp.Ge case");
             }
             default: {
                 return loweringError(
@@ -1232,11 +1341,18 @@ export class AstToSsaCtx {
     }
 
     private resolveNamedCallReturnType(name: string, fallback: IRType): IRType {
+        // Derive the unqualified function name (e.g. "Point::create" → "create").
         const parts = name.split("::");
-        const lastPart = parts[parts.length - 1];
-        if (parts.length > 1 && lastPart === "new") {
-            return makeIRStructType(parts[0], []);
+        const unqualifiedName = parts[parts.length - 1];
+
+        // Look up the return type of the already-lowered function.
+        const fn = this.irModule.functions.find(
+            (f) => f.name === unqualifiedName,
+        );
+        if (fn) {
+            return fn.returnType;
         }
+
         return fallback;
     }
 
@@ -1306,7 +1422,7 @@ export class AstToSsaCtx {
                 valueExpr,
                 lowered.value,
             );
-            if (typeof formatTag === "undefined") {
+            if (formatTag === undefined) {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
                     `unsupported value in \`${expr.name}!\` formatting`,
@@ -1366,7 +1482,7 @@ export class AstToSsaCtx {
         valueId: ValueId,
     ): FormatTag | undefined {
         const fromExpr = this.inferExpressionFormatTag(expr);
-        if (typeof fromExpr !== "undefined") {
+        if (fromExpr !== undefined) {
             return fromExpr;
         }
         return this.inferFormatTagFromValueType(valueId);
@@ -1387,7 +1503,7 @@ export class AstToSsaCtx {
         valueId: ValueId,
     ): FormatTag | undefined {
         const valueType = this.resolveValueType(valueId);
-        if (typeof valueType === "undefined") {
+        if (valueType === undefined) {
             return undefined;
         }
         if (valueType.kind === IRTypeKind.Bool) {
@@ -1499,11 +1615,20 @@ export class AstToSsaCtx {
         let baseType = this.resolveValueType(baseValue);
         if (baseType instanceof PtrType) {
             const { inner } = baseType;
-            if (inner.kind === IRTypeKind.Struct) {
-                const deref = this.builder.load(baseValue, inner);
+            if (inner instanceof StructType) {
+                // Resolve the full struct type from the module registry, since
+                // Types translated from TypeNodes may have empty field lists.
+                const resolvedInner =
+                    this.irModule.structs.get(inner.name) ?? inner;
+                const deref = this.builder.load(baseValue, resolvedInner);
                 baseValue = deref.id;
-                baseType = inner;
+                baseType = resolvedInner;
             }
+        }
+        // Resolve the full struct type from the module registry when the type
+        // Has empty field lists (e.g. from translated TypeNodes).
+        if (baseType instanceof StructType) {
+            baseType = this.irModule.structs.get(baseType.name) ?? baseType;
         }
         if (!(baseType instanceof StructType)) {
             return loweringError(
@@ -1743,7 +1868,7 @@ export class AstToSsaCtx {
     }
 
     private lowerReturn(expr: ReturnExpr): Result<ValueId, LoweringError> {
-        if (typeof expr.value === "undefined") {
+        if (expr.value === undefined) {
             this.builder.ret();
             return ok(this.unitValue());
         }
@@ -1840,7 +1965,7 @@ export class AstToSsaCtx {
     static translateTypeNode(typeNode: TypeNode): IRType {
         if (typeNode instanceof NamedTypeNode) {
             const builtin = AstToSsaCtx.namedBuiltin(typeNode.name);
-            if (typeof builtin !== "undefined") {
+            if (builtin !== undefined) {
                 return AstToSsaCtx.builtinToIrType(builtin);
             }
             return makeIRStructType(typeNode.name, []);
@@ -2148,7 +2273,7 @@ export class AstToSsaCtx {
         if (!block) {
             return true;
         }
-        return typeof block.terminator !== "undefined";
+        return block.terminator !== undefined;
     }
 
     private isImplicitUnitTypeNode(typeNode: TypeNode): boolean {
@@ -2349,11 +2474,7 @@ function collectImplFunctionIds(
     item: ImplItem,
     fnIdMap: Map<string, number>,
 ): void {
-    const implTarget =
-        item.target instanceof NamedTypeNode ? item.target.name : "Self";
-    if (implTarget === "Vec") {
-        return;
-    }
+    const implTarget = item.target.name;
     for (const method of item.methods) {
         fnIdMap.set(method.name, hashName(method.name));
         fnIdMap.set(`${implTarget}::${method.name}`, hashName(method.name));
@@ -2410,27 +2531,63 @@ function ensureImplStructMetadata(
     }
 }
 
-function rewriteNewMethodReturnType(
-    method: FnItem,
-    implTarget: string,
-): FnItem {
-    const returnsUnit = isUnitNamedTypeNode(method.returnType);
-    if (method.name !== "new" || !returnsUnit) {
-        return method;
-    }
+function rewriteSelfInMethod(method: FnItem, implTarget: string): FnItem {
+    const rewriteType = (ty: TypeNode): TypeNode => {
+        if (ty instanceof NamedTypeNode && ty.name === "Self") {
+            return new NamedTypeNode(ty.span, implTarget);
+        }
+        if (ty instanceof RefTypeNode) {
+            return new RefTypeNode(
+                ty.span,
+                ty.mutability,
+                rewriteType(ty.inner),
+            );
+        }
+        if (ty instanceof PtrTypeNode) {
+            return new PtrTypeNode(
+                ty.span,
+                ty.mutability,
+                rewriteType(ty.inner),
+            );
+        }
+        return ty;
+    };
+
+    const newParams: ParamNode[] = method.params.map((p) => {
+        let ty = rewriteType(p.ty);
+        if (p.isReceiver) {
+            // Parser stores &self/&mut self with ty=NamedTypeNode("Self"), losing the &.
+            // Restore the reference so the IR param type matches the pointer the call site passes.
+            if (
+                p.receiverKind === ReceiverKind.ref ||
+                p.receiverKind === ReceiverKind.refMut
+            ) {
+                const mut =
+                    p.receiverKind === ReceiverKind.refMut
+                        ? Mutability.Mutable
+                        : Mutability.Immutable;
+                ty = new RefTypeNode(p.span, mut, ty);
+            }
+        }
+        return {
+            ...p,
+            // Normalize receiver name: parser produces "Self" (capital) but the body uses "self".
+            name: p.isReceiver ? "self" : p.name,
+            ty,
+        };
+    });
+
+    const newReturnType = rewriteType(method.returnType);
+
     return new FnItem(
         method.span,
         method.name,
-        method.params,
-        new NamedTypeNode(method.returnType.span, implTarget),
+        newParams,
+        newReturnType,
         method.body,
         method.derives,
         method.builtinName,
     );
-}
-
-function isUnitNamedTypeNode(typeNode: TypeNode): boolean {
-    return typeNode instanceof NamedTypeNode && typeNode.name === "unit";
 }
 
 function lowerImplMethods(
@@ -2455,7 +2612,7 @@ function lowerImplMethods(
         }
         ensureImplStructMetadata(irModule, structFieldNames, implTarget);
         lowerOwnedFunction(
-            rewriteNewMethodReturnType(method, implTarget),
+            rewriteSelfInMethod(method, implTarget),
             irModule,
             structFieldNames,
             enumVariantTags,
@@ -2625,7 +2782,7 @@ function inferCallSiteTypeArgs(
     const argTypes: (TypeNode | undefined)[] = call.args.map((arg) =>
         inferLiteralType(arg),
     );
-    return inferTypeArgs(generic, argTypes, undefined);
+    return inferTypeArgs(generic, argTypes);
 }
 
 function inferLiteralType(expr: Expression): TypeNode | undefined {

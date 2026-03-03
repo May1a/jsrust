@@ -645,7 +645,8 @@ export class IRSerializer {
             visitAllocaInst: (): number => U32_BYTE_WIDTH, // Local id
             visitLoadInst: (): number => U32_BYTE_WIDTH, // Ptr
             visitStoreInst: (store: StoreInst): number =>
-                TWO_U32_WIDTH + this.calculateTypeSize(this.requireValueType(store.value)),
+                TWO_U32_WIDTH +
+                this.calculateTypeSize(this.requireValueType(store.value)),
             visitMemcpyInst: (): number => THREE_U32_WIDTH, // Dest, src, size
             visitGepInst: (gep: GepInst): number => {
                 let s = U32_BYTE_WIDTH; // Ptr
@@ -1204,7 +1205,7 @@ export class IRSerializer {
 
     private requireValueType(valueId: ValueId): IRType {
         const valueType = this.currentValueTypes.get(valueId);
-        if (typeof valueType !== "undefined") {
+        if (valueType !== undefined) {
             return valueType;
         }
         throw new Error(`Missing value type for operand v${String(valueId)}`);

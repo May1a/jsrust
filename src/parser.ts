@@ -71,6 +71,7 @@ import {
     type Pattern,
     type Statement,
     type TypeNode,
+    ReceiverKind,
 } from "./ast";
 
 // ---------------------------------------------------------------------------
@@ -341,10 +342,6 @@ class Parser {
             column: tok.column,
         });
         return tok;
-    }
-
-    makeSpan(tok: Token): Span {
-        return new Span(tok.line, tok.column, 0, 0);
     }
 
     spanFrom(startToken: Token): Span {
@@ -775,7 +772,9 @@ class Parser {
                     params.push({
                         span: this.spanFrom(paramStart),
                         isReceiver: true,
-                        receiverKind: isMut ? "ref_mut" : "ref",
+                        receiverKind: isMut
+                            ? ReceiverKind.refMut
+                            : ReceiverKind.ref,
                         ty: new NamedTypeNode(
                             this.spanFrom(paramStart),
                             "Self",
@@ -795,7 +794,7 @@ class Parser {
                 params.push({
                     span: this.spanFrom(paramStart),
                     isReceiver: true,
-                    receiverKind: "value",
+                    receiverKind: ReceiverKind.value,
                     name: "Self",
                     ty: new NamedTypeNode(this.spanFrom(paramStart), "Self"),
                 });
@@ -990,10 +989,10 @@ class Parser {
 
     private parseImplBody(startTok: Token): ImplItem {
         this.parseGenericParams();
-        const typeA = this.parseTypeNode();
-
-        const { target, traitType } = this.parseImplTarget(typeA);
-
+        const target = this.parseNamedType(this.peek());
+        if (!target) {
+            throw new Error("TODO: Replace this with a proper diagnostic");
+        }
         this.skipWhereClause();
         this.expect(TokenType.OpenCurly);
 
@@ -1006,23 +1005,7 @@ class Parser {
         }
 
         this.expect(TokenType.CloseCurly);
-        return new ImplItem(
-            this.spanFrom(startTok),
-            target,
-            methods,
-            traitType,
-        );
-    }
-
-    private parseImplTarget(typeA: TypeNode): {
-        target: TypeNode;
-        traitType?: TypeNode;
-    } {
-        if (!this.check(TokenType.For)) {
-            return { target: typeA };
-        }
-        this.advance();
-        return { target: this.parseTypeNode(), traitType: typeA };
+        return new ImplItem(this.spanFrom(startTok), target, methods);
     }
 
     private parseImplMember(methods: (FnItem | GenericFnItem)[]): void {
@@ -1214,7 +1197,7 @@ class Parser {
             !this.check(TokenType.Eof)
         ) {
             const stmt = this.parseStatement();
-            if (stmt === undefined) break;
+            if (!stmt) break;
 
             if (stmt instanceof ExprStmt && stmt.isReturn) {
                 // Block-like expressions (if/match/loop/while/for/block) don't
@@ -1401,7 +1384,7 @@ class Parser {
         );
     }
 
-    private parseFnType(start: Token): TypeNode | undefined {
+    private parseFnType(start: Token): FnTypeNode | undefined {
         if (!this.eat(TokenType.Fn)) return undefined;
         this.expect(TokenType.OpenParen);
         const params: TypeNode[] = [];
@@ -1428,7 +1411,7 @@ class Parser {
         return new FnTypeNode(this.spanFrom(start), params, retType);
     }
 
-    private parseNamedType(start: Token): TypeNode | undefined {
+    private parseNamedType(start: Token): NamedTypeNode | undefined {
         if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) {
             return undefined;
         }
@@ -1451,7 +1434,7 @@ class Parser {
         return new NamedTypeNode(this.spanFrom(start), name, args);
     }
 
-    private parseUnknownType(start: Token): TypeNode {
+    private parseUnknownType(start: Token): InferredTypeNode {
         const errTok = this.peek();
         this.errors.push({
             message: `Expected type, got '${errTok.value}'`,
@@ -1589,7 +1572,7 @@ class Parser {
         );
     }
 
-    private parseBooleanPattern(start: Token): Pattern | undefined {
+    private parseBooleanPattern(start: Token): LiteralPattern | undefined {
         if (!this.check(TokenType.True) && !this.check(TokenType.False)) {
             return undefined;
         }
@@ -1601,7 +1584,7 @@ class Parser {
         );
     }
 
-    private parseStringPattern(start: Token): Pattern | undefined {
+    private parseStringPattern(start: Token): LiteralPattern | undefined {
         if (!this.check(TokenType.String)) return undefined;
         const tok = this.advance();
         return new LiteralPattern(
@@ -1611,7 +1594,7 @@ class Parser {
         );
     }
 
-    private parseTuplePatternNode(start: Token): Pattern | undefined {
+    private parseTuplePatternNode(start: Token): TuplePattern | undefined {
         if (!this.eat(TokenType.OpenParen)) return undefined;
         if (this.eat(TokenType.CloseParen)) {
             return new TuplePattern(this.spanFrom(start), []);
@@ -1627,7 +1610,7 @@ class Parser {
         return new TuplePattern(this.spanFrom(start), elements);
     }
 
-    private parseSlicePatternNode(start: Token): Pattern | undefined {
+    private parseSlicePatternNode(start: Token): SlicePattern | undefined {
         if (!this.eat(TokenType.OpenSquare)) return undefined;
         const elements: Pattern[] = [];
         let rest: Pattern | undefined;
@@ -1767,7 +1750,7 @@ class Parser {
         if (tok.type !== TokenType.Eof && tok.type !== TokenType.CloseCurly) {
             this.advance();
         }
-        return new WildcardPattern(this.makeSpan(tok));
+        return new WildcardPattern(this.spanFrom(tok));
     }
 
     private parseLiteralPatternEnd(): LiteralPattern {
@@ -1875,7 +1858,7 @@ class Parser {
         return new CallExpr(this.spanFrom(fieldTok), fieldExpr, args, typeArgs);
     }
 
-    private parseCallPostfix(left: Expression): Expression | undefined {
+    private parseCallPostfix(left: Expression): CallExpr | undefined {
         if (!this.check(TokenType.OpenParen)) return undefined;
         const callStart = this.peek();
         this.advance();
@@ -1884,7 +1867,7 @@ class Parser {
         return new CallExpr(this.spanFrom(callStart), left, args);
     }
 
-    private parseIndexPostfix(left: Expression): Expression | undefined {
+    private parseIndexPostfix(left: Expression): IndexExpr | undefined {
         if (!this.check(TokenType.OpenSquare)) return undefined;
         const idxStart = this.peek();
         this.advance();
@@ -1974,7 +1957,7 @@ class Parser {
         left: Expression,
         noStructLiteral: boolean,
         inclusive: boolean,
-    ): Expression {
+    ): RangeExpr {
         if (this.canStartExpression()) {
             const right = this.parseExpr(RANGE_PRECEDENCE, noStructLiteral);
             return new RangeExpr(this.spanFrom(start), left, right, inclusive);
@@ -1987,7 +1970,7 @@ class Parser {
         left: Expression,
         prec: number,
         noStructLiteral: boolean,
-    ): Expression | undefined {
+    ): AssignExpr | undefined {
         if (this.check(TokenType.Eq)) {
             this.advance();
             return new AssignExpr(
@@ -2012,7 +1995,7 @@ class Parser {
         left: Expression,
         prec: number,
         noStructLiteral: boolean,
-    ): Expression | undefined {
+    ): BinaryExpr | undefined {
         if (this.check(TokenType.Lt) && this.peekAt(1).type === TokenType.Lt) {
             this.advance();
             this.advance();
@@ -2041,7 +2024,7 @@ class Parser {
         left: Expression,
         prec: number,
         noStructLiteral: boolean,
-    ): Expression | undefined {
+    ): BinaryExpr | undefined {
         const op = BINARY_OPERATORS[this.peek().type];
         if (op === undefined) return undefined;
         this.advance();
@@ -2081,17 +2064,17 @@ class Parser {
     private parseIdentifierExpr(
         startTok: Token,
         noStructLiteral: boolean,
-    ): Expression {
+    ): MacroExpr | IdentifierExpr | StructExpr {
         const { baseExpr, lastName } = this.parsePathExpression(startTok);
         const macroExpr = this.parseMacroExpr(startTok, lastName);
-        if (macroExpr !== undefined) return macroExpr;
+        if (macroExpr) return macroExpr;
         if (!noStructLiteral && this.check(TokenType.OpenCurly)) {
             return this.parseStructExpr(startTok, baseExpr);
         }
         return baseExpr;
     }
 
-    private parseLiteralPrefix(start: Token): Expression | undefined {
+    private parseLiteralPrefix(start: Token): LiteralExpr | undefined {
         if (this.check(TokenType.Integer)) {
             const tok = this.advance();
             if (
@@ -2140,7 +2123,7 @@ class Parser {
     private parseRangePrefix(
         start: Token,
         noStructLiteral: boolean,
-    ): Expression | undefined {
+    ): RangeExpr | undefined {
         if (this.checkDotDotEq()) {
             this.eatDotDotEq();
             return this.finishPrefixRange(start, noStructLiteral, true);
@@ -2154,7 +2137,7 @@ class Parser {
         start: Token,
         noStructLiteral: boolean,
         inclusive: boolean,
-    ): Expression {
+    ): RangeExpr {
         if (this.canStartExpression()) {
             const end = this.parseExpr(RANGE_PRECEDENCE, noStructLiteral);
             return new RangeExpr(
@@ -2232,7 +2215,7 @@ class Parser {
     private parseUnaryPrefix(
         start: Token,
         noStructLiteral: boolean,
-    ): Expression | undefined {
+    ): UnaryExpr | RefExpr | DerefExpr | undefined {
         if (this.eat(TokenType.And)) {
             if (this.check(TokenType.Lifetime)) this.advance();
             const mut = this.eat(TokenType.Mut) !== undefined;
@@ -2291,7 +2274,7 @@ class Parser {
         return new MacroExpr(this.spanFrom(start), "tuple", elems);
     }
 
-    private parseArrayPrefix(start: Token): Expression | undefined {
+    private parseArrayPrefix(start: Token): MacroExpr | undefined {
         if (!this.eat(TokenType.OpenSquare)) return undefined;
         const elems: Expression[] = [];
         while (
@@ -2305,7 +2288,7 @@ class Parser {
         return new MacroExpr(this.spanFrom(start), "vec", elems);
     }
 
-    private parseClosurePrefix(start: Token): Expression | undefined {
+    private parseClosurePrefix(start: Token): ClosureExpr | undefined {
         if (!this.check(TokenType.Pipe) && !this.check(TokenType.PipePipe)) {
             return undefined;
         }
@@ -2315,14 +2298,14 @@ class Parser {
     private parsePathPrefix(
         start: Token,
         noStructLiteral: boolean,
-    ): Expression | undefined {
+    ): MacroExpr | IdentifierExpr | StructExpr | undefined {
         if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) {
             return undefined;
         }
         return this.parseIdentifierExpr(start, noStructLiteral);
     }
 
-    private parseInvalidPrefix(start: Token): Expression {
+    private parseInvalidPrefix(start: Token): LiteralExpr {
         const tok = this.peek();
         this.errors.push({
             message: `Unexpected token '${tok.value}' in expression`,
@@ -2338,7 +2321,7 @@ class Parser {
     }
 
     private parsePathExpression(startTok: Token): {
-        baseExpr: Expression;
+        baseExpr: IdentifierExpr;
         lastName: string;
     } {
         const firstName = this.advance().value;
@@ -2367,7 +2350,7 @@ class Parser {
     private parseMacroExpr(
         startTok: Token,
         macroName: string,
-    ): Expression | undefined {
+    ): MacroExpr | undefined {
         if (
             !this.check(TokenType.Bang) ||
             this.peekAt(1).type === TokenType.Eq
@@ -2538,7 +2521,7 @@ class Parser {
         );
     }
 
-    private parseElseBranch(): Expression | undefined {
+    private parseElseBranch(): IfExpr | BlockExpr | undefined {
         if (!this.eat(TokenType.Else)) return undefined;
         return this.eat(TokenType.If)
             ? this.parseIfExpr(this.tokens[this.pos - 1])

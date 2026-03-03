@@ -21,6 +21,7 @@ const disabledRules: DummyRuleMap = {
     "typescript/consistent-type-definitions": "off",
     "oxc/no-rest-spread-properties": "off",
     "no-implicit-coercion": "off",
+    "default-case": "off",
 };
 
 const stricterRules: DummyRuleMap = {
@@ -29,6 +30,24 @@ const stricterRules: DummyRuleMap = {
     "unicorn/no-instanceof-array": "error",
     "unicorn/no-this-assignment": "error",
     "typescript/only-throw-error": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "unicorn/no-negation-in-equality-check": "error",
+    "typescript/prefer-includes": "error",
+    "typescript/prefer-nullish-coalescing": "error",
+    "typescript/prefer-ts-expect-error": "error",
+    "typescript/switch-exhaustiveness-check": [
+        "error",
+        {
+            allowDefaultCaseForExhaustiveSwitch: true,
+            considerDefaultExhaustiveForUnions: true,
+        },
+    ],
+    "unicorn/no-typeof-undefined": "error",
+    "unicorn/no-unreadable-iife": "error",
+    "unicorn/no-useless-switch-case": "error",
+    "unicorn/no-useless-undefined": ["error", { checkArguments: false }],
 };
 
 const categoriesEnable: RuleCategories = {
