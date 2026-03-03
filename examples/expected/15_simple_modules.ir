@@ -1,0 +1,54 @@
+module main {
+
+  strings {
+    s0 = "{}"
+  }
+
+  fn f0 add(v1 arg0: i32, v2 arg1: i32) -> i32 {
+    b0 (entry):
+      v3: ptr<i32> = alloca i32
+      store v1 -> v3
+      v5: ptr<i32> = alloca i32
+      store v2 -> v5
+      v7: i32      = load v3
+      v8: i32      = load v5
+      v9: i32      = iadd v7, v8
+      ret v9
+  }
+
+  fn f10 sub(v11 arg0: i32, v12 arg1: i32) -> i32 {
+    b0 (entry):
+      v13: ptr<i32> = alloca i32
+      store v11 -> v13
+      v15: ptr<i32> = alloca i32
+      store v12 -> v15
+      v17: i32      = load v13
+      v18: i32      = load v15
+      v19: i32      = isub v17, v18
+      ret v19
+  }
+
+  fn f20 test_example() -> () {
+    b0 (entry):
+      v21: i32      = iconst 1
+      v22: i32      = iconst 2
+      v23: i64      = call f96417(v21, v22)
+      v24: ptr<i64> = alloca i64
+      store v23 -> v24
+      v26: ptr      = sconst s0
+      v27: i64      = load v24
+      v28: i64      = iconst 1
+      call f862609(v26, v28, v27)
+      v30: i32      = iconst 1
+      v31: i32      = iconst 2
+      v32: i64      = call f114240(v30, v31)
+      v33: ptr<i64> = alloca i64
+      store v32 -> v33
+      v35: ptr      = sconst s0
+      v36: i64      = load v33
+      v37: i64      = iconst 1
+      call f862609(v35, v37, v36)
+      ret
+  }
+
+}
