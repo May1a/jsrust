@@ -23,6 +23,12 @@ const disabledRules: DummyRuleMap = {
     "no-implicit-coercion": "off",
     "default-case": "off",
     "capitalized-comments": "off",
+    "oxc/no-optional-chaining": "off",
+    "typescript/explicit-function-return-type": "off",
+    "no-div-regex": "off",
+    "eslint/no-sequences": "off",
+    "oxc/no-async-await": "off",
+    "unicorn/no-process-exit": "off",
 };
 
 const stricterRules: DummyRuleMap = {
@@ -67,7 +73,6 @@ export default defineConfig({
         builtin: true,
     },
     ignorePatterns: [
-        "tests/**",
         "dist/**",
         "oxlint.config.ts",
         "third_party/**",
