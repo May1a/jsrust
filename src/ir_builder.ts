@@ -161,7 +161,7 @@ export class IRBuilder {
         const block = this.currentFunction.blocks.find(
             (candidate) => candidate.id === blockId,
         );
-        return block === undefined ? [] : block.predecessors;
+        return block?.predecessors ?? [];
     }
 
     // ============================================================================
@@ -520,7 +520,7 @@ export class IRBuilder {
     // Instruction Adding
     // ============================================================================
 
-    add(inst: IRInst): ValueId | null {
+    add(inst: IRInst): ValueId {
         addIRInstruction(this.requireCurrentBlock(), inst);
         return inst.id;
     }

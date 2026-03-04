@@ -1,4 +1,4 @@
-import { type Result, err, ok, okVoid } from "./diagnostics";
+import { Result } from "better-result";
 
 import {
     AllocaInst,
@@ -192,11 +192,11 @@ const INSTRUCTION_READERS: Partial<Record<IRInstKind, InstructionReader>> = {
     [IRInstKind.Fconst]: (deserializer, id, ty) =>
         deserializer.readFconstInstruction(id, ty),
     [IRInstKind.Bconst]: (deserializer, id) =>
-        ok(new BconstInst(id, deserializer.readU8() !== 0)),
+        Result.ok(new BconstInst(id, deserializer.readU8() !== 0)),
     [IRInstKind.Null]: (deserializer, id, ty) =>
         deserializer.readNullInstruction(id, ty),
     [IRInstKind.Sconst]: (deserializer, id) =>
-        ok(new SconstInst(id, deserializer.readU32())),
+        Result.ok(new SconstInst(id, deserializer.readU32())),
     [IRInstKind.Iadd]: (deserializer, id, ty) =>
         deserializer.readIntBinaryInstruction(IRInstKind.Iadd, id, ty),
     [IRInstKind.Isub]: (deserializer, id, ty) =>
@@ -240,7 +240,7 @@ const INSTRUCTION_READERS: Partial<Record<IRInstKind, InstructionReader>> = {
     [IRInstKind.Store]: (deserializer, id) =>
         deserializer.readStoreInstruction(id),
     [IRInstKind.Memcpy]: (deserializer, id) =>
-        ok(
+        Result.ok(
             new MemcpyInst(
                 id,
                 deserializer.readU32(),
@@ -250,7 +250,7 @@ const INSTRUCTION_READERS: Partial<Record<IRInstKind, InstructionReader>> = {
         ),
     [IRInstKind.Gep]: (deserializer, id) => deserializer.readGepInstruction(id),
     [IRInstKind.Ptradd]: (deserializer, id) =>
-        ok(new PtraddInst(id, deserializer.readU32(), deserializer.readU32())),
+        Result.ok(new PtraddInst(id, deserializer.readU32(), deserializer.readU32())),
     [IRInstKind.Trunc]: (deserializer, id, ty) =>
         deserializer.readIntCastInstruction(IRInstKind.Trunc, id, ty),
     [IRInstKind.Sext]: (deserializer, id, ty) =>
@@ -309,20 +309,20 @@ class IRDeserializer {
 
     deserializeModule(): Result<IRModule, DeserializeError> {
         const headerResult = this.readHeaderOffsets();
-        if (!headerResult.ok) {
+        if (!headerResult.isOk()) {
             return headerResult;
         }
 
         this.pos = headerResult.value.stringTableOffset;
         const stringTableResult = this.readStringTable();
-        if (!stringTableResult.ok) {
+        if (!stringTableResult.isOk()) {
             return stringTableResult;
         }
         this.strings = stringTableResult.value;
 
         this.pos = headerResult.value.typesOffset;
         const typesResult = this.readTypesSection();
-        if (!typesResult.ok) {
+        if (!typesResult.isOk()) {
             return typesResult;
         }
 
@@ -331,24 +331,24 @@ class IRDeserializer {
 
         this.pos = headerResult.value.literalsOffset;
         const literalsResult = this.readStringLiteralsSection();
-        if (!literalsResult.ok) {
+        if (!literalsResult.isOk()) {
             return literalsResult;
         }
         this.addStringLiteralsToModule(module, literalsResult.value);
 
         this.pos = headerResult.value.globalsOffset;
         const globalsResult = this.readGlobalsSection(module);
-        if (!globalsResult.ok) {
+        if (!globalsResult.isOk()) {
             return globalsResult;
         }
 
         this.pos = headerResult.value.functionsOffset;
         const functionsResult = this.readFunctionsSection(module);
-        if (!functionsResult.ok) {
+        if (!functionsResult.isOk()) {
             return functionsResult;
         }
 
-        return ok(module);
+        return Result.ok(module);
     }
 
     readU8(): number {
@@ -395,19 +395,19 @@ class IRDeserializer {
             strings.push(this.decodeUtf8(bytes));
         }
 
-        return ok(strings);
+        return Result.ok(strings);
     }
 
     getString(id: number): Result<string, DeserializeError> {
         if (id < 0 || id >= this.strings.length) {
-            return err({
+            return Result.err({
                 kind: DeserializeErrorKind.OutOfBoundsReference,
                 message: `Invalid string ID: ${id}`,
                 pos: this.pos,
             });
         }
 
-        return ok(this.strings[id]);
+        return Result.ok(this.strings[id]);
     }
 
     readStringLiteralsSection(): Result<string[], DeserializeError> {
@@ -419,7 +419,7 @@ class IRDeserializer {
             literals.push(this.decodeUtf8(this.readBytes(length)));
         }
 
-        return ok(literals);
+        return Result.ok(literals);
     }
 
     readTypesSection(): Result<
@@ -435,7 +435,7 @@ class IRDeserializer {
         const structCount = this.readU32();
         for (let i = 0; i < structCount; i++) {
             const structResult = this.readStructTypeDefinition();
-            if (!structResult.ok) {
+            if (!structResult.isOk()) {
                 return structResult;
             }
             structs.set(structResult.value.name, structResult.value.struct);
@@ -444,19 +444,19 @@ class IRDeserializer {
         const enumCount = this.readU32();
         for (let i = 0; i < enumCount; i++) {
             const enumResult = this.readEnumTypeDefinition();
-            if (!enumResult.ok) {
+            if (!enumResult.isOk()) {
                 return enumResult;
             }
             enums.set(enumResult.value.name, enumResult.value.enumType);
         }
 
-        return ok({ structs, enums });
+        return Result.ok({ structs, enums });
     }
 
     readType(): Result<IRType, DeserializeError> {
         const tagValue = this.readU8();
         if (!isIRTypeKind(tagValue)) {
-            return err({
+            return Result.err({
                 kind: DeserializeErrorKind.InvalidTypeTag,
                 message: `Invalid type tag: ${tagValue}`,
                 pos: this.pos,
@@ -464,19 +464,19 @@ class IRDeserializer {
         }
 
         if (tagValue === IRTypeKind.Int) {
-            return ok(makeIRIntType(this.readU8()));
+            return Result.ok(makeIRIntType(this.readU8()));
         }
         if (tagValue === IRTypeKind.Float) {
-            return ok(makeIRFloatType(this.readU8()));
+            return Result.ok(makeIRFloatType(this.readU8()));
         }
         if (tagValue === IRTypeKind.Bool) {
-            return ok(makeIRBoolType());
+            return Result.ok(makeIRBoolType());
         }
         if (tagValue === IRTypeKind.Ptr) {
-            return ok(makeIRPtrType(makeIRUnitType()));
+            return Result.ok(makeIRPtrType(makeIRUnitType()));
         }
         if (tagValue === IRTypeKind.Unit) {
-            return ok(makeIRUnitType());
+            return Result.ok(makeIRUnitType());
         }
         if (tagValue === IRTypeKind.Struct) {
             return this.readNamedStructType();
@@ -495,12 +495,12 @@ class IRDeserializer {
 
         for (let i = 0; i < count; i++) {
             const nameResult = this.getString(this.readU32());
-            if (!nameResult.ok) {
+            if (!nameResult.isOk()) {
                 return nameResult;
             }
 
             const typeResult = this.readType();
-            if (!typeResult.ok) {
+            if (!typeResult.isOk()) {
                 return typeResult;
             }
 
@@ -508,7 +508,7 @@ class IRDeserializer {
             let init: boolean | number | bigint | undefined;
             if (hasInit) {
                 const constResult = this.readConstant(typeResult.value);
-                if (!constResult.ok) {
+                if (!constResult.isOk()) {
                     return constResult;
                 }
                 init = constResult.value;
@@ -521,7 +521,7 @@ class IRDeserializer {
             });
         }
 
-        return okVoid();
+        return Result.ok(undefined);
     }
 
     readConstant(
@@ -529,13 +529,13 @@ class IRDeserializer {
     ): Result<boolean | number | bigint, DeserializeError> {
         switch (ty.kind) {
             case IRTypeKind.Int: {
-                return ok(this.readI64());
+                return Result.ok(this.readI64());
             }
             case IRTypeKind.Float: {
-                return ok(this.readF64());
+                return Result.ok(this.readF64());
             }
             case IRTypeKind.Bool: {
-                return ok(this.readU8() !== 0);
+                return Result.ok(this.readU8() !== 0);
             }
             case IRTypeKind.Ptr: {
                 throw new Error("Not implemented yet: IRTypeKind.Ptr case");
@@ -564,18 +564,18 @@ class IRDeserializer {
 
         for (let i = 0; i < count; i++) {
             const fnResult = this.readFunction();
-            if (!fnResult.ok) {
+            if (!fnResult.isOk()) {
                 return fnResult;
             }
             addIRFunction(module, fnResult.value);
         }
 
-        return okVoid();
+        return Result.ok(undefined);
     }
 
     readFunction(): Result<IRFunction, DeserializeError> {
         const nameResult = this.getString(this.readU32());
-        if (!nameResult.ok) {
+        if (!nameResult.isOk()) {
             return nameResult;
         }
 
@@ -583,14 +583,14 @@ class IRDeserializer {
         const params = [];
         for (let i = 0; i < paramCount; i++) {
             const typeResult = this.readType();
-            if (!typeResult.ok) {
+            if (!typeResult.isOk()) {
                 return typeResult;
             }
             params.push(makeIRParam(this.readU32(), "", typeResult.value));
         }
 
         const returnResult = this.readType();
-        if (!returnResult.ok) {
+        if (!returnResult.isOk()) {
             return returnResult;
         }
 
@@ -604,7 +604,7 @@ class IRDeserializer {
         const localCount = this.readU32();
         for (let i = 0; i < localCount; i++) {
             const typeResult = this.readType();
-            if (!typeResult.ok) {
+            if (!typeResult.isOk()) {
                 return typeResult;
             }
             addIRLocal(fn, makeIRLocal(this.readU32(), typeResult.value, ""));
@@ -613,13 +613,13 @@ class IRDeserializer {
         const blockCount = this.readU32();
         for (let i = 0; i < blockCount; i++) {
             const blockResult = this.readBlock();
-            if (!blockResult.ok) {
+            if (!blockResult.isOk()) {
                 return blockResult;
             }
             addIRBlock(fn, blockResult.value);
         }
 
-        return ok(fn);
+        return Result.ok(fn);
     }
 
     readBlock(): Result<IRBlock, DeserializeError> {
@@ -628,7 +628,7 @@ class IRDeserializer {
         const paramCount = this.readU32();
         for (let i = 0; i < paramCount; i++) {
             const typeResult = this.readType();
-            if (!typeResult.ok) {
+            if (!typeResult.isOk()) {
                 return typeResult;
             }
             addIRBlockParam(block, this.readU32(), typeResult.value);
@@ -637,26 +637,26 @@ class IRDeserializer {
         const instCount = this.readU32();
         for (let i = 0; i < instCount; i++) {
             const instResult = this.readInstruction();
-            if (!instResult.ok) {
+            if (!instResult.isOk()) {
                 return instResult;
             }
             addIRInstruction(block, instResult.value);
         }
 
         const termResult = this.readTerminator();
-        if (!termResult.ok) {
+        if (!termResult.isOk()) {
             return termResult;
         }
         setIRTerminator(block, termResult.value);
 
-        return ok(block);
+        return Result.ok(block);
     }
 
     readInstruction(): Result<IRInst, DeserializeError> {
         const opcodeValue = this.readU8();
         const opcode = fromBinaryInstKind(opcodeValue);
         if (opcode === undefined) {
-            return err({
+            return Result.err({
                 kind: DeserializeErrorKind.InvalidOpcode,
                 message: `Invalid instruction opcode: ${opcodeValue}`,
                 pos: this.pos,
@@ -665,12 +665,12 @@ class IRDeserializer {
 
         const id = this.readU32();
         const typeResult = this.readType();
-        if (!typeResult.ok) {
+        if (!typeResult.isOk()) {
             return typeResult;
         }
         const reader = INSTRUCTION_READERS[opcode];
         if (!reader) {
-            return err({
+            return Result.err({
                 kind: DeserializeErrorKind.InvalidOpcode,
                 message: "Invalid instruction opcode",
                 pos: this.pos,
@@ -682,7 +682,7 @@ class IRDeserializer {
     readTerminator(): Result<IRTerm, DeserializeError> {
         const tagValue = this.readU8();
         if (!isIRTermKind(tagValue)) {
-            return err({
+            return Result.err({
                 kind: DeserializeErrorKind.InvalidTerminatorTag,
                 message: `Invalid terminator tag: ${tagValue}`,
                 pos: this.pos,
@@ -693,7 +693,7 @@ class IRDeserializer {
         if (reader) {
             return reader(this);
         }
-        return ok(new UnreachableTerm());
+        return Result.ok(new UnreachableTerm());
     }
 
     decodeUtf8(bytes: Uint8Array): string {
@@ -711,7 +711,7 @@ class IRDeserializer {
         DeserializeError
     > {
         if (this.end < HEADER_SIZE) {
-            return err({
+            return Result.err({
                 kind: DeserializeErrorKind.TruncatedData,
                 message: "Buffer too small for header",
                 pos: this.pos,
@@ -720,7 +720,7 @@ class IRDeserializer {
 
         const magic = this.readU32();
         if (magic !== MAGIC) {
-            return err({
+            return Result.err({
                 kind: DeserializeErrorKind.InvalidMagic,
                 message: `Invalid magic bytes: expected 0x${MAGIC.toString(HEX_RADIX)}, got 0x${magic.toString(HEX_RADIX)}`,
                 pos: this.pos,
@@ -729,7 +729,7 @@ class IRDeserializer {
 
         const version = this.readU32();
         if (version !== VERSION) {
-            return err({
+            return Result.err({
                 kind: DeserializeErrorKind.InvalidVersion,
                 message: `Unsupported version: ${version}`,
                 pos: this.pos,
@@ -737,7 +737,7 @@ class IRDeserializer {
         }
 
         this.readU32();
-        return ok({
+        return Result.ok({
             stringTableOffset: this.readU32(),
             typesOffset: this.readU32(),
             literalsOffset: this.readU32(),
@@ -773,14 +773,14 @@ class IRDeserializer {
         DeserializeError
     > {
         const nameResult = this.getString(this.readU32());
-        if (!nameResult.ok) {
+        if (!nameResult.isOk()) {
             return nameResult;
         }
         const fieldsResult = this.readTypeList();
-        if (!fieldsResult.ok) {
+        if (!fieldsResult.isOk()) {
             return fieldsResult;
         }
-        return ok({
+        return Result.ok({
             name: nameResult.value,
             struct: makeIRStructType(nameResult.value, fieldsResult.value),
         });
@@ -791,19 +791,19 @@ class IRDeserializer {
         DeserializeError
     > {
         const nameResult = this.getString(this.readU32());
-        if (!nameResult.ok) {
+        if (!nameResult.isOk()) {
             return nameResult;
         }
         const variantCount = this.readU32();
         const variants: IRType[][] = [];
         for (let i = 0; i < variantCount; i++) {
             const fieldsResult = this.readTypeList();
-            if (!fieldsResult.ok) {
+            if (!fieldsResult.isOk()) {
                 return fieldsResult;
             }
             variants.push(fieldsResult.value);
         }
-        return ok({
+        return Result.ok({
             name: nameResult.value,
             enumType: makeIREnumType(nameResult.value, variants),
         });
@@ -811,27 +811,27 @@ class IRDeserializer {
 
     readNamedStructType(): Result<IRType, DeserializeError> {
         const nameResult = this.getString(this.readU32());
-        if (!nameResult.ok) {
+        if (!nameResult.isOk()) {
             return nameResult;
         }
-        return ok(makeIRStructType(nameResult.value, []));
+        return Result.ok(makeIRStructType(nameResult.value, []));
     }
 
     readNamedEnumType(): Result<IRType, DeserializeError> {
         const nameResult = this.getString(this.readU32());
-        if (!nameResult.ok) {
+        if (!nameResult.isOk()) {
             return nameResult;
         }
-        return ok(makeIREnumType(nameResult.value, []));
+        return Result.ok(makeIREnumType(nameResult.value, []));
     }
 
     readArrayType(): Result<IRType, DeserializeError> {
         const length = this.readU32();
         const elementResult = this.readType();
-        if (!elementResult.ok) {
+        if (!elementResult.isOk()) {
             return elementResult;
         }
-        return ok(makeIRArrayType(elementResult.value, length));
+        return Result.ok(makeIRArrayType(elementResult.value, length));
     }
 
     readFunctionType(): Result<IRType, DeserializeError> {
@@ -839,16 +839,16 @@ class IRDeserializer {
         const params: IRType[] = [];
         for (let i = 0; i < paramCount; i++) {
             const paramResult = this.readType();
-            if (!paramResult.ok) {
+            if (!paramResult.isOk()) {
                 return paramResult;
             }
             params.push(paramResult.value);
         }
         const returnResult = this.readType();
-        if (!returnResult.ok) {
+        if (!returnResult.isOk()) {
             return returnResult;
         }
-        return ok(makeIRFnType(params, returnResult.value));
+        return Result.ok(makeIRFnType(params, returnResult.value));
     }
 
     readTypeList(): Result<IRType[], DeserializeError> {
@@ -856,12 +856,12 @@ class IRDeserializer {
         const types: IRType[] = [];
         for (let i = 0; i < count; i++) {
             const typeResult = this.readType();
-            if (!typeResult.ok) {
+            if (!typeResult.isOk()) {
                 return typeResult;
             }
             types.push(typeResult.value);
         }
-        return ok(types);
+        return Result.ok(types);
     }
 
     readIconstInstruction(
@@ -871,7 +871,7 @@ class IRDeserializer {
         if (!isIRIntType(ty)) {
             return this.invalidInstructionType(IRInstKind.Iconst, ty);
         }
-        return ok(new IconstInst(id, ty, Number(this.readI64())));
+        return Result.ok(new IconstInst(id, ty, Number(this.readI64())));
     }
 
     readFconstInstruction(
@@ -881,7 +881,7 @@ class IRDeserializer {
         if (!isIRFloatType(ty)) {
             return this.invalidInstructionType(IRInstKind.Fconst, ty);
         }
-        return ok(new FconstInst(id, ty, this.readF64()));
+        return Result.ok(new FconstInst(id, ty, this.readF64()));
     }
 
     readNullInstruction(
@@ -891,7 +891,7 @@ class IRDeserializer {
         if (!isIRPtrType(ty)) {
             return this.invalidInstructionType(IRInstKind.Null, ty);
         }
-        return ok(new NullInst(id, ty));
+        return Result.ok(new NullInst(id, ty));
     }
 
     readIntBinaryInstruction(
@@ -902,7 +902,7 @@ class IRDeserializer {
         if (!isIRIntType(ty)) {
             return this.invalidInstructionType(opcode, ty);
         }
-        return ok(
+        return Result.ok(
             this.makeIntBinaryInstruction(
                 opcode,
                 id,
@@ -921,7 +921,7 @@ class IRDeserializer {
         if (!isIRFloatType(ty)) {
             return this.invalidInstructionType(opcode, ty);
         }
-        return ok(
+        return Result.ok(
             this.makeFloatBinaryInstruction(
                 opcode,
                 id,
@@ -940,7 +940,7 @@ class IRDeserializer {
         if (!isIRIntType(ty)) {
             return this.invalidInstructionType(opcode, ty);
         }
-        return ok(
+        return Result.ok(
             this.makeBitwiseInstruction(
                 opcode,
                 id,
@@ -963,12 +963,12 @@ class IRDeserializer {
             if (!isIcmpOp(op)) {
                 return this.invalidOp(opcode, op);
             }
-            return ok(new IcmpInst(id, op, left, right));
+            return Result.ok(new IcmpInst(id, op, left, right));
         }
         if (!isFcmpOp(op)) {
             return this.invalidOp(opcode, op);
         }
-        return ok(new FcmpInst(id, op, left, right));
+        return Result.ok(new FcmpInst(id, op, left, right));
     }
 
     readNegInstruction(
@@ -981,33 +981,33 @@ class IRDeserializer {
             if (!isIRIntType(ty)) {
                 return this.invalidInstructionType(opcode, ty);
             }
-            return ok(new InegInst(id, ty, operand));
+            return Result.ok(new InegInst(id, ty, operand));
         }
         if (!isIRFloatType(ty)) {
             return this.invalidInstructionType(opcode, ty);
         }
-        return ok(new FnegInst(id, ty, operand));
+        return Result.ok(new FnegInst(id, ty, operand));
     }
 
     readAllocaInstruction(id: number): Result<IRInst, DeserializeError> {
         const allocTypeResult = this.readType();
-        if (!allocTypeResult.ok) {
+        if (!allocTypeResult.isOk()) {
             return allocTypeResult;
         }
         const hasAlignment = this.readU8() !== 0;
         const alignment = hasAlignment ? this.readU32() : undefined;
-        return ok(new AllocaInst(id, allocTypeResult.value, alignment));
+        return Result.ok(new AllocaInst(id, allocTypeResult.value, alignment));
     }
 
     readLoadInstruction(id: number): Result<IRInst, DeserializeError> {
         const ptr = this.readU32();
         const loadTypeResult = this.readType();
-        if (!loadTypeResult.ok) {
+        if (!loadTypeResult.isOk()) {
             return loadTypeResult;
         }
         const hasAlignment = this.readU8() !== 0;
         const alignment = hasAlignment ? this.readU32() : undefined;
-        return ok(new LoadInst(id, ptr, loadTypeResult.value, alignment));
+        return Result.ok(new LoadInst(id, ptr, loadTypeResult.value, alignment));
     }
 
     readStoreInstruction(id: number): Result<IRInst, DeserializeError> {
@@ -1015,7 +1015,7 @@ class IRDeserializer {
         const ptr = this.readU32();
         const hasAlignment = this.readU8() !== 0;
         const alignment = hasAlignment ? this.readU32() : undefined;
-        return ok(new StoreInst(id, value, ptr, alignment));
+        return Result.ok(new StoreInst(id, value, ptr, alignment));
     }
 
     readGepInstruction(id: number): Result<IRInst, DeserializeError> {
@@ -1026,10 +1026,10 @@ class IRDeserializer {
             indices.push(this.readU32());
         }
         const resultTypeResult = this.readType();
-        if (!resultTypeResult.ok) {
+        if (!resultTypeResult.isOk()) {
             return resultTypeResult;
         }
-        return ok(new GepInst(id, ptr, indices, resultTypeResult.value));
+        return Result.ok(new GepInst(id, ptr, indices, resultTypeResult.value));
     }
 
     readIntCastInstruction(
@@ -1039,11 +1039,11 @@ class IRDeserializer {
     ): Result<IRInst, DeserializeError> {
         const operand = this.readU32();
         const fromTypeResult = this.readType();
-        if (!fromTypeResult.ok) {
+        if (!fromTypeResult.isOk()) {
             return fromTypeResult;
         }
         const toTypeResult = this.readType();
-        if (!toTypeResult.ok) {
+        if (!toTypeResult.isOk()) {
             return toTypeResult;
         }
         if (
@@ -1052,7 +1052,7 @@ class IRDeserializer {
         ) {
             return this.invalidInstructionType(opcode, ty);
         }
-        return ok(
+        return Result.ok(
             this.makeIntCastInstruction(
                 opcode,
                 id,
@@ -1069,11 +1069,11 @@ class IRDeserializer {
     ): Result<IRInst, DeserializeError> {
         const operand = this.readU32();
         const fromTypeResult = this.readType();
-        if (!fromTypeResult.ok) {
+        if (!fromTypeResult.isOk()) {
             return fromTypeResult;
         }
         const toTypeResult = this.readType();
-        if (!toTypeResult.ok) {
+        if (!toTypeResult.isOk()) {
             return toTypeResult;
         }
         return this.makeGeneralCastInstruction(
@@ -1097,18 +1097,18 @@ class IRDeserializer {
             args.push(this.readU32());
         }
         const calleeTypeResult = this.readType();
-        if (!calleeTypeResult.ok) {
+        if (!calleeTypeResult.isOk()) {
             return calleeTypeResult;
         }
         if (!isIRFnType(calleeTypeResult.value)) {
             return this.invalidInstructionType(opcode, calleeTypeResult.value);
         }
         if (opcode === IRInstKind.Call) {
-            return ok(
+            return Result.ok(
                 new CallInst(id, callee, args, calleeTypeResult.value, ty),
             );
         }
-        return ok(
+        return Result.ok(
             new CallDynInst(id, callee, args, calleeTypeResult.value, ty),
         );
     }
@@ -1120,7 +1120,7 @@ class IRDeserializer {
             fields.push(this.readU32());
         }
         const structTypeResult = this.readType();
-        if (!structTypeResult.ok) {
+        if (!structTypeResult.isOk()) {
             return structTypeResult;
         }
         if (!isIRStructType(structTypeResult.value)) {
@@ -1129,7 +1129,7 @@ class IRDeserializer {
                 structTypeResult.value,
             );
         }
-        return ok(new StructCreateInst(id, fields, structTypeResult.value));
+        return Result.ok(new StructCreateInst(id, fields, structTypeResult.value));
     }
 
     readStructGetInstruction(
@@ -1139,7 +1139,7 @@ class IRDeserializer {
         const struct = this.readU32();
         const index = this.readU32();
         const structTypeResult = this.readType();
-        if (!structTypeResult.ok) {
+        if (!structTypeResult.isOk()) {
             return structTypeResult;
         }
         if (!isIRStructType(structTypeResult.value)) {
@@ -1148,7 +1148,7 @@ class IRDeserializer {
                 structTypeResult.value,
             );
         }
-        return ok(
+        return Result.ok(
             new StructGetInst(id, struct, index, structTypeResult.value, ty),
         );
     }
@@ -1158,7 +1158,7 @@ class IRDeserializer {
         const hasData = this.readU8() !== 0;
         const data = hasData ? this.readU32() : this.readMissingEnumData();
         const enumTypeResult = this.readType();
-        if (!enumTypeResult.ok) {
+        if (!enumTypeResult.isOk()) {
             return enumTypeResult;
         }
         if (!isIREnumType(enumTypeResult.value)) {
@@ -1167,13 +1167,13 @@ class IRDeserializer {
                 enumTypeResult.value,
             );
         }
-        return ok(new EnumCreateInst(id, tag, data, enumTypeResult.value));
+        return Result.ok(new EnumCreateInst(id, tag, data, enumTypeResult.value));
     }
 
     readEnumGetTagInstruction(id: number): Result<IRInst, DeserializeError> {
         const enumValue = this.readU32();
         const enumTypeResult = this.readType();
-        if (!enumTypeResult.ok) {
+        if (!enumTypeResult.isOk()) {
             return enumTypeResult;
         }
         if (!isIREnumType(enumTypeResult.value)) {
@@ -1182,13 +1182,13 @@ class IRDeserializer {
                 enumTypeResult.value,
             );
         }
-        return ok(new EnumGetTagInst(id, enumValue, enumTypeResult.value));
+        return Result.ok(new EnumGetTagInst(id, enumValue, enumTypeResult.value));
     }
 
     readEnumGetDataInstruction(id: number): Result<IRInst, DeserializeError> {
         const enumValue = this.readU32();
         const enumTypeResult = this.readType();
-        if (!enumTypeResult.ok) {
+        if (!enumTypeResult.isOk()) {
             return enumTypeResult;
         }
         if (!isIREnumType(enumTypeResult.value)) {
@@ -1198,10 +1198,10 @@ class IRDeserializer {
             );
         }
         const dataTypeResult = this.readType();
-        if (!dataTypeResult.ok) {
+        if (!dataTypeResult.isOk()) {
             return dataTypeResult;
         }
-        return ok(
+        return Result.ok(
             new EnumGetDataInst(
                 id,
                 enumValue,
@@ -1214,7 +1214,7 @@ class IRDeserializer {
     readRetTerm(): Result<IRTerm, DeserializeError> {
         const hasValue = this.readU8() !== 0;
         const value = hasValue ? this.readU32() : undefined;
-        return ok(new RetTerm(value));
+        return Result.ok(new RetTerm(value));
     }
 
     readBrTerm(): Result<IRTerm, DeserializeError> {
@@ -1224,7 +1224,7 @@ class IRDeserializer {
         for (let i = 0; i < argCount; i++) {
             args.push(this.readU32());
         }
-        return ok(new BrTerm(target, args));
+        return Result.ok(new BrTerm(target, args));
     }
 
     readBrIfTerm(): Result<IRTerm, DeserializeError> {
@@ -1233,7 +1233,7 @@ class IRDeserializer {
         const thenArgs = this.readValueList();
         const elseBlock = this.readU32();
         const elseArgs = this.readValueList();
-        return ok(
+        return Result.ok(
             new BrIfTerm(condition, thenBlock, elseBlock, thenArgs, elseArgs),
         );
     }
@@ -1250,7 +1250,7 @@ class IRDeserializer {
         }
         const defaultBlock = this.readU32();
         const defaultArgs = this.readValueList();
-        return ok(new SwitchTerm(value, defaultBlock, defaultArgs, cases));
+        return Result.ok(new SwitchTerm(value, defaultBlock, defaultArgs, cases));
     }
 
     readValueList(): number[] {
@@ -1313,7 +1313,7 @@ class IRDeserializer {
         opcode: IRInstKind,
         ty: IRType,
     ): Result<never, DeserializeError> {
-        return err({
+        return Result.err({
             kind: DeserializeErrorKind.InvalidTypeTag,
             message: `Invalid type ${ty.kind} for instruction ${opcode}`,
             pos: this.pos,
@@ -1321,7 +1321,7 @@ class IRDeserializer {
     }
 
     invalidOp(opcode: IRInstKind, op: number): Result<never, DeserializeError> {
-        return err({
+        return Result.err({
             kind: DeserializeErrorKind.InvalidOpcode,
             message: `Invalid op ${op} for instruction ${opcode}`,
             pos: this.pos,
@@ -1443,28 +1443,28 @@ class IRDeserializer {
                 if (!isIRFloatType(fromType) || !isIRIntType(toType)) {
                     return this.invalidInstructionType(opcode, toType);
                 }
-                return ok(new FptouiInst(id, operand, fromType, toType));
+                return Result.ok(new FptouiInst(id, operand, fromType, toType));
             }
             case IRInstKind.Fptosi: {
                 if (!isIRFloatType(fromType) || !isIRIntType(toType)) {
                     return this.invalidInstructionType(opcode, toType);
                 }
-                return ok(new FptosiInst(id, operand, fromType, toType));
+                return Result.ok(new FptosiInst(id, operand, fromType, toType));
             }
             case IRInstKind.Uitofp: {
                 if (!isIRIntType(fromType) || !isIRFloatType(toType)) {
                     return this.invalidInstructionType(opcode, toType);
                 }
-                return ok(new UitofpInst(id, operand, fromType, toType));
+                return Result.ok(new UitofpInst(id, operand, fromType, toType));
             }
             case IRInstKind.Sitofp: {
                 if (!isIRIntType(fromType) || !isIRFloatType(toType)) {
                     return this.invalidInstructionType(opcode, toType);
                 }
-                return ok(new SitofpInst(id, operand, fromType, toType));
+                return Result.ok(new SitofpInst(id, operand, fromType, toType));
             }
             case IRInstKind.Bitcast: {
-                return ok(new BitcastInst(id, operand, fromType, toType));
+                return Result.ok(new BitcastInst(id, operand, fromType, toType));
             }
             default: {
                 return this.invalidInstructionType(opcode, toType);

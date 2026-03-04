@@ -2,7 +2,11 @@ import { describe, test, expect } from "bun:test";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { compileToIR } from "./helpers";
-import { discoverTestFunctions, compileFileToBinary } from "../src/compile";
+import {
+    compileFileToBinary,
+    discoverTestFunctions,
+    formatCompileError,
+} from "../src/compile";
 import {
     runBackendWasm,
     canRunBackendIntegrationTests,
@@ -41,15 +45,26 @@ describe("examples", () => {
 
         test(file, () => {
             const source = readFileSync(resolve(examplesDir, file), "utf8");
-            const ir = compileToIR(source);
-            expect(ir).toBe(expectedContent);
+            const irResult = compileToIR(source);
+            expect(irResult.isOk()).toBe(true);
+            if (irResult.isErr()) {
+                expect(formatCompileError(irResult.error)).toBe("");
+                return;
+            }
+
+            expect(irResult.value).toBe(expectedContent);
         });
     }
 });
 
 describe("examples runtime", () => {
     const backendCheck = canRunBackendIntegrationTests();
-    if (!backendCheck.ok) throw new Error("Backend Failed!");
+    if (backendCheck.isErr()) {
+        test.skip("backend integration unavailable", () => {
+            expect(backendCheck.error.message.length).toBeGreaterThan(0);
+        });
+        return;
+    }
 
     const files = readdirSync(examplesDir)
         .filter((f) => f.endsWith(".rs"))
@@ -58,7 +73,7 @@ describe("examples runtime", () => {
     for (const file of files) {
         const filePath = resolve(examplesDir, file);
         const discoverResult = discoverTestFunctions(filePath);
-        if (!discoverResult.ok || discoverResult.tests.length === 0) continue;
+        if (discoverResult.isErr() || discoverResult.value.length === 0) continue;
         const skipExample = shouldSkipExample(file);
 
         describe(file, () => {
@@ -67,16 +82,14 @@ describe("examples runtime", () => {
 
             if (!skipExample) {
                 const binaryResult = compileFileToBinary(filePath);
-                if (binaryResult.ok && binaryResult.bytes) {
-                    ({ bytes } = binaryResult);
+                if (binaryResult.isOk()) {
+                    ({ bytes } = binaryResult.value);
                 } else {
-                    compileError = binaryResult.errors
-                        .map((e) => e.message)
-                        .join("; ");
+                    compileError = formatCompileError(binaryResult.error);
                 }
             }
 
-            for (const testFn of discoverResult.tests) {
+            for (const testFn of discoverResult.value) {
                 if (skipExample) {
                     test.skip(testFn.name, () => {
                         /* skip test */
@@ -85,17 +98,16 @@ describe("examples runtime", () => {
                 }
 
                 test(testFn.name, () => {
-                    if (compileError !== undefined) {
-                        throw new Error(`Compilation failed: ${compileError}`);
-                    }
-                    if (bytes === undefined) {
-                        throw new Error("No binary bytes produced");
-                    }
+                    expect(compileError).toBeUndefined();
+                    expect(bytes).toBeDefined();
+                    if (compileError !== undefined || bytes === undefined) return;
+
                     const runResult = runBackendWasm(bytes, {
                         entry: testFn.name,
                     });
-                    if (!runResult.ok) {
-                        throw new Error(`Test failed: ${runResult.message}`);
+                    expect(runResult.isOk()).toBe(true);
+                    if (runResult.isErr()) {
+                        expect(runResult.error.message).toBe("");
                     }
                 });
             }

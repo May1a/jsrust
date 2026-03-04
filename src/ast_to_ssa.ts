@@ -61,7 +61,7 @@ import {
     mangledName,
     type SubstitutionMap,
 } from "./monomorphize";
-import { type Result, err, ok, okVoid } from "./diagnostics";
+import { Result } from "better-result";
 import { BUILTIN_SYMBOLS } from "./builtin_symbols";
 
 // Type alias for expression visitor to reduce complexity
@@ -166,7 +166,7 @@ function loweringError<T>(
     message: string,
     span: Span,
 ): Result<T, LoweringError> {
-    return err({ kind, message, span });
+    return Result.err({ kind, message, span });
 }
 
 // Default values for type initialization
@@ -256,7 +256,7 @@ export class AstToSsaCtx {
         this.loopStack = [];
 
         const paramEntries = this.getLowerableParams(fnDecl);
-        if (!paramEntries.ok) {
+        if (!paramEntries.isOk()) {
             return paramEntries;
         }
         const paramTypes = paramEntries.value.map(({ ty }) =>
@@ -277,7 +277,7 @@ export class AstToSsaCtx {
             );
         }
         const bodyResult = this.lowerBlock(fnDecl.body);
-        if (!bodyResult.ok) {
+        if (!bodyResult.isOk()) {
             return bodyResult;
         }
 
@@ -295,7 +295,7 @@ export class AstToSsaCtx {
         }
 
         this.sealAllBlocks();
-        return ok(this.builder.build());
+        return Result.ok(this.builder.build());
     }
 
     private getLowerableParams(
@@ -305,7 +305,7 @@ export class AstToSsaCtx {
         for (const param of fnDecl.params) {
             params.push({ name: param.name, ty: param.ty });
         }
-        return ok(params);
+        return Result.ok(params);
     }
 
     private startFunction(name: string, paramTypes: IRType[]): void {
@@ -347,23 +347,23 @@ export class AstToSsaCtx {
     ): Result<ValueId | undefined, LoweringError> {
         for (const stmt of block.stmts) {
             const stmtResult = this.lowerStatement(stmt);
-            if (!stmtResult.ok) {
+            if (!stmtResult.isOk()) {
                 return stmtResult;
             }
             if (this.isCurrentBlockTerminated()) {
-                return ok(undefined);
+                return Result.ok(undefined);
             }
         }
 
         if (!block.expr) {
-            return ok(undefined);
+            return Result.ok(undefined);
         }
 
         const exprResult = this.lowerExpression(block.expr);
-        if (!exprResult.ok) {
+        if (!exprResult.isOk()) {
             return exprResult;
         }
-        return ok(exprResult.value);
+        return Result.ok(exprResult.value);
     }
 
     private lowerStatement(stmt: Statement): Result<void, LoweringError> {
@@ -372,10 +372,10 @@ export class AstToSsaCtx {
         }
         if (stmt instanceof ExprStmt) {
             const exprResult = this.lowerExpression(stmt.expr);
-            if (!exprResult.ok) {
+            if (!exprResult.isOk()) {
                 return exprResult;
             }
-            return okVoid();
+            return Result.ok(undefined);
         }
 
         return loweringError(
@@ -387,7 +387,7 @@ export class AstToSsaCtx {
 
     private lowerLetStatement(stmt: LetStmt): Result<void, LoweringError> {
         const initResult = this.lowerExpression(stmt.init);
-        if (!initResult.ok) {
+        if (!initResult.isOk()) {
             return initResult;
         }
 
@@ -408,7 +408,7 @@ export class AstToSsaCtx {
                 formatTag: this.inferExpressionFormatTag(stmt.init),
             });
         }
-        return okVoid();
+        return Result.ok(undefined);
     }
 
     private lowerExpression(expr: Expression): Result<ValueId, LoweringError> {
@@ -447,13 +447,13 @@ export class AstToSsaCtx {
             visitIfExpr: (expr: IfExpr) => this.lowerIf(expr),
             visitBlockExpr: (expr: BlockExpr) => {
                 const blockResult = this.lowerBlock(expr);
-                if (!blockResult.ok) {
+                if (!blockResult.isOk()) {
                     return blockResult;
                 }
                 if (blockResult.value === undefined) {
-                    return ok(this.unitValue());
+                    return Result.ok(this.unitValue());
                 }
-                return ok(blockResult.value);
+                return Result.ok(blockResult.value);
             },
             visitReturnExpr: (expr: ReturnExpr) => this.lowerReturn(expr),
             visitBreakExpr: (expr: BreakExpr) => this.lowerBreak(expr),
@@ -653,20 +653,20 @@ export class AstToSsaCtx {
         }
 
         const valueResult = this.lowerExpression(expr.value);
-        if (!valueResult.ok) {
+        if (!valueResult.isOk()) {
             return valueResult;
         }
         this.builder.store(binding.ptr, valueResult.value, binding.ty);
-        return ok(valueResult.value);
+        return Result.ok(valueResult.value);
     }
 
     private lowerBinary(expr: BinaryExpr): Result<ValueId, LoweringError> {
         const leftResult = this.lowerExpression(expr.left);
-        if (!leftResult.ok) {
+        if (!leftResult.isOk()) {
             return leftResult;
         }
         const rightResult = this.lowerExpression(expr.right);
-        if (!rightResult.ok) {
+        if (!rightResult.isOk()) {
             return rightResult;
         }
 
@@ -975,10 +975,10 @@ export class AstToSsaCtx {
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
             const addInst = this.builder.fadd(left, right, FloatWidth.F64);
-            return ok(addInst.id);
+            return Result.ok(addInst.id);
         }
         const addInst = this.builder.iadd(left, right, IntWidth.I32);
-        return ok(addInst.id);
+        return Result.ok(addInst.id);
     }
 
     private handleSubOperation(
@@ -988,10 +988,10 @@ export class AstToSsaCtx {
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
             const subInst = this.builder.fsub(left, right, FloatWidth.F64);
-            return ok(subInst.id);
+            return Result.ok(subInst.id);
         }
         const subInst = this.builder.isub(left, right, IntWidth.I32);
-        return ok(subInst.id);
+        return Result.ok(subInst.id);
     }
 
     private handleMulOperation(
@@ -1001,10 +1001,10 @@ export class AstToSsaCtx {
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
             const mulInst = this.builder.fmul(left, right, FloatWidth.F64);
-            return ok(mulInst.id);
+            return Result.ok(mulInst.id);
         }
         const mulInst = this.builder.imul(left, right, IntWidth.I32);
-        return ok(mulInst.id);
+        return Result.ok(mulInst.id);
     }
 
     private handleDivOperation(
@@ -1014,10 +1014,10 @@ export class AstToSsaCtx {
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
             const divInst = this.builder.fdiv(left, right, FloatWidth.F64);
-            return ok(divInst.id);
+            return Result.ok(divInst.id);
         }
         const divInst = this.builder.idiv(left, right, IntWidth.I32);
-        return ok(divInst.id);
+        return Result.ok(divInst.id);
     }
 
     private handleRemOperation(
@@ -1025,7 +1025,7 @@ export class AstToSsaCtx {
         right: ValueId,
     ): Result<ValueId, LoweringError> {
         const remInst = this.builder.imod(left, right, IntWidth.I32);
-        return ok(remInst.id);
+        return Result.ok(remInst.id);
     }
 
     // Comparison operation handlers
@@ -1036,10 +1036,10 @@ export class AstToSsaCtx {
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
             const cmpInst = this.builder.fcmp(FcmpOp.Oeq, left, right);
-            return ok(cmpInst.id);
+            return Result.ok(cmpInst.id);
         }
         const cmpInst = this.builder.icmp(IcmpOp.Eq, left, right);
-        return ok(cmpInst.id);
+        return Result.ok(cmpInst.id);
     }
 
     private handleNeOperation(
@@ -1049,10 +1049,10 @@ export class AstToSsaCtx {
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
             const cmpInst = this.builder.fcmp(FcmpOp.One, left, right);
-            return ok(cmpInst.id);
+            return Result.ok(cmpInst.id);
         }
         const cmpInst = this.builder.icmp(IcmpOp.Ne, left, right);
-        return ok(cmpInst.id);
+        return Result.ok(cmpInst.id);
     }
 
     private handleLtOperation(
@@ -1062,10 +1062,10 @@ export class AstToSsaCtx {
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
             const cmpInst = this.builder.fcmp(FcmpOp.Olt, left, right);
-            return ok(cmpInst.id);
+            return Result.ok(cmpInst.id);
         }
         const cmpInst = this.builder.icmp(IcmpOp.Slt, left, right);
-        return ok(cmpInst.id);
+        return Result.ok(cmpInst.id);
     }
 
     private handleLeOperation(
@@ -1075,10 +1075,10 @@ export class AstToSsaCtx {
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
             const cmpInst = this.builder.fcmp(FcmpOp.Ole, left, right);
-            return ok(cmpInst.id);
+            return Result.ok(cmpInst.id);
         }
         const cmpInst = this.builder.icmp(IcmpOp.Sle, left, right);
-        return ok(cmpInst.id);
+        return Result.ok(cmpInst.id);
     }
 
     private handleGtOperation(
@@ -1088,10 +1088,10 @@ export class AstToSsaCtx {
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
             const cmpInst = this.builder.fcmp(FcmpOp.Ogt, left, right);
-            return ok(cmpInst.id);
+            return Result.ok(cmpInst.id);
         }
         const cmpInst = this.builder.icmp(IcmpOp.Sgt, left, right);
-        return ok(cmpInst.id);
+        return Result.ok(cmpInst.id);
     }
 
     private handleGeOperation(
@@ -1101,10 +1101,10 @@ export class AstToSsaCtx {
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
             const cmpInst = this.builder.fcmp(FcmpOp.Oge, left, right);
-            return ok(cmpInst.id);
+            return Result.ok(cmpInst.id);
         }
         const cmpInst = this.builder.icmp(IcmpOp.Sge, left, right);
-        return ok(cmpInst.id);
+        return Result.ok(cmpInst.id);
     }
 
     // Bitwise operation handlers
@@ -1113,7 +1113,7 @@ export class AstToSsaCtx {
         right: ValueId,
     ): Result<ValueId, LoweringError> {
         const andInst = this.builder.iand(left, right, IntWidth.I8);
-        return ok(andInst.id);
+        return Result.ok(andInst.id);
     }
 
     private handleOrOperation(
@@ -1121,7 +1121,7 @@ export class AstToSsaCtx {
         right: ValueId,
     ): Result<ValueId, LoweringError> {
         const orInst = this.builder.ior(left, right, IntWidth.I8);
-        return ok(orInst.id);
+        return Result.ok(orInst.id);
     }
 
     private handleXorOperation(
@@ -1129,7 +1129,7 @@ export class AstToSsaCtx {
         right: ValueId,
     ): Result<ValueId, LoweringError> {
         const xorInst = this.builder.ixor(left, right, IntWidth.I32);
-        return ok(xorInst.id);
+        return Result.ok(xorInst.id);
     }
 
     private handleShlOperation(
@@ -1137,7 +1137,7 @@ export class AstToSsaCtx {
         right: ValueId,
     ): Result<ValueId, LoweringError> {
         const shlInst = this.builder.ishl(left, right, IntWidth.I32);
-        return ok(shlInst.id);
+        return Result.ok(shlInst.id);
     }
 
     private handleShrOperation(
@@ -1145,22 +1145,22 @@ export class AstToSsaCtx {
         right: ValueId,
     ): Result<ValueId, LoweringError> {
         const shrInst = this.builder.ishr(left, right, IntWidth.I32);
-        return ok(shrInst.id);
+        return Result.ok(shrInst.id);
     }
 
     private lowerUnary(expr: UnaryExpr): Result<ValueId, LoweringError> {
         const operandResult = this.lowerExpression(expr.operand);
-        if (!operandResult.ok) return operandResult;
+        if (!operandResult.isOk()) return operandResult;
         const operand = operandResult.value;
 
         switch (expr.op) {
             case UnaryOp.Neg: {
                 if (this.isFloatish(expr.operand)) {
                     const negInst = this.builder.fneg(operand, FloatWidth.F64);
-                    return ok(negInst.id);
+                    return Result.ok(negInst.id);
                 }
                 const negInst = this.builder.ineg(operand, IntWidth.I32);
-                return ok(negInst.id);
+                return Result.ok(negInst.id);
             }
             case UnaryOp.Not: {
                 const oneInst = this.builder.bconst(true);
@@ -1169,7 +1169,7 @@ export class AstToSsaCtx {
                     oneInst.id,
                     IntWidth.I8,
                 );
-                return ok(xorInst.id);
+                return Result.ok(xorInst.id);
             }
             case UnaryOp.Ref: {
                 if (expr.operand instanceof IdentifierExpr) {
@@ -1181,21 +1181,21 @@ export class AstToSsaCtx {
                             expr.operand.span,
                         );
                     }
-                    return ok(binding.ptr);
+                    return Result.ok(binding.ptr);
                 }
 
                 const ptrTy = makeIRIntType(IntWidth.I64);
                 const allocaInst = this.builder.alloca(ptrTy);
                 const ptrId = allocaInst.id;
                 this.builder.store(ptrId, operand, ptrTy);
-                return ok(ptrId);
+                return Result.ok(ptrId);
             }
             case UnaryOp.Deref: {
                 const loadInst = this.builder.load(
                     operand,
                     makeIRIntType(IntWidth.I64),
                 );
-                return ok(loadInst.id);
+                return Result.ok(loadInst.id);
             }
             default: {
                 return loweringError(
@@ -1211,7 +1211,7 @@ export class AstToSsaCtx {
         const args: ValueId[] = [];
         for (const arg of expr.args) {
             const argResult = this.lowerExpression(arg);
-            if (!argResult.ok) {
+            if (!argResult.isOk()) {
                 return argResult;
             }
             args.push(argResult.value);
@@ -1232,7 +1232,7 @@ export class AstToSsaCtx {
         }
 
         const calleeResult = this.lowerExpression(expr.callee);
-        if (!calleeResult.ok) {
+        if (!calleeResult.isOk()) {
             return calleeResult;
         }
         const callDynInst = this.builder.callDyn(
@@ -1240,7 +1240,7 @@ export class AstToSsaCtx {
             args,
             retTy,
         );
-        return ok(callDynInst.id);
+        return Result.ok(callDynInst.id);
     }
 
     private resolveGenericCallName(expr: CallExpr): string | undefined {
@@ -1270,7 +1270,7 @@ export class AstToSsaCtx {
             args,
             returnType,
         );
-        return ok(callInst.id);
+        return Result.ok(callInst.id);
     }
 
     private lowerMethodCall(
@@ -1278,7 +1278,7 @@ export class AstToSsaCtx {
         args: ValueId[],
     ): Result<ValueId, LoweringError> {
         const receiver = this.lowerExpression(callee.receiver);
-        if (!receiver.ok) {
+        if (!receiver.isOk()) {
             return receiver;
         }
         const methodBuiltin = this.tryLowerBuiltinMethod(
@@ -1308,7 +1308,7 @@ export class AstToSsaCtx {
             [receiverArg, ...args],
             returnType,
         );
-        return ok(callInst.id);
+        return Result.ok(callInst.id);
     }
 
     private tryLowerBuiltinMethod(
@@ -1317,7 +1317,7 @@ export class AstToSsaCtx {
     ): Result<ValueId, LoweringError> | undefined {
         switch (callee.field) {
             case "clone": {
-                return ok(receiverValue);
+                return Result.ok(receiverValue);
             }
             case "len": {
                 return AstToSsaCtx.handleInstructionId(
@@ -1332,7 +1332,7 @@ export class AstToSsaCtx {
             case "push":
             case "get":
             case "pop": {
-                return ok(this.unitValue());
+                return Result.ok(this.unitValue());
             }
             default: {
                 return undefined;
@@ -1386,7 +1386,7 @@ export class AstToSsaCtx {
                 args,
                 returnType,
             );
-            return ok(callInst.id);
+            return Result.ok(callInst.id);
         }
         const returnType = this.resolveNamedCallReturnType(
             callee.name,
@@ -1397,7 +1397,7 @@ export class AstToSsaCtx {
             args,
             returnType,
         );
-        return ok(callInst.id);
+        return Result.ok(callInst.id);
     }
 
     private resolveNamedCallReturnType(name: string, fallback: IRType): IRType {
@@ -1445,10 +1445,10 @@ export class AstToSsaCtx {
 
     private lowerAssert(expr: MacroExpr): Result<ValueId, LoweringError> {
         if (expr.args.length < 1) {
-            return ok(this.unitValue());
+            return Result.ok(this.unitValue());
         }
         const condResult = this.lowerExpression(expr.args[0]);
-        if (!condResult.ok) return condResult;
+        if (!condResult.isOk()) return condResult;
 
         const failBlock = this.builder.createBlock("assert_fail");
         const continueBlock = this.builder.createBlock("assert_ok");
@@ -1458,7 +1458,7 @@ export class AstToSsaCtx {
         this.builder.unreachable();
 
         this.builder.switchToBlock(continueBlock);
-        return ok(this.unitValue());
+        return Result.ok(this.unitValue());
     }
 
     private lowerAssertEq(expr: MacroExpr): Result<ValueId, LoweringError> {
@@ -1470,9 +1470,9 @@ export class AstToSsaCtx {
             );
         }
         const leftResult = this.lowerExpression(expr.args[0]);
-        if (!leftResult.ok) return leftResult;
+        if (!leftResult.isOk()) return leftResult;
         const rightResult = this.lowerExpression(expr.args[1]);
-        if (!rightResult.ok) return rightResult;
+        if (!rightResult.isOk()) return rightResult;
 
         const leftType = this.resolveValueType(leftResult.value);
         const rightType = this.resolveValueType(rightResult.value);
@@ -1497,7 +1497,7 @@ export class AstToSsaCtx {
             ).id;
         } else {
             // Cannot statically compare values of this type; treat as no-op
-            return ok(this.unitValue());
+            return Result.ok(this.unitValue());
         }
 
         const failBlock = this.builder.createBlock("assert_fail");
@@ -1508,7 +1508,7 @@ export class AstToSsaCtx {
         this.builder.unreachable();
 
         this.builder.switchToBlock(continueBlock);
-        return ok(this.unitValue());
+        return Result.ok(this.unitValue());
     }
 
     private lowerPrintMacro(
@@ -1516,7 +1516,7 @@ export class AstToSsaCtx {
         appendNewline: boolean,
     ): Result<ValueId, LoweringError> {
         const preparedArgs = this.preparePrintArguments(expr);
-        if (!preparedArgs.ok) {
+        if (!preparedArgs.isOk()) {
             return preparedArgs;
         }
         const builtinName = appendNewline
@@ -1534,7 +1534,7 @@ export class AstToSsaCtx {
         expr: MacroExpr,
     ): Result<ValueId[], LoweringError> {
         const templateResult = this.parseFormatTemplate(expr);
-        if (!templateResult.ok) {
+        if (!templateResult.isOk()) {
             return templateResult;
         }
         const template = templateResult.value;
@@ -1545,7 +1545,7 @@ export class AstToSsaCtx {
         const args: ValueId[] = [this.builder.sconst(formatLiteralId).id];
         for (const valueExpr of expr.args.slice(1)) {
             const lowered = this.lowerExpression(valueExpr);
-            if (!lowered.ok) {
+            if (!lowered.isOk()) {
                 return lowered;
             }
             const formatTag = this.resolveExpressionFormatTag(
@@ -1562,14 +1562,14 @@ export class AstToSsaCtx {
             args.push(this.builder.iconst(formatTag, IntWidth.I64).id);
             args.push(lowered.value);
         }
-        return ok(args);
+        return Result.ok(args);
     }
 
     private parseFormatTemplate(
         expr: MacroExpr,
     ): Result<FormatTemplate, LoweringError> {
         if (expr.args.length === 0) {
-            return ok({
+            return Result.ok({
                 literal: EMPTY_FORMAT,
                 placeholderCount: 0,
             });
@@ -1587,7 +1587,7 @@ export class AstToSsaCtx {
         }
         const literal = String(formatExpr.value);
         const parsed = AstToSsaCtx.countFormatPlaceholders(literal);
-        if (!parsed.ok) {
+        if (!parsed.isOk()) {
             return loweringError(
                 LoweringErrorKind.UnsupportedNode,
                 parsed.error,
@@ -1601,7 +1601,7 @@ export class AstToSsaCtx {
                 expr.span,
             );
         }
-        return ok({
+        return Result.ok({
             literal,
             placeholderCount: parsed.value,
         });
@@ -1656,7 +1656,7 @@ export class AstToSsaCtx {
         const fieldTypes: IRType[] = [];
         for (const arg of expr.args) {
             const lowered = this.lowerExpression(arg);
-            if (!lowered.ok) {
+            if (!lowered.isOk()) {
                 return lowered;
             }
             values.push(lowered.value);
@@ -1714,7 +1714,7 @@ export class AstToSsaCtx {
                 );
             }
             const lowered = this.lowerExpression(fieldExpr);
-            if (!lowered.ok) {
+            if (!lowered.isOk()) {
                 return lowered;
             }
             fieldValues.push(lowered.value);
@@ -1737,7 +1737,7 @@ export class AstToSsaCtx {
 
     private lowerFieldAccess(expr: FieldExpr): Result<ValueId, LoweringError> {
         const base = this.lowerExpression(expr.receiver);
-        if (!base.ok) {
+        if (!base.isOk()) {
             return base;
         }
 
@@ -1934,7 +1934,7 @@ export class AstToSsaCtx {
         }
 
         const bodyResult = this.lowerExpression(expr.body);
-        if (!bodyResult.ok) {
+        if (!bodyResult.isOk()) {
             return bodyResult;
         }
 
@@ -1947,7 +1947,7 @@ export class AstToSsaCtx {
         }
 
         this.sealAllBlocks();
-        return ok(this.builder.build());
+        return Result.ok(this.builder.build());
     }
 
     private saveBuilderSnapshot(): BuilderSnapshot {
@@ -2000,7 +2000,7 @@ export class AstToSsaCtx {
         const closureResult = this.lowerClosureFunction(name, expr);
         this.restoreBuilderSnapshot(snap);
 
-        if (!closureResult.ok) {
+        if (!closureResult.isOk()) {
             return closureResult;
         }
 
@@ -2023,7 +2023,7 @@ export class AstToSsaCtx {
 
     private lowerMatchExpr(expr: MatchExpr): Result<ValueId, LoweringError> {
         const scrutinee = this.lowerExpression(expr.matchOn);
-        if (!scrutinee.ok) {
+        if (!scrutinee.isOk()) {
             return scrutinee;
         }
 
@@ -2086,7 +2086,7 @@ export class AstToSsaCtx {
             const arm = arms[index];
             this.builder.switchToBlock(armBlocks[index]);
             const body = this.lowerExpression(arm.body);
-            if (!body.ok) {
+            if (!body.isOk()) {
                 return body;
             }
             armValues.push(
@@ -2129,17 +2129,17 @@ export class AstToSsaCtx {
                 );
                 if (mergeBlock !== undefined) {
                     const [param] = mergeBlock.params;
-                    return ok(param.id);
+                    return Result.ok(param.id);
                 }
             }
         }
 
-        return ok(this.unitValue());
+        return Result.ok(this.unitValue());
     }
 
     private lowerIf(expr: IfExpr): Result<ValueId, LoweringError> {
         const condResult = this.lowerExpression(expr.condition);
-        if (!condResult.ok) return condResult;
+        if (!condResult.isOk()) return condResult;
 
         const thenId = this.builder.createBlock("if_then");
         const elseId = this.builder.createBlock("if_else");
@@ -2148,7 +2148,7 @@ export class AstToSsaCtx {
 
         this.builder.switchToBlock(thenId);
         const thenResult = this.lowerBlock(expr.thenBranch);
-        if (!thenResult.ok) {
+        if (!thenResult.isOk()) {
             return thenResult;
         }
         const thenValue = this.isCurrentBlockTerminated()
@@ -2159,7 +2159,7 @@ export class AstToSsaCtx {
         let elseValue: ValueId | undefined;
         if (expr.elseBranch) {
             const elseResult = this.lowerExpression(expr.elseBranch);
-            if (!elseResult.ok) return elseResult;
+            if (!elseResult.isOk()) return elseResult;
             elseValue = this.isCurrentBlockTerminated()
                 ? undefined
                 : elseResult.value;
@@ -2215,27 +2215,27 @@ export class AstToSsaCtx {
                 );
                 if (mergeBlock !== undefined) {
                     const [param] = mergeBlock.params;
-                    return ok(param.id);
+                    return Result.ok(param.id);
                 }
             }
         }
 
-        return ok(this.unitValue());
+        return Result.ok(this.unitValue());
     }
 
     private lowerReturn(expr: ReturnExpr): Result<ValueId, LoweringError> {
         if (expr.value === undefined) {
             this.builder.ret();
-            return ok(this.unitValue());
+            return Result.ok(this.unitValue());
         }
 
         const valueResult = this.lowerExpression(expr.value);
-        if (!valueResult.ok) {
+        if (!valueResult.isOk()) {
             return valueResult;
         }
 
         this.builder.ret(valueResult.value);
-        return ok(valueResult.value);
+        return Result.ok(valueResult.value);
     }
 
     private lowerBreak(expr: BreakExpr): Result<ValueId, LoweringError> {
@@ -2248,7 +2248,7 @@ export class AstToSsaCtx {
             );
         }
         this.builder.br(frame.breakBlock);
-        return ok(this.unitValue());
+        return Result.ok(this.unitValue());
     }
 
     private lowerContinue(expr: ContinueExpr): Result<ValueId, LoweringError> {
@@ -2261,7 +2261,7 @@ export class AstToSsaCtx {
             );
         }
         this.builder.br(frame.continueBlock);
-        return ok(this.unitValue());
+        return Result.ok(this.unitValue());
     }
 
     private lowerLoop(expr: LoopExpr): Result<ValueId, LoweringError> {
@@ -2277,7 +2277,7 @@ export class AstToSsaCtx {
         this.builder.switchToBlock(body);
         this.loopStack.push({ breakBlock: exit, continueBlock: header });
         const bodyResult = this.lowerBlock(expr.body);
-        if (!bodyResult.ok) {
+        if (!bodyResult.isOk()) {
             return bodyResult;
         }
         this.loopStack.pop();
@@ -2286,7 +2286,7 @@ export class AstToSsaCtx {
         }
 
         this.builder.switchToBlock(exit);
-        return ok(this.unitValue());
+        return Result.ok(this.unitValue());
     }
 
     private lowerWhile(expr: WhileExpr): Result<ValueId, LoweringError> {
@@ -2298,7 +2298,7 @@ export class AstToSsaCtx {
 
         this.builder.switchToBlock(header);
         const condResult = this.lowerExpression(expr.condition);
-        if (!condResult.ok) {
+        if (!condResult.isOk()) {
             return condResult;
         }
         this.builder.brIf(condResult.value, body, [], exit, []);
@@ -2306,7 +2306,7 @@ export class AstToSsaCtx {
         this.builder.switchToBlock(body);
         this.loopStack.push({ breakBlock: exit, continueBlock: header });
         const bodyResult = this.lowerBlock(expr.body);
-        if (!bodyResult.ok) {
+        if (!bodyResult.isOk()) {
             return bodyResult;
         }
         this.loopStack.pop();
@@ -2315,7 +2315,7 @@ export class AstToSsaCtx {
         }
 
         this.builder.switchToBlock(exit);
-        return ok(this.unitValue());
+        return Result.ok(this.unitValue());
     }
 
     static translateTypeNode(typeNode: TypeNode): IRType {
@@ -2568,7 +2568,7 @@ export class AstToSsaCtx {
                     index += 1;
                     continue;
                 }
-                return err("unsupported format token after `{`");
+                return Result.err("unsupported format token after `{`");
             }
             if (byte === "}") {
                 const nextByte = literal[index + 1];
@@ -2576,10 +2576,10 @@ export class AstToSsaCtx {
                     index += 1;
                     continue;
                 }
-                return err("unmatched `}` in format string");
+                return Result.err("unmatched `}` in format string");
             }
         }
-        return ok(count);
+        return Result.ok(count);
     }
 
     private defaultValueForType(ty: IRType): ValueId {
@@ -2706,7 +2706,7 @@ export class AstToSsaCtx {
                 zeroSpan(),
             );
         }
-        return ok(id);
+        return Result.ok(id);
     }
 }
 
@@ -2898,7 +2898,7 @@ function lowerOwnedFunction(
     });
     ctx.seedFunctionIds(fnIdMap);
     const lowered = ctx.lowerFunction(fnItem);
-    if (!lowered.ok) {
+    if (!lowered.isOk()) {
         throw new Error(
             `Failed to lower function \`${fnItem.name}\`: ${lowered.error.message}`,
         );

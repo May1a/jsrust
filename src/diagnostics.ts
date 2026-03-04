@@ -266,126 +266,6 @@ function createCollector(): DiagnosticCollector {
 }
 
 // ============================================================================
-// Task 13.5: Result Type
-// ============================================================================
-
-export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
-
-/**
- * Create a successful result
- */
-function ok$1<T>(value: T): Result<T, never> {
-    return { ok: true, value };
-}
-
-function ok$2(): Result<void, never> {
-    return { ok: true, value: undefined };
-}
-/**
- * Create an error result
- */
-function err$1<E>(err: E): Result<never, E> {
-    return { ok: false, error: err };
-}
-
-/**
- * Check if a result is successful
- */
-export function isOk<T, E>(
-    result: Result<T, E>,
-): result is Result<T, never> & { value: T } {
-    return result.ok;
-}
-
-/**
- * Check if a result is an error
- */
-export function isErr<T, E>(
-    result: Result<T, E>,
-): result is Result<never, E> & { error: E } {
-    return !result.ok;
-}
-
-/**
- * Unwrap a result, throwing if it's an error
- */
-export function unwrap<T, E>(result: Result<T, E>): T {
-    if (result.ok) {
-        return result.value;
-    }
-    throw new Error(
-        result.error instanceof Error
-            ? result.error.message
-            : String(result.error),
-    );
-}
-
-/**
- * Unwrap a result, returning a default value if it's an error
- */
-export function unwrapOr<T, E>(result: Result<T, E>, defaultValue: T): T {
-    return result.ok ? result.value : defaultValue;
-}
-
-/**
- * Map a result's value if successful
- */
-export function map<T, U, E>(
-    result: Result<T, E>,
-    fn: (value: T) => U,
-): Result<U, E> {
-    if (result.ok) {
-        return ok$1(fn(result.value));
-    }
-    return /** @type {Result<U, E>} */ result;
-}
-
-/**
- * Map a result's error if it's an error
- */
-export function mapErr<T, E, F>(
-    result: Result<T, E>,
-    fn: (error: E) => F,
-): Result<T, F> {
-    if (!result.ok) {
-        return err$1(fn(result.error));
-    }
-    return result;
-}
-
-/**
- * Chain a result with another operation
- */
-export function andThen<T, U, E>(
-    result: Result<T, E>,
-    fn: (value: T) => Result<U, E>,
-): Result<U, E> {
-    if (result.ok) {
-        return fn(result.value);
-    }
-    return result;
-}
-
-/**
- * Combine multiple results, collecting all errors
- */
-function combineResults$1<T, E>(results: Result<T, E>[]): Result<T[], E[]> {
-    const values: T[] = [];
-    const errors: E[] = [];
-    for (const result of results) {
-        if (result.ok) {
-            values.push(result.value);
-        } else {
-            errors.push(result.error);
-        }
-    }
-    if (errors.length > 0) {
-        return err$1(errors);
-    }
-    return ok$1(values);
-}
-
-// ============================================================================
 // Task 13.7: Source Context
 // ============================================================================
 
@@ -798,11 +678,6 @@ export {
     // Diagnostic Collector
     DiagnosticCollector,
     createCollector,
-    // Result Type
-    ok$1 as ok,
-    ok$2 as okVoid,
-    err$1 as err,
-    combineResults$1 as combineResults,
     // Source Context
     SourceContext,
     createSourceContext,

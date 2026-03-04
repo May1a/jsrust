@@ -40,7 +40,7 @@ import {
     UnaryOp,
     type Item,
 } from "./ast";
-import { type Result, err, okVoid } from "./diagnostics";
+import { Result } from "better-result";
 import { inferTypeArgs, mangledName } from "./monomorphize";
 import type { TypeContext } from "./type_context";
 
@@ -1012,7 +1012,7 @@ export function inferModule(
                 typeCtx,
                 new ModuleNode(item.span, item.name, item.items),
             );
-            if (!nested.ok) {
+            if (!nested.isOk()) {
                 errors.push(...nested.error);
             }
         }
@@ -1035,7 +1035,7 @@ export function inferModule(
     }
 
     if (errors.length > 0) {
-        return err(errors);
+        return Result.err(errors);
     }
-    return okVoid();
+    return Result.ok(undefined);
 }

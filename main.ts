@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { Result, TaggedError, type Result as BetterResult } from "better-result";
 import {
     compile,
     compileFile,
@@ -8,10 +9,13 @@ import {
     compileFileToIRModule,
     compileToBinary,
     compileFileToBinary,
+    compileErrorDiagnostics,
+    formatCompileError,
     discoverTestFunctions,
+    type CompileArtifact,
+    type CompileError,
     type CompileDiagnostic,
     type CompileOptions,
-    type CompileResult,
     type TestFn,
 } from "./src/compile";
 import { runBackendCodegenWasm, runBackendWasm } from "./src/backend_runner";
@@ -40,6 +44,30 @@ type RunOptions = {
     codegenWasm: boolean;
 };
 
+const taggedError = TaggedError;
+
+const CliArgErrorBase = taggedError("CliArgError")<{
+    message: string;
+}>();
+
+class CliArgError extends CliArgErrorBase {}
+
+const SourceFileReadErrorBase = taggedError("SourceFileReadError")<{
+    filePath: string;
+    message: string;
+    cause: unknown;
+}>();
+
+class SourceFileReadError extends SourceFileReadErrorBase {}
+
+const FileWriteErrorBase = taggedError("FileWriteError")<{
+    outputPath: string;
+    message: string;
+    cause: unknown;
+}>();
+
+class FileWriteError extends FileWriteErrorBase {}
+
 // ---------------------------------------------------------------------------
 // Diagnostic display
 // ---------------------------------------------------------------------------
@@ -58,14 +86,12 @@ function errorKindCode(kind?: string): string {
 }
 
 function compileDiagnosticToDisplay(cd: CompileDiagnostic, file: string): Diagnostic {
-    if (cd.span) {
-        const span: SourceSpan = makeSourceSpan(
-            makeSourceLocation(cd.span.line, cd.span.column, file),
-            makeSourceLocation(cd.span.line, cd.span.column + (cd.span.length ?? 1), file),
-        );
-        return withCode(makeDiagnostic(Level.Error, cd.message, span), errorKindCode(cd.kind));
-    }
-    return { level: Level.Error, message: cd.message, code: errorKindCode(cd.kind) };
+    const width = Math.max(1, cd.span.end - cd.span.start);
+    const span: SourceSpan = makeSourceSpan(
+        makeSourceLocation(cd.span.line, cd.span.column, file),
+        makeSourceLocation(cd.span.line, cd.span.column + width, file),
+    );
+    return withCode(makeDiagnostic(Level.Error, cd.message, span), errorKindCode(cd.kind));
 }
 
 function printDiagnostics(errors: CompileDiagnostic[], filePath: string, source: string): void {
@@ -84,36 +110,76 @@ function printDiagnostics(errors: CompileDiagnostic[], filePath: string, source:
 // File utilities
 // ---------------------------------------------------------------------------
 
-function readSourceFile(filePath: string): string {
-    try {
-        return fs.readFileSync(filePath, "utf8");
-    } catch {
+function causeMessage(cause: unknown): string {
+    if (cause instanceof Error) {
+        return cause.message;
+    }
+
+    return String(cause);
+}
+
+function readSourceFile(
+    filePath: string,
+): BetterResult<string, SourceFileReadError> {
+    return Result.try({
+        try: () => fs.readFileSync(filePath, "utf8"),
+        catch: (cause) =>
+            new SourceFileReadError({
+                filePath,
+                message: `failed to read file: ${filePath}: ${causeMessage(cause)}`,
+                cause,
+            }),
+    });
+}
+
+function readSourceFileOrEmpty(filePath: string): string {
+    const readResult = readSourceFile(filePath);
+    if (readResult.isErr()) {
         return "";
     }
+
+    return readResult.value;
 }
 
 function writeFileAtomic(
     outputPath: string,
     bytes: Uint8Array,
-): { ok: true } | { ok: false; message: string } {
+): BetterResult<void, FileWriteError> {
     const resolved = path.resolve(outputPath);
     const tempPath = `${resolved}.tmp`;
     try {
         fs.mkdirSync(path.dirname(resolved), { recursive: true });
         fs.writeFileSync(tempPath, bytes);
         fs.renameSync(tempPath, resolved);
-        return { ok: true };
+        return Result.ok();
     } catch (error) {
         try {
             if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
         } catch {
             // Cleanup of temp file failed; ignore and fall through to return the original error.
         }
-        return {
-            ok: false,
-            message: `failed to write file: ${resolved}: ${error instanceof Error ? error.message : String(error)}`,
-        };
+        return Result.err(
+            new FileWriteError({
+                outputPath: resolved,
+                message: `failed to write file: ${resolved}: ${causeMessage(error)}`,
+                cause: error,
+            }),
+        );
     }
+}
+
+function printCompileFailure(
+    error: CompileError,
+    filePath: string,
+    source: string,
+): void {
+    const diagnostics = compileErrorDiagnostics(error);
+    if (diagnostics !== undefined) {
+        printDiagnostics(diagnostics, filePath, source);
+        return;
+    }
+
+    console.error(`error: ${formatCompileError(error)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +232,7 @@ function printCompileHelp(exitCode = 0): never {
 
 function parseCompileArgs(
     args: string[],
-): { options: CompileOptions; inputFile?: string } | { error: string } {
+): BetterResult<{ options: CompileOptions; inputFile?: string }, CliArgError> {
     const options: CompileOptions = { emitAst: false, emitIR: true, validate: true };
     let inputFile: string | undefined;
 
@@ -180,7 +246,9 @@ function parseCompileArgs(
             options.validate = false;
         } else if (arg === "-o") {
             i++;
-            if (i >= args.length) return { error: "missing value for -o" };
+            if (i >= args.length) {
+                return Result.err(new CliArgError({ message: "missing value for -o" }));
+            }
             options.outputFile = args[i];
         } else if (arg === "-h" || arg === "--help") {
             printCompileHelp(0);
@@ -189,61 +257,76 @@ function parseCompileArgs(
         }
     }
 
-    return { options, inputFile };
+    return Result.ok({ options, inputFile });
 }
 
-function buildCompileOutput(result: CompileResult, options: CompileOptions): string {
+function buildCompileOutput(result: CompileArtifact, options: CompileOptions): string {
     let output = "";
-    if (options.emitAst && result.ast) {
+    if (options.emitAst && result.ast !== undefined) {
         output += `=== AST ===\n${JSON.stringify(result.ast, undefined, 2)}\n\n`;
     }
-    if (options.emitIR && result.ir) {
+    if (options.emitIR && result.ir !== undefined) {
         output += `=== SSA IR ===\n${String(result.ir)}`;
     }
     return output;
 }
 
-function writeCompileOutput(output: string, outputFile: string | undefined): number {
-    if (outputFile) {
-        try {
+function writeCompileOutput(
+    output: string,
+    outputFile: string | undefined,
+): BetterResult<void, FileWriteError> {
+    if (outputFile === undefined) {
+        console.log(output);
+        return Result.ok();
+    }
+
+    return Result.try({
+        try: () => {
             fs.writeFileSync(outputFile, output);
             console.log(`Output written to ${outputFile}`);
-        } catch (error) {
-            console.error(
-                `error: failed to write output file: ${error instanceof Error ? error.message : String(error)}`,
-            );
-            return 1;
-        }
-    } else {
-        console.log(output);
-    }
-    return 0;
+        },
+        catch: (cause) =>
+            new FileWriteError({
+                outputPath: path.resolve(outputFile),
+                message: `failed to write output file: ${causeMessage(cause)}`,
+                cause,
+            }),
+    });
 }
 
 function runCompileCli(args: string[]): number {
     if (args.length === 0) printCompileHelp(1);
 
     const parsed = parseCompileArgs(args);
-    if ("error" in parsed) {
-        console.error(`error: ${parsed.error}`);
+    if (parsed.isErr()) {
+        console.error(`error: ${parsed.error.message}`);
         return 1;
     }
-    const { options, inputFile } = parsed;
+    const { options, inputFile } = parsed.value;
 
     if (!inputFile) {
         console.error("error: no input file specified");
         return 1;
     }
 
-    const source = readSourceFile(inputFile);
+    const source = readSourceFileOrEmpty(inputFile);
     const result = compileFile(inputFile, options);
 
-    if (!result.ok) {
-        printDiagnostics(result.errors, inputFile, source);
+    if (result.isErr()) {
+        printCompileFailure(result.error, inputFile, source);
         return 1;
     }
 
-    return writeCompileOutput(buildCompileOutput(result, options), options.outputFile);
+    const writeResult = writeCompileOutput(
+        buildCompileOutput(result.value, options),
+        options.outputFile,
+    );
+    if (writeResult.isErr()) {
+        console.error(`error: ${writeResult.error.message}`);
+        return 1;
+    }
+
+    return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -279,12 +362,12 @@ function runSingleTest(
         ? runBackendCodegenWasm(bytes, { entry: testFn.name, trace: false })
         : runBackendWasm(bytes, { entry: testFn.name, trace: false });
 
-    if (!runResult.ok) {
-        return { passed: false, reason: runResult.message };
+    if (runResult.isErr()) {
+        return { passed: false, reason: runResult.error.message };
     }
 
     if (testFn.expectedOutput !== undefined) {
-        const actual = normalizeNewlines(runResult.stdout);
+        const actual = normalizeNewlines(runResult.value.stdout);
         const expected = normalizeNewlines(testFn.expectedOutput);
         if (actual !== expected) {
             const line = firstDiffLine(actual, expected);
@@ -300,7 +383,12 @@ function runSingleTest(
     return { passed: true };
 }
 
-function parseTestArgs(args: string[]): { validate: boolean; codegenWasm: boolean; inputFile?: string } | { error: string } {
+function parseTestArgs(
+    args: string[],
+): BetterResult<
+    { validate: boolean; codegenWasm: boolean; inputFile?: string },
+    CliArgError
+> {
     let validate = true;
     let codegenWasm = false;
     let inputFile: string | undefined;
@@ -313,15 +401,21 @@ function parseTestArgs(args: string[]): { validate: boolean; codegenWasm: boolea
         } else if (arg === "-h" || arg === "--help") {
             printTestHelp(0);
         } else if (arg.startsWith("-")) {
-            return { error: `unknown option for test: ${arg}` };
+            return Result.err(
+                new CliArgError({ message: `unknown option for test: ${arg}` }),
+            );
         } else if (!inputFile) {
             inputFile = arg;
         } else {
-            return { error: `unexpected positional argument: ${arg}` };
+            return Result.err(
+                new CliArgError({
+                    message: `unexpected positional argument: ${arg}`,
+                }),
+            );
         }
     }
 
-    return { validate, codegenWasm, inputFile };
+    return Result.ok({ validate, codegenWasm, inputFile });
 }
 
 function reportTestSuite(
@@ -357,11 +451,11 @@ function runTestCli(args: string[]): number {
     if (args.length === 0) printTestHelp(1);
 
     const parsed = parseTestArgs(args);
-    if ("error" in parsed) {
-        console.error(`error: ${parsed.error}`);
+    if (parsed.isErr()) {
+        console.error(`error: ${parsed.error.message}`);
         return 1;
     }
-    const { validate, codegenWasm, inputFile } = parsed;
+    const { validate, codegenWasm, inputFile } = parsed.value;
 
     if (!inputFile) {
         console.error("error: no input file specified for test");
@@ -369,23 +463,35 @@ function runTestCli(args: string[]): number {
     }
 
     const discoverResult = discoverTestFunctions(inputFile);
-    if (!discoverResult.ok) {
-        printDiagnostics(discoverResult.errors, inputFile, readSourceFile(inputFile));
+    if (discoverResult.isErr()) {
+        printCompileFailure(
+            discoverResult.error,
+            inputFile,
+            readSourceFileOrEmpty(inputFile),
+        );
         return 1;
     }
 
-    if (discoverResult.tests.length === 0) {
+    if (discoverResult.value.length === 0) {
         console.log("No test functions found.");
         return 0;
     }
 
     const binaryResult = compileFileToBinary(inputFile, { validate });
-    if (!binaryResult.ok || !binaryResult.bytes) {
-        printDiagnostics(binaryResult.errors, inputFile, readSourceFile(inputFile));
+    if (binaryResult.isErr()) {
+        printCompileFailure(
+            binaryResult.error,
+            inputFile,
+            readSourceFileOrEmpty(inputFile),
+        );
         return 1;
     }
 
-    return reportTestSuite(discoverResult.tests, binaryResult.bytes, codegenWasm);
+    return reportTestSuite(
+        discoverResult.value,
+        binaryResult.value.bytes,
+        codegenWasm,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -410,7 +516,7 @@ function printRunHelp(exitCode = 0): never {
 
 function parseRunArgs(
     args: string[],
-): { options: RunOptions; inputFile?: string } | { error: string } {
+): BetterResult<{ options: RunOptions; inputFile?: string }, CliArgError> {
     const options: RunOptions = {
         entry: "main",
         trace: false,
@@ -425,17 +531,29 @@ function parseRunArgs(
         const arg = args[i];
         if (arg === "--entry") {
             i++;
-            if (i >= args.length) return { error: "missing value for --entry" };
+            if (i >= args.length) {
+                return Result.err(
+                    new CliArgError({ message: "missing value for --entry" }),
+                );
+            }
             options.entry = args[i];
         } else if (arg === "--trace") {
             options.trace = true;
         } else if (arg === "--trace-out") {
             i++;
-            if (i >= args.length) return { error: "missing value for --trace-out" };
+            if (i >= args.length) {
+                return Result.err(
+                    new CliArgError({ message: "missing value for --trace-out" }),
+                );
+            }
             options.traceOutPath = args[i];
         } else if (arg === "--out-bin") {
             i++;
-            if (i >= args.length) return { error: "missing value for --out-bin" };
+            if (i >= args.length) {
+                return Result.err(
+                    new CliArgError({ message: "missing value for --out-bin" }),
+                );
+            }
             options.outBin = args[i];
         } else if (arg === "--no-validate") {
             options.validate = false;
@@ -444,15 +562,21 @@ function parseRunArgs(
         } else if (arg === "-h" || arg === "--help") {
             printRunHelp(0);
         } else if (arg.startsWith("-")) {
-            return { error: `unknown option for run: ${arg}` };
+            return Result.err(
+                new CliArgError({ message: `unknown option for run: ${arg}` }),
+            );
         } else if (!inputFile) {
             inputFile = arg;
         } else {
-            return { error: `unexpected positional argument: ${arg}` };
+            return Result.err(
+                new CliArgError({
+                    message: `unexpected positional argument: ${arg}`,
+                }),
+            );
         }
     }
 
-    return { options, inputFile };
+    return Result.ok({ options, inputFile });
 }
 
 function executeAndReport(bytes: Uint8Array, options: RunOptions): number {
@@ -460,20 +584,20 @@ function executeAndReport(bytes: Uint8Array, options: RunOptions): number {
         ? runBackendCodegenWasm(bytes, { entry: options.entry, trace: options.trace })
         : runBackendWasm(bytes, { entry: options.entry, trace: options.trace });
 
-    if (!runResult.ok) {
-        console.error(`error[${runResult.label}]: ${runResult.message}`);
-        return runResult.exitCode ?? 1;
+    if (runResult.isErr()) {
+        console.error(`error[${runResult.error.label ?? "internal-error"}]: ${runResult.error.message}`);
+        return runResult.error.exitCode ?? 1;
     }
 
-    if (runResult.stdoutBytes.length > 0) {
-        process.stdout.write(Buffer.from(runResult.stdoutBytes));
+    if (runResult.value.stdoutBytes.length > 0) {
+        process.stdout.write(Buffer.from(runResult.value.stdoutBytes));
     }
-    process.stdout.write(runResult.hasExitValue ? `ok exit=${runResult.exitValue}\n` : "ok\n");
+    process.stdout.write(runResult.value.hasExitValue ? `ok exit=${runResult.value.exitValue}\n` : "ok\n");
 
     if (options.traceOutPath) {
-        const writeResult = writeFileAtomic(options.traceOutPath, runResult.traceBytes);
-        if (!writeResult.ok) {
-            console.error(`error: ${writeResult.message}`);
+        const writeResult = writeFileAtomic(options.traceOutPath, runResult.value.traceBytes);
+        if (writeResult.isErr()) {
+            console.error(`error: ${writeResult.error.message}`);
             return 1;
         }
     }
@@ -485,11 +609,11 @@ function runBackendCli(args: string[]): number {
     if (args.length === 0) printRunHelp(1);
 
     const parsed = parseRunArgs(args);
-    if ("error" in parsed) {
-        console.error(`error: ${parsed.error}`);
+    if (parsed.isErr()) {
+        console.error(`error: ${parsed.error.message}`);
         return 1;
     }
-    const { options, inputFile } = parsed;
+    const { options, inputFile } = parsed.value;
 
     if (!inputFile) {
         console.error("error: no input file specified for run");
@@ -504,26 +628,22 @@ function runBackendCli(args: string[]): number {
         return 1;
     }
 
-    const source = readSourceFile(inputFile);
+    const source = readSourceFileOrEmpty(inputFile);
     const binaryResult = compileFileToBinary(inputFile, { validate: options.validate });
-    if (!binaryResult.ok) {
-        printDiagnostics(binaryResult.errors, inputFile, source);
-        return 1;
-    }
-    if (!binaryResult.bytes) {
-        console.error("error: binary IR serialization produced no bytes");
+    if (binaryResult.isErr()) {
+        printCompileFailure(binaryResult.error, inputFile, source);
         return 1;
     }
 
     if (options.outBin) {
-        const writeResult = writeFileAtomic(options.outBin, binaryResult.bytes);
-        if (!writeResult.ok) {
-            console.error(`error: ${writeResult.message}`);
+        const writeResult = writeFileAtomic(options.outBin, binaryResult.value.bytes);
+        if (writeResult.isErr()) {
+            console.error(`error: ${writeResult.error.message}`);
             return 1;
         }
     }
 
-    return executeAndReport(binaryResult.bytes, options);
+    return executeAndReport(binaryResult.value.bytes, options);
 }
 
 // ---------------------------------------------------------------------------

@@ -8,70 +8,41 @@
  *   bun run scripts/update-expected.ts 05_if_else.rs 06_loops.rs
  */
 
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { readdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseModule } from "../src/parser";
-import { TypeContext } from "../src/type_context";
-import { inferModule } from "../src/inference";
-import { checkBorrowLite } from "../src/borrow";
-import { resolveModuleTree } from "../src/module_resolver";
-import { expandDerives } from "../src/derive_expand";
-import { lowerAstModuleToSsa } from "../src/ast_to_ssa";
-import { printModule } from "../src/ir_printer";
-import { resetIRIds } from "../src/ir";
+import { Result } from "better-result";
+import { compileFile, formatCompileError } from "../src/compile";
 
 const root = resolve(import.meta.dir, "..");
 const examplesDir = resolve(root, "examples");
 const expectedDir = resolve(examplesDir, "expected");
 
-function compileToIR(source: string): string {
-    resetIRIds();
-
-    const parseResult = parseModule(source);
-    if (!parseResult.ok) {
-        const msgs = parseResult.errors.map((e) => e.message).join("; ");
-        throw new Error(`Parse error: ${msgs}`);
+function toExampleFileNames(args: string[]): string[] {
+    if (args.length === 0) {
+        return readdirSync(examplesDir)
+            .filter((fileName) => fileName.endsWith(".rs"))
+            .toSorted();
     }
 
-    const resolveResult = resolveModuleTree(parseResult.value);
-    if (!resolveResult.ok || !resolveResult.module) {
-        const msgs = resolveResult.errors
-            .map((e) => e.message)
-            .join("; ");
-        throw new Error(`Resolve error: ${msgs}`);
-    }
+    return args.map((fileName) =>
+        fileName.endsWith(".rs") ? fileName : `${fileName}.rs`,
+    );
+}
 
-    const deriveResult = expandDerives(resolveResult.module);
-    if (!deriveResult.ok || !deriveResult.module) {
-        const msgs = deriveResult.errors
-            .map((e) => e.message)
-            .join("; ");
-        throw new Error(`Derive expand error: ${msgs}`);
-    }
-
-    const typeCtx = new TypeContext();
-    const inferResult = inferModule(typeCtx, deriveResult.module);
-    if (!inferResult.ok) {
-        const msgs = inferResult.error
-            .filter(Boolean)
-            .map((e) => e.message)
-            .join("; ");
-        throw new Error(`Type inference error: ${msgs}`);
-    }
-
-    checkBorrowLite(deriveResult.module, typeCtx);
-
-    const irModule = lowerAstModuleToSsa(deriveResult.module);
-    return `${printModule(irModule)}\n`;
+function writeExpectedFile(outputPath: string, ir: string) {
+    return Result.try({
+        try: () => {
+            writeFileSync(outputPath, ir);
+        },
+        catch: (cause) =>
+            new Error(
+                `failed to write ${outputPath}: ${cause instanceof Error ? cause.message : String(cause)}`,
+            ),
+    });
 }
 
 const args = process.argv.slice(2);
-const files =
-    args.length > 0
-        ? args.map((a) => (a.endsWith(".rs") ? a : `${a}.rs`))
-        : readdirSync(examplesDir)
-              .filter((f) => f.endsWith(".rs"))
-              .toSorted();
+const files = toExampleFileNames(args);
 
 let updated = 0;
 let failed = 0;
@@ -79,28 +50,31 @@ let failed = 0;
 for (const file of files) {
     const sourcePath = resolve(examplesDir, file);
     const outPath = resolve(expectedDir, file.replace(".rs", ".ir"));
+    const compileResult = compileFile(sourcePath);
 
-    let source: string;
-    try {
-        source = readFileSync(sourcePath, "utf8");
-    } catch {
-        console.error(`✗ ${file}: source file not found`);
-        failed++;
+    if (compileResult.isErr()) {
+        console.error(`x ${file}: ${formatCompileError(compileResult.error)}`);
+        failed += 1;
         continue;
     }
 
-    try {
-        const ir = compileToIR(source);
-        writeFileSync(outPath, ir);
-        console.log(`✓ ${file}`);
-        updated++;
-    } catch (error) {
-        console.error(
-            `✗ ${file}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        failed++;
+    const { ir } = compileResult.value;
+    if (ir === undefined) {
+        console.error(`x ${file}: compiler produced no IR`);
+        failed += 1;
+        continue;
     }
+
+    const writeResult = writeExpectedFile(outPath, `${ir}\n`);
+    if (writeResult.isErr()) {
+        console.error(`x ${file}: ${writeResult.error.message}`);
+        failed += 1;
+        continue;
+    }
+
+    console.log(`ok ${file}`);
+    updated += 1;
 }
 
 console.log(`\n${updated} updated, ${failed} failed`);
-if (failed > 0) throw new Error("Some examples failed to compile");
+process.exit(failed > 0 ? 1 : 0);
