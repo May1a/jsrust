@@ -6,21 +6,21 @@ module main {
 
   struct Point { i32, i32 }
 
-  fn f0 test_example() -> () {
+  fn f949693 test_example() -> () {
     b0 (entry):
-      v1: i32               = iconst 1
-      v2: i32               = iconst 2
-      v3: struct Point      = struct_create Point { v1, v2 }
-      v4: ptr<struct Point> = alloca struct Point
-      store v3 -> v4
-      v6: struct Point      = load v4
-      v7: i32               = struct_get v6.0
-      v8: ptr<i32>          = alloca i32
-      store v7 -> v8
-      v10: ptr              = sconst s0
-      v11: i32              = load v8
-      v12: i64              = iconst 1
-      call f862609(v10, v12, v11)
+      v0: i32               = iconst 1
+      v1: i32               = iconst 2
+      v2: struct Point      = struct_create Point { v0, v1 }
+      v3: ptr<struct Point> = alloca struct Point
+      store v2 -> v3
+      v5: struct Point      = load v3
+      v6: i32               = struct_get v5.0
+      v7: ptr<i32>          = alloca i32
+      store v6 -> v7
+      v9: ptr               = sconst s0
+      v10: i32              = load v7
+      v11: i64              = iconst 1
+      call f862609(v9, v11, v10)
       ret
   }
 

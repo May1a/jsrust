@@ -5,24 +5,24 @@ module main {
     s1 = "Hello, world!"
   }
 
-  fn f0 test(v1 arg0: ptr<ptr<u8>>) -> () {
+  fn f556498 test(v0 arg0: ptr<ptr<u8>>) -> () {
     b0 (entry):
-      v2: ptr<ptr<ptr<u8>>> = alloca ptr<ptr<u8>>
-      store v1 -> v2
-      v4: ptr               = sconst s0
-      v5: ptr<ptr<u8>>      = load v2
-      v6: i64               = iconst 0
-      call f862609(v4, v6, v5)
+      v1: ptr<ptr<ptr<u8>>> = alloca ptr<ptr<u8>>
+      store v0 -> v1
+      v3: ptr               = sconst s0
+      v4: ptr<ptr<u8>>      = load v1
+      v5: i64               = iconst 0
+      call f862609(v3, v5, v4)
       ret
   }
 
-  fn f8 test_example() -> () {
+  fn f949693 test_example() -> () {
     b0 (entry):
-      v9: ptr       = sconst s1
-      v10: ptr<ptr> = alloca ptr
-      store v9 -> v10
-      v12: ptr      = load v10
-      call f556498(v12)
+      v7: ptr      = sconst s1
+      v8: ptr<ptr> = alloca ptr
+      store v7 -> v8
+      v10: ptr     = load v8
+      call test(v10)
       ret
   }
 

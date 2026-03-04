@@ -8,79 +8,79 @@ module main {
 
   struct Self { i32, i32 }
 
-  fn f0 create(v1 arg0: i32, v2 arg1: i32) -> struct Point {
+  fn f294148 create(v0 arg0: i32, v1 arg1: i32) -> struct Point {
     b0 (entry):
-      v3: ptr<i32>     = alloca i32
-      store v1 -> v3
-      v5: ptr<i32>     = alloca i32
-      store v2 -> v5
-      v7: i32          = load v3
-      v8: i32          = load v5
-      v9: struct Point = struct_create Point { v7, v8 }
-      ret v9
+      v2: ptr<i32>     = alloca i32
+      store v0 -> v2
+      v4: ptr<i32>     = alloca i32
+      store v1 -> v4
+      v6: i32          = load v2
+      v7: i32          = load v4
+      v8: struct Point = struct_create Point { v6, v7 }
+      ret v8
   }
 
-  fn f10 new(v11 arg0: i32, v12 arg1: i32) -> struct Point {
+  fn f108960 new(v9 arg0: i32, v10 arg1: i32) -> struct Point {
     b0 (entry):
+      v11: ptr<i32>    = alloca i32
+      store v9 -> v11
       v13: ptr<i32>    = alloca i32
-      store v11 -> v13
-      v15: ptr<i32>    = alloca i32
-      store v12 -> v15
-      v17: i32         = load v13
-      v18: i32         = load v15
-      v19: struct Self = struct_create Self { v17, v18 }
-      ret v19
+      store v10 -> v13
+      v15: i32         = load v11
+      v16: i32         = load v13
+      v17: struct Self = struct_create Self { v15, v16 }
+      ret v17
   }
 
-  fn f20 add(v21 arg0: ptr<struct Point>, v22 arg1: ptr<struct Point>) -> struct Point {
+  fn f96417 add(v18 arg0: ptr<struct Point>, v19 arg1: ptr<struct Point>) -> struct Point {
     b0 (entry):
-      v23: ptr<ptr<struct Point>> = alloca ptr<struct Point>
-      store v21 -> v23
-      v25: ptr<ptr<struct Point>> = alloca ptr<struct Point>
-      store v22 -> v25
-      v27: ptr<struct Point>      = load v23
+      v20: ptr<ptr<struct Point>> = alloca ptr<struct Point>
+      store v18 -> v20
+      v22: ptr<ptr<struct Point>> = alloca ptr<struct Point>
+      store v19 -> v22
+      v24: ptr<struct Point>      = load v20
+      v25: struct Point           = load v24
+      v26: i32                    = struct_get v25.0
+      v27: ptr<struct Point>      = load v22
       v28: struct Point           = load v27
       v29: i32                    = struct_get v28.0
-      v30: ptr<struct Point>      = load v25
-      v31: struct Point           = load v30
-      v32: i32                    = struct_get v31.0
-      v33: i32                    = iadd v29, v32
-      v34: ptr<struct Point>      = load v23
+      v30: i32                    = iadd v26, v29
+      v31: ptr<struct Point>      = load v20
+      v32: struct Point           = load v31
+      v33: i32                    = struct_get v32.1
+      v34: ptr<struct Point>      = load v22
       v35: struct Point           = load v34
       v36: i32                    = struct_get v35.1
-      v37: ptr<struct Point>      = load v25
-      v38: struct Point           = load v37
-      v39: i32                    = struct_get v38.1
-      v40: i32                    = iadd v36, v39
-      v41: struct Point           = struct_create Point { v33, v40 }
-      ret v41
+      v37: i32                    = iadd v33, v36
+      v38: struct Point           = struct_create Point { v30, v37 }
+      ret v38
   }
 
-  fn f42 test_example() -> () {
+  fn f949693 test_example() -> () {
     b0 (entry):
-      v43: i32               = iconst 1
-      v44: i32               = iconst 2
-      v45: struct Point      = call f294148(v43, v44)
-      v46: ptr<struct Point> = alloca struct Point
-      store v45 -> v46
-      v48: i32               = iconst 3
-      v49: i32               = iconst 4
-      v50: struct Point      = call f108960(v48, v49)
-      v51: ptr<struct Point> = alloca struct Point
-      store v50 -> v51
-      v53: struct Point      = load v51
-      v54: struct Point      = load v46
-      v55: struct Point      = call f96417(v46, v51)
-      v56: ptr<struct Point> = alloca struct Point
-      store v55 -> v56
-      v58: ptr               = sconst s0
-      v59: struct Point      = load v56
-      v60: i32               = struct_get v59.0
-      v61: i64               = iconst 1
-      v62: struct Point      = load v56
-      v63: i32               = struct_get v62.1
-      v64: i64               = iconst 1
-      call f862609(v58, v61, v60, v64, v63)
+      v39: i32               = iconst 1
+      v40: i32               = iconst 2
+      v41: struct Point      = call create(v39, v40)
+      v42: ptr<struct Point> = alloca struct Point
+      store v41 -> v42
+      v44: i32               = iconst 3
+      v45: i32               = iconst 4
+      v46: struct Point      = call new(v44, v45)
+      v47: ptr<struct Point> = alloca struct Point
+      store v46 -> v47
+      v49: struct Point      = load v47
+      v50: struct Point      = load v42
+      v51: struct Point      = call add(v42, v47)
+      v52: ptr<struct Point> = alloca struct Point
+      store v51 -> v52
+      v54: ptr               = sconst s0
+      v55: struct Point      = load v52
+      v56: i32               = struct_get v55.0
+      v57: i64               = iconst 1
+      v58: struct Point      = load v52
+      v59: i32               = struct_get v58.1
+      v60: i64               = iconst 1
+      call f862609(v54, v57, v56, v60, v59)
       ret
   }
 

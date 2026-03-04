@@ -4,22 +4,22 @@ module main {
     s0 = "{}"
   }
 
-  fn f0 test_example() -> () {
+  fn f949693 test_example() -> () {
     b0 (entry):
-      v1: ptr = sconst s0
-      v2: i32 = iconst 1
-      v3: i64 = call f621660(v2)
-      v4: i64 = iconst 1
-      call f862609(v1, v4, v3)
+      v0: ptr = sconst s0
+      v1: i32 = iconst 1
+      v2: i64 = call id_i32(v1)
+      v3: i64 = iconst 1
+      call f862609(v0, v3, v2)
       ret
   }
 
-  fn f6 id_i32(v7 arg0: i32) -> i32 {
+  fn f621660 id_i32(v5 arg0: i32) -> i32 {
     b0 (entry):
-      v8: ptr<i32> = alloca i32
-      store v7 -> v8
-      v10: i32     = load v8
-      ret v10
+      v6: ptr<i32> = alloca i32
+      store v5 -> v6
+      v8: i32      = load v6
+      ret v8
   }
 
 }

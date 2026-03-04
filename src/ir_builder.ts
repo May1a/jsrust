@@ -102,10 +102,15 @@ export class IRBuilder {
         this.varTypes = new Map(); // VarName -> IRType
         this.nextBlockId = 0;
     }
-    createFunction(name: string, params: IRType[], returnType: IRType): void {
+    createFunction(
+        name: string,
+        params: IRType[],
+        returnType: IRType,
+        id?: number,
+    ): void {
         this.currentFunction = {
             blocks: [],
-            id: freshValueId(),
+            id: id ?? freshValueId(),
             locals: [],
             name,
             params: params.map((ty, i) => ({

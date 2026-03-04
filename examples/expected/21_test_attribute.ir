@@ -5,31 +5,31 @@ module main {
     s1 = "x = {}"
   }
 
-  fn f0 test_basic() -> () {
+  fn f178369 test_basic() -> () {
     b0 (entry):
-      v1: i32      = iconst 1
-      v2: i32      = iconst 2
-      v3: i32      = iadd v1, v2
-      v4: ptr<i32> = alloca i32
-      store v3 -> v4
-      v6: ptr      = sconst s0
-      v7: i32      = load v4
-      v8: i64      = iconst 1
-      call f862609(v6, v8, v7)
+      v0: i32      = iconst 1
+      v1: i32      = iconst 2
+      v2: i32      = iadd v0, v1
+      v3: ptr<i32> = alloca i32
+      store v2 -> v3
+      v5: ptr      = sconst s0
+      v6: i32      = load v3
+      v7: i64      = iconst 1
+      call f862609(v5, v7, v6)
       ret
   }
 
-  fn f10 test_multiplication() -> () {
+  fn f799213 test_multiplication() -> () {
     b0 (entry):
-      v11: i32      = iconst 4
-      v12: i32      = iconst 5
-      v13: i32      = imul v11, v12
-      v14: ptr<i32> = alloca i32
-      store v13 -> v14
-      v16: ptr      = sconst s1
-      v17: i32      = load v14
-      v18: i64      = iconst 1
-      call f862609(v16, v18, v17)
+      v9: i32       = iconst 4
+      v10: i32      = iconst 5
+      v11: i32      = imul v9, v10
+      v12: ptr<i32> = alloca i32
+      store v11 -> v12
+      v14: ptr      = sconst s1
+      v15: i32      = load v12
+      v16: i64      = iconst 1
+      call f862609(v14, v16, v15)
       ret
   }
 

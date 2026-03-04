@@ -4,10 +4,10 @@ module main {
     s0 = "Hello, World!"
   }
 
-  fn f0 test_example() -> () {
+  fn f949693 test_example() -> () {
     b0 (entry):
-      v1: ptr = sconst s0
-      call f862609(v1)
+      v0: ptr = sconst s0
+      call f862609(v0)
       ret
   }
 

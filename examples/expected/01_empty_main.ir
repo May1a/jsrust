@@ -1,6 +1,6 @@
 module main {
 
-  fn f0 test_example() -> () {
+  fn f949693 test_example() -> () {
     b0 (entry):
       ret
   }

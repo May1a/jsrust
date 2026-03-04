@@ -9,34 +9,34 @@ module main {
 
   enum Color { [], [], [] }
 
-  fn f0 test_example() -> () {
+  fn f949693 test_example() -> () {
     b0 (entry):
-      v1: enum __anon_enum      = enum_create __anon_enum tag=1
-      v2: ptr<enum __anon_enum> = alloca enum __anon_enum
-      store v1 -> v2
-      v4: enum __anon_enum      = load v2
-      v5: usize                 = enum_get_tag v4
-      switch v5 [ 0 => b1, 1 => b2, 2 => b3 ] default: b1
+      v0: enum __anon_enum      = enum_create __anon_enum tag=1
+      v1: ptr<enum __anon_enum> = alloca enum __anon_enum
+      store v0 -> v1
+      v3: enum __anon_enum      = load v1
+      v4: usize                 = enum_get_tag v3
+      switch v4 [ 0 => b1, 1 => b2, 2 => b3 ] default: b1
   
     b1 (match_arm_0):
-      v6: ptr = sconst s0
-      br b4(v6)
+      v5: ptr = sconst s0
+      br b4(v5)
   
     b2 (match_arm_1):
-      v7: ptr = sconst s1
-      br b4(v7)
+      v6: ptr = sconst s1
+      br b4(v6)
   
     b3 (match_arm_2):
-      v8: ptr = sconst s2
-      br b4(v8)
+      v7: ptr = sconst s2
+      br b4(v7)
   
-    b4(v9: ptr) (match_merge):
-      v10: ptr<ptr> = alloca ptr
-      store v9 -> v10
-      v12: ptr      = sconst s3
-      v13: ptr      = load v10
-      v14: i64      = iconst 0
-      call f862609(v12, v14, v13)
+    b4(v8: ptr) (match_merge):
+      v9: ptr<ptr> = alloca ptr
+      store v8 -> v9
+      v11: ptr     = sconst s3
+      v12: ptr     = load v9
+      v13: i64     = iconst 0
+      call f862609(v11, v13, v12)
       ret
   }
 

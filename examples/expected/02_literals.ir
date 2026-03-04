@@ -4,20 +4,20 @@ module main {
     s0 = "hello"
   }
 
-  fn f0 test_example() -> () {
+  fn f949693 test_example() -> () {
     b0 (entry):
-      v1: i32       = iconst 42
-      v2: ptr<i32>  = alloca i32
-      store v1 -> v2
-      v4: f64       = fconst 3.14
-      v5: ptr<f64>  = alloca f64
-      store v4 -> v5
-      v7: bool      = bconst true
-      v8: ptr<bool> = alloca bool
-      store v7 -> v8
-      v10: ptr      = sconst s0
-      v11: ptr<ptr> = alloca ptr
-      store v10 -> v11
+      v0: i32       = iconst 42
+      v1: ptr<i32>  = alloca i32
+      store v0 -> v1
+      v3: f64       = fconst 3.14
+      v4: ptr<f64>  = alloca f64
+      store v3 -> v4
+      v6: bool      = bconst true
+      v7: ptr<bool> = alloca bool
+      store v6 -> v7
+      v9: ptr       = sconst s0
+      v10: ptr<ptr> = alloca ptr
+      store v9 -> v10
       ret
   }
 

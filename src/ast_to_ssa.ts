@@ -292,7 +292,8 @@ export class AstToSsaCtx {
     }
 
     private startFunction(name: string, paramTypes: IRType[]): void {
-        this.builder.createFunction(name, paramTypes, this.currentReturnType);
+        const fnId = this.resolveFunctionId(name);
+        this.builder.createFunction(name, paramTypes, this.currentReturnType, fnId);
         const entryId = this.builder.createBlock("entry");
         this.builder.switchToBlock(entryId);
     }
@@ -2849,9 +2850,12 @@ function inferLiteralType(expr: Expression): TypeNode | undefined {
             }
         }
     }
-    if (expr instanceof IdentifierExpr) {
-        // Cannot determine type without full context
-        return undefined;
+    if (expr instanceof BinaryExpr) {
+        // Arithmetic/bitwise ops preserve the operand type — try left then right
+        return inferLiteralType(expr.left) ?? inferLiteralType(expr.right);
+    }
+    if (expr instanceof UnaryExpr) {
+        return inferLiteralType(expr.operand);
     }
     return undefined;
 }

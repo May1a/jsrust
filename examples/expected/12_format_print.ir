@@ -11,24 +11,24 @@ module main {
     s7 = "No placeholders here"
   }
 
-  fn f0 test_example() -> () {
+  fn f949693 test_example() -> () {
     b0 (entry):
-      v1: ptr  = sconst s0
-      v2: ptr  = sconst s1
-      v3: i64  = iconst 0
-      call f862609(v1, v3, v2)
-      v5: ptr  = sconst s2
-      v6: ptr  = sconst s3
-      v7: i64  = iconst 0
-      v8: ptr  = sconst s4
-      v9: i64  = iconst 0
-      call f862609(v5, v7, v6, v9, v8)
-      v11: ptr = sconst s5
-      v12: ptr = sconst s6
-      v13: i64 = iconst 0
-      call f862609(v11, v13, v12)
-      v15: ptr = sconst s7
-      call f862609(v15)
+      v0: ptr  = sconst s0
+      v1: ptr  = sconst s1
+      v2: i64  = iconst 0
+      call f862609(v0, v2, v1)
+      v4: ptr  = sconst s2
+      v5: ptr  = sconst s3
+      v6: i64  = iconst 0
+      v7: ptr  = sconst s4
+      v8: i64  = iconst 0
+      call f862609(v4, v6, v5, v8, v7)
+      v10: ptr = sconst s5
+      v11: ptr = sconst s6
+      v12: i64 = iconst 0
+      call f862609(v10, v12, v11)
+      v14: ptr = sconst s7
+      call f862609(v14)
       ret
   }
 

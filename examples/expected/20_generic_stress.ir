@@ -1,0 +1,68 @@
+module main {
+
+  strings {
+    s0 = "{} {}"
+  }
+
+  fn f949693 test_example() -> () {
+    b0 (entry):
+      v0: i32       = iconst 40
+      v1: i64       = call id_i32(v0)
+      v2: ptr<i64>  = alloca i64
+      store v1 -> v2
+      v4: i64       = load v2
+      v5: i32       = iconst 2
+      v6: i32       = iadd v4, v5
+      v7: i64       = call id_i32(v6)
+      v8: ptr<i64>  = alloca i64
+      store v7 -> v8
+      v10: i64      = load v8
+      v11: i32      = iconst 999
+      v12: i64      = call pick_left_i32_i32(v10, v11)
+      v13: ptr<i64> = alloca i64
+      store v12 -> v13
+      v15: i32      = iconst 0
+      v16: i64      = load v13
+      v17: i32      = iconst 1
+      v18: i32      = iadd v16, v17
+      v19: i64      = call pick_right_i32_i32(v15, v18)
+      v20: ptr<i64> = alloca i64
+      store v19 -> v20
+      v22: ptr      = sconst s0
+      v23: i64      = load v13
+      v24: i64      = iconst 1
+      v25: i64      = load v20
+      v26: i64      = iconst 1
+      call f862609(v22, v24, v23, v26, v25)
+      ret
+  }
+
+  fn f621660 id_i32(v28 arg0: i32) -> i32 {
+    b0 (entry):
+      v29: ptr<i32> = alloca i32
+      store v28 -> v29
+      v31: i32      = load v29
+      ret v31
+  }
+
+  fn f788105 pick_left_i32_i32(v32 arg0: i32, v33 arg1: i32) -> i32 {
+    b0 (entry):
+      v34: ptr<i32> = alloca i32
+      store v32 -> v34
+      v36: ptr<i32> = alloca i32
+      store v33 -> v36
+      v38: i32      = load v34
+      ret v38
+  }
+
+  fn f421808 pick_right_i32_i32(v39 arg0: i32, v40 arg1: i32) -> i32 {
+    b0 (entry):
+      v41: ptr<i32> = alloca i32
+      store v39 -> v41
+      v43: ptr<i32> = alloca i32
+      store v40 -> v43
+      v45: i32      = load v43
+      ret v45
+  }
+
+}
