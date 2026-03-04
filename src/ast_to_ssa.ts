@@ -2,7 +2,7 @@ import {
     type AssignExpr,
     BinaryExpr,
     BinaryOp,
-    type BlockExpr,
+    BlockExpr,
     type BreakExpr,
     BuiltinType,
     CallExpr,
@@ -15,6 +15,7 @@ import {
     FieldExpr,
     FnItem,
     type ForExpr,
+    FnTypeNode,
     GenericFnItem,
     GenericStructItem,
     ImplItem,
@@ -109,6 +110,7 @@ import {
     makeIRUnitType,
     type BlockId,
     FloatType,
+    type IRBlock,
     type IRFunction,
     type IRModule,
     type IRType,
@@ -116,6 +118,7 @@ import {
     PtrType,
     StructType,
     type ValueId,
+    type BoolType,
 } from "./ir";
 import { IRBuilder } from "./ir_builder";
 
@@ -137,11 +140,25 @@ interface LocalBinding {
     ptr: ValueId;
     ty: IRType;
     formatTag?: FormatTag;
+    typeNode?: TypeNode;
 }
 
 interface LoopFrame {
     breakBlock: BlockId;
     continueBlock: BlockId;
+}
+
+interface BuilderSnapshot {
+    fn: IRFunction | undefined;
+    block: IRBlock | undefined;
+    sealed: Set<BlockId>;
+    varDefs: Map<string, Map<BlockId, ValueId>>;
+    incompletePhis: Map<string, Map<BlockId, ValueId[]>>;
+    varTypes: Map<string, IRType>;
+    nextBlockId: number;
+    locals: Map<string, LocalBinding>;
+    loopStack: LoopFrame[];
+    returnType: IRType;
 }
 
 function loweringError<T>(
@@ -293,7 +310,12 @@ export class AstToSsaCtx {
 
     private startFunction(name: string, paramTypes: IRType[]): void {
         const fnId = this.resolveFunctionId(name);
-        this.builder.createFunction(name, paramTypes, this.currentReturnType, fnId);
+        this.builder.createFunction(
+            name,
+            paramTypes,
+            this.currentReturnType,
+            fnId,
+        );
         const entryId = this.builder.createBlock("entry");
         this.builder.switchToBlock(entryId);
     }
@@ -315,6 +337,7 @@ export class AstToSsaCtx {
                 ptr: allocaId,
                 ty: irType,
                 formatTag: AstToSsaCtx.formatTagFromTypeNode(paramEntry.ty),
+                typeNode: paramEntry.ty,
             });
         }
     }
@@ -647,8 +670,8 @@ export class AstToSsaCtx {
             return rightResult;
         }
 
-        const left = leftResult.value;
-        const right = rightResult.value;
+        const left = this.autoDerefForBinaryOp(leftResult.value);
+        const right = this.autoDerefForBinaryOp(rightResult.value);
         const isFloat =
             this.isFloatish(expr.left) || this.isFloatish(expr.right);
 
@@ -660,6 +683,22 @@ export class AstToSsaCtx {
             isFloat,
             expr.span,
         );
+    }
+
+    /**
+     * When a binary operation is applied to a reference value (ptr<T> where T is
+     * a primitive arithmetic type), automatically dereference it. This mirrors
+     * Rust's auto-deref coercion for `&T` operands in arithmetic/comparison.
+     */
+    private autoDerefForBinaryOp(value: ValueId): ValueId {
+        const ty = this.resolveValueType(value);
+        if (
+            ty instanceof PtrType &&
+            (ty.inner instanceof IntType || ty.inner instanceof FloatType)
+        ) {
+            return this.builder.load(value, ty.inner).id;
+        }
+        return value;
     }
 
     private handleBinaryOperation(
@@ -1256,10 +1295,14 @@ export class AstToSsaCtx {
             callee.field,
             receiverType,
         );
-        const returnType =
+        const defaultReturnType =
             receiverType instanceof StructType
                 ? receiverType
                 : makeIRIntType(IntWidth.I64);
+        const returnType = this.resolveNamedCallReturnType(
+            qualifiedName,
+            defaultReturnType,
+        );
         const callInst = this.builder.call(
             this.resolveFunctionId(qualifiedName),
             [receiverArg, ...args],
@@ -1326,8 +1369,24 @@ export class AstToSsaCtx {
         args: ValueId[],
         defaultReturnType: IRType,
     ): Result<ValueId, LoweringError> {
-        if (this.locals.has(callee.name)) {
-            return ok(this.unitValue());
+        const localBinding = this.locals.get(callee.name);
+        if (localBinding !== undefined) {
+            const fnIdInst = this.builder.load(
+                localBinding.ptr,
+                localBinding.ty,
+            );
+            const returnType =
+                localBinding.typeNode instanceof FnTypeNode
+                    ? AstToSsaCtx.translateTypeNode(
+                          localBinding.typeNode.returnType,
+                      )
+                    : defaultReturnType;
+            const callInst = this.builder.callDyn(
+                fnIdInst.id,
+                args,
+                returnType,
+            );
+            return ok(callInst.id);
         }
         const returnType = this.resolveNamedCallReturnType(
             callee.name,
@@ -1365,9 +1424,11 @@ export class AstToSsaCtx {
             case "println": {
                 return this.lowerPrintMacro(expr, true);
             }
-            case "assert":
+            case "assert": {
+                return this.lowerAssert(expr);
+            }
             case "assert_eq": {
-                return ok(this.unitValue());
+                return this.lowerAssertEq(expr);
             }
             case "vec": {
                 return this.lowerVecMacro(expr);
@@ -1380,6 +1441,74 @@ export class AstToSsaCtx {
                 );
             }
         }
+    }
+
+    private lowerAssert(expr: MacroExpr): Result<ValueId, LoweringError> {
+        if (expr.args.length < 1) {
+            return ok(this.unitValue());
+        }
+        const condResult = this.lowerExpression(expr.args[0]);
+        if (!condResult.ok) return condResult;
+
+        const failBlock = this.builder.createBlock("assert_fail");
+        const continueBlock = this.builder.createBlock("assert_ok");
+        this.builder.brIf(condResult.value, continueBlock, [], failBlock, []);
+
+        this.builder.switchToBlock(failBlock);
+        this.builder.unreachable();
+
+        this.builder.switchToBlock(continueBlock);
+        return ok(this.unitValue());
+    }
+
+    private lowerAssertEq(expr: MacroExpr): Result<ValueId, LoweringError> {
+        if (expr.args.length < 2) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                "assert_eq! requires two arguments",
+                expr.span,
+            );
+        }
+        const leftResult = this.lowerExpression(expr.args[0]);
+        if (!leftResult.ok) return leftResult;
+        const rightResult = this.lowerExpression(expr.args[1]);
+        if (!rightResult.ok) return rightResult;
+
+        const leftType = this.resolveValueType(leftResult.value);
+        const rightType = this.resolveValueType(rightResult.value);
+
+        let cmpId: ValueId;
+        if (leftType instanceof FloatType || rightType instanceof FloatType) {
+            cmpId = this.builder.fcmp(
+                FcmpOp.Oeq,
+                leftResult.value,
+                rightResult.value,
+            ).id;
+        } else if (
+            leftType instanceof IntType ||
+            (leftType !== undefined && leftType.kind === IRTypeKind.Bool) ||
+            rightType instanceof IntType ||
+            (rightType !== undefined && rightType.kind === IRTypeKind.Bool)
+        ) {
+            cmpId = this.builder.icmp(
+                IcmpOp.Eq,
+                leftResult.value,
+                rightResult.value,
+            ).id;
+        } else {
+            // Cannot statically compare values of this type; treat as no-op
+            return ok(this.unitValue());
+        }
+
+        const failBlock = this.builder.createBlock("assert_fail");
+        const continueBlock = this.builder.createBlock("assert_ok");
+        this.builder.brIf(cmpId, continueBlock, [], failBlock, []);
+
+        this.builder.switchToBlock(failBlock);
+        this.builder.unreachable();
+
+        this.builder.switchToBlock(continueBlock);
+        return ok(this.unitValue());
     }
 
     private lowerPrintMacro(
@@ -1661,7 +1790,233 @@ export class AstToSsaCtx {
         return AstToSsaCtx.handleInstructionId(fieldGet.id);
     }
 
-    private lowerClosure(_expr: ClosureExpr): Result<ValueId, LoweringError> {
+    private closureCounter = 0;
+
+    private collectFreeVars(expr: ClosureExpr): Set<string> {
+        const params = new Set(expr.params.map((p) => p.name));
+        const bound = new Set<string>(params);
+        const free = new Set<string>();
+
+        walkAst(expr.body, (node) => {
+            if (
+                node instanceof LetStmt &&
+                node.pattern instanceof IdentPattern
+            ) {
+                bound.add(node.pattern.name);
+            }
+            if (node instanceof IdentifierExpr && !bound.has(node.name)) {
+                free.add(node.name);
+            }
+        });
+
+        return free;
+    }
+
+    private static inferLiteralIRType(
+        lit: LiteralExpr,
+    ): IntType | FloatType | BoolType {
+        if (lit.literalKind === LiteralKind.Float) {
+            return makeIRFloatType(FloatWidth.F64);
+        }
+        if (lit.literalKind === LiteralKind.Bool) {
+            return makeIRBoolType();
+        }
+        return makeIRIntType(IntWidth.I32);
+    }
+
+    private inferParamTypeFromBody(
+        paramName: string,
+        body: Expression,
+    ): IRType | undefined {
+        let result: IRType | undefined;
+        walkAst(body, (node) => {
+            if (result !== undefined) return;
+            if (!(node instanceof BinaryExpr)) return;
+            const { left, right } = node;
+            const leftIsParam =
+                left instanceof IdentifierExpr && left.name === paramName;
+            const rightIsParam =
+                right instanceof IdentifierExpr && right.name === paramName;
+            if (leftIsParam && right instanceof LiteralExpr) {
+                result = AstToSsaCtx.inferLiteralIRType(right);
+            } else if (rightIsParam && left instanceof LiteralExpr) {
+                result = AstToSsaCtx.inferLiteralIRType(left);
+            }
+        });
+        return result;
+    }
+
+    private resolveClosureParamType(
+        param: { name: string; ty: TypeNode },
+        body: Expression,
+    ): IRType {
+        const explicit = AstToSsaCtx.translateTypeNode(param.ty);
+        if (explicit.kind !== IRTypeKind.Unit) {
+            return explicit;
+        }
+        return (
+            this.inferParamTypeFromBody(param.name, body) ??
+            makeIRIntType(IntWidth.I32)
+        );
+    }
+
+    private inferExprType(
+        expr: Expression,
+        paramTypeMap: Map<string, IRType>,
+    ): IRType {
+        if (expr instanceof LiteralExpr) {
+            return AstToSsaCtx.inferLiteralIRType(expr);
+        }
+        if (expr instanceof IdentifierExpr) {
+            return paramTypeMap.get(expr.name) ?? makeIRUnitType();
+        }
+        if (expr instanceof BinaryExpr) {
+            const leftTy = this.inferExprType(expr.left, paramTypeMap);
+            const rightTy = this.inferExprType(expr.right, paramTypeMap);
+            if (leftTy.kind !== IRTypeKind.Unit) return leftTy;
+            if (rightTy.kind !== IRTypeKind.Unit) return rightTy;
+        }
+        if (expr instanceof BlockExpr && expr.expr !== undefined) {
+            return this.inferExprType(expr.expr, paramTypeMap);
+        }
+        return makeIRUnitType();
+    }
+
+    private resolveClosureReturnType(
+        expr: ClosureExpr,
+        paramTypes: IRType[],
+    ): IRType {
+        const explicit = AstToSsaCtx.translateTypeNode(expr.returnType);
+        if (explicit.kind !== IRTypeKind.Unit) {
+            return explicit;
+        }
+        const paramTypeMap = new Map<string, IRType>();
+        for (let i = 0; i < expr.params.length; i++) {
+            paramTypeMap.set(expr.params[i].name, paramTypes[i]);
+        }
+        return this.inferExprType(expr.body, paramTypeMap);
+    }
+
+    private lowerClosureFunction(
+        name: string,
+        expr: ClosureExpr,
+    ): Result<IRFunction, LoweringError> {
+        const paramEntries = expr.params.map((p) => ({
+            name: p.name,
+            ty: p.ty,
+        }));
+        const paramTypes = paramEntries.map((p) =>
+            this.resolveClosureParamType(p, expr.body),
+        );
+        this.currentReturnType = this.resolveClosureReturnType(
+            expr,
+            paramTypes,
+        );
+        this.startFunction(name, paramTypes);
+
+        const { currentFunction } = this.builder;
+        if (currentFunction) {
+            for (let i = 0; i < paramEntries.length; i++) {
+                const paramEntry = paramEntries[i];
+                const irType = paramTypes[i];
+                const allocaId = this.builder.alloca(irType).id;
+                this.builder.store(
+                    allocaId,
+                    currentFunction.params[i].id,
+                    irType,
+                );
+                this.locals.set(paramEntry.name, {
+                    ptr: allocaId,
+                    ty: irType,
+                    typeNode: paramEntry.ty,
+                });
+            }
+        }
+
+        const bodyResult = this.lowerExpression(expr.body);
+        if (!bodyResult.ok) {
+            return bodyResult;
+        }
+
+        if (!this.isCurrentBlockTerminated()) {
+            if (this.currentTypeKind() === IRTypeKind.Unit) {
+                this.builder.ret();
+            } else {
+                this.builder.ret(bodyResult.value);
+            }
+        }
+
+        this.sealAllBlocks();
+        return ok(this.builder.build());
+    }
+
+    private saveBuilderSnapshot(): BuilderSnapshot {
+        return {
+            fn: this.builder.currentFunction,
+            block: this.builder.currentBlock,
+            sealed: this.builder.sealedBlocks,
+            varDefs: this.builder.varDefs,
+            incompletePhis: this.builder.incompletePhis,
+            varTypes: this.builder.varTypes,
+            nextBlockId: this.builder.nextBlockId,
+            locals: new Map(this.locals),
+            loopStack: this.loopStack,
+            returnType: this.currentReturnType,
+        };
+    }
+
+    private restoreBuilderSnapshot(snap: BuilderSnapshot): void {
+        this.builder.currentFunction = snap.fn;
+        this.builder.currentBlock = snap.block;
+        this.builder.sealedBlocks = snap.sealed;
+        this.builder.varDefs = snap.varDefs;
+        this.builder.incompletePhis = snap.incompletePhis;
+        this.builder.varTypes = snap.varTypes;
+        this.builder.nextBlockId = snap.nextBlockId;
+        this.locals.clear();
+        for (const [k, v] of snap.locals) {
+            this.locals.set(k, v);
+        }
+        this.loopStack = snap.loopStack;
+        this.currentReturnType = snap.returnType;
+    }
+
+    private lowerNonCapturingClosure(
+        expr: ClosureExpr,
+    ): Result<ValueId, LoweringError> {
+        const name = `__closure_${this.closureCounter++}`;
+        const snap = this.saveBuilderSnapshot();
+
+        this.builder.currentFunction = undefined;
+        this.builder.currentBlock = undefined;
+        this.builder.sealedBlocks = new Set();
+        this.builder.varDefs = new Map();
+        this.builder.incompletePhis = new Map();
+        this.builder.varTypes = new Map();
+        this.builder.nextBlockId = 0;
+        this.locals.clear();
+        this.loopStack = [];
+
+        const closureResult = this.lowerClosureFunction(name, expr);
+        this.restoreBuilderSnapshot(snap);
+
+        if (!closureResult.ok) {
+            return closureResult;
+        }
+
+        addIRFunction(this.irModule, closureResult.value);
+        const fnId = this.resolveFunctionId(name);
+        const idInst = this.builder.iconst(fnId, IntWidth.I64);
+        return AstToSsaCtx.handleInstructionId(idInst.id);
+    }
+
+    private lowerClosure(expr: ClosureExpr): Result<ValueId, LoweringError> {
+        const freeVars = this.collectFreeVars(expr);
+        const hasCaptures = [...freeVars].some((v) => this.locals.has(v));
+        if (!hasCaptures) {
+            return this.lowerNonCapturingClosure(expr);
+        }
+        // Capturing closures are not yet supported; fall back to placeholder
         const placeholder = this.builder.iconst(0, IntWidth.I64);
         return AstToSsaCtx.handleInstructionId(placeholder.id);
     }
@@ -1976,6 +2331,10 @@ export class AstToSsaCtx {
         }
         if (typeNode instanceof PtrTypeNode) {
             return makeIRPtrType(AstToSsaCtx.translateTypeNode(typeNode.inner));
+        }
+        if (typeNode instanceof FnTypeNode) {
+            // Function pointers are represented as 64-bit function IDs.
+            return makeIRIntType(IntWidth.I64);
         }
         return makeIRUnitType();
     }

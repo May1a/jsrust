@@ -623,6 +623,10 @@ class Parser {
         derives: string[],
         isTest: boolean,
     ): Item[] | undefined {
+        // `const fn` — consume `const` and treat as a regular function
+        if (this.check(TokenType.Const) && this.peekAt(1).type === TokenType.Fn) {
+            this.advance();
+        }
         if (this.eat(TokenType.Fn)) {
             return [this.parseFnBody(start, derives, isTest)];
         }
