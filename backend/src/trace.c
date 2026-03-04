@@ -119,4 +119,3 @@ ByteSpan TraceBuffer_span(const TraceBuffer* trace)
 {
     return ByteSpan_fromParts(trace->data, trace->len);
 }
-

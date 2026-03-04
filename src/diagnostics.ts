@@ -2,7 +2,7 @@
 // Diagnostics and Error Reporting
 // ============================================================================
 
-import type { Span } from "./types";
+import type { Span } from "./ast";
 
 // ============================================================================
 // Task 13.1: Source Location
@@ -11,26 +11,22 @@ import type { Span } from "./types";
 /**
  * Represents a position in source code
  */
-type SourceLocation = {
+interface SourceLocation {
     file?: string;
     line: number;
     column: number;
-};
+}
 
 /**
  * Represents a range in source code
  */
-type SourceSpan = {
+interface SourceSpan {
     start: SourceLocation;
     end: SourceLocation;
-};
+}
 
 /**
  * Create a source location
- * @param {number} line - 1-based line number
- * @param {number} column - 1-based column number
- * @param {string} [file] - Optional file path
- * @returns {SourceLocation}
  */
 function makeSourceLocation(
     line: number,
@@ -86,7 +82,6 @@ function makeSourceSpanFromLC(
 
 /**
  * Diagnostic severity level
- * @enum {number}
  */
 enum Level {
     Error,
@@ -95,19 +90,19 @@ enum Level {
     Help,
 }
 
-type RelatedInfo = {
+interface RelatedInfo {
     span: SourceSpan;
     message: string;
-};
+}
 
-type Diagnostic = {
+interface Diagnostic {
     level: number;
     message: string;
     span?: SourceSpan;
     code?: string;
     related?: RelatedInfo[];
     hint?: string;
-};
+}
 
 /**
  * Create a diagnostic
@@ -156,21 +151,42 @@ function withRelated(
     span: SourceSpan,
     message: string,
 ): Diagnostic {
-    const related = diag.related || [];
+    const related = diag.related === undefined ? [] : [...diag.related];
     related.push({ span, message });
-    return { ...diag, related };
+    return {
+        level: diag.level,
+        message: diag.message,
+        span: diag.span,
+        code: diag.code,
+        related,
+        hint: diag.hint,
+    };
 }
 /**
  * Add an error code to a diagnostic
  */
 function withCode(diag: Diagnostic, code: string): Diagnostic {
-    return { ...diag, code };
+    return {
+        level: diag.level,
+        message: diag.message,
+        span: diag.span,
+        code,
+        related: diag.related,
+        hint: diag.hint,
+    };
 }
 /**
  * Add a hint to a diagnostic
  */
 function withHint(diag: Diagnostic, hint: string): Diagnostic {
-    return { ...diag, hint };
+    return {
+        level: diag.level,
+        message: diag.message,
+        span: diag.span,
+        code: diag.code,
+        related: diag.related,
+        hint,
+    };
 }
 // ============================================================================
 // Task 13.4: Error Collection
@@ -183,29 +199,28 @@ class DiagnosticCollector {
     diagnostics: Diagnostic[];
     #hasErrors: boolean;
     constructor() {
-        /** @type {Diagnostic[]} */
         this.diagnostics = [];
         this.#hasErrors = false;
     }
     /**
      * Add a diagnostic
      */
-    add(diag: Diagnostic) {
+    add(diag: Diagnostic): void {
         this.diagnostics.push(diag);
-        if (diag.level === Level.Error) {
+        if (diag.level === (Level.Error as number)) {
             this.#hasErrors = true;
         }
     }
-    addError(message: string, span: SourceSpan) {
+    addError(message: string, span: SourceSpan): void {
         this.add(error(message, span));
     }
-    addWarning(message: string, span: SourceSpan) {
+    addWarning(message: string, span: SourceSpan): void {
         this.add(warning(message, span));
     }
-    addNote(message: string, span: SourceSpan) {
+    addNote(message: string, span: SourceSpan): void {
         this.add(note(message, span));
     }
-    addHelp(message: string, span: SourceSpan) {
+    addHelp(message: string, span: SourceSpan): void {
         this.add(help(message, span));
     }
 
@@ -213,25 +228,31 @@ class DiagnosticCollector {
         return this.#hasErrors;
     }
     hasWarnings(): boolean {
-        return this.diagnostics.some((d) => d.level === Level.Warning);
+        return this.diagnostics.some(
+            (d) => d.level === (Level.Warning as number),
+        );
     }
     getDiagnostics(): Diagnostic[] {
         return [...this.diagnostics];
     }
     getErrors(): Diagnostic[] {
-        return this.diagnostics.filter((d) => d.level === Level.Error);
+        return this.diagnostics.filter(
+            (d) => d.level === (Level.Error as number),
+        );
     }
     getWarnings(): Diagnostic[] {
-        return this.diagnostics.filter((d) => d.level === Level.Warning);
+        return this.diagnostics.filter(
+            (d) => d.level === (Level.Warning as number),
+        );
     }
-    clear() {
+    clear(): void {
         this.diagnostics = [];
         this.#hasErrors = false;
     }
     countByLevel(level: number): number {
         return this.diagnostics.filter((d) => d.level === level).length;
     }
-    merge(other: DiagnosticCollector) {
+    merge(other: DiagnosticCollector): void {
         for (const diag of other.diagnostics) {
             this.add(diag);
         }
@@ -245,125 +266,6 @@ function createCollector(): DiagnosticCollector {
 }
 
 // ============================================================================
-// Task 13.5: Result Type
-// ============================================================================
-
-export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
-
-/**
- * Create a successful result
- */
-function ok$1<T>(value: T): Result<T, never> {
-    return { ok: true, value };
-}
-
-/**
- * Create an error result
- */
-function err$1<E>(error: E): Result<never, E> {
-    return { ok: false, error };
-}
-
-/**
- * Check if a result is successful
- */
-export function isOk<T, E>(
-    result: Result<T, E>,
-): result is Result<T, never> & { value: T } {
-    return result.ok;
-}
-
-/**
- * Check if a result is an error
- */
-export function isErr<T, E>(
-    result: Result<T, E>,
-): result is Result<never, E> & { error: E } {
-    return !result.ok;
-}
-
-/**
- * Unwrap a result, throwing if it's an error
- */
-export function unwrap<T, E>(result: Result<T, E>): T {
-    if (result.ok) {
-        return result.value;
-    }
-    throw new Error(
-        result.error instanceof Error
-            ? result.error.message
-            : String(result.error),
-    );
-}
-
-/**
- * Unwrap a result, returning a default value if it's an error
- */
-export function unwrapOr<T, E>(result: Result<T, E>, defaultValue: T): T {
-    return result.ok ? result.value : defaultValue;
-}
-
-/**
- * Map a result's value if successful
- */
-export function map<T, U, E>(
-    result: Result<T, E>,
-    fn: (value: T) => U,
-): Result<U, E> {
-    if (result.ok) {
-        return ok$1(fn(result.value));
-    }
-    return /** @type {Result<U, E>} */ result;
-}
-
-/**
- * Map a result's error if it's an error
- */
-export function mapErr<T, E, F>(
-    result: Result<T, E>,
-    fn: (error: E) => F,
-): Result<T, F> {
-    if (!result.ok) {
-        return err$1(fn(result.error));
-    }
-    return /** @type {Result<T, F>} */ result;
-}
-
-/**
- * Chain a result with another operation
- */
-export function andThen<T, U, E>(
-    result: Result<T, E>,
-    fn: (value: T) => Result<U, E>,
-): Result<U, E> {
-    if (result.ok) {
-        return fn(result.value);
-    }
-    return /** @type {Result<U, E>} */ result;
-}
-
-/**
- * Combine multiple results, collecting all errors
- */
-function combineResults$1<T, E>(results: Result<T, E>[]): Result<T[], E[]> {
-    /** @type {T[]} */
-    const values: T[] = [];
-    /** @type {E[]} */
-    const errors: E[] = [];
-    for (const result of results) {
-        if (result.ok) {
-            values.push(result.value);
-        } else {
-            errors.push(result.error);
-        }
-    }
-    if (errors.length > 0) {
-        return err$1(errors);
-    }
-    return ok$1(values);
-}
-
-// ============================================================================
 // Task 13.7: Source Context
 // ============================================================================
 
@@ -373,27 +275,23 @@ function combineResults$1<T, E>(results: Result<T, E>[]): Result<T[], E[]> {
 class SourceContext {
     source: string;
     file?: string;
-    #lines: string[] | null;
+    #lines: string[] | undefined;
     constructor(source: string, file: string) {
         this.source = source;
         this.file = file;
-        this.#lines = null;
     }
     /**
      * Get source lines (lazy initialization)
      */
     get lines(): string[] {
-        if (this.#lines === null) {
-            this.#lines = this.source.split("\n");
-        }
-        return this.#lines;
+        return (this.#lines ??= this.source.split("\n"));
     }
     /**
      * Get a specific line (1-based)
      */
-    getLine(lineNum: number): string | null {
+    getLine(lineNum: number): string | undefined {
         if (lineNum < 1 || lineNum > this.lines.length) {
-            return null;
+            return undefined;
         }
         return this.lines[lineNum - 1];
     }
@@ -406,10 +304,10 @@ class SourceContext {
     /**
      * Get source text for a span
      */
-    getText(span: SourceSpan): string | null {
+    getText(span: SourceSpan): string | undefined {
         const startLine = this.getLine(span.start.line);
         const endLine = this.getLine(span.end.line);
-        if (!startLine || !endLine) return null;
+        if (!startLine || !endLine) return undefined;
         if (span.start.line === span.end.line) {
             return startLine.substring(
                 span.start.column - 1,
@@ -461,28 +359,12 @@ const LEVEL_COLORS: Record<number, string> = {
     [Level.Help]: "\x1b[32m", // Green
 };
 
-/** @type {string} */
-const RESET: string = "\x1b[0m";
-/** @type {string} */
-const BOLD: string = "\x1b[1m";
-/** @type {string} */
-const DIM: string = "\x1b[2m";
-/** @type {string} */
-const BLUE: string = "\x1b[34m";
+const RESET = "\x1b[0m";
+const BOLD = "\x1b[1m";
+const DIM = "\x1b[2m";
+const BLUE = "\x1b[34m";
 
-/**
- * Render a diagnostic to a string
- * @param {boolean} [options.color=true] - Whether to use ANSI colors
- */
-function renderDiagnostic(
-    diag: Diagnostic,
-    ctx: SourceContext,
-    options: { color?: boolean } = { color: true },
-): string {
-    const { color } = options;
-    const lines = [];
-
-    // Header: level and message
+function renderHeader(diag: Diagnostic, color: boolean | undefined): string {
     const levelName = LEVEL_NAMES[diag.level] || "unknown";
     const levelColor = color ? LEVEL_COLORS[diag.level] || "" : "";
     const reset = color ? RESET : "";
@@ -493,9 +375,10 @@ function renderDiagnostic(
         header += `${bold}[${diag.code}]${reset}`;
     }
     header += `: ${diag.message}`;
+    return header;
+}
 
-    lines.push(header);
-    // Location
+function renderLocation(diag: Diagnostic, lines: string[]): void {
     if (diag.span) {
         const loc = diag.span.start;
         let locStr = `  `;
@@ -505,24 +388,18 @@ function renderDiagnostic(
         locStr += `${loc.line}:${loc.column}`;
         lines.push(locStr);
     }
-    // Source code snippet
-    if (ctx && diag.span) {
-        const snippet = renderSnippet(diag.span, ctx, color);
-        if (snippet) {
-            lines.push("");
-            lines.push(snippet);
-        }
-    }
-    // Hint
-    if (diag.hint) {
-        const helpColor = color ? LEVEL_COLORS[Level.Help] || "" : "";
-        lines.push(`  ${helpColor}hint${reset}: ${diag.hint}`);
-    }
-    // Related information
+}
+
+function renderRelated(
+    diag: Diagnostic,
+    lines: string[],
+    color: boolean | undefined,
+): void {
     if (diag.related && diag.related.length > 0) {
         for (const rel of diag.related) {
             lines.push("");
             const noteColor = color ? LEVEL_COLORS[Level.Note] || "" : "";
+            const reset = color ? RESET : "";
             lines.push(`  ${noteColor}note${reset}: ${rel.message}`);
             if (rel.span.start.file) {
                 lines.push(
@@ -535,6 +412,40 @@ function renderDiagnostic(
             }
         }
     }
+}
+
+/**
+ * Render a diagnostic to a string
+ * @param {boolean} [options.color] - Whether to use ANSI colors (defaults to true)
+ */
+function renderDiagnostic(
+    diag: Diagnostic,
+    ctx: SourceContext,
+    options: { color?: boolean } = { color: true },
+): string {
+    const { color } = options;
+    const lines: string[] = [];
+
+    lines.push(renderHeader(diag, color));
+    renderLocation(diag, lines);
+
+    // Source code snippet
+    if (diag.span) {
+        const snippet = renderSnippet(diag.span, ctx, color);
+        if (snippet) {
+            lines.push("");
+            lines.push(snippet);
+        }
+    }
+    // Hint
+    if (diag.hint) {
+        const helpColor = color ? LEVEL_COLORS[Level.Help] || "" : "";
+        const reset = color ? RESET : "";
+        lines.push(`  ${helpColor}hint${reset}: ${diag.hint}`);
+    }
+
+    renderRelated(diag, lines, color);
+
     return lines.join("\n");
 }
 
@@ -544,7 +455,7 @@ function renderDiagnostic(
 function renderSnippet(
     span: SourceSpan,
     ctx: SourceContext,
-    color: boolean = true,
+    color = true,
 ): string {
     const lines = [];
     const width = ctx.lineNumberWidth;
@@ -558,7 +469,7 @@ function renderSnippet(
     const displayEnd = Math.min(ctx.lineCount, endLine + contextLines);
     for (let lineNum = displayStart; lineNum <= displayEnd; lineNum++) {
         const line = ctx.getLine(lineNum);
-        if (line === null) continue;
+        if (line === undefined) continue;
         const lineNumStr = String(lineNum).padStart(width);
         const gutter = `${dim}${lineNumStr} |${reset}`;
         if (lineNum >= startLine && lineNum <= endLine) {
@@ -591,11 +502,7 @@ function renderSnippet(
 /**
  * Build an underline string
  */
-function buildUnderline(
-    start: number,
-    end: number,
-    color: boolean = true,
-): string {
+function buildUnderline(start: number, end: number, color = true): string {
     const reset = color ? RESET : "";
     const bold = color ? BOLD : "";
     const blue = color ? BLUE : "";
@@ -647,7 +554,7 @@ function formatUndefinedVar(name: string, span: SourceSpan): Diagnostic {
 function formatDuplicateDef(
     name: string,
     span: SourceSpan,
-    prevSpan: SourceSpan,
+    prevSpan?: SourceSpan,
 ): Diagnostic {
     const diag = error(`Duplicate definition of \`${name}\``, span);
     if (prevSpan) {
@@ -713,7 +620,7 @@ function formatUnreachableCode(span: SourceSpan): Diagnostic {
  */
 function formatUnusedVar(name: string, span: SourceSpan): Diagnostic {
     const diag = warning(`Unused variable: \`${name}\``, span);
-    return withHint(diag, "Prefix with underscore to silence: `_" + name + "`");
+    return withHint(diag, `Prefix with underscore to silence: \`_${name}\``);
 }
 /**
  * Format a dead code warning
@@ -727,7 +634,7 @@ function formatDeadCode(name: string, span: SourceSpan): Diagnostic {
 function formatBorrowError(
     message: string,
     span: SourceSpan,
-    borrowSpan: SourceSpan,
+    borrowSpan?: SourceSpan,
 ): Diagnostic {
     const diag = error(message, span);
     if (borrowSpan) {
@@ -741,7 +648,7 @@ function formatBorrowError(
 function formatMoveError(
     varName: string,
     span: SourceSpan,
-    moveSpan: SourceSpan,
+    moveSpan?: SourceSpan,
 ): Diagnostic {
     const diag = error(`Use of moved value: \`${varName}\``, span);
     if (moveSpan) {
@@ -749,6 +656,8 @@ function formatMoveError(
     }
     return diag;
 }
+
+export type { Diagnostic, SourceSpan, SourceLocation };
 
 export {
     // Source Location
@@ -769,10 +678,6 @@ export {
     // Diagnostic Collector
     DiagnosticCollector,
     createCollector,
-    // Result Type
-    ok$1 as ok,
-    err$1 as err,
-    combineResults$1 as combineResults,
     // Source Context
     SourceContext,
     createSourceContext,

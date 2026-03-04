@@ -1640,10 +1640,7 @@ static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* fram
             return Exec_pointerAddCells(engine->runtime, pointeePointer, offset, outValue);
         }
         if (
-            inst->indices.count >= 2 &&
-            left.index != UINT32_MAX &&
-            Runtime_cellPtrKind(engine->runtime, left.index) == RuntimePtrKind_Stack
-        ) {
+            inst->indices.count >= 2 && left.index != UINT32_MAX && Runtime_cellPtrKind(engine->runtime, left.index) == RuntimePtrKind_Stack) {
             ExecValue firstIndex;
             ExecValue fieldIndex;
             uint32_t fieldOffset;

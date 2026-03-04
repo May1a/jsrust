@@ -24,4 +24,3 @@ BackendStatus BackendStatus_make(jsrust_backend_error_code code, ByteSpan messag
 BackendStatus BackendStatus_ok(void);
 ByteSpan BackendError_defaultMessage(jsrust_backend_error_code code);
 int BackendError_exitCode(jsrust_backend_error_code code);
-

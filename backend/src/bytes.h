@@ -33,4 +33,3 @@ bool ByteBuffer_reserve(ByteBuffer* buffer, size_t requiredCap);
 bool ByteBuffer_appendByte(ByteBuffer* buffer, uint8_t value);
 bool ByteBuffer_appendSpan(ByteBuffer* buffer, ByteSpan span);
 bool ByteBuffer_appendLiteral(ByteBuffer* buffer, const char* literal);
-

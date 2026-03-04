@@ -6,10 +6,11 @@ enum Color {
 
 #[test]
 fn test_example() {
-    let c = Color::Red;
-    let v = match 1 {
-        1 => 10,
-        2 => 20,
-        _ => 0,
+    let c = Color::Green;
+    let v = match c {
+        Color::Red => "Color Red!",
+        Color::Green => "Color Green!",
+        Color::Blue => "Color Blue!",
     };
+    println!("{}", v);
 }

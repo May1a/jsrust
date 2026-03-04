@@ -1,3 +1,5 @@
+// derives are not yet implemented
+
 #[derive(Clone, Copy, Debug)]
 struct Pair {
     a: i32,

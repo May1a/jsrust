@@ -34,4 +34,3 @@ void Log_writeUsage(FILE* out)
 {
     Log_writeLiteral(out, "Usage: jsrust-backend-c run --input <path> [--entry <fn>] [--trace] [--trace-out <path>]\n");
 }
-

@@ -1,75 +1,77 @@
 import {
-    freshValueId,
-    makeIRBlock,
+    type BlockId,
+    type FcmpOp,
+    type IRBlock,
+    type IRFunction,
+    type IRInst,
+    type IRType,
+    type IcmpOp,
+    type FloatWidth,
+    type IntWidth,
+    type LocalId,
+    type ValueId,
     addIRBlock,
     addIRBlockParam,
     addIRInstruction,
-    setIRTerminator,
     addSuccessor,
-    IRType,
-    BlockId,
-    ValueId,
-    IRFunction,
-    IRBlock,
-    IRInst,
-    FcmpOp,
-    IcmpOp,
-    LocalId,
+    freshValueId,
+    makeIRBlock,
+    setIRTerminator,
 } from "./ir";
 import {
-    makeIconst,
-    makeFconst,
-    makeBconst,
-    makeNull,
-    makeIadd,
-    makeIsub,
-    makeImul,
-    makeIdiv,
-    makeImod,
-    makeFadd,
-    makeFsub,
-    makeFmul,
-    makeFdiv,
-    makeIneg,
-    makeFneg,
-    makeIand,
-    makeIor,
-    makeIxor,
-    makeIshl,
-    makeIshr,
-    makeIcmp,
-    makeFcmp,
     makeAlloca,
-    makeLoad,
-    makeStore,
-    makeMemcpy,
-    makeGep,
-    makePtradd,
-    makeTrunc,
-    makeSext,
-    makeZext,
-    makeFptoui,
-    makeFptosi,
-    makeUitofp,
-    makeSitofp,
+    makeBconst,
     makeBitcast,
     makeCall,
     makeCallDyn,
+    makeEnumCreate,
+    makeEnumGetData,
+    makeEnumGetTag,
+    makeFadd,
+    makeFcmp,
+    makeFconst,
+    makeFdiv,
+    makeFmul,
+    makeFneg,
+    makeFptosi,
+    makeFptoui,
+    makeFsub,
+    makeGep,
+    makeIadd,
+    makeIand,
+    makeIcmp,
+    makeIconst,
+    makeIdiv,
+    makeImod,
+    makeImul,
+    makeIneg,
+    makeIor,
+    makeIshl,
+    makeIshr,
+    makeIsub,
+    makeIxor,
+    makeLoad,
+    makeMemcpy,
+    makeNull,
+    makePtradd,
+    makeSconst,
+    makeSext,
+    makeSitofp,
+    makeStore,
     makeStructCreate,
     makeStructGet,
-    makeEnumCreate,
-    makeEnumGetTag,
-    makeEnumGetData,
-    makeSconst,
+    makeTrunc,
+    makeUitofp,
+    makeZext,
 } from "./ir_instructions";
 import {
-    makeRet,
     makeBr,
     makeBrIf,
+    makeRet,
+    type SwitchCase,
     makeSwitch,
     makeUnreachable,
 } from "./ir_terminators";
-import { FloatWidth, IntWidth } from "./types";
 
 /**
  * IRBuilder - constructs SSA IR functions incrementally
@@ -84,9 +86,9 @@ import { FloatWidth, IntWidth } from "./types";
  *   const fn = builder.build();
  */
 export class IRBuilder {
-    currentModule: any | null;
-    currentFunction: IRFunction | null;
-    currentBlock: IRBlock | null;
+    currentModule?: unknown;
+    currentFunction?: IRFunction;
+    currentBlock?: IRBlock;
     sealedBlocks: Set<BlockId>;
     varDefs: Map<string, Map<BlockId, ValueId>>;
     incompletePhis: Map<string, Map<BlockId, ValueId[]>>;
@@ -94,18 +96,22 @@ export class IRBuilder {
     nextBlockId: number;
 
     constructor() {
-        this.currentModule = null;
-        this.currentFunction = null;
-        this.currentBlock = null;
         this.sealedBlocks = new Set();
-        this.varDefs = new Map(); // varName -> Map<blockId, ValueId>
-        this.incompletePhis = new Map(); // blockId -> Map<varName, ValueId>
-        this.varTypes = new Map(); // varName -> IRType
+        this.varDefs = new Map(); // VarName -> Map<blockId, ValueId>
+        this.incompletePhis = new Map(); // BlockId -> Map<varName, ValueId>
+        this.varTypes = new Map(); // VarName -> IRType
         this.nextBlockId = 0;
     }
-    createFunction(name: string, params: IRType[], returnType: IRType) {
+    createFunction(
+        name: string,
+        params: IRType[],
+        returnType: IRType,
+        id?: number,
+    ): void {
         this.currentFunction = {
-            id: freshValueId(),
+            blocks: [],
+            id: id ?? freshValueId(),
+            locals: [],
             name,
             params: params.map((ty, i) => ({
                 id: freshValueId(),
@@ -113,35 +119,23 @@ export class IRBuilder {
                 ty,
             })),
             returnType,
-            blocks: [],
-            locals: [],
-            entry: null,
         };
-        this.currentModule = null; // Will be set later if added to module
     }
 
-    createBlock(
-        name: string | null = null,
-        paramTypes: IRType[] = [],
-    ): BlockId {
+    createBlock(name?: string, paramTypes: IRType[] = []): BlockId {
         const blockId = this.nextBlockId++;
-        const block = makeIRBlock(blockId);
-        if (name) {
-            block.name = name;
-        }
+        const block = makeIRBlock(blockId, name);
         for (const ty of paramTypes) {
             addIRBlockParam(block, freshValueId(), ty);
         }
         if (this.currentFunction) {
             addIRBlock(this.currentFunction, block);
-            if (this.currentFunction.entry === null) {
-                this.currentFunction.entry = block;
-            }
+            this.currentFunction.entry ??= block;
         }
         return blockId;
     }
 
-    switchToBlock(blockId: BlockId) {
+    switchToBlock(blockId: BlockId): void {
         if (!this.currentFunction) {
             throw new Error("No current function");
         }
@@ -152,7 +146,7 @@ export class IRBuilder {
         this.currentBlock = block;
     }
 
-    sealBlock(blockId: BlockId) {
+    sealBlock(blockId: BlockId): void {
         this.sealedBlocks.add(blockId);
     }
 
@@ -161,8 +155,12 @@ export class IRBuilder {
     }
 
     getPredecessors(blockId: BlockId): BlockId[] {
-        if (!this.currentFunction) return [];
-        const block = this.currentFunction.blocks.find((b) => b.id === blockId);
+        if (this.currentFunction === undefined) {
+            return [];
+        }
+        const block = this.currentFunction.blocks.find(
+            (candidate) => candidate.id === blockId,
+        );
         return block?.predecessors ?? [];
     }
 
@@ -170,25 +168,22 @@ export class IRBuilder {
     // Variable Operations (SSA Construction)
     // ============================================================================
 
-    declareVar(name: string, type: IRType) {
+    declareVar(name: string, type: IRType): void {
         this.varTypes.set(name, type);
         this.varDefs.set(name, new Map());
         this.incompletePhis.set(name, new Map());
     }
-    defineVar(name: string, value: ValueId, blockId: BlockId | null = null) {
-        if (blockId === null) {
-            if (!this.currentBlock) throw new Error("No current block");
-            blockId = this.currentBlock.id;
-        }
+    defineVar(name: string, value: ValueId, blockId?: BlockId): void {
+        const resolvedBlockId = blockId ?? this.requireCurrentBlock().id;
         const defs = this.varDefs.get(name);
         if (!defs) {
             throw new Error(`Variable ${name} not declared`);
         }
-        defs.set(blockId, value);
+        defs.set(resolvedBlockId, value);
         // If there are incomplete phis waiting at this block, update them
         const phis = this.incompletePhis.get(name);
         if (phis) {
-            const phiVal = phis.get(blockId);
+            const phiVal = phis.get(resolvedBlockId);
             if (phiVal !== undefined) {
                 // In a full implementation, we'd add the operand to the phi node
                 // For now, we'll mark the phi as having one more incoming value
@@ -197,19 +192,17 @@ export class IRBuilder {
         }
     }
 
-    useVar(name: string, blockId: BlockId | null = null): ValueId {
-        if (blockId === null) {
-            if (!this.currentBlock) throw new Error("No current block");
-            blockId = this.currentBlock.id;
-        }
+    useVar(name: string, blockId?: BlockId): ValueId {
+        const resolvedBlockId = blockId ?? this.requireCurrentBlock().id;
         const defs = this.varDefs.get(name);
         if (!defs) {
             throw new Error(`Variable ${name} not declared`);
         }
         // Find the defining block that dominates this block
         // Simplified: look for definition in current block first, then predecessors
-        if (defs.has(blockId)) {
-            return defs.get(blockId) as ValueId;
+        const existingDef = defs.get(resolvedBlockId);
+        if (existingDef !== undefined) {
+            return existingDef;
         }
         // Need to create phi node (simplified)
         // In real SSA construction, we'd insert phi at dominance frontiers
@@ -221,21 +214,41 @@ export class IRBuilder {
             phis = new Map();
             this.incompletePhis.set(name, phis);
         }
-        const existing = phis.get(blockId);
+        const existing = phis.get(resolvedBlockId);
         if (existing === undefined) {
-            phis.set(blockId, [phiValueId]);
+            phis.set(resolvedBlockId, [phiValueId]);
         } else {
             existing.push(phiValueId);
         }
         return phiValueId;
     }
 
-    writeVar(name: string, blockId: BlockId, value: ValueId) {
+    writeVar(name: string, blockId: BlockId, value: ValueId): void {
         this.defineVar(name, value, blockId);
     }
 
-    readVar(name: string, blockId: BlockId | null = null): ValueId {
+    readVar(name: string, blockId?: BlockId): ValueId {
         return this.useVar(name, blockId);
+    }
+
+    private requireCurrentBlock(): IRBlock {
+        if (!this.currentBlock) {
+            throw new Error("No current block");
+        }
+        return this.currentBlock;
+    }
+
+    private appendInstruction(inst: IRInst): IRInst {
+        addIRInstruction(this.requireCurrentBlock(), inst);
+        return inst;
+    }
+
+    private setTerminator(term: ReturnType<typeof makeRet>): void {
+        setIRTerminator(this.requireCurrentBlock(), term);
+    }
+
+    private addCurrentSuccessor(target: BlockId): void {
+        addSuccessor(this.requireCurrentBlock(), target);
     }
 
     // ============================================================================
@@ -243,26 +256,18 @@ export class IRBuilder {
     // ============================================================================
 
     iconst(value: number, width: IntWidth): IRInst {
-        const inst = makeIconst(value, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeIconst(value, width));
     }
     fconst(value: number, width: FloatWidth): IRInst {
-        const inst = makeFconst(value, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeFconst(value, width));
     }
 
     bconst(value: boolean): IRInst {
-        const inst = makeBconst(value);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeBconst(value));
     }
 
     null(ty: IRType): IRInst {
-        const inst = makeNull(ty);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeNull(ty));
     }
 
     // ============================================================================
@@ -270,69 +275,47 @@ export class IRBuilder {
     // ============================================================================
 
     iadd(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-        const inst = makeIadd(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeIadd(a, b, width));
     }
 
     isub(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-        const inst = makeIsub(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeIsub(a, b, width));
     }
 
     imul(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-        const inst = makeImul(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeImul(a, b, width));
     }
 
     idiv(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-        const inst = makeIdiv(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeIdiv(a, b, width));
     }
 
     imod(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-        const inst = makeImod(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeImod(a, b, width));
     }
 
     fadd(a: ValueId, b: ValueId, width: FloatWidth): IRInst {
-        const inst = makeFadd(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeFadd(a, b, width));
     }
 
     fsub(a: ValueId, b: ValueId, width: FloatWidth): IRInst {
-        const inst = makeFsub(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeFsub(a, b, width));
     }
 
     fmul(a: ValueId, b: ValueId, width: FloatWidth): IRInst {
-        const inst = makeFmul(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeFmul(a, b, width));
     }
 
     fdiv(a: ValueId, b: ValueId, width: FloatWidth): IRInst {
-        const inst = makeFdiv(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeFdiv(a, b, width));
     }
 
     ineg(a: ValueId, width: IntWidth): IRInst {
-        const inst = makeIneg(a, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeIneg(a, width));
     }
 
     fneg(a: ValueId, width: FloatWidth): IRInst {
-        const inst = makeFneg(a, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeFneg(a, width));
     }
 
     // ============================================================================
@@ -340,33 +323,23 @@ export class IRBuilder {
     // ============================================================================
 
     iand(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-        const inst = makeIand(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeIand(a, b, width));
     }
 
     ior(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-        const inst = makeIor(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeIor(a, b, width));
     }
 
     ixor(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-        const inst = makeIxor(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeIxor(a, b, width));
     }
 
     ishl(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-        const inst = makeIshl(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeIshl(a, b, width));
     }
 
     ishr(a: ValueId, b: ValueId, width: IntWidth): IRInst {
-        const inst = makeIshr(a, b, width);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeIshr(a, b, width));
     }
 
     // ============================================================================
@@ -374,43 +347,31 @@ export class IRBuilder {
     // ============================================================================
 
     icmp(op: IcmpOp, a: ValueId, b: ValueId): IRInst {
-        const inst = makeIcmp(op, a, b);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeIcmp(op, a, b));
     }
 
     fcmp(op: FcmpOp, a: ValueId, b: ValueId): IRInst {
-        const inst = makeFcmp(op, a, b);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeFcmp(op, a, b));
     }
 
     // ============================================================================
     // Memory Instructions
     // ============================================================================
 
-    alloca(ty: IRType, localId: LocalId | null = null): IRInst {
-        const inst = makeAlloca(ty, localId);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+    alloca(ty: IRType, localId?: LocalId): IRInst {
+        return this.appendInstruction(makeAlloca(ty, localId));
     }
 
     load(ptr: ValueId, ty: IRType): IRInst {
-        const inst = makeLoad(ptr, ty);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeLoad(ptr, ty));
     }
 
     store(ptr: ValueId, value: ValueId, ty: IRType): IRInst {
-        const inst = makeStore(ptr, value, ty);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeStore(ptr, value, ty));
     }
 
     memcpy(dest: ValueId, src: ValueId, size: ValueId): IRInst {
-        const inst = makeMemcpy(dest, src, size);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeMemcpy(dest, src, size));
     }
 
     // ============================================================================
@@ -418,91 +379,59 @@ export class IRBuilder {
     // ============================================================================
 
     gep(ptr: ValueId, indices: ValueId[], resultTy: IRType): IRInst {
-        const inst = makeGep(ptr, indices, resultTy);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeGep(ptr, indices, resultTy));
     }
 
     ptradd(ptr: ValueId, offset: ValueId): IRInst {
-        const inst = makePtradd(ptr, offset);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makePtradd(ptr, offset));
     }
 
     // ============================================================================
     // Conversion Instructions
     // ============================================================================
 
-    trunc(val: ValueId, fromType: IRType, toType: IRType): IRInst {
-        const inst = makeTrunc(val, fromType, toType);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+    trunc(val: ValueId, _fromType: IRType, toType: IRType): IRInst {
+        return this.appendInstruction(makeTrunc(val, toType));
     }
 
-    sext(val: ValueId, fromType: IRType, toType: IRType): IRInst {
-        const inst = makeSext(val, fromType, toType);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+    sext(val: ValueId, _fromType: IRType, toType: IRType): IRInst {
+        return this.appendInstruction(makeSext(val, toType));
     }
 
-    zext(val: ValueId, fromType: IRType, toType: IRType): IRInst {
-        const inst = makeZext(val, fromType, toType);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+    zext(val: ValueId, _fromType: IRType, toType: IRType): IRInst {
+        return this.appendInstruction(makeZext(val, toType));
     }
 
     fptoui(val: ValueId, toType: IRType): IRInst {
-        const inst = makeFptoui(val, toType);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeFptoui(val, toType));
     }
 
     fptosi(val: ValueId, toType: IRType): IRInst {
-        const inst = makeFptosi(val, toType);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeFptosi(val, toType));
     }
 
     uitofp(val: ValueId, toType: IRType): IRInst {
-        const inst = makeUitofp(val, toType);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeUitofp(val, toType));
     }
 
     sitofp(val: ValueId, toType: IRType): IRInst {
-        const inst = makeSitofp(val, toType);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeSitofp(val, toType));
     }
 
     bitcast(val: ValueId, toType: IRType): IRInst {
-        const inst = makeBitcast(val, toType);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeBitcast(val, toType));
     }
 
     // ============================================================================
     // Call Instruction
     // ============================================================================
 
-    call(
-        fn: ValueId,
-        args: ValueId[],
-        returnType: IRType | null = null,
-    ): IRInst {
-        const inst = makeCall(fn, args, returnType);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+    call(fn: ValueId, args: ValueId[], returnType?: IRType): IRInst {
+        return this.appendInstruction(makeCall(fn, args, returnType));
     }
 
-    callDyn(
-        fn: ValueId,
-        args: ValueId[],
-        returnType: IRType | null = null,
-    ): IRInst {
-        const inst = makeCallDyn(fn, args, returnType);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+    callDyn(fn: ValueId, args: ValueId[], returnType?: IRType): IRInst {
+        return this.appendInstruction(makeCallDyn(fn, args, returnType));
     }
 
     // ============================================================================
@@ -510,27 +439,21 @@ export class IRBuilder {
     // ============================================================================
 
     structCreate(fields: ValueId[], ty: IRType): IRInst {
-        const inst = makeStructCreate(fields, ty);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeStructCreate(fields, ty));
     }
 
     structGet(struct: ValueId, fieldIndex: number, fieldTy: IRType): IRInst {
-        const inst = makeStructGet(struct, fieldIndex, fieldTy);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(
+            makeStructGet(struct, fieldIndex, fieldTy),
+        );
     }
 
-    enumCreate(variant: number, data: ValueId | null, ty: IRType): IRInst {
-        const inst = makeEnumCreate(variant, data, ty);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+    enumCreate(variant: number, data: ValueId | undefined, ty: IRType): IRInst {
+        return this.appendInstruction(makeEnumCreate(variant, data, ty));
     }
 
     enumGetTag(enum_: ValueId): IRInst {
-        const inst = makeEnumGetTag(enum_);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeEnumGetTag(enum_));
     }
 
     enumGetData(
@@ -539,30 +462,27 @@ export class IRBuilder {
         index: number,
         dataTy: IRType,
     ): IRInst {
-        const inst = makeEnumGetData(enum_, variant, index, dataTy);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(
+            makeEnumGetData(enum_, variant, index, dataTy),
+        );
     }
 
     sconst(literalId: number): IRInst {
-        const inst = makeSconst(literalId);
-        addIRInstruction(this.currentBlock!, inst);
-        return inst;
+        return this.appendInstruction(makeSconst(literalId));
     }
 
     // ============================================================================
     // Terminators
     // ============================================================================
 
-    ret(value: ValueId | null = null) {
-        const term = makeRet(value ?? null);
-        setIRTerminator(this.currentBlock!, term);
+    ret(value?: ValueId): void {
+        this.setTerminator(makeRet(value));
     }
 
-    br(target: BlockId, args: ValueId[] = []) {
+    br(target: BlockId, args: ValueId[] = []): void {
         const term = makeBr(target, args);
-        setIRTerminator(this.currentBlock!, term);
-        addSuccessor(this.currentBlock!, target);
+        this.setTerminator(term);
+        this.addCurrentSuccessor(target);
     }
 
     brIf(
@@ -571,42 +491,37 @@ export class IRBuilder {
         thenArgs: ValueId[] | undefined,
         elseBlock: BlockId,
         elseArgs: ValueId[] | undefined = [],
-    ) {
+    ): void {
         const term = makeBrIf(cond, thenBlock, thenArgs, elseBlock, elseArgs);
-        setIRTerminator(this.currentBlock!, term);
-        addSuccessor(this.currentBlock!, thenBlock);
-        addSuccessor(this.currentBlock!, elseBlock);
+        this.setTerminator(term);
+        this.addCurrentSuccessor(thenBlock);
+        this.addCurrentSuccessor(elseBlock);
     }
 
     switch(
         value: ValueId,
-        cases: Array<{
-            value: any;
-            target: BlockId;
-            args: ValueId[];
-        }>,
+        cases: SwitchCase[],
         defaultBlock: BlockId,
         defaultArgs: ValueId[] = [],
-    ) {
+    ): void {
         const term = makeSwitch(value, cases, defaultBlock, defaultArgs);
-        setIRTerminator(this.currentBlock!, term);
-        for (const c of cases) {
-            addSuccessor(this.currentBlock!, c.target);
+        this.setTerminator(term);
+        for (const switchCase of cases) {
+            this.addCurrentSuccessor(switchCase.target);
         }
-        addSuccessor(this.currentBlock!, defaultBlock);
+        this.addCurrentSuccessor(defaultBlock);
     }
 
-    unreachable() {
-        const term = makeUnreachable();
-        setIRTerminator(this.currentBlock!, term);
+    unreachable(): void {
+        this.setTerminator(makeUnreachable());
     }
 
     // ============================================================================
     // Instruction Adding
     // ============================================================================
 
-    add(inst: IRInst): ValueId | null {
-        addIRInstruction(this.currentBlock!, inst);
+    add(inst: IRInst): ValueId {
+        addIRInstruction(this.requireCurrentBlock(), inst);
         return inst.id;
     }
 
@@ -628,7 +543,7 @@ export class IRBuilder {
         // Verify all blocks sealed
         for (const block of this.currentFunction.blocks) {
             if (!this.sealedBlocks.has(block.id)) {
-                if (process?.env?.TEST_VERBOSE === "1") {
+                if (process.env.TEST_VERBOSE === "1") {
                     console.warn(`Block ${block.id} not sealed`);
                 }
             }
