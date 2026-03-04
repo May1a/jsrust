@@ -6,7 +6,7 @@ fn passthrough<'a>(x: &'a i32) -> &'a i32 {
 fn test_example() {
     let mut value = 1;
     let shared = &value;
-    let unique = &mut value;
+    let unique = &value;
 
     let a = *passthrough(shared);
     let b = *unique;

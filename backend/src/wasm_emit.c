@@ -853,9 +853,9 @@ static BackendStatus WasmFunctionLowering_emitFormatValue(
         if (WasmFunctionLowering_getConstInt(lowering, valueId, &value).code == JSRUST_BACKEND_OK) {
             if (value)
                 return WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, ByteSpan_fromCString("true")) ? BackendStatus_ok()
-                                                                                                                 : WasmEmit_internalError("wasm codegen: failed to emit bool true");
+                                                                                                                : WasmEmit_internalError("wasm codegen: failed to emit bool true");
             return WasmFunctionLowering_emitWriteLiteralBytes(lowering, code, ByteSpan_fromCString("false")) ? BackendStatus_ok()
-                                                                                                               : WasmEmit_internalError("wasm codegen: failed to emit bool false");
+                                                                                                             : WasmEmit_internalError("wasm codegen: failed to emit bool false");
         }
         map = WasmFunctionLowering_findValueConst(lowering, valueId);
         if (!map || map->wasmType != WasmValType_I32)

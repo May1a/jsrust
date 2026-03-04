@@ -4,6 +4,9 @@ pub struct Point {
 }
 
 impl Point {
+    pub fn create(x: i32, y: i32) -> Self {
+        Point { x, y }
+    }
     pub fn new(x: i32, y: i32) -> Self {
         Self { x, y }
     }
@@ -14,7 +17,7 @@ impl Point {
 
 #[test]
 fn test_example() {
-    let p1 = Point::new(1, 2);
+    let p1 = Point::create(1, 2);
     let p2 = Point::new(3, 4);
     let p3 = p1.add(&p2);
     println!("({}, {})", p3.x, p3.y);

@@ -1,35 +1,53 @@
 # JSRust - Rust compiler in TypeScript
 
-A Rust compiler written in pure TypeScript with no dependencies.
+## Instructions
 
-## Plans
-
-See `plans/README.md` for the current planning structure.
-
-## Plan Status
-
-- `plans/STATUS.md`
-
-## Running
+- After working on a file run:
 
 ```bash
-node main.js run <file.rs>
+bun typecheck <file>
 ```
 
-Optional run flags:
+### Error handling and control-flow
 
-- `--entry <fn>`
-- `--trace --trace-out <path>`
-- `--out-bin <path>`
-- `--codegen-wasm`
-- `--no-validate`
+- Use the `Result` type from `better-result`
+- Use `match` from `ts-pattern` for control flow (avoid ternaries)
 
-## Testing
+Ensure that a high level of code quality is enforced.
+DO **NOT** take shortcuts of any kind
+
+Code which does not pass the lints is **NOT** working code (it **is** a bug)
+
+### IF YOU SEE A BUG:
+
+- It does **NOT** matter if it is unrelated to your task
+- You **HAVE** to fix it
+
+## Frontend Type-Safety Constraints
+
+- Write typesafe code
+- **NEVER** use an `eslint-disable` comment (if you see one, **remove** it)
+- **NEVER** modify `oxlint.config.ts`
+
+<!-- opensrc:start -->
+
+## Source Code Reference
+
+Source code for dependencies is available in `opensrc/` for deeper understanding of implementation details.
+
+See `opensrc/sources.json` for the list of available packages and their versions.
+
+Use this source code when you need to understand how a package works internally, not just its types/interface.
+
+### Fetching Additional Source Code
+
+To fetch source code for a package or repository you need to understand, run:
 
 ```bash
-npm run test
+npx opensrc <package>           # npm package (e.g., npx opensrc zod)
+npx opensrc pypi:<package>      # Python package (e.g., npx opensrc pypi:requests)
+npx opensrc crates:<package>    # Rust crate (e.g., npx opensrc crates:serde)
+npx opensrc <owner>/<repo>      # GitHub repo (e.g., npx opensrc vercel/ai)
 ```
 
-- Use `npm run test:update-examples` to regenerate changed/missing IR snapshots in `examples/expected/`.
-- Simple Rust examples live in `examples/`
-- The test suite compiles every `examples/*.rs` file via `tests/examples.js`
+<!-- opensrc:end -->

@@ -1,3 +1,6 @@
+// TODO: change test
+// This is a duplicate of 11_functions_print.rs
+
 fn print_str_slice(s: &str) {
     println!("{}", s);
 }

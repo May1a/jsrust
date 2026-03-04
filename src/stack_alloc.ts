@@ -4,18 +4,18 @@
  * Allocates stack slots for local variables in functions.
  */
 
-import { IRFunction, IRLocal } from "./ir";
-import { LayoutCache } from "./memory_layout";
+import type { IRFunction, IRLocal } from "./ir";
+import type { LayoutCache } from "./memory_layout";
 
 // ============================================================================
 // Task 10.10: Frame Layout
 // ============================================================================
 
-type FrameLayout = {
+interface FrameLayout {
     slots: Map<number, number>;
     size: number;
     align: number;
-};
+}
 
 function makeFrameLayout(
     slots: Map<number, number>,
@@ -33,16 +33,11 @@ function makeFrameLayout(
  * Stack slot allocator for function locals
  */
 class StackAllocator {
-    currentOffset: number;
-    maxAlign: number;
-    slots: Map<number, number>;
+    currentOffset = 0; // Current frame offset (negative, grows downward)
+    maxAlign = 1; // Maximum alignment required
+    slots: Map<number, number>; // Map LocalId to offset
 
     constructor() {
-        /** @type {number} Current frame offset (negative, grows downward) */
-        this.currentOffset = 0;
-        /** @type {number} Maximum alignment required */
-        this.maxAlign = 1;
-        /** @type {Map<number, number>} Map LocalId to offset */
         this.slots = new Map();
     }
 
@@ -93,7 +88,7 @@ class StackAllocator {
     /**
      * Reset the allocator
      */
-    reset() {
+    reset(): void {
         this.currentOffset = 0;
         this.maxAlign = 1;
         this.slots.clear();
@@ -131,7 +126,7 @@ function sortLocalsByAlignment(
     locals: IRLocal[],
     layoutCache: LayoutCache,
 ): IRLocal[] {
-    return [...locals].sort((a, b) => {
+    return [...locals].toSorted((a, b) => {
         const layoutA = layoutCache.getLayout(a.ty);
         const layoutB = layoutCache.getLayout(b.ty);
         // Sort by alignment descending (larger alignment first)
