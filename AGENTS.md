@@ -10,7 +10,7 @@ bun typecheck <file>
 
 ### Error handling and control-flow
 
-- Use the `Result` type from `neverthrow`
+- Use the `Result` type from `better-result`
 - Use `match` from `ts-pattern` for control flow (avoid ternaries)
 
 Ensure that a high level of code quality is enforced.

@@ -19,7 +19,7 @@
         "tabWidth": 4
     },
     "dependencies": {
-        "neverthrow": "^8.2.0",
+        "better-result": "^2.7.0",
         "ts-pattern": "^5.9.0"
     }
 }
