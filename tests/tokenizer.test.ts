@@ -4,7 +4,7 @@ import { tokenize, TokenType } from "../src/tokenizer";
 // Helper: tokenize a source fragment, appending a newline to avoid the
 // tokenizer's undefined-peek edge case at end-of-input.
 function tok(source: string) {
-    return tokenize(source + "\n");
+    return tokenize(`${source}\n`);
 }
 
 describe("literals", () => {

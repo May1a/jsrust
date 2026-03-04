@@ -9,76 +9,71 @@ import { printModule } from "../src/ir_printer";
 import { resetIRIds } from "../src/ir";
 import { validateFunction } from "../src/ir_validate";
 
-export function compileToIR(source: string): string {
-    resetIRIds();
+function joinMessages(errors: readonly { message: string }[]): string {
+    return errors.map((error) => error.message).join("; ");
+}
 
+function requireResolvedModule(source: string) {
     const parseResult = parseModule(source);
     if (!parseResult.ok) {
-        const msgs = parseResult.errors.map((e) => e.message).join("; ");
-        throw new Error(`Parse error: ${msgs}`);
+        throw new Error(`Parse error: ${joinMessages(parseResult.errors)}`);
     }
 
-    const ast = parseResult.value;
-
-    const resolveResult = resolveModuleTree(ast);
+    const resolveResult = resolveModuleTree(parseResult.value);
     if (!resolveResult.ok || !resolveResult.module) {
-        const msgs = (resolveResult.errors ?? [])
-            .map((e) => e.message)
-            .join("; ");
-        throw new Error(`Resolve error: ${msgs}`);
+        throw new Error(`Resolve error: ${joinMessages(resolveResult.errors)}`);
     }
-    const resolvedAst = resolveResult.module;
 
-    const deriveResult = expandDerives(resolvedAst);
+    const deriveResult = expandDerives(resolveResult.module);
     if (!deriveResult.ok || !deriveResult.module) {
-        const msgs = (deriveResult.errors ?? [])
-            .map((e) => e.message)
-            .join("; ");
-        throw new Error(`Derive expand error: ${msgs}`);
+        throw new Error(`Derive expand error: ${joinMessages(deriveResult.errors)}`);
     }
-    const expandedAst = deriveResult.module;
 
+    return deriveResult.module;
+}
+
+function validateTypes(expandedAst: ReturnType<typeof requireResolvedModule>) {
     const typeCtx = new TypeContext();
     const inferResult = inferModule(typeCtx, expandedAst);
     if (!inferResult.ok) {
-        const msgs = (inferResult.error ?? [])
-            .filter(Boolean)
-            .map((e) => e.message)
-            .join("; ");
-        throw new Error(`Type inference error: ${msgs}`);
+        throw new Error(`Type inference error: ${joinMessages(inferResult.error.filter(Boolean))}`);
     }
 
     const borrowResult = checkBorrowLite(expandedAst, typeCtx);
     if (!borrowResult.ok) {
-        const msgs = (borrowResult.errors ?? [])
-            .map((e) => e.message)
-            .join("; ");
-        throw new Error(`Borrow check error: ${msgs}`);
-    }
-
-    let irModule;
-    try {
-        irModule = lowerAstModuleToSsa(expandedAst);
-    } catch (e) {
         throw new Error(
-            `SSA lowering error: ${e instanceof Error ? e.message : String(e)}`,
+            `Borrow check error: ${joinMessages(borrowResult.errors ?? [])}`,
         );
     }
 
+    return typeCtx;
+}
+
+function collectValidationErrors(module: ReturnType<typeof lowerAstModuleToSsa>) {
     const validationErrors: string[] = [];
-    for (const fn of irModule.functions) {
+    for (const fn of module.functions) {
         const result = validateFunction(fn);
-        if (!result.ok) {
-            for (const err of result.errors ?? []) {
-                validationErrors.push(
-                    `in function \`${fn.name}\`: ${err.message}`,
-                );
-            }
+        if (result.ok) {
+            continue;
+        }
+
+        for (const error of result.errors ?? []) {
+            validationErrors.push(`in function \`${fn.name}\`: ${error.message}`);
         }
     }
+
+    return validationErrors;
+}
+
+export function compileToIR(source: string): string {
+    resetIRIds();
+    const expandedAst = requireResolvedModule(source);
+    validateTypes(expandedAst);
+    const irModule = lowerAstModuleToSsa(expandedAst);
+    const validationErrors = collectValidationErrors(irModule);
     if (validationErrors.length > 0) {
         throw new Error(`IR validation error: ${validationErrors.join("; ")}`);
     }
 
-    return printModule(irModule) + "\n";
+    return `${printModule(irModule)}\n`;
 }

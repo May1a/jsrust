@@ -21,16 +21,23 @@ import {
     ImplItem,
 } from "../src/ast";
 
+function expectInstanceOf<T>(
+    value: unknown,
+    ctor: abstract new (...args: never[]) => T,
+): asserts value is T {
+    expect(value).toBeInstanceOf(ctor);
+}
+
 // Appending a newline avoids the tokenizer's undefined-peek edge case when
 // source ends with an identifier or keyword character.
 function expr(src: string) {
-    return parseExpression(src + "\n");
+    return parseExpression(`${src}\n`);
 }
 function stmt(src: string) {
-    return parseStatement(src + "\n");
+    return parseStatement(`${src}\n`);
 }
 function mod(src: string) {
-    return parseModule(src + "\n");
+    return parseModule(`${src}\n`);
 }
 
 describe("expressions", () => {
@@ -38,18 +45,19 @@ describe("expressions", () => {
         const result = expr("1 + 2");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.value).toBeInstanceOf(BinaryExpr);
-        const e = result.value as BinaryExpr;
+        expectInstanceOf(result.value, BinaryExpr);
+        const e = result.value;
         expect(e.op).toBe(BinaryOp.Add);
-        expect(e.left).toBeInstanceOf(LiteralExpr);
-        expect(e.right).toBeInstanceOf(LiteralExpr);
+        expectInstanceOf(e.left, LiteralExpr);
+        expectInstanceOf(e.right, LiteralExpr);
     });
 
     test("binary arithmetic: multiplication", () => {
         const result = expr("3 * 4");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        const e = result.value as BinaryExpr;
+        expectInstanceOf(result.value, BinaryExpr);
+        const e = result.value;
         expect(e.op).toBe(BinaryOp.Mul);
     });
 
@@ -57,7 +65,8 @@ describe("expressions", () => {
         const result = expr("a < b");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        const e = result.value as BinaryExpr;
+        expectInstanceOf(result.value, BinaryExpr);
+        const e = result.value;
         expect(e.op).toBe(BinaryOp.Lt);
     });
 
@@ -65,7 +74,8 @@ describe("expressions", () => {
         const result = expr("x == 0");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        const e = result.value as BinaryExpr;
+        expectInstanceOf(result.value, BinaryExpr);
+        const e = result.value;
         expect(e.op).toBe(BinaryOp.Eq);
     });
 
@@ -73,7 +83,8 @@ describe("expressions", () => {
         const result = expr("a && b");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        const e = result.value as BinaryExpr;
+        expectInstanceOf(result.value, BinaryExpr);
+        const e = result.value;
         expect(e.op).toBe(BinaryOp.And);
     });
 
@@ -81,26 +92,28 @@ describe("expressions", () => {
         const result = expr("a || b");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        const e = result.value as BinaryExpr;
+        expectInstanceOf(result.value, BinaryExpr);
+        const e = result.value;
         expect(e.op).toBe(BinaryOp.Or);
     });
 
     test("integer literal", () => {
-        const result = expr("42");
+        const intLiteral = 42;
+        const result = expr(intLiteral.toString());
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.value).toBeInstanceOf(LiteralExpr);
-        const lit = result.value as LiteralExpr;
+        expectInstanceOf(result.value, LiteralExpr);
+        const lit = result.value;
         expect(lit.literalKind).toBe(LiteralKind.Int);
-        expect(lit.value).toBe(42);
+        expect(lit.value).toBe(intLiteral);
     });
 
     test("string literal", () => {
         const result = expr('"hello"');
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.value).toBeInstanceOf(LiteralExpr);
-        const lit = result.value as LiteralExpr;
+        expectInstanceOf(result.value, LiteralExpr);
+        const lit = result.value;
         expect(lit.literalKind).toBe(LiteralKind.String);
         expect(lit.value).toBe("hello");
     });
@@ -109,8 +122,8 @@ describe("expressions", () => {
         const result = expr("foo(1, 2)");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.value).toBeInstanceOf(CallExpr);
-        const call = result.value as CallExpr;
+        expectInstanceOf(result.value, CallExpr);
+        const call = result.value;
         expect(call.args.length).toBe(2);
     });
 
@@ -118,16 +131,16 @@ describe("expressions", () => {
         const result = expr("{ 1 + 2 }");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.value).toBeInstanceOf(BlockExpr);
+        expectInstanceOf(result.value, BlockExpr);
     });
 
     test("if expression", () => {
         const result = expr("if x { 1 } else { 2 }");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.value).toBeInstanceOf(IfExpr);
-        const ifExpr = result.value as IfExpr;
-        expect(ifExpr.condition).toBeInstanceOf(IdentifierExpr);
+        expectInstanceOf(result.value, IfExpr);
+        const ifExpr = result.value;
+        expectInstanceOf(ifExpr.condition, IdentifierExpr);
         expect(ifExpr.elseBranch).not.toBeNull();
     });
 
@@ -135,8 +148,8 @@ describe("expressions", () => {
         const result = expr("|x| x + 1");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.value).toBeInstanceOf(ClosureExpr);
-        const closure = result.value as ClosureExpr;
+        expectInstanceOf(result.value, ClosureExpr);
+        const closure = result.value;
         expect(closure.params.length).toBe(1);
     });
 });
@@ -146,30 +159,30 @@ describe("statements", () => {
         const result = stmt("let x = 5;");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.value).toBeInstanceOf(LetStmt);
-        const s = result.value as LetStmt;
+        expectInstanceOf(result.value, LetStmt);
+        const s = result.value;
         // No type annotation: parser inserts an InferredTypeNode
-        expect(s.type).toBeInstanceOf(InferredTypeNode);
+        expectInstanceOf(s.type, InferredTypeNode);
     });
 
     test("let binding with type annotation", () => {
         const result = stmt("let x: i32 = 5;");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.value).toBeInstanceOf(LetStmt);
-        const s = result.value as LetStmt;
-        expect(s.type).toBeInstanceOf(NamedTypeNode);
-        expect((s.type as NamedTypeNode).name).toBe("i32");
+        expectInstanceOf(result.value, LetStmt);
+        const s = result.value;
+        expectInstanceOf(s.type, NamedTypeNode);
+        expect(s.type.name).toBe("i32");
     });
 
     test("let mutable binding", () => {
         const result = stmt("let mut count = 0;");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.value).toBeInstanceOf(LetStmt);
-        const s = result.value as LetStmt;
-        expect(s.pattern).toBeInstanceOf(IdentPattern);
-        expect((s.pattern as IdentPattern).mutability).toBe(Mutability.Mutable);
+        expectInstanceOf(result.value, LetStmt);
+        const s = result.value;
+        expectInstanceOf(s.pattern, IdentPattern);
+        expect(s.pattern.mutability).toBe(Mutability.Mutable);
     });
 });
 
@@ -178,10 +191,11 @@ describe("items", () => {
         const result = mod("fn add(a: i32, b: i32) -> i32 { a + b }");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        const items = result.value.items;
+        const { items } = result.value;
         expect(items.length).toBe(1);
-        expect(items[0]).toBeInstanceOf(FnItem);
-        const fn = items[0] as FnItem;
+        const [firstItem] = items;
+        expectInstanceOf(firstItem, FnItem);
+        const fn = firstItem;
         expect(fn.name).toBe("add");
         expect(fn.params.length).toBe(2);
         expect(fn.returnType).not.toBeNull();
@@ -191,7 +205,9 @@ describe("items", () => {
         const result = mod("fn main() {}");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        const fn = result.value.items[0] as FnItem;
+        const [firstItem] = result.value.items;
+        expectInstanceOf(firstItem, FnItem);
+        const fn = firstItem;
         expect(fn.params.length).toBe(0);
     });
 
@@ -199,20 +215,23 @@ describe("items", () => {
         const result = mod("struct Point { x: i32, y: i32 }");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.value.items[0]).toBeInstanceOf(StructItem);
-        const s = result.value.items[0] as StructItem;
+        const [firstItem] = result.value.items;
+        expectInstanceOf(firstItem, StructItem);
+        const s = firstItem;
         expect(s.name).toBe("Point");
         expect(s.fields.length).toBe(2);
     });
 
     test("enum with variants", () => {
+        const enumVariants = 3;
         const result = mod("enum Color { Red, Green, Blue }");
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        expect(result.value.items[0]).toBeInstanceOf(EnumItem);
-        const e = result.value.items[0] as EnumItem;
+        const [firstItem] = result.value.items;
+        expectInstanceOf(firstItem, EnumItem);
+        const e = firstItem;
         expect(e.name).toBe("Color");
-        expect(e.variants.length).toBe(3);
+        expect(e.variants.length).toBe(enumVariants);
     });
 
     test("impl block", () => {
@@ -221,11 +240,9 @@ describe("items", () => {
         );
         expect(result.ok).toBe(true);
         if (!result.ok) return;
-        const implItem = result.value.items.find(
-            (i) => i instanceof ImplItem,
-        ) as ImplItem | undefined;
+        const implItem = result.value.items.find((i) => i instanceof ImplItem);
         expect(implItem).toBeDefined();
-        expect(implItem!.methods.length).toBe(1);
+        expect(implItem?.methods.length).toBe(1);
     });
 });
 
