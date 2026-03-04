@@ -1,1 +1,32 @@
-module main {}
+module main {
+
+  fn f96417 add(v0 arg0: i32, v1 arg1: i32) -> i32 {
+    b0 (entry):
+      v2: ptr<i32> = alloca i32
+      store v0 -> v2
+      v4: ptr<i32> = alloca i32
+      store v1 -> v4
+      v6: i32      = load v2
+      v7: i32      = load v4
+      v8: i32      = iadd v6, v7
+      ret v8
+  }
+
+  fn f559375 test_const_fn() -> () {
+    b0 (entry):
+      v9: i32   = iconst 1
+      v10: i32  = iconst 2
+      v11: i32  = call add(v9, v10)
+      v12: i32  = iconst 3
+      v13: bool = icmp.eq v11, v12
+      br_if v13, then: b2, else: b1
+  
+    b1 (assert_fail):
+      unreachable
+  
+    b2 (assert_ok):
+      v14: i8 = iconst 0
+      ret
+  }
+
+}

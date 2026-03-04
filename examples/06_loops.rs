@@ -5,5 +5,6 @@ fn test_example() {
     while i < 3 {
         i += 1;
     }
+    assert_eq!(i, 3);
     println!("{}", i);
 }

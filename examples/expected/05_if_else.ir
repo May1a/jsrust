@@ -20,10 +20,20 @@ module main {
     b3(v3: i32) (if_merge):
       v4: ptr<i32> = alloca i32
       store v3 -> v4
-      v6: ptr      = sconst s0
-      v7: i32      = load v4
-      v8: i64      = iconst 1
-      call f862609(v6, v8, v7)
+      v6: i32      = load v4
+      v7: i32      = iconst 1
+      v8: bool     = icmp.eq v6, v7
+      br_if v8, then: b5, else: b4
+  
+    b4 (assert_fail):
+      unreachable
+  
+    b5 (assert_ok):
+      v9: i8   = iconst 0
+      v10: ptr = sconst s0
+      v11: i32 = load v4
+      v12: i64 = iconst 1
+      call f862609(v10, v12, v11)
       ret
   }
 

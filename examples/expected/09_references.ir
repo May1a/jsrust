@@ -12,6 +12,16 @@ module main {
       v7: i64           = load v6
       v8: ptr<i64>      = alloca i64
       store v7 -> v8
+      v10: i64          = load v8
+      v11: i32          = load v1
+      v12: bool         = icmp.eq v10, v11
+      br_if v12, then: b2, else: b1
+  
+    b1 (assert_fail):
+      unreachable
+  
+    b2 (assert_ok):
+      v13: i8 = iconst 0
       ret
   }
 

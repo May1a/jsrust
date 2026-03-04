@@ -17,10 +17,20 @@ module main {
       v6: i32               = struct_get v5.0
       v7: ptr<i32>          = alloca i32
       store v6 -> v7
-      v9: ptr               = sconst s0
-      v10: i32              = load v7
-      v11: i64              = iconst 1
-      call f862609(v9, v11, v10)
+      v9: i32               = load v7
+      v10: i32              = iconst 1
+      v11: bool             = icmp.eq v9, v10
+      br_if v11, then: b2, else: b1
+  
+    b1 (assert_fail):
+      unreachable
+  
+    b2 (assert_ok):
+      v12: i8  = iconst 0
+      v13: ptr = sconst s0
+      v14: i32 = load v7
+      v15: i64 = iconst 1
+      call f862609(v13, v15, v14)
       ret
   }
 
