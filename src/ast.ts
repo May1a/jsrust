@@ -771,11 +771,13 @@ type UsePrefix = "crate" | "mod"; // TODO: add more
 export class UseItem extends Item {
     prefix?: UsePrefix;
     path: string[];
+    alias?: string;
 
-    constructor(span: Span, path: string[], prefix?: UsePrefix) {
+    constructor(span: Span, path: string[], prefix?: UsePrefix, alias?: string) {
         super(span);
         this.path = path;
         this.prefix = prefix;
+        this.alias = alias;
     }
 
     toFullPath(): string {

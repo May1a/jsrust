@@ -242,7 +242,8 @@ describe("items", () => {
         if (!result.ok) return;
         const implItem = result.value.items.find((i) => i instanceof ImplItem);
         expect(implItem).toBeDefined();
-        expect(implItem?.methods.length).toBe(1);
+        if (implItem === undefined) return;
+        expect(implItem.methods.length).toBe(1);
     });
 });
 

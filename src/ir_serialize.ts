@@ -530,7 +530,7 @@ export class IRSerializer {
         for (const global of module.globals) {
             size += U32_BYTE_WIDTH; // Name string id
             size += this.calculateTypeSize(global.ty);
-            if (global.init !== undefined) {
+            if (global.init) {
                 size += BYTE_WIDTH; // Has_init = 1
                 size += this.calculateConstantSize(global.init);
             } else {
@@ -642,7 +642,8 @@ export class IRSerializer {
             visitIshrInst: (): number => TWO_U32_WIDTH, // Left, right
             visitIcmpInst: (): number => TWO_U32_AND_TAG_WIDTH, // Left, right, op
             visitFcmpInst: (): number => TWO_U32_AND_TAG_WIDTH, // Left, right, op
-            visitAllocaInst: (): number => U32_BYTE_WIDTH, // Local id
+            visitAllocaInst: (alloca: AllocaInst): number =>
+                U32_BYTE_WIDTH + this.calculateTypeSize(alloca.allocType),
             visitLoadInst: (): number => U32_BYTE_WIDTH, // Ptr
             visitStoreInst: (store: StoreInst): number =>
                 TWO_U32_WIDTH +
@@ -1102,6 +1103,7 @@ export class IRSerializer {
             },
             visitAllocaInst: (i: AllocaInst): void => {
                 this.writeU32(i.id);
+                this.writeType(i.allocType);
             },
             visitLoadInst: (i: LoadInst): void => {
                 this.writeU32(i.ptr);
