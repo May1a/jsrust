@@ -510,7 +510,8 @@ static bool IRReader_readInstruction(IRReader* reader, IRInstruction* inst)
     case IRInstKind_Fneg:
         return IRReader_readU32(reader, &inst->a);
     case IRInstKind_Alloca:
-        return IRReader_readU32(reader, &inst->localId);
+        return IRReader_readU32(reader, &inst->localId)
+            && IRReader_readType(reader, 0, &inst->fromTy);
     case IRInstKind_Load:
         return IRReader_readU32(reader, &inst->ptr);
     case IRInstKind_Store:

@@ -46,6 +46,7 @@ import {
     type StructExpr,
     TraitImplItem,
     type TypeNode,
+    ArrayTypeNode,
     UseItem,
     UnaryExpr,
     UnaryOp,
@@ -108,6 +109,8 @@ import {
     makeIRPtrType,
     makeIRStructType,
     makeIRUnitType,
+    ArrayType,
+    makeIRArrayType,
     type BlockId,
     FloatType,
     type IRBlock,
@@ -437,12 +440,7 @@ export class AstToSsaCtx {
             visitAssignExpr: (expr: AssignExpr) => this.lowerAssign(expr),
             visitCallExpr: (expr: CallExpr) => this.lowerCall(expr),
             visitFieldExpr: (expr: FieldExpr) => this.lowerFieldAccess(expr),
-            visitIndexExpr: (expr: IndexExpr) =>
-                loweringError(
-                    LoweringErrorKind.UnsupportedNode,
-                    "Index expression lowering not implemented",
-                    expr.span,
-                ),
+            visitIndexExpr: (expr: IndexExpr) => this.lowerIndexExpr(expr),
             visitIfExpr: (expr: IfExpr) => this.lowerIf(expr),
             visitBlockExpr: (expr: BlockExpr) => {
                 const blockResult = this.lowerBlock(expr);
@@ -1414,6 +1412,9 @@ export class AstToSsaCtx {
             case "assert_eq": {
                 return this.lowerAssertEq(expr);
             }
+            case "vec": {
+                return this.lowerArrayLiteral(expr);
+            }
             default: {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
@@ -1422,6 +1423,61 @@ export class AstToSsaCtx {
                 );
             }
         }
+    }
+
+    private lowerArrayLiteral(expr: MacroExpr): Result<ValueId, LoweringError> {
+        const elementValues: ValueId[] = [];
+        for (const elemExpr of expr.args) {
+            const result = this.lowerExpression(elemExpr);
+            if (!result.isOk()) return result;
+            elementValues.push(result.value);
+        }
+
+        const elemTy =
+            elementValues.length > 0
+                ? (this.resolveValueType(elementValues[0]) ?? makeIRUnitType())
+                : makeIRUnitType();
+
+        const arrayType = makeIRArrayType(elemTy, expr.args.length);
+        const arrPtr = this.builder.alloca(arrayType);
+
+        for (let i = 0; i < elementValues.length; i++) {
+            const idxInst = this.builder.iconst(i, IntWidth.I32);
+            const elemPtr = this.builder.gep(arrPtr.id, [idxInst.id], elemTy);
+            this.builder.store(elemPtr.id, elementValues[i], elemTy);
+        }
+
+        return Result.ok(arrPtr.id);
+    }
+
+    private lowerIndexExpr(expr: IndexExpr): Result<ValueId, LoweringError> {
+        const receiverResult = this.lowerExpression(expr.receiver);
+        if (!receiverResult.isOk()) return receiverResult;
+
+        const receiverType = this.resolveValueType(receiverResult.value);
+        if (
+            !(receiverType instanceof PtrType) ||
+            !(receiverType.inner instanceof ArrayType)
+        ) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                "Index expression requires an array receiver",
+                expr.span,
+            );
+        }
+
+        const elemTy = receiverType.inner.element;
+
+        const indexResult = this.lowerExpression(expr.index);
+        if (!indexResult.isOk()) return indexResult;
+
+        const elemPtr = this.builder.gep(
+            receiverResult.value,
+            [indexResult.value],
+            elemTy,
+        );
+        const loaded = this.builder.load(elemPtr.id, elemTy);
+        return AstToSsaCtx.handleInstructionId(loaded.id);
     }
 
     private lowerAssert(expr: MacroExpr): Result<ValueId, LoweringError> {
@@ -2288,6 +2344,17 @@ export class AstToSsaCtx {
         if (typeNode instanceof FnTypeNode) {
             // Function pointers are represented as 64-bit function IDs.
             return makeIRIntType(IntWidth.I64);
+        }
+        if (typeNode instanceof ArrayTypeNode) {
+            const elemTy = AstToSsaCtx.translateTypeNode(typeNode.element);
+            if (
+                !(typeNode.length instanceof LiteralExpr) ||
+                typeNode.length.literalKind !== LiteralKind.Int
+            ) {
+                return makeIRUnitType();
+            }
+            const len = Number(typeNode.length.value);
+            return makeIRArrayType(elemTy, len);
         }
         return makeIRUnitType();
     }

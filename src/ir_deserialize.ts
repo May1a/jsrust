@@ -86,6 +86,7 @@ import {
     setIRTerminator,
     type EnumType,
     type FloatType,
+    PtrType,
     type IRBlock,
     type IRFunction,
     type IRInst,
@@ -248,7 +249,7 @@ const INSTRUCTION_READERS: Partial<Record<IRInstKind, InstructionReader>> = {
                 deserializer.readU32(),
             ),
         ),
-    [IRInstKind.Gep]: (deserializer, id) => deserializer.readGepInstruction(id),
+    [IRInstKind.Gep]: (deserializer, id, ty) => deserializer.readGepInstruction(id, ty),
     [IRInstKind.Ptradd]: (deserializer, id) =>
         Result.ok(new PtraddInst(id, deserializer.readU32(), deserializer.readU32())),
     [IRInstKind.Trunc]: (deserializer, id, ty) =>
@@ -990,13 +991,13 @@ class IRDeserializer {
     }
 
     readAllocaInstruction(id: number): Result<IRInst, DeserializeError> {
+        // localId is written in the body (same as id, the result value id)
+        this.readU32();
         const allocTypeResult = this.readType();
         if (!allocTypeResult.isOk()) {
             return allocTypeResult;
         }
-        const hasAlignment = this.readU8() !== 0;
-        const alignment = hasAlignment ? this.readU32() : undefined;
-        return Result.ok(new AllocaInst(id, allocTypeResult.value, alignment));
+        return Result.ok(new AllocaInst(id, allocTypeResult.value));
     }
 
     readLoadInstruction(id: number): Result<IRInst, DeserializeError> {
@@ -1018,18 +1019,16 @@ class IRDeserializer {
         return Result.ok(new StoreInst(id, value, ptr, alignment));
     }
 
-    readGepInstruction(id: number): Result<IRInst, DeserializeError> {
+    readGepInstruction(id: number, ty: IRType): Result<IRInst, DeserializeError> {
         const ptr = this.readU32();
         const indexCount = this.readU32();
         const indices: number[] = [];
         for (let i = 0; i < indexCount; i++) {
             indices.push(this.readU32());
         }
-        const resultTypeResult = this.readType();
-        if (!resultTypeResult.isOk()) {
-            return resultTypeResult;
-        }
-        return Result.ok(new GepInst(id, ptr, indices, resultTypeResult.value));
+        // ty is PtrType(resultType) from the instruction header; no extra type in stream
+        const resultType = ty instanceof PtrType ? ty.inner : ty;
+        return Result.ok(new GepInst(id, ptr, indices, resultType));
     }
 
     readIntCastInstruction(

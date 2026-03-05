@@ -44,6 +44,7 @@ import {
     EnumItem,
     TraitImplItem,
     TraitItem,
+    ArrayTypeNode,
     TupleTypeNode,
     type TypeNode,
     UnaryExpr,
@@ -390,6 +391,18 @@ function inferExprTypeExtended(
         return inferDeref(typeCtx, expr, errors);
     }
 
+    if (expr instanceof MacroExpr && expr.name === "vec") {
+        const elemType =
+            expr.args.length > 0
+                ? inferExprType(typeCtx, expr.args[0], errors)
+                : undefined;
+        for (const arg of expr.args) {
+            inferExprType(typeCtx, arg, errors);
+        }
+        if (elemType === undefined) return undefined;
+        return new ArrayTypeNode(expr.span, elemType, undefined);
+    }
+
     if (
         expr instanceof MacroExpr ||
         expr instanceof WhileExpr ||
@@ -409,8 +422,11 @@ function inferExprTypeExtended(
     }
 
     if (expr instanceof IndexExpr) {
-        inferExprType(typeCtx, expr.receiver, errors);
+        const receiverType = inferExprType(typeCtx, expr.receiver, errors);
         inferExprType(typeCtx, expr.index, errors);
+        if (receiverType instanceof ArrayTypeNode) {
+            return receiverType.element;
+        }
         return undefined;
     }
 
