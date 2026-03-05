@@ -401,6 +401,8 @@ static uint32_t WasmEmit_stackSlotSize(const IRType* type)
     switch (type->kind) {
     case IRTypeKind_Unit:
         return 0;
+    case IRTypeKind_Array:
+        return type->arrayLength * 8;
     default:
         return 8;
     }
@@ -1646,7 +1648,7 @@ static BackendStatus WasmFunctionLowering_emitInstruction(
     case IRInstKind_Alloca: {
         uint32_t allocSize;
         const WasmLocalSlotMap* slot;
-        allocSize = WasmEmit_stackSlotSize(inst->ty ? inst->ty->elementType : NULL);
+        allocSize = WasmEmit_stackSlotSize(inst->fromTy);
         if (!inst->hasResult || resultIsVoid)
             return WasmEmit_validateError("wasm codegen: alloca missing pointer result");
         slot = WasmFunctionLowering_findLocalSlot(lowering, inst->localId);
