@@ -177,7 +177,6 @@ const STRING_FIRST_CHAR_INDEX = 0;
 const DEFAULT_CHAR_CODE = 0;
 const HASH_FACTOR = 31;
 const HASH_MODULUS = 1_000_000;
-const VEC_CAPACITY_FALLBACK = 4;
 const EMPTY_FORMAT = "";
 
 // Loop frame access
@@ -1319,21 +1318,6 @@ export class AstToSsaCtx {
             case "clone": {
                 return Result.ok(receiverValue);
             }
-            case "len": {
-                return AstToSsaCtx.handleInstructionId(
-                    this.builder.iconst(0, IntWidth.I32).id,
-                );
-            }
-            case "capacity": {
-                return AstToSsaCtx.handleInstructionId(
-                    this.builder.iconst(VEC_CAPACITY_FALLBACK, IntWidth.I32).id,
-                );
-            }
-            case "push":
-            case "get":
-            case "pop": {
-                return Result.ok(this.unitValue());
-            }
             default: {
                 return undefined;
             }
@@ -1429,9 +1413,6 @@ export class AstToSsaCtx {
             }
             case "assert_eq": {
                 return this.lowerAssertEq(expr);
-            }
-            case "vec": {
-                return this.lowerVecMacro(expr);
             }
             default: {
                 return loweringError(
@@ -1649,34 +1630,6 @@ export class AstToSsaCtx {
             return FormatTag.String;
         }
         return undefined;
-    }
-
-    private lowerVecMacro(expr: MacroExpr): Result<ValueId, LoweringError> {
-        const values: ValueId[] = [];
-        const fieldTypes: IRType[] = [];
-        for (const arg of expr.args) {
-            const lowered = this.lowerExpression(arg);
-            if (!lowered.isOk()) {
-                return lowered;
-            }
-            values.push(lowered.value);
-            fieldTypes.push(
-                this.resolveValueType(lowered.value) ?? makeIRUnitType(),
-            );
-        }
-        const vecTypeName = "Vec";
-        const vecType =
-            this.irModule.structs.get(vecTypeName) ??
-            makeIRStructType(vecTypeName, fieldTypes);
-        if (!this.irModule.structs.has(vecTypeName)) {
-            this.irModule.structs.set(vecTypeName, vecType);
-            this.structFieldNames.set(
-                vecTypeName,
-                fieldTypes.map((_, index) => `_${index}`),
-            );
-        }
-        const vecCreate = this.builder.structCreate(values, vecType);
-        return AstToSsaCtx.handleInstructionId(vecCreate.id);
     }
 
     private lowerStructLiteral(
