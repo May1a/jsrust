@@ -161,7 +161,10 @@ export class IRBuilder {
         const block = this.currentFunction.blocks.find(
             (candidate) => candidate.id === blockId,
         );
-        return block?.predecessors ?? [];
+        if (block === undefined) {
+            return [];
+        }
+        return block.predecessors;
     }
 
     // ============================================================================
