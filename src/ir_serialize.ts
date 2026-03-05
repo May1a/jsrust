@@ -530,7 +530,7 @@ export class IRSerializer {
         for (const global of module.globals) {
             size += U32_BYTE_WIDTH; // Name string id
             size += this.calculateTypeSize(global.ty);
-            if (global.init !== undefined) {
+            if (global.init) {
                 size += BYTE_WIDTH; // Has_init = 1
                 size += this.calculateConstantSize(global.init);
             } else {
