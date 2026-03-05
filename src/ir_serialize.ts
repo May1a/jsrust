@@ -642,7 +642,8 @@ export class IRSerializer {
             visitIshrInst: (): number => TWO_U32_WIDTH, // Left, right
             visitIcmpInst: (): number => TWO_U32_AND_TAG_WIDTH, // Left, right, op
             visitFcmpInst: (): number => TWO_U32_AND_TAG_WIDTH, // Left, right, op
-            visitAllocaInst: (): number => U32_BYTE_WIDTH, // Local id
+            visitAllocaInst: (alloca: AllocaInst): number =>
+                U32_BYTE_WIDTH + this.calculateTypeSize(alloca.allocType),
             visitLoadInst: (): number => U32_BYTE_WIDTH, // Ptr
             visitStoreInst: (store: StoreInst): number =>
                 TWO_U32_WIDTH +
@@ -1102,6 +1103,7 @@ export class IRSerializer {
             },
             visitAllocaInst: (i: AllocaInst): void => {
                 this.writeU32(i.id);
+                this.writeType(i.allocType);
             },
             visitLoadInst: (i: LoadInst): void => {
                 this.writeU32(i.ptr);

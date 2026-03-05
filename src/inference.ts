@@ -1055,6 +1055,18 @@ function inferFnBody(
                 });
             }
         }
+    } else {
+        const declaredReturnType = resolveSelf(fnItem.returnType, selfTypeName);
+        const implicitUnitType = new TupleTypeNode(fnItem.span, []);
+        if (
+            !isInferredPlaceholder(declaredReturnType) &&
+            !typesEqual(declaredReturnType, implicitUnitType)
+        ) {
+            errors.push({
+                message: `Mismatched return type: expected \`${typeToString(declaredReturnType)}\`, found \`()\``,
+                span: fnItem.body.span,
+            });
+        }
     }
     typeCtx.popScope();
 }
