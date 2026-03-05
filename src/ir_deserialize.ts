@@ -86,6 +86,7 @@ import {
     setIRTerminator,
     type EnumType,
     type FloatType,
+    PtrType,
     type IRBlock,
     type IRFunction,
     type IRInst,
@@ -176,6 +177,10 @@ function isFcmpOp(value: number): value is FcmpOp {
     return FCMP_OP_VALUES.has(value);
 }
 
+function instructionHasResult(kind: IRInstKind): boolean {
+    return kind !== IRInstKind.Store && kind !== IRInstKind.Memcpy;
+}
+
 type InstructionReader = (
     deserializer: IRDeserializer,
     id: number,
@@ -235,8 +240,8 @@ const INSTRUCTION_READERS: Partial<Record<IRInstKind, InstructionReader>> = {
         deserializer.readNegInstruction(IRInstKind.Fneg, id, ty),
     [IRInstKind.Alloca]: (deserializer, id) =>
         deserializer.readAllocaInstruction(id),
-    [IRInstKind.Load]: (deserializer, id) =>
-        deserializer.readLoadInstruction(id),
+    [IRInstKind.Load]: (deserializer, id, ty) =>
+        deserializer.readLoadInstruction(id, ty),
     [IRInstKind.Store]: (deserializer, id) =>
         deserializer.readStoreInstruction(id),
     [IRInstKind.Memcpy]: (deserializer, id) =>
@@ -248,7 +253,7 @@ const INSTRUCTION_READERS: Partial<Record<IRInstKind, InstructionReader>> = {
                 deserializer.readU32(),
             ),
         ),
-    [IRInstKind.Gep]: (deserializer, id) => deserializer.readGepInstruction(id),
+    [IRInstKind.Gep]: (deserializer, id, ty) => deserializer.readGepInstruction(id, ty),
     [IRInstKind.Ptradd]: (deserializer, id) =>
         Result.ok(new PtraddInst(id, deserializer.readU32(), deserializer.readU32())),
     [IRInstKind.Trunc]: (deserializer, id, ty) =>
@@ -257,16 +262,16 @@ const INSTRUCTION_READERS: Partial<Record<IRInstKind, InstructionReader>> = {
         deserializer.readIntCastInstruction(IRInstKind.Sext, id, ty),
     [IRInstKind.Zext]: (deserializer, id, ty) =>
         deserializer.readIntCastInstruction(IRInstKind.Zext, id, ty),
-    [IRInstKind.Fptoui]: (deserializer, id) =>
-        deserializer.parseGeneralCastInstruction(IRInstKind.Fptoui, id),
-    [IRInstKind.Fptosi]: (deserializer, id) =>
-        deserializer.parseGeneralCastInstruction(IRInstKind.Fptosi, id),
-    [IRInstKind.Uitofp]: (deserializer, id) =>
-        deserializer.parseGeneralCastInstruction(IRInstKind.Uitofp, id),
-    [IRInstKind.Sitofp]: (deserializer, id) =>
-        deserializer.parseGeneralCastInstruction(IRInstKind.Sitofp, id),
-    [IRInstKind.Bitcast]: (deserializer, id) =>
-        deserializer.parseGeneralCastInstruction(IRInstKind.Bitcast, id),
+    [IRInstKind.Fptoui]: (deserializer, id, ty) =>
+        deserializer.parseGeneralCastInstruction(IRInstKind.Fptoui, id, ty),
+    [IRInstKind.Fptosi]: (deserializer, id, ty) =>
+        deserializer.parseGeneralCastInstruction(IRInstKind.Fptosi, id, ty),
+    [IRInstKind.Uitofp]: (deserializer, id, ty) =>
+        deserializer.parseGeneralCastInstruction(IRInstKind.Uitofp, id, ty),
+    [IRInstKind.Sitofp]: (deserializer, id, ty) =>
+        deserializer.parseGeneralCastInstruction(IRInstKind.Sitofp, id, ty),
+    [IRInstKind.Bitcast]: (deserializer, id, ty) =>
+        deserializer.parseGeneralCastInstruction(IRInstKind.Bitcast, id, ty),
     [IRInstKind.Call]: (deserializer, id, ty) =>
         deserializer.readCallInstruction(IRInstKind.Call, id, ty),
     [IRInstKind.CallDyn]: (deserializer, id, ty) =>
@@ -663,7 +668,7 @@ class IRDeserializer {
             });
         }
 
-        const id = this.readU32();
+        const id = instructionHasResult(opcode) ? this.readU32() : 0;
         const typeResult = this.readType();
         if (!typeResult.isOk()) {
             return typeResult;
@@ -990,46 +995,40 @@ class IRDeserializer {
     }
 
     readAllocaInstruction(id: number): Result<IRInst, DeserializeError> {
+        // localId is written in the body (same as id, the result value id)
+        this.readU32();
         const allocTypeResult = this.readType();
         if (!allocTypeResult.isOk()) {
             return allocTypeResult;
         }
-        const hasAlignment = this.readU8() !== 0;
-        const alignment = hasAlignment ? this.readU32() : undefined;
-        return Result.ok(new AllocaInst(id, allocTypeResult.value, alignment));
+        return Result.ok(new AllocaInst(id, allocTypeResult.value));
     }
 
-    readLoadInstruction(id: number): Result<IRInst, DeserializeError> {
+    readLoadInstruction(id: number, ty: IRType): Result<IRInst, DeserializeError> {
         const ptr = this.readU32();
-        const loadTypeResult = this.readType();
-        if (!loadTypeResult.isOk()) {
-            return loadTypeResult;
-        }
-        const hasAlignment = this.readU8() !== 0;
-        const alignment = hasAlignment ? this.readU32() : undefined;
-        return Result.ok(new LoadInst(id, ptr, loadTypeResult.value, alignment));
+        return Result.ok(new LoadInst(id, ptr, ty));
     }
 
     readStoreInstruction(id: number): Result<IRInst, DeserializeError> {
-        const value = this.readU32();
         const ptr = this.readU32();
-        const hasAlignment = this.readU8() !== 0;
-        const alignment = hasAlignment ? this.readU32() : undefined;
-        return Result.ok(new StoreInst(id, value, ptr, alignment));
+        const value = this.readU32();
+        const valueTypeResult = this.readType();
+        if (!valueTypeResult.isOk()) {
+            return valueTypeResult;
+        }
+        return Result.ok(new StoreInst(id, value, ptr));
     }
 
-    readGepInstruction(id: number): Result<IRInst, DeserializeError> {
+    readGepInstruction(id: number, ty: IRType): Result<IRInst, DeserializeError> {
         const ptr = this.readU32();
         const indexCount = this.readU32();
         const indices: number[] = [];
         for (let i = 0; i < indexCount; i++) {
             indices.push(this.readU32());
         }
-        const resultTypeResult = this.readType();
-        if (!resultTypeResult.isOk()) {
-            return resultTypeResult;
-        }
-        return Result.ok(new GepInst(id, ptr, indices, resultTypeResult.value));
+        // ty is PtrType(resultType) from the instruction header; no extra type in stream
+        const resultType = ty instanceof PtrType ? ty.inner : ty;
+        return Result.ok(new GepInst(id, ptr, indices, resultType));
     }
 
     readIntCastInstruction(
@@ -1066,22 +1065,19 @@ class IRDeserializer {
     parseGeneralCastInstruction(
         opcode: IRInstKind,
         id: number,
+        ty: IRType,
     ): Result<IRInst, DeserializeError> {
         const operand = this.readU32();
         const fromTypeResult = this.readType();
         if (!fromTypeResult.isOk()) {
             return fromTypeResult;
         }
-        const toTypeResult = this.readType();
-        if (!toTypeResult.isOk()) {
-            return toTypeResult;
-        }
         return this.makeGeneralCastInstruction(
             opcode,
             id,
             operand,
             fromTypeResult.value,
-            toTypeResult.value,
+            ty,
         );
     }
 

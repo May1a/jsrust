@@ -1574,11 +1574,25 @@ static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* fram
         }
 
         if (local->cellIndex == UINT32_MAX) {
-            uint32_t newCell;
-            status = Runtime_allocateCell(engine->runtime, Exec_defaultValueForType(local->localType), &newCell);
-            if (status.code != JSRUST_BACKEND_OK)
-                return status;
-            local->cellIndex = newCell;
+            IRType* allocType = inst->fromTy;
+            if (allocType && allocType->kind == IRTypeKind_Array) {
+                uint32_t newCell;
+                status = Runtime_allocateCells(
+                    engine->runtime,
+                    allocType->arrayLength,
+                    Exec_defaultValueForType(allocType->elementType),
+                    RuntimePtrKind_Stack,
+                    &newCell);
+                if (status.code != JSRUST_BACKEND_OK)
+                    return status;
+                local->cellIndex = newCell;
+            } else {
+                uint32_t newCell;
+                status = Runtime_allocateCell(engine->runtime, Exec_defaultValueForType(local->localType), &newCell);
+                if (status.code != JSRUST_BACKEND_OK)
+                    return status;
+                local->cellIndex = newCell;
+            }
         }
 
         *outValue = ExecValue_makePtr(local->cellIndex);
