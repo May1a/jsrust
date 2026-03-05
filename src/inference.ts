@@ -1,32 +1,42 @@
 import {
+    AssignExpr,
     BinaryExpr,
     BinaryOp,
     BlockExpr,
+    BreakExpr,
     CallExpr,
     ClosureExpr,
+    ContinueExpr,
+    DerefExpr,
     ExprStmt,
     type Expression,
     FieldExpr,
     FnItem,
+    ForExpr,
     GenericFnItem,
     GenericStructItem,
     IdentPattern,
     IdentifierExpr,
     IfExpr,
     InferredTypeNode,
+    IndexExpr,
     ImplItem,
     ItemStmt,
     LetStmt,
     LiteralExpr,
     LiteralKind,
+    LoopExpr,
+    MacroExpr,
     MatchExpr,
     ModItem,
     ModuleNode,
     Mutability,
     NamedTypeNode,
     type ParamNode,
+    RangeExpr,
     RefExpr,
     RefTypeNode,
+    ReturnExpr,
     type Span,
     type Statement,
     StructExpr,
@@ -38,6 +48,8 @@ import {
     type TypeNode,
     UnaryExpr,
     UnaryOp,
+    UseItem,
+    WhileExpr,
     type Item,
 } from "./ast";
 import { Result } from "better-result";
@@ -182,14 +194,16 @@ function registerImplMethodsWithPrefix(
     if (targetName === undefined) return;
     const qTarget = qualify(targetName);
     for (const method of node.methods) {
+        // Resolve `Self` → concrete type so callers get the concrete return type
+        const returnType = resolveSelf(method.returnType, targetName);
         typeCtx.registerFnSignature(`${qTarget}::${method.name}`, {
             params: buildParamList(method.params),
-            returnType: method.returnType,
+            returnType,
         });
         if (modulePrefix) {
             typeCtx.registerFnSignature(`${targetName}::${method.name}`, {
                 params: buildParamList(method.params),
-                returnType: method.returnType,
+                returnType,
             });
         }
     }
@@ -271,7 +285,25 @@ function registerItemTypesWithPrefix(
         }
         if (node instanceof ModItem) {
             registerItemTypesWithPrefix(typeCtx, node.items, qualify(node.name));
+            continue;
         }
+        if (node instanceof UseItem) {
+            registerUseItemAlias(typeCtx, node);
+        }
+    }
+}
+
+function registerUseItemAlias(typeCtx: TypeContext, node: UseItem): void {
+    if (node.path.length === 0) return;
+    const fullPath = node.path.join("::");
+    const localName = node.alias ?? node.path[node.path.length - 1];
+
+    // Avoid re-registering if the local name matches the last segment (no alias)
+    if (localName === fullPath) return;
+
+    const sig = typeCtx.lookupFnSignature(fullPath);
+    if (sig !== undefined) {
+        typeCtx.registerFnSignature(localName, sig);
     }
 }
 
@@ -346,7 +378,49 @@ function inferExprTypeInner(
         return expr.returnType;
     }
 
-    return undefined;
+    return inferExprTypeExtended(typeCtx, expr, errors);
+}
+
+function inferExprTypeExtended(
+    typeCtx: TypeContext,
+    expr: Expression,
+    errors: TypeError[],
+): TypeNode | undefined {
+    if (expr instanceof DerefExpr) {
+        return inferDeref(typeCtx, expr, errors);
+    }
+
+    if (
+        expr instanceof MacroExpr ||
+        expr instanceof WhileExpr ||
+        expr instanceof ForExpr ||
+        expr instanceof LoopExpr ||
+        expr instanceof AssignExpr
+    ) {
+        return inferUnitExpr(typeCtx, expr, errors);
+    }
+
+    if (
+        expr instanceof ReturnExpr ||
+        expr instanceof BreakExpr ||
+        expr instanceof ContinueExpr
+    ) {
+        return inferDivergingExpr(typeCtx, expr, errors);
+    }
+
+    if (expr instanceof IndexExpr) {
+        inferExprType(typeCtx, expr.receiver, errors);
+        inferExprType(typeCtx, expr.index, errors);
+        return undefined;
+    }
+
+    if (expr instanceof RangeExpr) {
+        if (expr.start !== undefined) inferExprType(typeCtx, expr.start, errors);
+        if (expr.end !== undefined) inferExprType(typeCtx, expr.end, errors);
+        return undefined;
+    }
+
+    throw new Error(`Unhandled expression type in inference: ${expr.constructor.name}`);
 }
 
 function inferLiteral(expr: LiteralExpr): TypeNode {
@@ -371,7 +445,7 @@ function inferLiteral(expr: LiteralExpr): TypeNode {
             return new NamedTypeNode(expr.span, "char");
         }
         default: {
-            return new InferredTypeNode(expr.span);
+            throw new Error(`Unhandled literal kind in inference: ${String(expr.literalKind)}`);
         }
     }
 }
@@ -379,21 +453,40 @@ function inferLiteral(expr: LiteralExpr): TypeNode {
 function inferIdentifier(
     typeCtx: TypeContext,
     expr: IdentifierExpr,
-    _errors: TypeError[],
+    errors: TypeError[],
 ): TypeNode | undefined {
     const varTy = typeCtx.lookupVariable(expr.name);
     if (varTy !== undefined) return varTy;
 
-    // Could be a function name used as a value — not an error here
     const fnSig = typeCtx.lookupFnSignature(expr.name);
-    if (fnSig !== undefined) return undefined;
+    if (fnSig !== undefined) {
+        errors.push({
+            message: `\`${expr.name}\` is a function and cannot be used as a first-class value`,
+            span: expr.span,
+        });
+        return undefined;
+    }
 
-    // Could be a type name (e.g. enum variant)
     const namedTy = typeCtx.lookupNamedType(expr.name);
-    if (namedTy !== undefined) return undefined;
+    if (namedTy !== undefined) {
+        errors.push({
+            message: `\`${expr.name}\` is a type and cannot be used as a value`,
+            span: expr.span,
+        });
+        return undefined;
+    }
 
-    // Only report error if it's clearly a variable reference, not a type/function path
-    // For now, don't report — leave that to a future name resolution pass
+    // Qualified paths (e.g. `Color::Green`, `Vec::new`) are enum variants or
+    // associated items — not yet tracked in the type context. Return undefined
+    // without an error; type propagation will handle the absence.
+    if (expr.name.includes("::")) {
+        return undefined;
+    }
+
+    errors.push({
+        message: `Cannot find value \`${expr.name}\` in this scope`,
+        span: expr.span,
+    });
     return undefined;
 }
 
@@ -463,9 +556,71 @@ function inferUnary(
         if (operandTy instanceof RefTypeNode) {
             return operandTy.inner;
         }
+        if (operandTy !== undefined) {
+            errors.push({
+                message: `Cannot dereference value of type \`${typeToString(operandTy)}\``,
+                span: expr.span,
+            });
+        }
+        return undefined;
     }
 
     return operandTy;
+}
+
+function inferDeref(
+    typeCtx: TypeContext,
+    expr: DerefExpr,
+    errors: TypeError[],
+): TypeNode | undefined {
+    const targetTy = inferExprType(typeCtx, expr.target, errors);
+    if (targetTy instanceof RefTypeNode) {
+        return targetTy.inner;
+    }
+    if (targetTy !== undefined) {
+        errors.push({
+            message: `Cannot dereference value of type \`${typeToString(targetTy)}\``,
+            span: expr.span,
+        });
+    }
+    return undefined;
+}
+
+function inferUnitExpr(
+    typeCtx: TypeContext,
+    expr: MacroExpr | WhileExpr | ForExpr | LoopExpr | AssignExpr,
+    errors: TypeError[],
+): TupleTypeNode {
+    if (expr instanceof WhileExpr) {
+        inferExprType(typeCtx, expr.condition, errors);
+        inferBlock(typeCtx, expr.body, errors);
+    } else if (expr instanceof ForExpr) {
+        inferExprType(typeCtx, expr.iter, errors);
+        inferBlock(typeCtx, expr.body, errors);
+    } else if (expr instanceof LoopExpr) {
+        inferBlock(typeCtx, expr.body, errors);
+    } else if (expr instanceof AssignExpr) {
+        inferExprType(typeCtx, expr.target, errors);
+        inferExprType(typeCtx, expr.value, errors);
+    } else {
+        for (const arg of expr.args) {
+            inferExprType(typeCtx, arg, errors);
+        }
+    }
+    return new TupleTypeNode(expr.span, []);
+}
+
+function inferDivergingExpr(
+    typeCtx: TypeContext,
+    expr: ReturnExpr | BreakExpr | ContinueExpr,
+    errors: TypeError[],
+): undefined {
+    if (expr instanceof ReturnExpr && expr.value !== undefined) {
+        inferExprType(typeCtx, expr.value, errors);
+    } else if (expr instanceof BreakExpr && expr.value !== undefined) {
+        inferExprType(typeCtx, expr.value, errors);
+    }
+    return undefined;
 }
 
 function inferCall(
@@ -490,6 +645,15 @@ function inferCall(
         if (sig !== undefined) {
             return sig.returnType;
         }
+
+        // Qualified paths (e.g. `Vec::new`) are not yet tracked — skip
+        if (!expr.callee.name.includes("::")) {
+            errors.push({
+                message: `cannot find function \`${expr.callee.name}\` in this scope`,
+                span: expr.callee.span,
+            });
+        }
+        return undefined;
     }
 
     // Method call: callee is a FieldExpr (e.g., `obj.method(...)`)
@@ -515,6 +679,15 @@ function inferCall(
                 return methodSig.returnType;
             }
         }
+
+        // Receiver type is known but no matching method signature was found
+        if (receiverTy !== undefined) {
+            errors.push({
+                message: `no method \`${expr.callee.field}\` found for type \`${typeToString(receiverTy)}\``,
+                span: expr.callee.span,
+            });
+        }
+        return undefined;
     }
 
     return undefined;
@@ -771,6 +944,8 @@ function inferStatement(
         registerItemTypesWithPrefix(typeCtx, [stmt.item], "");
         return;
     }
+
+    throw new Error(`Unhandled statement type in inference: ${stmt.constructor.name}`);
 }
 
 function inferLetStmt(
@@ -832,9 +1007,12 @@ function inferFnBody(
 
     typeCtx.pushScope();
 
-    // Bind parameters into scope (including receiver params like `self`)
+    // Bind parameters into scope
     for (const param of fnItem.params) {
-        typeCtx.setVariable(param.name, param.ty);
+        // Receiver params (self / &self / &mut self) are accessed as lowercase `self` in Rust code.
+        // The parser stores name: "Self" (for the type), but variable lookups use "self".
+        const bindName = param.isReceiver ? "self" : param.name;
+        typeCtx.setVariable(bindName, param.ty);
     }
 
     // Infer body statements

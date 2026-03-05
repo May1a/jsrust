@@ -1222,13 +1222,14 @@ class Parser {
         }
 
         // Optional `as alias`
+        let alias: string | undefined;
         if (this.check(TokenType.Identifier) && this.peek().value === "as") {
             this.advance(); // Consume "as"
-            this.eat(TokenType.Identifier); // Consume alias (dropped)
+            alias = this.expect(TokenType.Identifier).value;
         }
 
         if (segments.length === 0) return [];
-        return [new UseItem(this.spanFrom(startTok), segments)];
+        return [new UseItem(this.spanFrom(startTok), segments, undefined, alias)];
     }
 
     // -----------------------------------------------------------------------
