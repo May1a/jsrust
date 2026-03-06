@@ -436,6 +436,20 @@ static ExecValue Exec_compareInt(uint8_t op, int64_t left, int64_t right)
     return ExecValue_makeBool(0);
 }
 
+static bool Exec_valueAsIntLike(ExecValue value, int64_t* out)
+{
+    switch (value.kind) {
+    case ExecValueKind_Int:
+        *out = value.i64;
+        return true;
+    case ExecValueKind_Bool:
+        *out = value.b != 0 ? 1 : 0;
+        return true;
+    default:
+        return false;
+    }
+}
+
 static ExecValue Exec_compareFloat(uint8_t op, double left, double right)
 {
     switch (op) {
@@ -1522,17 +1536,21 @@ static BackendStatus Exec_executeInstruction(ExecEngine* engine, ExecFrame* fram
             *outValue = ExecValue_makeFloat(left.f64 / right.f64);
         }
         return BackendStatus_ok();
-    case IRInstKind_Icmp:
+    case IRInstKind_Icmp: {
+        int64_t leftComparable;
+        int64_t rightComparable;
         status = Exec_readOperand(frame, inst->a, &left);
         if (status.code != JSRUST_BACKEND_OK)
             return status;
         status = Exec_readOperand(frame, inst->b, &right);
         if (status.code != JSRUST_BACKEND_OK)
             return status;
-        if (left.kind != ExecValueKind_Int || right.kind != ExecValueKind_Int)
+        if (!Exec_valueAsIntLike(left, &leftComparable) ||
+            !Exec_valueAsIntLike(right, &rightComparable))
             return Exec_error("icmp on non-integer values");
-        *outValue = Exec_compareInt(inst->compareOp, left.i64, right.i64);
+        *outValue = Exec_compareInt(inst->compareOp, leftComparable, rightComparable);
         return BackendStatus_ok();
+    }
     case IRInstKind_Fcmp:
         status = Exec_readOperand(frame, inst->a, &left);
         if (status.code != JSRUST_BACKEND_OK)

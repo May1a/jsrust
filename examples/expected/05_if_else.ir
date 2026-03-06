@@ -36,7 +36,7 @@ module main {
   fn f949693 test_example() -> () {
     b0 (entry):
       v10: bool = bconst false
-      v11: i64  = call passthrough_bool(v10)
+      v11: bool = call passthrough_bool(v10)
       br_if v11, then: b1, else: b2
   
     b1 (if_then):
@@ -45,7 +45,7 @@ module main {
   
     b2 (if_else):
       v13: bool = bconst false
-      v14: i64  = call passthrough_bool(v13)
+      v14: bool = call passthrough_bool(v13)
       v15: bool = bconst true
       v16: bool = icmp.eq v14, v15
       br_if v16, then: b3, else: b4
@@ -56,7 +56,7 @@ module main {
   
     b4 (if_else):
       v18: bool = bconst true
-      v19: i64  = call passthrough_bool(v18)
+      v19: bool = call passthrough_bool(v18)
       br_if v19, then: b5, else: b6
   
     b5 (if_then):

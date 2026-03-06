@@ -228,6 +228,7 @@ export class AstToSsaCtx {
     readonly irModule: IRModule;
     private readonly locals: Map<string, LocalBinding>;
     private readonly functionIds: Map<string, number>;
+    private readonly functionReturnTypes: Map<string, IRType>;
     private readonly structFieldNames: Map<string, string[]>;
     private readonly enumVariantTags: Map<string, number>;
     private readonly monoRegistry?: MonomorphizationRegistry;
@@ -237,6 +238,7 @@ export class AstToSsaCtx {
     constructor(
         options: {
             irModule?: IRModule;
+            functionReturnTypes?: Map<string, IRType>;
             structFieldNames?: Map<string, string[]>;
             enumVariantTags?: Map<string, number>;
             monoRegistry?: MonomorphizationRegistry;
@@ -246,6 +248,8 @@ export class AstToSsaCtx {
         this.irModule = options.irModule ?? makeIRModule("main");
         this.locals = new Map();
         this.functionIds = new Map();
+        this.functionReturnTypes =
+            options.functionReturnTypes ?? new Map<string, IRType>();
         this.structFieldNames =
             options.structFieldNames ?? new Map<string, string[]>();
         this.enumVariantTags =
@@ -1427,6 +1431,13 @@ export class AstToSsaCtx {
         // Derive the unqualified function name (e.g. "Point::create" → "create").
         const parts = name.split("::");
         const unqualifiedName = parts[parts.length - 1];
+
+        const seededReturnType =
+            this.functionReturnTypes.get(name) ??
+            this.functionReturnTypes.get(unqualifiedName);
+        if (seededReturnType) {
+            return seededReturnType;
+        }
 
         // Look up the return type of the already-lowered function.
         const fn = this.irModule.functions.find(
@@ -2900,6 +2911,16 @@ function collectFunctionIds(moduleNode: ModuleNode): Map<string, number> {
     return fnIdMap;
 }
 
+function collectFunctionReturnTypes(
+    moduleNode: ModuleNode,
+): Map<string, IRType> {
+    const returnTypes = new Map<string, IRType>();
+    for (const item of moduleNode.items) {
+        collectItemReturnTypes(item, returnTypes);
+    }
+    return returnTypes;
+}
+
 function collectItemFunctionIds(
     item: ModuleNode["items"][number],
     fnIdMap: Map<string, number>,
@@ -2954,6 +2975,50 @@ function collectItemFunctionIds(
     }
 }
 
+function collectItemReturnTypes(
+    item: ModuleNode["items"][number],
+    returnTypes: Map<string, IRType>,
+    modulePrefix = "",
+): void {
+    const qualify = (name: string): string =>
+        qualifyModuleName(modulePrefix, name);
+
+    if (item instanceof GenericFnItem || item instanceof GenericStructItem) {
+        return;
+    }
+    if (item instanceof FnItem && item.body) {
+        const returnType = AstToSsaCtx.translateTypeNode(item.returnType);
+        returnTypes.set(item.name, returnType);
+        if (modulePrefix) {
+            returnTypes.set(qualify(item.name), returnType);
+        }
+        return;
+    }
+    if (item instanceof ImplItem) {
+        collectImplReturnTypes(item, returnTypes, modulePrefix);
+        return;
+    }
+    if (item instanceof TraitImplItem) {
+        const targetName = item.target.name;
+        for (const method of item.fnImpls) {
+            if (!method.body) {
+                continue;
+            }
+            const returnType = AstToSsaCtx.translateTypeNode(
+                resolveSelfInTypeNode(method.returnType, targetName),
+            );
+            returnTypes.set(method.name, returnType);
+            returnTypes.set(`${targetName}::${method.name}`, returnType);
+        }
+        return;
+    }
+    if (item instanceof ModItem) {
+        for (const modItem of item.items) {
+            collectItemReturnTypes(modItem, returnTypes, qualify(item.name));
+        }
+    }
+}
+
 function collectImplFunctionIds(
     item: ImplItem,
     fnIdMap: Map<string, number>,
@@ -2975,9 +3040,55 @@ function collectImplFunctionIds(
     }
 }
 
+function resolveSelfInTypeNode(ty: TypeNode, selfName: string): TypeNode {
+    if (ty instanceof NamedTypeNode && ty.name === "Self") {
+        return new NamedTypeNode(ty.span, selfName);
+    }
+    if (ty instanceof RefTypeNode) {
+        return new RefTypeNode(
+            ty.span,
+            ty.mutability,
+            resolveSelfInTypeNode(ty.inner, selfName),
+        );
+    }
+    if (ty instanceof PtrTypeNode) {
+        return new PtrTypeNode(
+            ty.span,
+            ty.mutability,
+            resolveSelfInTypeNode(ty.inner, selfName),
+        );
+    }
+    return ty;
+}
+
+function collectImplReturnTypes(
+    item: ImplItem,
+    returnTypes: Map<string, IRType>,
+    modulePrefix = "",
+): void {
+    const implTarget = item.target.name;
+    const qualify = (name: string): string =>
+        qualifyModuleName(modulePrefix, name);
+    const qImplTarget = qualify(implTarget);
+    for (const method of item.methods) {
+        if (!method.body) {
+            continue;
+        }
+        const returnType = AstToSsaCtx.translateTypeNode(
+            resolveSelfInTypeNode(method.returnType, implTarget),
+        );
+        returnTypes.set(method.name, returnType);
+        returnTypes.set(`${implTarget}::${method.name}`, returnType);
+        if (qImplTarget !== implTarget) {
+            returnTypes.set(`${qImplTarget}::${method.name}`, returnType);
+        }
+    }
+}
+
 function lowerOwnedFunction(
     fnItem: FnItem,
     irModule: IRModule,
+    functionReturnTypes: Map<string, IRType>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
     fnIdMap: Map<string, number>,
@@ -2985,6 +3096,7 @@ function lowerOwnedFunction(
 ): void {
     const ctx = new AstToSsaCtx({
         irModule,
+        functionReturnTypes,
         structFieldNames,
         enumVariantTags,
         monoRegistry,
@@ -3092,6 +3204,7 @@ function rewriteSelfInMethod(method: FnItem, implTarget: string): FnItem {
 function lowerImplMethods(
     item: ImplItem,
     irModule: IRModule,
+    functionReturnTypes: Map<string, IRType>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
     fnIdMap: Map<string, number>,
@@ -3109,6 +3222,7 @@ function lowerImplMethods(
         lowerOwnedFunction(
             rewriteSelfInMethod(method, implTarget),
             irModule,
+            functionReturnTypes,
             structFieldNames,
             enumVariantTags,
             fnIdMap,
@@ -3120,6 +3234,7 @@ function lowerImplMethods(
 function lowerModuleItem(
     item: ModuleNode["items"][number],
     irModule: IRModule,
+    functionReturnTypes: Map<string, IRType>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
     fnIdMap: Map<string, number>,
@@ -3132,6 +3247,7 @@ function lowerModuleItem(
         lowerOwnedFunction(
             item,
             irModule,
+            functionReturnTypes,
             structFieldNames,
             enumVariantTags,
             fnIdMap,
@@ -3143,6 +3259,7 @@ function lowerModuleItem(
         lowerImplMethods(
             item,
             irModule,
+            functionReturnTypes,
             structFieldNames,
             enumVariantTags,
             fnIdMap,
@@ -3161,6 +3278,7 @@ function lowerModuleItem(
             lowerOwnedFunction(
                 rewriteSelfInMethod(method, implTarget),
                 irModule,
+                functionReturnTypes,
                 structFieldNames,
                 enumVariantTags,
                 fnIdMap,
@@ -3174,6 +3292,7 @@ function lowerModuleItem(
             lowerModuleItem(
                 modItem,
                 irModule,
+                functionReturnTypes,
                 structFieldNames,
                 enumVariantTags,
                 fnIdMap,
@@ -3197,8 +3316,13 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
 
     // Register specialization function IDs
     const fnIdMap = collectFunctionIds(moduleNode);
+    const functionReturnTypes = collectFunctionReturnTypes(moduleNode);
     for (const spec of specializations) {
         fnIdMap.set(spec.name, hashName(spec.name));
+        functionReturnTypes.set(
+            spec.name,
+            AstToSsaCtx.translateTypeNode(spec.returnType),
+        );
     }
 
     // Lower regular items (pass registry so calls to generics get rewritten)
@@ -3206,6 +3330,7 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
         lowerModuleItem(
             item,
             irModule,
+            functionReturnTypes,
             structFieldNames,
             enumVariantTags,
             fnIdMap,
@@ -3218,6 +3343,7 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
         lowerOwnedFunction(
             spec,
             irModule,
+            functionReturnTypes,
             structFieldNames,
             enumVariantTags,
             fnIdMap,
