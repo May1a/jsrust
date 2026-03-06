@@ -383,6 +383,10 @@ export class AstToSsaCtx {
         return value;
     }
 
+    private currentBlockId(): BlockId | undefined {
+        return this.builder.currentBlock?.id;
+    }
+
     private mergeBlockArgs(
         value: ValueId | undefined,
         resultType: IRType | undefined,
@@ -2129,54 +2133,24 @@ export class AstToSsaCtx {
         arms: MatchArmNode[],
         armBlocks: BlockId[],
     ): Result<ValueId, LoweringError> {
-        const armValues: (ValueId | undefined)[] = [];
-
-        for (let index = 0; index < arms.length; index++) {
-            const arm = arms[index];
-            this.builder.switchToBlock(armBlocks[index]);
-            const body = this.lowerExpression(arm.body);
-            if (!body.isOk()) {
-                return body;
-            }
-            armValues.push(this.currentBlockValue(body.value));
+        const armResult = this.lowerMatchArmBodies(arms, armBlocks);
+        if (!armResult.isOk()) {
+            return armResult;
         }
-
-        const allProduceValues = armValues.every((v) => v !== undefined);
-        const [firstArmValue] = armValues;
-        let resultType: IRType | undefined;
-        if (allProduceValues && firstArmValue !== undefined) {
-            resultType = this.resolveValueType(firstArmValue);
-        }
+        const { armExitBlocks, armValues } = armResult.value;
+        const resultType = this.resolveMergeResultType(armValues);
 
         const mergeId = this.createMergeBlock("match_merge", resultType);
 
-        for (let index = 0; index < arms.length; index++) {
-            this.builder.switchToBlock(armBlocks[index]);
-            if (!this.isCurrentBlockTerminated()) {
-                const armValue = armValues[index];
-                this.builder.br(
-                    mergeId,
-                    this.mergeBlockArgs(armValue, resultType),
-                );
-            }
-        }
+        this.connectMergePredecessors(
+            armExitBlocks,
+            armValues,
+            mergeId,
+            resultType,
+        );
 
         this.builder.switchToBlock(mergeId);
-
-        if (resultType) {
-            const currentFn = this.builder.currentFunction;
-            if (currentFn) {
-                const mergeBlock = currentFn.blocks.find(
-                    (b) => b.id === mergeId,
-                );
-                if (mergeBlock) {
-                    const [param] = mergeBlock.params;
-                    return Result.ok(param.id);
-                }
-            }
-        }
-
-        return Result.ok(this.unitValue());
+        return Result.ok(this.mergeBlockResultValue(mergeId) ?? this.unitValue());
     }
 
     private lowerIf(expr: IfExpr): Result<ValueId, LoweringError> {
@@ -2194,22 +2168,30 @@ export class AstToSsaCtx {
             return thenResult;
         }
         const thenValue = this.currentBlockValue(thenResult.value);
+        const thenExitId = this.currentBlockId();
 
         this.builder.switchToBlock(elseId);
         let elseValue: ValueId | undefined;
+        let elseExitId: BlockId | undefined = elseId;
         if (expr.elseBranch) {
             const elseResult = this.lowerExpression(expr.elseBranch);
             if (!elseResult.isOk()) return elseResult;
             elseValue = this.currentBlockValue(elseResult.value);
+            elseExitId = this.currentBlockId();
         }
 
-        return this.terminateIfBranches(thenId, thenValue, elseId, elseValue);
+        return this.terminateIfBranches(
+            thenExitId,
+            thenValue,
+            elseExitId,
+            elseValue,
+        );
     }
 
     private terminateIfBranches(
-        thenId: BlockId,
+        thenId: BlockId | undefined,
         thenValue: ValueId | undefined,
-        elseId: BlockId,
+        elseId: BlockId | undefined,
         elseValue: ValueId | undefined,
     ): Result<ValueId, LoweringError> {
         const bothProduceValue =
@@ -2221,38 +2203,29 @@ export class AstToSsaCtx {
 
         const mergeId = this.createMergeBlock("if_merge", resultType);
 
-        this.builder.switchToBlock(thenId);
-        if (!this.isCurrentBlockTerminated()) {
-            this.builder.br(
-                mergeId,
-                this.mergeBlockArgs(thenValue, resultType),
-            );
+        if (thenId !== undefined) {
+            this.builder.switchToBlock(thenId);
+            if (!this.isCurrentBlockTerminated()) {
+                this.builder.br(
+                    mergeId,
+                    this.mergeBlockArgs(thenValue, resultType),
+                );
+            }
         }
 
-        this.builder.switchToBlock(elseId);
-        if (!this.isCurrentBlockTerminated()) {
-            this.builder.br(
-                mergeId,
-                this.mergeBlockArgs(elseValue, resultType),
-            );
+        if (elseId !== undefined) {
+            this.builder.switchToBlock(elseId);
+            if (!this.isCurrentBlockTerminated()) {
+                this.builder.br(
+                    mergeId,
+                    this.mergeBlockArgs(elseValue, resultType),
+                );
+            }
         }
 
         this.builder.switchToBlock(mergeId);
 
-        if (resultType) {
-            const currentFn = this.builder.currentFunction;
-            if (currentFn) {
-                const mergeBlock = currentFn.blocks.find(
-                    (b) => b.id === mergeId,
-                );
-                if (mergeBlock) {
-                    const [param] = mergeBlock.params;
-                    return Result.ok(param.id);
-                }
-            }
-        }
-
-        return Result.ok(this.unitValue());
+        return Result.ok(this.mergeBlockResultValue(mergeId) ?? this.unitValue());
     }
 
     private lowerReturn(expr: ReturnExpr): Result<ValueId, LoweringError> {
@@ -2677,6 +2650,83 @@ export class AstToSsaCtx {
             return true;
         }
         return block.terminator !== undefined;
+    }
+
+    private lowerMatchArmBodies(
+        arms: MatchArmNode[],
+        armBlocks: BlockId[],
+    ): Result<
+        {
+            armExitBlocks: (BlockId | undefined)[];
+            armValues: (ValueId | undefined)[];
+        },
+        LoweringError
+    > {
+        const armExitBlocks: (BlockId | undefined)[] = [];
+        const armValues: (ValueId | undefined)[] = [];
+
+        for (let index = 0; index < arms.length; index++) {
+            const arm = arms[index];
+            this.builder.switchToBlock(armBlocks[index]);
+            const body = this.lowerExpression(arm.body);
+            if (!body.isOk()) {
+                return body;
+            }
+            armValues.push(this.currentBlockValue(body.value));
+            armExitBlocks.push(this.currentBlockId());
+        }
+
+        return Result.ok({ armExitBlocks, armValues });
+    }
+
+    private resolveMergeResultType(
+        values: (ValueId | undefined)[],
+    ): IRType | undefined {
+        const allProduceValues = values.every((value) => value !== undefined);
+        const [firstValue] = values;
+
+        if (!allProduceValues || firstValue === undefined) {
+            return undefined;
+        }
+
+        return this.resolveValueType(firstValue);
+    }
+
+    private connectMergePredecessors(
+        exitBlockIds: (BlockId | undefined)[],
+        values: (ValueId | undefined)[],
+        mergeId: BlockId,
+        resultType: IRType | undefined,
+    ): void {
+        for (let index = 0; index < exitBlockIds.length; index++) {
+            const exitBlockId = exitBlockIds[index];
+            if (exitBlockId === undefined) {
+                continue;
+            }
+            this.builder.switchToBlock(exitBlockId);
+            if (!this.isCurrentBlockTerminated()) {
+                const value = values[index];
+                this.builder.br(
+                    mergeId,
+                    this.mergeBlockArgs(value, resultType),
+                );
+            }
+        }
+    }
+
+    private mergeBlockResultValue(mergeId: BlockId): ValueId | undefined {
+        const currentFn = this.builder.currentFunction;
+        if (!currentFn) {
+            return undefined;
+        }
+
+        const mergeBlock = currentFn.blocks.find((block) => block.id === mergeId);
+        if (!mergeBlock) {
+            return undefined;
+        }
+
+        const [param] = mergeBlock.params;
+        return param.id;
     }
 
     private isImplicitUnitTypeNode(typeNode: TypeNode): boolean {

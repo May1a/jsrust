@@ -4,7 +4,7 @@ module main {
     s0 = "{}"
   }
 
-  fn f949693 test_example() -> () {
+  fn f379446 simple_if() -> () {
     b0 (entry):
       v0: bool = bconst true
       br_if v0, then: b1, else: b2
@@ -14,7 +14,7 @@ module main {
       br b3(v1)
   
     b2 (if_else):
-      v2: i32 = iconst 2
+      v2: i32 = iconst 0
       br b3(v2)
   
     b3(v3: i32) (if_merge):
@@ -29,12 +29,76 @@ module main {
       unreachable
   
     b5 (assert_ok):
-      v9: i8   = iconst 0
-      v10: ptr = sconst s0
-      v11: i32 = load v4
-      v12: i64 = iconst 1
-      call f862609(v10, v12, v11)
+      v9: i8 = iconst 0
       ret
+  }
+
+  fn f949693 test_example() -> () {
+    b0 (entry):
+      v10: bool = bconst false
+      v11: i64  = call passthrough_bool(v10)
+      br_if v11, then: b1, else: b2
+  
+    b1 (if_then):
+      v12: i32 = iconst 1
+      br b9(v12)
+  
+    b2 (if_else):
+      v13: bool = bconst false
+      v14: i64  = call passthrough_bool(v13)
+      v15: bool = bconst true
+      v16: bool = icmp.eq v14, v15
+      br_if v16, then: b3, else: b4
+  
+    b3 (if_then):
+      v17: i32 = iconst 2
+      br b8(v17)
+  
+    b4 (if_else):
+      v18: bool = bconst true
+      v19: i64  = call passthrough_bool(v18)
+      br_if v19, then: b5, else: b6
+  
+    b5 (if_then):
+      v20: i32 = iconst 3
+      br b7(v20)
+  
+    b6 (if_else):
+      v21: i32 = iconst 4
+      br b7(v21)
+  
+    b7(v22: i32) (if_merge):
+      br b8(v22)
+  
+    b8(v23: i32) (if_merge):
+      br b9(v23)
+  
+    b9(v24: i32) (if_merge):
+      v25: ptr<i32> = alloca i32
+      store v24 -> v25
+      v27: i32      = load v25
+      v28: i32      = iconst 3
+      v29: bool     = icmp.eq v27, v28
+      br_if v29, then: b11, else: b10
+  
+    b10 (assert_fail):
+      unreachable
+  
+    b11 (assert_ok):
+      v30: i8  = iconst 0
+      v31: ptr = sconst s0
+      v32: i32 = load v25
+      v33: i64 = iconst 1
+      call f862609(v31, v33, v32)
+      ret
+  }
+
+  fn f88843 passthrough_bool(v35 arg0: bool) -> bool {
+    b0 (entry):
+      v36: ptr<bool> = alloca bool
+      store v35 -> v36
+      v38: bool      = load v36
+      ret v38
   }
 
 }
