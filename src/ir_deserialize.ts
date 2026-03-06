@@ -280,14 +280,14 @@ const INSTRUCTION_READERS: Partial<Record<IRInstKind, InstructionReader>> = {
         deserializer.readCallInstruction(IRInstKind.Call, id, ty),
     [IRInstKind.CallDyn]: (deserializer, id, ty) =>
         deserializer.readCallInstruction(IRInstKind.CallDyn, id, ty),
-    [IRInstKind.StructCreate]: (deserializer, id) =>
-        deserializer.readStructCreateInstruction(id),
+    [IRInstKind.StructCreate]: (deserializer, id, ty) =>
+        deserializer.readStructCreateInstruction(id, ty),
     [IRInstKind.StructGet]: (deserializer, id, ty) =>
         deserializer.readStructGetInstruction(id, ty),
-    [IRInstKind.EnumCreate]: (deserializer, id) =>
-        deserializer.readEnumCreateInstruction(id),
-    [IRInstKind.EnumGetTag]: (deserializer, id) =>
-        deserializer.readEnumGetTagInstruction(id),
+    [IRInstKind.EnumCreate]: (deserializer, id, ty) =>
+        deserializer.readEnumCreateInstruction(id, ty),
+    [IRInstKind.EnumGetTag]: (deserializer, id, ty) =>
+        deserializer.readEnumGetTagInstruction(id, ty),
     [IRInstKind.EnumGetData]: (deserializer, id) =>
         deserializer.readEnumGetDataInstruction(id),
 };
@@ -1129,25 +1129,19 @@ class IRDeserializer {
         );
     }
 
-    readStructCreateInstruction(id: number): Result<IRInst, DeserializeError> {
+    readStructCreateInstruction(
+        id: number,
+        ty: IRType,
+    ): Result<IRInst, DeserializeError> {
         const fieldCount = this.readU32();
         const fields: number[] = [];
         for (let i = 0; i < fieldCount; i++) {
             fields.push(this.readU32());
         }
-        const structTypeResult = this.readType();
-        if (!structTypeResult.isOk()) {
-            return structTypeResult;
+        if (!isIRStructType(ty)) {
+            return this.invalidInstructionType(IRInstKind.StructCreate, ty);
         }
-        if (!isIRStructType(structTypeResult.value)) {
-            return this.invalidInstructionType(
-                IRInstKind.StructCreate,
-                structTypeResult.value,
-            );
-        }
-        return Result.ok(
-            new StructCreateInst(id, fields, structTypeResult.value),
-        );
+        return Result.ok(new StructCreateInst(id, fields, ty));
     }
 
     readStructGetInstruction(
@@ -1171,41 +1165,31 @@ class IRDeserializer {
         );
     }
 
-    readEnumCreateInstruction(id: number): Result<IRInst, DeserializeError> {
+    readEnumCreateInstruction(
+        id: number,
+        ty: IRType,
+    ): Result<IRInst, DeserializeError> {
         const tag = this.readU32();
         const hasData = this.readU8() !== 0;
         const data = match(hasData)
             .with(true, () => this.readU32())
             .otherwise(() => this.readMissingEnumData());
-        const enumTypeResult = this.readType();
-        if (!enumTypeResult.isOk()) {
-            return enumTypeResult;
+        if (!isIREnumType(ty)) {
+            return this.invalidInstructionType(IRInstKind.EnumCreate, ty);
         }
-        if (!isIREnumType(enumTypeResult.value)) {
-            return this.invalidInstructionType(
-                IRInstKind.EnumCreate,
-                enumTypeResult.value,
-            );
-        }
-        return Result.ok(
-            new EnumCreateInst(id, tag, data, enumTypeResult.value),
-        );
+        return Result.ok(new EnumCreateInst(id, tag, data, ty));
     }
 
-    readEnumGetTagInstruction(id: number): Result<IRInst, DeserializeError> {
+    readEnumGetTagInstruction(
+        id: number,
+        ty: IRType,
+    ): Result<IRInst, DeserializeError> {
         const enumValue = this.readU32();
-        const enumTypeResult = this.readType();
-        if (!enumTypeResult.isOk()) {
-            return enumTypeResult;
-        }
-        if (!isIREnumType(enumTypeResult.value)) {
-            return this.invalidInstructionType(
-                IRInstKind.EnumGetTag,
-                enumTypeResult.value,
-            );
+        if (!isIRIntType(ty)) {
+            return this.invalidInstructionType(IRInstKind.EnumGetTag, ty);
         }
         return Result.ok(
-            new EnumGetTagInst(id, enumValue, enumTypeResult.value),
+            new EnumGetTagInst(id, enumValue, makeIREnumType("__anon_enum", [])),
         );
     }
 

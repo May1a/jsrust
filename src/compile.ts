@@ -116,10 +116,10 @@ function prepareAst(
     options: { sourcePath?: string } = {},
 ): Result<ModuleNode, CompileDiagnosticsError> {
     const parseResult = parseModule(source);
-    if (!parseResult.ok) {
+    if (parseResult.isErr()) {
         return Result.err(
             diagnosticsError(
-                parseResult.errors.map((error) => ({
+                parseResult.error.map((error) => ({
                     message: error.message,
                     span: new Span(error.line, error.column, 0, 0),
                     kind: "parse" as const,

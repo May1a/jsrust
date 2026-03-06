@@ -143,19 +143,50 @@ function typeToString(ty: TypeNode): string {
 /**
  * Check if two types are structurally equivalent.
  */
+function typesEqualList(left: TypeNode[], right: TypeNode[]): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    return left.every((type, index) => typesEqual(type, right[index]));
+}
+
+function genericArgsEqual(
+    left: GenericArgsNode | undefined,
+    right: GenericArgsNode | undefined,
+): boolean {
+    if ((left === undefined) !== (right === undefined)) {
+        return false;
+    }
+    if (left === undefined || right === undefined) {
+        return true;
+    }
+    return typesEqualList(left.args, right.args);
+}
+
 function typesEqual(a: TypeNode, b: TypeNode): boolean {
     if (isInferredPlaceholder(a) || isInferredPlaceholder(b)) {
         return true;
     }
     if (a instanceof NamedTypeNode && b instanceof NamedTypeNode) {
-        return a.name === b.name;
+        return a.name === b.name && genericArgsEqual(a.args, b.args);
     }
     if (a instanceof TupleTypeNode && b instanceof TupleTypeNode) {
-        if (a.elements.length !== b.elements.length) return false;
-        return a.elements.every((el, i) => typesEqual(el, b.elements[i]));
+        return typesEqualList(a.elements, b.elements);
+    }
+    if (a instanceof ArrayTypeNode && b instanceof ArrayTypeNode) {
+        return a.length === b.length && typesEqual(a.element, b.element);
     }
     if (a instanceof RefTypeNode && b instanceof RefTypeNode) {
         return a.mutability === b.mutability && typesEqual(a.inner, b.inner);
+    }
+    if (a instanceof PtrTypeNode && b instanceof PtrTypeNode) {
+        return a.mutability === b.mutability && typesEqual(a.inner, b.inner);
+    }
+    if (a instanceof FnTypeNode && b instanceof FnTypeNode) {
+        return (
+            typesEqualList(a.params, b.params) &&
+            typesEqual(a.returnType, b.returnType)
+        );
     }
     return false;
 }
@@ -234,14 +265,19 @@ function registerTraitImplMethodsWithPrefix(
     if (!targetName) return;
     const qTarget = qualify(targetName);
     for (const method of node.fnImpls) {
+        const resolvedParams = method.params.map((param) => ({
+            ...param,
+            ty: resolveSelf(param.ty, targetName),
+        }));
+        const resolvedReturnType = resolveSelf(method.returnType, targetName);
         typeCtx.registerFnSignature(`${qTarget}::${method.name}`, {
-            params: buildParamList(method.params),
-            returnType: method.returnType,
+            params: buildParamList(resolvedParams),
+            returnType: resolvedReturnType,
         });
         if (modulePrefix) {
             typeCtx.registerFnSignature(`${targetName}::${method.name}`, {
-                params: buildParamList(method.params),
-                returnType: method.returnType,
+                params: buildParamList(resolvedParams),
+                returnType: resolvedReturnType,
             });
         }
     }
@@ -359,7 +395,7 @@ function inferExprTypeInner(
     errors: TypeError[],
 ): TypeNode | undefined {
     if (expr instanceof LiteralExpr) {
-        return inferLiteral(expr);
+        return inferLiteral(expr, errors);
     }
 
     if (expr instanceof IdentifierExpr) {
@@ -466,12 +502,17 @@ function inferExprTypeExtended(
         return undefined;
     }
 
-    throw new Error(
-        `Unhandled expression type in inference: ${expr.constructor.name}`,
-    );
+    errors.push({
+        message: `Unhandled expression type in inference: ${expr.constructor.name}`,
+        span: expr.span,
+    });
+    return undefined;
 }
 
-function inferLiteral(expr: LiteralExpr): TypeNode {
+function inferLiteral(
+    expr: LiteralExpr,
+    errors: TypeError[],
+): TypeNode | undefined {
     switch (expr.literalKind) {
         case LiteralKind.Int: {
             return new NamedTypeNode(expr.span, "i32");
@@ -493,9 +534,11 @@ function inferLiteral(expr: LiteralExpr): TypeNode {
             return new NamedTypeNode(expr.span, "char");
         }
         default: {
-            throw new Error(
-                `Unhandled literal kind in inference: ${String(expr.literalKind)}`,
-            );
+            errors.push({
+                message: `Unhandled literal kind in inference: ${String(expr.literalKind)}`,
+                span: expr.span,
+            });
+            return undefined;
         }
     }
 }
@@ -1028,9 +1071,10 @@ function inferStatement(
         return;
     }
 
-    throw new Error(
-        `Unhandled statement type in inference: ${stmt.constructor.name}`,
-    );
+    errors.push({
+        message: `Unhandled statement type in inference: ${stmt.constructor.name}`,
+        span: stmt.span,
+    });
 }
 
 function inferLetStmt(

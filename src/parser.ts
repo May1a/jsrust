@@ -1,4 +1,5 @@
 import { tokenize, TokenType, type Token } from "./tokenizer";
+import { Result } from "better-result";
 import {
     ArrayTypeNode,
     AssignExpr,
@@ -85,15 +86,13 @@ export interface ParseDiagnostic {
     line: number;
     column: number;
 }
-export type ParseResult<T> =
-    | { ok: true; value: T }
-    | { ok: false; errors: ParseDiagnostic[] };
+export type ParseResult<T> = Result<T, ParseDiagnostic[]>;
 
 function parseResult<T>(errors: ParseDiagnostic[], value: T): ParseResult<T> {
     if (errors.length > 0) {
-        return { ok: false, errors };
+        return Result.err(errors);
     }
-    return { ok: true, value };
+    return Result.ok(value);
 }
 
 function mutabilityFromFlag(mut: boolean): Mutability {
@@ -133,10 +132,9 @@ export function parseStatement(source: string): ParseResult<Statement> {
     const p = new Parser(tokenize(source));
     const value = p.parseStatement();
     if (value === undefined) {
-        return {
-            ok: false,
-            errors: [{ message: "Expected statement", line: 1, column: 1 }],
-        };
+        return Result.err([
+            { message: "Expected statement", line: 1, column: 1 },
+        ]);
     }
     return parseResult(p.errors, value);
 }
@@ -2169,7 +2167,7 @@ class Parser {
     private parseIdentifierExpr(
         startTok: Token,
         noStructLiteral: boolean,
-    ): MacroExpr | IdentifierExpr | StructExpr {
+    ): MacroExpr | IdentifierExpr | PathExpr | StructExpr {
         const { baseExpr, lastName } = this.parsePathExpression(startTok);
         const macroExpr = this.parseMacroExpr(startTok, lastName);
         if (macroExpr) return macroExpr;
@@ -2428,7 +2426,7 @@ class Parser {
     }
 
     private parsePathExpression(startTok: Token): {
-        baseExpr: IdentifierExpr;
+        baseExpr: IdentifierExpr | PathExpr;
         lastName: string;
     } {
         const firstName = this.advance().value;

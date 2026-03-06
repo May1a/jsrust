@@ -17,6 +17,7 @@ import {
     type ForExpr,
     FnTypeNode,
     GenericFnItem,
+    GenericArgsNode,
     GenericStructItem,
     ImplItem,
     IdentPattern,
@@ -35,6 +36,7 @@ import {
     type ModuleNode,
     NamedTypeNode,
     type ParamNode,
+    type PathExpr,
     PtrTypeNode,
     type RangeExpr,
     type RefExpr,
@@ -46,6 +48,7 @@ import {
     type StructExpr,
     TraitImplItem,
     type TypeNode,
+    TupleTypeNode,
     ArrayTypeNode,
     UseItem,
     UnaryExpr,
@@ -71,6 +74,7 @@ type ExpressionVisitor<T> = Pick<
     AstVisitor<T, AstToSsaCtx>,
     | "visitLiteralExpr"
     | "visitIdentifierExpr"
+    | "visitPathExpr"
     | "visitBinaryExpr"
     | "visitUnaryExpr"
     | "visitAssignExpr"
@@ -479,6 +483,7 @@ export class AstToSsaCtx {
             visitLiteralExpr: (expr: LiteralExpr) => this.lowerLiteral(expr),
             visitIdentifierExpr: (expr: IdentifierExpr) =>
                 this.lowerIdentifier(expr),
+            visitPathExpr: (expr: PathExpr) => this.visitPathExpr(expr),
             visitBinaryExpr: (expr: BinaryExpr) => this.lowerBinary(expr),
             visitUnaryExpr: (expr: UnaryExpr) => this.lowerUnary(expr),
             visitAssignExpr: (expr: AssignExpr) => this.lowerAssign(expr),
@@ -530,6 +535,7 @@ export class AstToSsaCtx {
         return {
             visitLiteralExpr: expressionVisitors.visitLiteralExpr,
             visitIdentifierExpr: expressionVisitors.visitIdentifierExpr,
+            visitPathExpr: expressionVisitors.visitPathExpr,
             visitBinaryExpr: expressionVisitors.visitBinaryExpr,
             visitUnaryExpr: expressionVisitors.visitUnaryExpr,
             visitAssignExpr: expressionVisitors.visitAssignExpr,
@@ -661,6 +667,10 @@ export class AstToSsaCtx {
         const fnId = this.resolveFunctionId(expr.name);
         const constInst = this.builder.iconst(fnId, IntWidth.I64);
         return AstToSsaCtx.handleInstructionId(constInst.id);
+    }
+
+    visitPathExpr(expr: PathExpr): Result<ValueId, LoweringError> {
+        return this.lowerIdentifier(expr);
     }
 
     private resolveEnumTypeForVariant(variantPath: string): EnumType {
@@ -2105,6 +2115,13 @@ export class AstToSsaCtx {
                 let value = Number(raw);
                 if (typeof raw === "number") {
                     value = raw;
+                } else if (
+                    arm.pattern.literalKind === LiteralKind.Char &&
+                    typeof raw === "string"
+                ) {
+                    value =
+                        raw.codePointAt(STRING_FIRST_CHAR_INDEX) ??
+                        DEFAULT_CHAR_CODE;
                 }
                 cases.push({ value, target: armBlocks[index], args: [] });
             } else if (arm.pattern instanceof IdentPattern) {
@@ -2206,19 +2223,35 @@ export class AstToSsaCtx {
         elseId: BlockId | undefined,
         elseValue: ValueId | undefined,
     ): Result<ValueId, LoweringError> {
-        // Determine resultType from branches that will actually reach the merge block.
-        let resultType: IRType | undefined;
+        // A merge only carries a value when every reachable predecessor supplies one.
+        let hasValuelessReachableBranch = false;
+        const reachableValues: ValueId[] = [];
+
         if (thenId !== undefined) {
             this.builder.switchToBlock(thenId);
-            if (!this.isCurrentBlockTerminated() && thenValue !== undefined) {
-                resultType = this.resolveValueType(thenValue);
+            if (!this.isCurrentBlockTerminated()) {
+                if (thenValue === undefined) {
+                    hasValuelessReachableBranch = true;
+                } else {
+                    reachableValues.push(thenValue);
+                }
             }
         }
-        if (resultType === undefined && elseId !== undefined) {
+
+        if (elseId !== undefined) {
             this.builder.switchToBlock(elseId);
-            if (!this.isCurrentBlockTerminated() && elseValue !== undefined) {
-                resultType = this.resolveValueType(elseValue);
+            if (!this.isCurrentBlockTerminated()) {
+                if (elseValue === undefined) {
+                    hasValuelessReachableBranch = true;
+                } else {
+                    reachableValues.push(elseValue);
+                }
             }
+        }
+
+        let resultType: IRType | undefined;
+        if (!hasValuelessReachableBranch && reachableValues.length > 0) {
+            resultType = this.resolveValueType(reachableValues[0]);
         }
 
         const mergeId = this.createMergeBlock("if_merge", resultType);
@@ -3051,8 +3084,36 @@ function collectImplFunctionIds(
 }
 
 function resolveSelfInTypeNode(ty: TypeNode, selfName: string): TypeNode {
-    if (ty instanceof NamedTypeNode && ty.name === "Self") {
-        return new NamedTypeNode(ty.span, selfName);
+    if (ty instanceof NamedTypeNode) {
+        let args: GenericArgsNode | undefined;
+        if (ty.args) {
+            args = new GenericArgsNode(
+                ty.args.span,
+                ty.args.args.map((arg) => resolveSelfInTypeNode(arg, selfName)),
+            );
+        }
+        if (ty.name === "Self") {
+            return new NamedTypeNode(ty.span, selfName, args);
+        }
+        if (args) {
+            return new NamedTypeNode(ty.span, ty.name, args);
+        }
+        return ty;
+    }
+    if (ty instanceof TupleTypeNode) {
+        return new TupleTypeNode(
+            ty.span,
+            ty.elements.map((element) =>
+                resolveSelfInTypeNode(element, selfName),
+            ),
+        );
+    }
+    if (ty instanceof ArrayTypeNode) {
+        return new ArrayTypeNode(
+            ty.span,
+            resolveSelfInTypeNode(ty.element, selfName),
+            ty.length,
+        );
     }
     if (ty instanceof RefTypeNode) {
         return new RefTypeNode(
@@ -3066,6 +3127,13 @@ function resolveSelfInTypeNode(ty: TypeNode, selfName: string): TypeNode {
             ty.span,
             ty.mutability,
             resolveSelfInTypeNode(ty.inner, selfName),
+        );
+    }
+    if (ty instanceof FnTypeNode) {
+        return new FnTypeNode(
+            ty.span,
+            ty.params.map((param) => resolveSelfInTypeNode(param, selfName)),
+            resolveSelfInTypeNode(ty.returnType, selfName),
         );
     }
     return ty;
