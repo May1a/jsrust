@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Result, TaggedError, type Result as BetterResult } from "better-result";
+import { Result, TaggedError } from "better-result";
+import { match } from "ts-pattern";
 import {
     compile,
     compileFile,
@@ -82,26 +83,43 @@ const ERROR_KIND_CODES: Record<string, string> = {
 };
 
 function errorKindCode(kind?: string): string {
-    return (kind && ERROR_KIND_CODES[kind]) ?? "E0000";
+    return ERROR_KIND_CODES[kind ?? ""] ?? "E0000";
 }
 
-function compileDiagnosticToDisplay(cd: CompileDiagnostic, file: string): Diagnostic {
+function compileDiagnosticToDisplay(
+    cd: CompileDiagnostic,
+    file: string,
+): Diagnostic {
     const width = Math.max(1, cd.span.end - cd.span.start);
     const span: SourceSpan = makeSourceSpan(
         makeSourceLocation(cd.span.line, cd.span.column, file),
         makeSourceLocation(cd.span.line, cd.span.column + width, file),
     );
-    return withCode(makeDiagnostic(Level.Error, cd.message, span), errorKindCode(cd.kind));
+    return withCode(
+        makeDiagnostic(Level.Error, cd.message, span),
+        errorKindCode(cd.kind),
+    );
 }
 
-function printDiagnostics(errors: CompileDiagnostic[], filePath: string, source: string): void {
+function printDiagnostics(
+    errors: CompileDiagnostic[],
+    filePath: string,
+    source: string,
+): void {
     const ctx = createSourceContext(source, filePath);
     const color = process.stderr.isTTY;
     for (const err of errors) {
-        console.error(renderDiagnostic(compileDiagnosticToDisplay(err, filePath), ctx, { color }));
+        console.error(
+            renderDiagnostic(compileDiagnosticToDisplay(err, filePath), ctx, {
+                color,
+            }),
+        );
     }
     if (errors.length > 0) {
-        const s = errors.length === 1 ? "" : "s";
+        let s = "s";
+        if (errors.length === 1) {
+            s = "";
+        }
         console.error(`\naborting due to ${errors.length} error${s}`);
     }
 }
@@ -118,9 +136,7 @@ function causeMessage(cause: unknown): string {
     return String(cause);
 }
 
-function readSourceFile(
-    filePath: string,
-): BetterResult<string, SourceFileReadError> {
+function readSourceFile(filePath: string): Result<string, SourceFileReadError> {
     return Result.try({
         try: () => fs.readFileSync(filePath, "utf8"),
         catch: (cause) =>
@@ -144,7 +160,7 @@ function readSourceFileOrEmpty(filePath: string): string {
 function writeFileAtomic(
     outputPath: string,
     bytes: Uint8Array,
-): BetterResult<void, FileWriteError> {
+): Result<void, FileWriteError> {
     const resolved = path.resolve(outputPath);
     const tempPath = `${resolved}.tmp`;
     try {
@@ -202,6 +218,13 @@ function firstDiffLine(a: string, b: string): number {
     return NO_DIFF;
 }
 
+function lineAt(text: string, line: number): string {
+    if (line <= 0) {
+        return "";
+    }
+    return text.split("\n")[line - 1] ?? "";
+}
+
 // ---------------------------------------------------------------------------
 // CLI — compile
 // ---------------------------------------------------------------------------
@@ -220,20 +243,28 @@ function printCompileHelp(exitCode = 0): never {
     console.log("  -h, --help    Show this help");
     console.log("");
     console.log("Run options:");
-    console.log("  run <file.rs>        Compile to binary IR and execute with backend runtime");
+    console.log(
+        "  run <file.rs>        Compile to binary IR and execute with backend runtime",
+    );
     console.log("  --entry <fn>         Entry function (default: main)");
     console.log("  --trace              Enable backend trace output");
     console.log("  --trace-out <path>   Write backend trace to file");
     console.log("  --out-bin <path>     Write binary IR artifact to path");
-    console.log("  --codegen-wasm       Compile binary IR to wasm and run generated wasm");
+    console.log(
+        "  --codegen-wasm       Compile binary IR to wasm and run generated wasm",
+    );
     console.log("  --no-validate        Skip IR validation");
     process.exit(exitCode);
 }
 
 function parseCompileArgs(
     args: string[],
-): BetterResult<{ options: CompileOptions; inputFile?: string }, CliArgError> {
-    const options: CompileOptions = { emitAst: false, emitIR: true, validate: true };
+): Result<{ options: CompileOptions; inputFile?: string }, CliArgError> {
+    const options: CompileOptions = {
+        emitAst: false,
+        emitIR: true,
+        validate: true,
+    };
     let inputFile: string | undefined;
 
     for (let i = 0; i < args.length; i++) {
@@ -247,12 +278,25 @@ function parseCompileArgs(
         } else if (arg === "-o") {
             i++;
             if (i >= args.length) {
-                return Result.err(new CliArgError({ message: "missing value for -o" }));
+                return Result.err(
+                    new CliArgError({ message: "missing value for -o" }),
+                );
             }
             options.outputFile = args[i];
         } else if (arg === "-h" || arg === "--help") {
             printCompileHelp(0);
-        } else if (!arg.startsWith("-")) {
+        } else if (arg.startsWith("-")) {
+            return Result.err(
+                new CliArgError({ message: `unknown flag: ${arg}` }),
+            );
+        } else {
+            if (inputFile !== undefined) {
+                return Result.err(
+                    new CliArgError({
+                        message: `extra positional argument: ${arg}`,
+                    }),
+                );
+            }
             inputFile = arg;
         }
     }
@@ -260,7 +304,10 @@ function parseCompileArgs(
     return Result.ok({ options, inputFile });
 }
 
-function buildCompileOutput(result: CompileArtifact, options: CompileOptions): string {
+function buildCompileOutput(
+    result: CompileArtifact,
+    options: CompileOptions,
+): string {
     let output = "";
     if (options.emitAst && result.ast !== undefined) {
         output += `=== AST ===\n${JSON.stringify(result.ast, undefined, 2)}\n\n`;
@@ -274,7 +321,7 @@ function buildCompileOutput(result: CompileArtifact, options: CompileOptions): s
 function writeCompileOutput(
     output: string,
     outputFile: string | undefined,
-): BetterResult<void, FileWriteError> {
+): Result<void, FileWriteError> {
     if (outputFile === undefined) {
         console.log(output);
         return Result.ok();
@@ -340,13 +387,21 @@ function printTestHelp(exitCode = 0): never {
     console.log("");
     console.log("Options:");
     console.log("  --no-validate        Skip IR validation");
-    console.log("  --codegen-wasm       Compile binary IR to wasm and run generated wasm");
+    console.log(
+        "  --codegen-wasm       Compile binary IR to wasm and run generated wasm",
+    );
     console.log("  -h, --help           Show this help");
     console.log("");
     console.log("Description:");
-    console.log("  Discovers and runs all functions marked with #[test] attribute.");
-    console.log('  Tests may declare expected stdout using #[expect_output("...")].');
-    console.log("  Reports test results and exits with code 0 if all tests pass,");
+    console.log(
+        "  Discovers and runs all functions marked with #[test] attribute.",
+    );
+    console.log(
+        '  Tests may declare expected stdout using #[expect_output("...")].',
+    );
+    console.log(
+        "  Reports test results and exits with code 0 if all tests pass,",
+    );
     console.log("  or 1 if any test fails.");
     process.exit(exitCode);
 }
@@ -358,9 +413,13 @@ function runSingleTest(
     bytes: Uint8Array,
     codegenWasm: boolean,
 ): TestRunResult {
-    const runResult = codegenWasm
-        ? runBackendCodegenWasm(bytes, { entry: testFn.name, trace: false })
-        : runBackendWasm(bytes, { entry: testFn.name, trace: false });
+    const runResult = match(codegenWasm)
+        .with(true, () =>
+            runBackendCodegenWasm(bytes, { entry: testFn.name, trace: false }),
+        )
+        .otherwise(() =>
+            runBackendWasm(bytes, { entry: testFn.name, trace: false }),
+        );
 
     if (runResult.isErr()) {
         return { passed: false, reason: runResult.error.message };
@@ -371,8 +430,8 @@ function runSingleTest(
         const expected = normalizeNewlines(testFn.expectedOutput);
         if (actual !== expected) {
             const line = firstDiffLine(actual, expected);
-            const actualLine = line > 0 ? (actual.split("\n")[line - 1] ?? "") : "";
-            const expectedLine = line > 0 ? (expected.split("\n")[line - 1] ?? "") : "";
+            const actualLine = lineAt(actual, line);
+            const expectedLine = lineAt(expected, line);
             return {
                 passed: false,
                 reason: `stdout mismatch at line ${line}\n  expected: ${JSON.stringify(expectedLine)}\n  actual:   ${JSON.stringify(actualLine)}`,
@@ -385,7 +444,7 @@ function runSingleTest(
 
 function parseTestArgs(
     args: string[],
-): BetterResult<
+): Result<
     { validate: boolean; codegenWasm: boolean; inputFile?: string },
     CliArgError
 > {
@@ -441,10 +500,17 @@ function reportTestSuite(
     }
 
     console.log("");
+    let status = "FAILED";
+    if (failed === 0) {
+        status = "ok";
+    }
     console.log(
-        `test result: ${failed === 0 ? "ok" : "FAILED"}. ${passed} passed; ${failed} failed; 0 ignored`,
+        `test result: ${status}. ${passed} passed; ${failed} failed; 0 ignored`,
     );
-    return failed > 0 ? 1 : 0;
+    if (failed > 0) {
+        return 1;
+    }
+    return 0;
 }
 
 function runTestCli(args: string[]): number {
@@ -508,7 +574,9 @@ function printRunHelp(exitCode = 0): never {
     console.log("  --trace              Enable backend trace output");
     console.log("  --trace-out <path>   Write backend trace to file");
     console.log("  --out-bin <path>     Write binary IR artifact to path");
-    console.log("  --codegen-wasm       Compile binary IR to wasm and run generated wasm");
+    console.log(
+        "  --codegen-wasm       Compile binary IR to wasm and run generated wasm",
+    );
     console.log("  --no-validate        Skip IR validation");
     console.log("  -h, --help           Show this help");
     process.exit(exitCode);
@@ -516,7 +584,7 @@ function printRunHelp(exitCode = 0): never {
 
 function parseRunArgs(
     args: string[],
-): BetterResult<{ options: RunOptions; inputFile?: string }, CliArgError> {
+): Result<{ options: RunOptions; inputFile?: string }, CliArgError> {
     const options: RunOptions = {
         entry: "main",
         trace: false,
@@ -543,7 +611,9 @@ function parseRunArgs(
             i++;
             if (i >= args.length) {
                 return Result.err(
-                    new CliArgError({ message: "missing value for --trace-out" }),
+                    new CliArgError({
+                        message: "missing value for --trace-out",
+                    }),
                 );
             }
             options.traceOutPath = args[i];
@@ -580,22 +650,41 @@ function parseRunArgs(
 }
 
 function executeAndReport(bytes: Uint8Array, options: RunOptions): number {
-    const runResult = options.codegenWasm
-        ? runBackendCodegenWasm(bytes, { entry: options.entry, trace: options.trace })
-        : runBackendWasm(bytes, { entry: options.entry, trace: options.trace });
+    const runResult = match(options.codegenWasm)
+        .with(true, () =>
+            runBackendCodegenWasm(bytes, {
+                entry: options.entry,
+                trace: options.trace,
+            }),
+        )
+        .otherwise(() =>
+            runBackendWasm(bytes, {
+                entry: options.entry,
+                trace: options.trace,
+            }),
+        );
 
     if (runResult.isErr()) {
-        console.error(`error[${runResult.error.label ?? "internal-error"}]: ${runResult.error.message}`);
+        console.error(
+            `error[${runResult.error.label ?? "internal-error"}]: ${runResult.error.message}`,
+        );
         return runResult.error.exitCode ?? 1;
     }
 
     if (runResult.value.stdoutBytes.length > 0) {
         process.stdout.write(Buffer.from(runResult.value.stdoutBytes));
     }
-    process.stdout.write(runResult.value.hasExitValue ? `ok exit=${runResult.value.exitValue}\n` : "ok\n");
+    let exitLine = "ok\n";
+    if (runResult.value.hasExitValue) {
+        exitLine = `ok exit=${runResult.value.exitValue}\n`;
+    }
+    process.stdout.write(exitLine);
 
     if (options.traceOutPath) {
-        const writeResult = writeFileAtomic(options.traceOutPath, runResult.value.traceBytes);
+        const writeResult = writeFileAtomic(
+            options.traceOutPath,
+            runResult.value.traceBytes,
+        );
         if (writeResult.isErr()) {
             console.error(`error: ${writeResult.error.message}`);
             return 1;
@@ -629,14 +718,19 @@ function runBackendCli(args: string[]): number {
     }
 
     const source = readSourceFileOrEmpty(inputFile);
-    const binaryResult = compileFileToBinary(inputFile, { validate: options.validate });
+    const binaryResult = compileFileToBinary(inputFile, {
+        validate: options.validate,
+    });
     if (binaryResult.isErr()) {
         printCompileFailure(binaryResult.error, inputFile, source);
         return 1;
     }
 
     if (options.outBin) {
-        const writeResult = writeFileAtomic(options.outBin, binaryResult.value.bytes);
+        const writeResult = writeFileAtomic(
+            options.outBin,
+            binaryResult.value.bytes,
+        );
         if (writeResult.isErr()) {
             console.error(`error: ${writeResult.error.message}`);
             return 1;

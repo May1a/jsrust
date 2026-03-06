@@ -1,7 +1,7 @@
-import { Result, type Result as BetterResult } from "better-result";
+import { Result } from "better-result";
 import { compile, type CompileError } from "../src/compile";
 
-export function compileToIR(source: string): BetterResult<string, CompileError> {
+export function compileToIR(source: string): Result<string, CompileError> {
     const result = compile(source);
     if (result.isErr()) {
         return result;

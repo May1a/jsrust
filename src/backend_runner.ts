@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Result, TaggedError } from "better-result";
+import { match } from "ts-pattern";
 
 const REPO_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const BACKEND_DIR = path.join(REPO_ROOT, "backend");
@@ -93,7 +94,10 @@ class BackendWasmRunError extends BackendWasmRunErrorBase {}
  * Convert bigint | number to bigint
  */
 function toBigInt(value: bigint | number): bigint {
-    return typeof value === "bigint" ? value : BigInt(value);
+    if (typeof value === "bigint") {
+        return value;
+    }
+    return BigInt(value);
 }
 
 interface BackendWasmExports {
@@ -146,13 +150,12 @@ function errorMessage(error: unknown): string {
  * @returns {boolean}
  */
 function fileExists(filePath: string): boolean {
-    return Result.try({
-        try: () => {
-            fs.accessSync(filePath, fs.constants.F_OK);
-            return true;
-        },
-        catch: () => false,
-    }).unwrap();
+    try {
+        fs.accessSync(filePath, fs.constants.F_OK);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -354,6 +357,10 @@ function isFunction(value: unknown): value is (...args: unknown[]) => unknown {
 
 function emptyBytes(): Uint8Array {
     return new Uint8Array();
+}
+
+function booleanFlag(value: boolean | undefined): number {
+    return match(value).with(true, () => 1).otherwise(() => 0);
 }
 
 function getNumberExport(
@@ -574,7 +581,8 @@ function validateBackendWasmExports(
         return Result.err(
             new BackendWasmLoadError({
                 code: "backend_wasm_load_failed",
-                message: "backend wasm export 'memory' is not a WebAssembly.Memory",
+                message:
+                    "backend wasm export 'memory' is not a WebAssembly.Memory",
             }),
         );
     }
@@ -639,6 +647,23 @@ function createBackendWasmExports(
     const codegenExport = optional.codegen;
     const codegenWasmPtrExport = optional.codegenWasmPtr;
     const codegenWasmLenExport = optional.codegenWasmLen;
+    let jsrustWasmCodegen: BackendWasmExports["jsrust_wasm_codegen"];
+    if (codegenExport) {
+        jsrustWasmCodegen = (
+            inputPtr: number,
+            inputLen: number,
+            entryPtr: number,
+            entryLen: number,
+        ) => codegenExport([inputPtr, inputLen, entryPtr, entryLen]);
+    }
+    let jsrustWasmCodegenWasmPtr: BackendWasmExports["jsrust_wasm_codegen_wasm_ptr"];
+    if (codegenWasmPtrExport) {
+        jsrustWasmCodegenWasmPtr = () => codegenWasmPtrExport();
+    }
+    let jsrustWasmCodegenWasmLen: BackendWasmExports["jsrust_wasm_codegen_wasm_len"];
+    if (codegenWasmLenExport) {
+        jsrustWasmCodegenWasmLen = () => codegenWasmLenExport();
+    }
 
     return Result.ok({
         memory,
@@ -667,23 +692,9 @@ function createBackendWasmExports(
         jsrust_wasm_stdout_len: () => required.stdoutLen(),
         jsrust_wasm_trace_ptr: () => required.tracePtr(),
         jsrust_wasm_trace_len: () => required.traceLen(),
-        jsrust_wasm_codegen:
-            codegenExport === undefined
-                ? undefined
-                : (
-                      inputPtr: number,
-                      inputLen: number,
-                      entryPtr: number,
-                      entryLen: number,
-                  ) => codegenExport([inputPtr, inputLen, entryPtr, entryLen]),
-        jsrust_wasm_codegen_wasm_ptr:
-            codegenWasmPtrExport === undefined
-                ? undefined
-                : () => codegenWasmPtrExport(),
-        jsrust_wasm_codegen_wasm_len:
-            codegenWasmLenExport === undefined
-                ? undefined
-                : () => codegenWasmLenExport(),
+        jsrust_wasm_codegen: jsrustWasmCodegen,
+        jsrust_wasm_codegen_wasm_ptr: jsrustWasmCodegenWasmPtr,
+        jsrust_wasm_codegen_wasm_len: jsrustWasmCodegenWasmLen,
     });
 }
 
@@ -695,7 +706,7 @@ function loadBackendWasm(options: { path: string }): Result<
     },
     BackendWasmLoadError
 > {
-    if (wasmRuntime !== undefined && wasmRuntime.path === options.path) {
+    if (wasmRuntime && wasmRuntime.path === options.path) {
         return Result.ok({
             path: wasmRuntime.path,
             exports: wasmRuntime.exports,
@@ -717,7 +728,10 @@ function loadBackendWasm(options: { path: string }): Result<
     if (validation.isErr()) {
         return validation;
     }
-    const wasmExports = createBackendWasmExports(exports, validation.value.memory);
+    const wasmExports = createBackendWasmExports(
+        exports,
+        validation.value.memory,
+    );
     if (wasmExports.isErr()) {
         return wasmExports;
     }
@@ -834,9 +848,7 @@ function rebuildBackendWasm(): Result<void, BackendBuildError> {
     return Result.ok(undefined);
 }
 
-function runGeneratedWasmBytes(
-    generatedWasmBytes: Uint8Array,
-): Result<
+function runGeneratedWasmBytes(generatedWasmBytes: Uint8Array): Result<
     {
         stdoutBytes: Uint8Array;
         hasExitValue: boolean;
@@ -882,21 +894,29 @@ function runGeneratedWasmBytes(
                 return 1;
             },
             jsrust_write_cstr(ptr: number): number {
-                return readCString(ptr) ? 1 : 0;
+                if (readCString(ptr)) {
+                    return 1;
+                }
+                return 0;
             },
             jsrust_write_i64(value: bigint | number): number {
                 pushText(toBigInt(value).toString());
                 return 1;
             },
             jsrust_write_f64(value: number): number {
-                const text = Number.isInteger(value)
-                    ? value.toFixed(1)
-                    : String(value);
+                let text = String(value);
+                if (Number.isInteger(value)) {
+                    text = value.toFixed(1);
+                }
                 pushText(text);
                 return 1;
             },
             jsrust_write_bool(value: number): number {
-                pushText(value ? "true" : "false");
+                let text = "false";
+                if (value !== 0) {
+                    text = "true";
+                }
+                pushText(text);
                 return 1;
             },
             jsrust_write_char(value: bigint | number): number {
@@ -968,7 +988,10 @@ function runGeneratedWasmBytes(
 
     const exitValueRaw: unknown = exitValueResult.value;
     const hasExitValue = exitValueRaw !== undefined;
-    const exitValue = hasExitValue ? Number(exitValueRaw) : 0;
+    let exitValue = 0;
+    if (hasExitValue) {
+        exitValue = Number(exitValueRaw);
+    }
 
     return Result.ok({
         stdoutBytes: Uint8Array.from(stdout),
@@ -1128,9 +1151,13 @@ function readDecodedWasmOutput(
     len: number,
 ): { bytes: Uint8Array; text: string } {
     const bytes = readWasmBytes(memory, ptr, len);
+    let text = "";
+    if (bytes.length > 0) {
+        text = textDecoder.decode(bytes);
+    }
     return {
         bytes,
-        text: bytes.length > 0 ? textDecoder.decode(bytes) : "",
+        text,
     };
 }
 
@@ -1348,7 +1375,7 @@ function runBackendWasm(
                 moduleBytes.length,
                 entryAlloc.value.ptr,
                 entryBytes.length,
-                options.trace ? 1 : 0,
+                booleanFlag(options.trace),
             ),
         catch: (cause) =>
             createBackendRunError({
@@ -1431,8 +1458,10 @@ function runBackendCodegenWasm(
         );
     }
     const { stdoutBytes } = generatedRun.value;
-    const stdout =
-        stdoutBytes.length > 0 ? textDecoder.decode(stdoutBytes) : "";
+    let stdout = "";
+    if (stdoutBytes.length > 0) {
+        stdout = textDecoder.decode(stdoutBytes);
+    }
     return Result.ok({
         code: "ok",
         stdout,

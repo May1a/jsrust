@@ -96,6 +96,7 @@ export enum BuiltinType {
 export interface AstVisitor<R, C> {
     visitLiteralExpr(node: LiteralExpr, ctx: C): R;
     visitIdentifierExpr(node: IdentifierExpr, ctx: C): R;
+    visitPathExpr(node: PathExpr, ctx: C): R;
     visitBinaryExpr(node: BinaryExpr, ctx: C): R;
     visitUnaryExpr(node: UnaryExpr, ctx: C): R;
     visitCallExpr(node: CallExpr, ctx: C): R;
@@ -1179,6 +1180,10 @@ export class PathExpr extends IdentifierExpr {
     constructor(span: Span, segments: string[]) {
         super(span, segments.join("::"));
         this.segments = segments;
+    }
+
+    override accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitPathExpr(this, ctx);
     }
 }
 
