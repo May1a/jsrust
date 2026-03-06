@@ -187,7 +187,7 @@ export class IRBuilder {
         const phis = this.incompletePhis.get(name);
         if (phis) {
             const phiVal = phis.get(resolvedBlockId);
-            if (phiVal) {
+            if (phiVal !== undefined) {
                 // In a full implementation, we'd add the operand to the phi node
                 // For now, we'll mark the phi as having one more incoming value
                 // This is simplified; real phi construction is more complex
@@ -218,7 +218,7 @@ export class IRBuilder {
             this.incompletePhis.set(name, phis);
         }
         const existing = phis.get(resolvedBlockId);
-        if (!existing) {
+        if (existing === undefined) {
             phis.set(resolvedBlockId, [phiValueId]);
         } else {
             existing.push(phiValueId);

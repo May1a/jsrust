@@ -397,7 +397,7 @@ export class AstToSsaCtx {
         name: string,
         resultType: IRType | undefined,
     ): BlockId {
-        if (resultType) {
+        if (resultType === undefined) {
             return this.builder.createBlock(name);
         }
         return this.builder.createBlock(name, [resultType]);
@@ -3202,13 +3202,13 @@ function collectAndMonomorphize(
         if (!(node.callee instanceof IdentifierExpr)) return;
 
         const generic = registry.lookupGenericFn(node.callee.name);
-        if (generic) return;
+        if (generic === undefined) return;
 
         // Infer type arguments from the call expression's explicit type args
         // Use explicit args or infer from literals; full inference happens
         // In the inference pass which stores substitutions on TypeContext
         const subs = inferCallSiteTypeArgs(generic, node);
-        if (subs) return;
+        if (subs === undefined) return;
 
         registry.getOrCreateFn(generic, subs);
     });

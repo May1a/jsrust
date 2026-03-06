@@ -149,13 +149,12 @@ function errorMessage(error: unknown): string {
  * @returns {boolean}
  */
 function fileExists(filePath: string): boolean {
-    return Result.try({
-        try: () => {
-            fs.accessSync(filePath, fs.constants.F_OK);
-            return true;
-        },
-        catch: () => false,
-    }).unwrap();
+    try {
+        fs.accessSync(filePath, fs.constants.F_OK);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 /**

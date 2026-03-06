@@ -132,7 +132,7 @@ export function parseExpression(source: string): ParseResult<Expression> {
 export function parseStatement(source: string): ParseResult<Statement> {
     const p = new Parser(tokenize(source));
     const value = p.parseStatement();
-    if (!value) {
+    if (value === undefined) {
         return {
             ok: false,
             errors: [{ message: "Expected statement", line: 1, column: 1 }],
@@ -800,7 +800,7 @@ class Parser {
             }
 
             const param = this.parseValueOrNamedParam(paramStart);
-            if (!param) {
+            if (param === undefined) {
                 break;
             }
             params.push(param);
@@ -1598,7 +1598,7 @@ class Parser {
 
     private parseNumericPattern(start: Token): Pattern | undefined {
         const literal = this.tryParseNumericLiteralPattern(start);
-        if (!literal) return undefined;
+        if (literal === undefined) return undefined;
         if (this.checkDotDotEq()) {
             this.eatDotDotEq();
             return new RangePattern(
@@ -1892,7 +1892,7 @@ class Parser {
 
         for (;;) {
             const nextLeft = this.parsePostfixExpr(left, minPrec);
-            if (!nextLeft) break;
+            if (nextLeft === undefined) break;
             left = nextLeft;
         }
 
@@ -2074,7 +2074,7 @@ class Parser {
             );
         }
         const compoundOp = COMPOUND_ASSIGNMENT_OPERATORS[this.peek().type];
-        if (!compoundOp) return undefined;
+        if (compoundOp === undefined) return undefined;
         this.advance();
         const right = this.parseExpr(prec - 1, noStructLiteral);
         return new AssignExpr(
@@ -2120,7 +2120,7 @@ class Parser {
         noStructLiteral: boolean,
     ): BinaryExpr | undefined {
         const op = BINARY_OPERATORS[this.peek().type];
-        if (!op) return undefined;
+        if (op === undefined) return undefined;
         this.advance();
         return new BinaryExpr(
             this.spanFrom(start),

@@ -664,7 +664,7 @@ class IRDeserializer {
     readInstruction(): Result<IRInst, DeserializeError> {
         const opcodeValue = this.readU8();
         const opcode = fromBinaryInstKind(opcodeValue);
-        if (!opcode) {
+        if (opcode === undefined) {
             return Result.err({
                 kind: DeserializeErrorKind.InvalidOpcode,
                 message: `Invalid instruction opcode: ${opcodeValue}`,
