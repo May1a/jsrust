@@ -1,4 +1,5 @@
 import { Result } from "better-result";
+import { match } from "ts-pattern";
 
 import {
     AllocaInst,
@@ -253,9 +254,12 @@ const INSTRUCTION_READERS: Partial<Record<IRInstKind, InstructionReader>> = {
                 deserializer.readU32(),
             ),
         ),
-    [IRInstKind.Gep]: (deserializer, id, ty) => deserializer.readGepInstruction(id, ty),
+    [IRInstKind.Gep]: (deserializer, id, ty) =>
+        deserializer.readGepInstruction(id, ty),
     [IRInstKind.Ptradd]: (deserializer, id) =>
-        Result.ok(new PtraddInst(id, deserializer.readU32(), deserializer.readU32())),
+        Result.ok(
+            new PtraddInst(id, deserializer.readU32(), deserializer.readU32()),
+        ),
     [IRInstKind.Trunc]: (deserializer, id, ty) =>
         deserializer.readIntCastInstruction(IRInstKind.Trunc, id, ty),
     [IRInstKind.Sext]: (deserializer, id, ty) =>
@@ -276,14 +280,14 @@ const INSTRUCTION_READERS: Partial<Record<IRInstKind, InstructionReader>> = {
         deserializer.readCallInstruction(IRInstKind.Call, id, ty),
     [IRInstKind.CallDyn]: (deserializer, id, ty) =>
         deserializer.readCallInstruction(IRInstKind.CallDyn, id, ty),
-    [IRInstKind.StructCreate]: (deserializer, id) =>
-        deserializer.readStructCreateInstruction(id),
+    [IRInstKind.StructCreate]: (deserializer, id, ty) =>
+        deserializer.readStructCreateInstruction(id, ty),
     [IRInstKind.StructGet]: (deserializer, id, ty) =>
         deserializer.readStructGetInstruction(id, ty),
-    [IRInstKind.EnumCreate]: (deserializer, id) =>
-        deserializer.readEnumCreateInstruction(id),
-    [IRInstKind.EnumGetTag]: (deserializer, id) =>
-        deserializer.readEnumGetTagInstruction(id),
+    [IRInstKind.EnumCreate]: (deserializer, id, ty) =>
+        deserializer.readEnumCreateInstruction(id, ty),
+    [IRInstKind.EnumGetTag]: (deserializer, id, ty) =>
+        deserializer.readEnumGetTagInstruction(id, ty),
     [IRInstKind.EnumGetData]: (deserializer, id) =>
         deserializer.readEnumGetDataInstruction(id),
 };
@@ -668,7 +672,10 @@ class IRDeserializer {
             });
         }
 
-        const id = instructionHasResult(opcode) ? this.readU32() : 0;
+        let id = 0;
+        if (instructionHasResult(opcode)) {
+            id = this.readU32();
+        }
         const typeResult = this.readType();
         if (!typeResult.isOk()) {
             return typeResult;
@@ -1004,7 +1011,10 @@ class IRDeserializer {
         return Result.ok(new AllocaInst(id, allocTypeResult.value));
     }
 
-    readLoadInstruction(id: number, ty: IRType): Result<IRInst, DeserializeError> {
+    readLoadInstruction(
+        id: number,
+        ty: IRType,
+    ): Result<IRInst, DeserializeError> {
         const ptr = this.readU32();
         return Result.ok(new LoadInst(id, ptr, ty));
     }
@@ -1019,7 +1029,10 @@ class IRDeserializer {
         return Result.ok(new StoreInst(id, value, ptr));
     }
 
-    readGepInstruction(id: number, ty: IRType): Result<IRInst, DeserializeError> {
+    readGepInstruction(
+        id: number,
+        ty: IRType,
+    ): Result<IRInst, DeserializeError> {
         const ptr = this.readU32();
         const indexCount = this.readU32();
         const indices: number[] = [];
@@ -1027,7 +1040,14 @@ class IRDeserializer {
             indices.push(this.readU32());
         }
         // ty is PtrType(resultType) from the instruction header; no extra type in stream
-        const resultType = ty instanceof PtrType ? ty.inner : ty;
+        if (!(ty instanceof PtrType)) {
+            return Result.err({
+                kind: DeserializeErrorKind.InvalidTypeTag,
+                message: `GEP instruction expected pointer header type, got unexpected type`,
+                pos: this.pos,
+            });
+        }
+        const resultType = ty.inner;
         return Result.ok(new GepInst(id, ptr, indices, resultType));
     }
 
@@ -1109,23 +1129,19 @@ class IRDeserializer {
         );
     }
 
-    readStructCreateInstruction(id: number): Result<IRInst, DeserializeError> {
+    readStructCreateInstruction(
+        id: number,
+        ty: IRType,
+    ): Result<IRInst, DeserializeError> {
         const fieldCount = this.readU32();
         const fields: number[] = [];
         for (let i = 0; i < fieldCount; i++) {
             fields.push(this.readU32());
         }
-        const structTypeResult = this.readType();
-        if (!structTypeResult.isOk()) {
-            return structTypeResult;
+        if (!isIRStructType(ty)) {
+            return this.invalidInstructionType(IRInstKind.StructCreate, ty);
         }
-        if (!isIRStructType(structTypeResult.value)) {
-            return this.invalidInstructionType(
-                IRInstKind.StructCreate,
-                structTypeResult.value,
-            );
-        }
-        return Result.ok(new StructCreateInst(id, fields, structTypeResult.value));
+        return Result.ok(new StructCreateInst(id, fields, ty));
     }
 
     readStructGetInstruction(
@@ -1149,36 +1165,32 @@ class IRDeserializer {
         );
     }
 
-    readEnumCreateInstruction(id: number): Result<IRInst, DeserializeError> {
+    readEnumCreateInstruction(
+        id: number,
+        ty: IRType,
+    ): Result<IRInst, DeserializeError> {
         const tag = this.readU32();
         const hasData = this.readU8() !== 0;
-        const data = hasData ? this.readU32() : this.readMissingEnumData();
-        const enumTypeResult = this.readType();
-        if (!enumTypeResult.isOk()) {
-            return enumTypeResult;
+        const data = match(hasData)
+            .with(true, () => this.readU32())
+            .otherwise(() => this.readMissingEnumData());
+        if (!isIREnumType(ty)) {
+            return this.invalidInstructionType(IRInstKind.EnumCreate, ty);
         }
-        if (!isIREnumType(enumTypeResult.value)) {
-            return this.invalidInstructionType(
-                IRInstKind.EnumCreate,
-                enumTypeResult.value,
-            );
-        }
-        return Result.ok(new EnumCreateInst(id, tag, data, enumTypeResult.value));
+        return Result.ok(new EnumCreateInst(id, tag, data, ty));
     }
 
-    readEnumGetTagInstruction(id: number): Result<IRInst, DeserializeError> {
+    readEnumGetTagInstruction(
+        id: number,
+        ty: IRType,
+    ): Result<IRInst, DeserializeError> {
         const enumValue = this.readU32();
-        const enumTypeResult = this.readType();
-        if (!enumTypeResult.isOk()) {
-            return enumTypeResult;
+        if (!isIRIntType(ty)) {
+            return this.invalidInstructionType(IRInstKind.EnumGetTag, ty);
         }
-        if (!isIREnumType(enumTypeResult.value)) {
-            return this.invalidInstructionType(
-                IRInstKind.EnumGetTag,
-                enumTypeResult.value,
-            );
-        }
-        return Result.ok(new EnumGetTagInst(id, enumValue, enumTypeResult.value));
+        return Result.ok(
+            new EnumGetTagInst(id, enumValue, makeIREnumType("__anon_enum", [])),
+        );
     }
 
     readEnumGetDataInstruction(id: number): Result<IRInst, DeserializeError> {
@@ -1209,7 +1221,10 @@ class IRDeserializer {
 
     readRetTerm(): Result<IRTerm, DeserializeError> {
         const hasValue = this.readU8() !== 0;
-        const value = hasValue ? this.readU32() : undefined;
+        let value: number | undefined;
+        if (hasValue) {
+            value = this.readU32();
+        }
         return Result.ok(new RetTerm(value));
     }
 
@@ -1246,7 +1261,9 @@ class IRDeserializer {
         }
         const defaultBlock = this.readU32();
         const defaultArgs = this.readValueList();
-        return Result.ok(new SwitchTerm(value, defaultBlock, defaultArgs, cases));
+        return Result.ok(
+            new SwitchTerm(value, defaultBlock, defaultArgs, cases),
+        );
     }
 
     readValueList(): number[] {
@@ -1460,7 +1477,9 @@ class IRDeserializer {
                 return Result.ok(new SitofpInst(id, operand, fromType, toType));
             }
             case IRInstKind.Bitcast: {
-                return Result.ok(new BitcastInst(id, operand, fromType, toType));
+                return Result.ok(
+                    new BitcastInst(id, operand, fromType, toType),
+                );
             }
             default: {
                 return this.invalidInstructionType(opcode, toType);

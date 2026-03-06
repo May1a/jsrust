@@ -87,7 +87,7 @@ function typeToMangledString(ty: TypeNode): string {
 function substituteType(ty: TypeNode, subs: SubstitutionMap): TypeNode {
     if (ty instanceof NamedTypeNode) {
         const replacement = subs.get(ty.name);
-        if (replacement !== undefined) {
+        if (replacement) {
             return replacement;
         }
         if (ty.args !== undefined) {
@@ -144,10 +144,10 @@ function substituteType(ty: TypeNode, subs: SubstitutionMap): TypeNode {
 function substituteCallExpr(expr: CallExpr, subs: SubstitutionMap): CallExpr {
     const newCallee = substituteExpr(expr.callee, subs);
     const newArgs = expr.args.map((arg) => substituteExpr(arg, subs));
-    const newTypeArgs =
-        expr.genericArgs !== undefined
-            ? expr.genericArgs.map((ta) => substituteType(ta, subs))
-            : undefined;
+    let newTypeArgs: TypeNode[] | undefined;
+    if (expr.genericArgs !== undefined) {
+        newTypeArgs = expr.genericArgs.map((ta) => substituteType(ta, subs));
+    }
     return new CallExpr(expr.span, newCallee, newArgs, newTypeArgs);
 }
 
@@ -170,17 +170,18 @@ function substituteMatchExpr(
     expr: MatchExpr,
     subs: SubstitutionMap,
 ): MatchExpr {
-    const newArms = expr.arms.map(
-        (arm) =>
-            new MatchArmNode(
-                arm.span,
-                arm.pattern,
-                substituteExpr(arm.body, subs),
-                arm.guard !== undefined
-                    ? substituteExpr(arm.guard, subs)
-                    : undefined,
-            ),
-    );
+    const newArms = expr.arms.map((arm) => {
+        let guard: Expression | undefined;
+        if (arm.guard !== undefined) {
+            guard = substituteExpr(arm.guard, subs);
+        }
+        return new MatchArmNode(
+            arm.span,
+            arm.pattern,
+            substituteExpr(arm.body, subs),
+            guard,
+        );
+    });
     return new MatchExpr(
         expr.span,
         substituteExpr(expr.matchOn, subs),
@@ -249,14 +250,15 @@ function substituteSecondary(
         );
     }
     if (expr instanceof RangeExpr) {
-        return new RangeExpr(
-            expr.span,
-            expr.start !== undefined
-                ? substituteExpr(expr.start, subs)
-                : undefined,
-            expr.end !== undefined ? substituteExpr(expr.end, subs) : undefined,
-            expr.inclusive,
-        );
+        let start: Expression | undefined;
+        if (expr.start !== undefined) {
+            start = substituteExpr(expr.start, subs);
+        }
+        let end: Expression | undefined;
+        if (expr.end !== undefined) {
+            end = substituteExpr(expr.end, subs);
+        }
+        return new RangeExpr(expr.span, start, end, expr.inclusive);
     }
     if (expr instanceof DerefExpr) {
         return new DerefExpr(expr.span, substituteExpr(expr.target, subs));
@@ -278,7 +280,10 @@ function substituteSecondary(
     return undefined;
 }
 
-function substituteExpr(expr: Expression, subs: SubstitutionMap): Expression {
+function substitutePrimary(
+    expr: Expression,
+    subs: SubstitutionMap,
+): Expression | undefined {
     if (expr instanceof LiteralExpr || expr instanceof IdentifierExpr) {
         return expr;
     }
@@ -310,23 +315,31 @@ function substituteExpr(expr: Expression, subs: SubstitutionMap): Expression {
     if (expr instanceof BlockExpr) {
         return substituteBlock(expr, subs);
     }
+    return undefined;
+}
+
+function substituteStructuredExpr(
+    expr: Expression,
+    subs: SubstitutionMap,
+): Expression | undefined {
     if (expr instanceof IfExpr) {
+        let elseBranch: Expression | undefined;
+        if (expr.elseBranch !== undefined) {
+            elseBranch = substituteExpr(expr.elseBranch, subs);
+        }
         return new IfExpr(
             expr.span,
             substituteExpr(expr.condition, subs),
             substituteBlock(expr.thenBranch, subs),
-            expr.elseBranch !== undefined
-                ? substituteExpr(expr.elseBranch, subs)
-                : undefined,
+            elseBranch,
         );
     }
     if (expr instanceof ReturnExpr) {
-        return new ReturnExpr(
-            expr.span,
-            expr.value !== undefined
-                ? substituteExpr(expr.value, subs)
-                : undefined,
-        );
+        let value: Expression | undefined;
+        if (expr.value !== undefined) {
+            value = substituteExpr(expr.value, subs);
+        }
+        return new ReturnExpr(expr.span, value);
     }
     if (expr instanceof RefExpr) {
         return new RefExpr(
@@ -341,12 +354,25 @@ function substituteExpr(expr: Expression, subs: SubstitutionMap): Expression {
     if (expr instanceof MatchExpr) {
         return substituteMatchExpr(expr, subs);
     }
+    return undefined;
+}
+
+function substituteExpr(expr: Expression, subs: SubstitutionMap): Expression {
+    const primary = substitutePrimary(expr, subs);
+    if (primary) {
+        return primary;
+    }
+
+    const structured = substituteStructuredExpr(expr, subs);
+    if (structured) {
+        return structured;
+    }
 
     const controlFlow = substituteControlFlow(expr, subs);
-    if (controlFlow !== undefined) return controlFlow;
+    if (controlFlow) return controlFlow;
 
     const secondary = substituteSecondary(expr, subs);
-    if (secondary !== undefined) return secondary;
+    if (secondary) return secondary;
 
     return expr;
 }
@@ -377,8 +403,10 @@ function substituteStmt(stmt: Statement, subs: SubstitutionMap): Statement {
 
 function substituteBlock(block: BlockExpr, subs: SubstitutionMap): BlockExpr {
     const newStmts = block.stmts.map((s) => substituteStmt(s, subs));
-    const newExpr =
-        block.expr !== undefined ? substituteExpr(block.expr, subs) : undefined;
+    let newExpr: Expression | undefined;
+    if (block.expr !== undefined) {
+        newExpr = substituteExpr(block.expr, subs);
+    }
     return new BlockExpr(block.span, newStmts, newExpr);
 }
 
@@ -400,10 +428,10 @@ export function monomorphizeFn(
     }));
 
     const newReturnType = substituteType(generic.returnType, subs);
-    const newBody =
-        generic.body !== undefined
-            ? substituteBlock(generic.body, subs)
-            : undefined;
+    let newBody: BlockExpr | undefined;
+    if (generic.body !== undefined) {
+        newBody = substituteBlock(generic.body, subs);
+    }
 
     return new FnItem(
         generic.span,
@@ -445,7 +473,7 @@ export function inferTypeArgs(
 ): SubstitutionMap | undefined {
     const subs: SubstitutionMap = new Map();
 
-    if (explicitTypeArgs !== undefined && explicitTypeArgs.length > 0) {
+    if (explicitTypeArgs && explicitTypeArgs.length > 0) {
         for (
             let i = 0;
             i < generic.genericParams.length && i < explicitTypeArgs.length;
@@ -460,7 +488,7 @@ export function inferTypeArgs(
     for (let i = 0; i < params.length && i < argTypes.length; i++) {
         const paramTy = params[i].ty;
         const argTy = argTypes[i];
-        if (argTy === undefined) continue;
+        if (!argTy) continue;
 
         unifyTypes(paramTy, argTy, subs);
     }
@@ -534,7 +562,7 @@ export class MonomorphizationRegistry {
     ): { item: FnItem; isNew: boolean } {
         const name = mangledName(generic.name, subs);
         const existing = this.fnSpecializations.get(name);
-        if (existing !== undefined) {
+        if (existing) {
             return { item: existing, isNew: false };
         }
         const specialized = monomorphizeFn(generic, subs);
@@ -548,7 +576,7 @@ export class MonomorphizationRegistry {
     ): { item: StructItem; isNew: boolean } {
         const name = mangledName(generic.name, subs);
         const existing = this.structSpecializations.get(name);
-        if (existing !== undefined) {
+        if (existing) {
             return { item: existing, isNew: false };
         }
         const specialized = monomorphizeStruct(generic, subs);

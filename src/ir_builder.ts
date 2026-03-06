@@ -1,5 +1,6 @@
 import {
     type BlockId,
+    type EnumType,
     type FcmpOp,
     type IRBlock,
     type IRFunction,
@@ -161,7 +162,7 @@ export class IRBuilder {
         const block = this.currentFunction.blocks.find(
             (candidate) => candidate.id === blockId,
         );
-        if (block === undefined) {
+        if (!block) {
             return [];
         }
         return block.predecessors;
@@ -451,7 +452,7 @@ export class IRBuilder {
         );
     }
 
-    enumCreate(variant: number, data: ValueId | undefined, ty: IRType): IRInst {
+    enumCreate(variant: number, data: ValueId | undefined, ty: EnumType): IRInst {
         return this.appendInstruction(makeEnumCreate(variant, data, ty));
     }
 

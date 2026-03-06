@@ -8,7 +8,7 @@ module main {
     b0 (entry):
       v0: ptr = sconst s0
       v1: i32 = iconst 1
-      v2: i64 = call id_i32(v1)
+      v2: i32 = call id_i32(v1)
       v3: i64 = iconst 1
       call f862609(v0, v3, v2)
       ret

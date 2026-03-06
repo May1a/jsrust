@@ -43,8 +43,8 @@ function mod(src: string) {
 describe("expressions", () => {
     test("binary arithmetic: addition", () => {
         const result = expr("1 + 2");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, BinaryExpr);
         const e = result.value;
         expect(e.op).toBe(BinaryOp.Add);
@@ -54,8 +54,8 @@ describe("expressions", () => {
 
     test("binary arithmetic: multiplication", () => {
         const result = expr("3 * 4");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, BinaryExpr);
         const e = result.value;
         expect(e.op).toBe(BinaryOp.Mul);
@@ -63,8 +63,8 @@ describe("expressions", () => {
 
     test("comparison: less than", () => {
         const result = expr("a < b");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, BinaryExpr);
         const e = result.value;
         expect(e.op).toBe(BinaryOp.Lt);
@@ -72,8 +72,8 @@ describe("expressions", () => {
 
     test("comparison: equal", () => {
         const result = expr("x == 0");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, BinaryExpr);
         const e = result.value;
         expect(e.op).toBe(BinaryOp.Eq);
@@ -81,8 +81,8 @@ describe("expressions", () => {
 
     test("boolean and", () => {
         const result = expr("a && b");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, BinaryExpr);
         const e = result.value;
         expect(e.op).toBe(BinaryOp.And);
@@ -90,8 +90,8 @@ describe("expressions", () => {
 
     test("boolean or", () => {
         const result = expr("a || b");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, BinaryExpr);
         const e = result.value;
         expect(e.op).toBe(BinaryOp.Or);
@@ -100,8 +100,8 @@ describe("expressions", () => {
     test("integer literal", () => {
         const intLiteral = 42;
         const result = expr(intLiteral.toString());
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, LiteralExpr);
         const lit = result.value;
         expect(lit.literalKind).toBe(LiteralKind.Int);
@@ -110,8 +110,8 @@ describe("expressions", () => {
 
     test("string literal", () => {
         const result = expr('"hello"');
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, LiteralExpr);
         const lit = result.value;
         expect(lit.literalKind).toBe(LiteralKind.String);
@@ -120,8 +120,8 @@ describe("expressions", () => {
 
     test("function call", () => {
         const result = expr("foo(1, 2)");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, CallExpr);
         const call = result.value;
         expect(call.args.length).toBe(2);
@@ -129,15 +129,15 @@ describe("expressions", () => {
 
     test("block expression", () => {
         const result = expr("{ 1 + 2 }");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, BlockExpr);
     });
 
     test("if expression", () => {
         const result = expr("if x { 1 } else { 2 }");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, IfExpr);
         const ifExpr = result.value;
         expectInstanceOf(ifExpr.condition, IdentifierExpr);
@@ -146,8 +146,8 @@ describe("expressions", () => {
 
     test("closure", () => {
         const result = expr("|x| x + 1");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, ClosureExpr);
         const closure = result.value;
         expect(closure.params.length).toBe(1);
@@ -157,8 +157,8 @@ describe("expressions", () => {
 describe("statements", () => {
     test("let binding without type annotation", () => {
         const result = stmt("let x = 5;");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, LetStmt);
         const s = result.value;
         // No type annotation: parser inserts an InferredTypeNode
@@ -167,8 +167,8 @@ describe("statements", () => {
 
     test("let binding with type annotation", () => {
         const result = stmt("let x: i32 = 5;");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, LetStmt);
         const s = result.value;
         expectInstanceOf(s.type, NamedTypeNode);
@@ -177,8 +177,8 @@ describe("statements", () => {
 
     test("let mutable binding", () => {
         const result = stmt("let mut count = 0;");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         expectInstanceOf(result.value, LetStmt);
         const s = result.value;
         expectInstanceOf(s.pattern, IdentPattern);
@@ -189,8 +189,8 @@ describe("statements", () => {
 describe("items", () => {
     test("fn with params and return type", () => {
         const result = mod("fn add(a: i32, b: i32) -> i32 { a + b }");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         const { items } = result.value;
         expect(items.length).toBe(1);
         const [firstItem] = items;
@@ -203,8 +203,8 @@ describe("items", () => {
 
     test("fn with no params", () => {
         const result = mod("fn main() {}");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         const [firstItem] = result.value.items;
         expectInstanceOf(firstItem, FnItem);
         const fn = firstItem;
@@ -213,8 +213,8 @@ describe("items", () => {
 
     test("struct with fields", () => {
         const result = mod("struct Point { x: i32, y: i32 }");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         const [firstItem] = result.value.items;
         expectInstanceOf(firstItem, StructItem);
         const s = firstItem;
@@ -225,8 +225,8 @@ describe("items", () => {
     test("enum with variants", () => {
         const enumVariants = 3;
         const result = mod("enum Color { Red, Green, Blue }");
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         const [firstItem] = result.value.items;
         expectInstanceOf(firstItem, EnumItem);
         const e = firstItem;
@@ -238,8 +238,8 @@ describe("items", () => {
         const result = mod(
             "struct Foo {}\nimpl Foo { fn bar(&self) -> i32 { 0 } }",
         );
-        expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
         const implItem = result.value.items.find((i) => i instanceof ImplItem);
         expect(implItem).toBeDefined();
         if (implItem === undefined) return;
@@ -250,21 +250,21 @@ describe("items", () => {
 describe("error cases", () => {
     test("missing closing brace", () => {
         const result = mod("fn foo() {");
-        expect(result.ok).toBe(false);
-        if (result.ok) return;
-        expect(result.errors.length).toBeGreaterThan(0);
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+        expect(result.error.length).toBeGreaterThan(0);
     });
 
     test("invalid expression", () => {
         const result = expr("+ +");
-        expect(result.ok).toBe(false);
+        expect(result.isErr()).toBe(true);
     });
 
     test("malformed let statement", () => {
         const result = stmt("let = 5;");
         // Either a parse error or the identifier will be missing
-        if (!result.ok) {
-            expect(result.errors.length).toBeGreaterThan(0);
+        if (result.isErr()) {
+            expect(result.error.length).toBeGreaterThan(0);
         }
     });
 });

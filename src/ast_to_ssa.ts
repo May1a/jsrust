@@ -17,6 +17,7 @@ import {
     type ForExpr,
     FnTypeNode,
     GenericFnItem,
+    GenericArgsNode,
     GenericStructItem,
     ImplItem,
     IdentPattern,
@@ -35,6 +36,7 @@ import {
     type ModuleNode,
     NamedTypeNode,
     type ParamNode,
+    type PathExpr,
     PtrTypeNode,
     type RangeExpr,
     type RefExpr,
@@ -46,6 +48,7 @@ import {
     type StructExpr,
     TraitImplItem,
     type TypeNode,
+    TupleTypeNode,
     ArrayTypeNode,
     UseItem,
     UnaryExpr,
@@ -64,12 +67,14 @@ import {
 } from "./monomorphize";
 import { Result } from "better-result";
 import { BUILTIN_SYMBOLS } from "./builtin_symbols";
+import { match } from "ts-pattern";
 
 // Type alias for expression visitor to reduce complexity
 type ExpressionVisitor<T> = Pick<
     AstVisitor<T, AstToSsaCtx>,
     | "visitLiteralExpr"
     | "visitIdentifierExpr"
+    | "visitPathExpr"
     | "visitBinaryExpr"
     | "visitUnaryExpr"
     | "visitAssignExpr"
@@ -95,6 +100,7 @@ type ExpressionVisitor<T> = Pick<
 import {
     addIREnum,
     addIRFunction,
+    type EnumType,
     FcmpOp,
     FloatWidth,
     IcmpOp,
@@ -182,6 +188,13 @@ const HASH_FACTOR = 31;
 const HASH_MODULUS = 1_000_000;
 const EMPTY_FORMAT = "";
 
+function qualifyModuleName(modulePrefix: string, name: string): string {
+    if (modulePrefix === "") {
+        return name;
+    }
+    return `${modulePrefix}::${name}`;
+}
+
 // Loop frame access
 const LAST_FRAME_INDEX = -1;
 
@@ -220,6 +233,7 @@ export class AstToSsaCtx {
     readonly irModule: IRModule;
     private readonly locals: Map<string, LocalBinding>;
     private readonly functionIds: Map<string, number>;
+    private readonly functionReturnTypes: Map<string, IRType>;
     private readonly structFieldNames: Map<string, string[]>;
     private readonly enumVariantTags: Map<string, number>;
     private readonly monoRegistry?: MonomorphizationRegistry;
@@ -229,6 +243,7 @@ export class AstToSsaCtx {
     constructor(
         options: {
             irModule?: IRModule;
+            functionReturnTypes?: Map<string, IRType>;
             structFieldNames?: Map<string, string[]>;
             enumVariantTags?: Map<string, number>;
             monoRegistry?: MonomorphizationRegistry;
@@ -238,6 +253,8 @@ export class AstToSsaCtx {
         this.irModule = options.irModule ?? makeIRModule("main");
         this.locals = new Map();
         this.functionIds = new Map();
+        this.functionReturnTypes =
+            options.functionReturnTypes ?? new Map<string, IRType>();
         this.structFieldNames =
             options.structFieldNames ?? new Map<string, string[]>();
         this.enumVariantTags =
@@ -368,6 +385,37 @@ export class AstToSsaCtx {
         return Result.ok(exprResult.value);
     }
 
+    private currentBlockValue(value: ValueId | undefined): ValueId | undefined {
+        if (value === undefined || this.isCurrentBlockTerminated()) {
+            return undefined;
+        }
+        return value;
+    }
+
+    private currentBlockId(): BlockId | undefined {
+        return this.builder.currentBlock?.id;
+    }
+
+    private mergeBlockArgs(
+        value: ValueId | undefined,
+        resultType: IRType | undefined,
+    ): ValueId[] {
+        if (value === undefined || !resultType) {
+            return [];
+        }
+        return [value];
+    }
+
+    private createMergeBlock(
+        name: string,
+        resultType: IRType | undefined,
+    ): BlockId {
+        if (resultType === undefined) {
+            return this.builder.createBlock(name);
+        }
+        return this.builder.createBlock(name, [resultType]);
+    }
+
     private lowerStatement(stmt: Statement): Result<void, LoweringError> {
         if (stmt instanceof LetStmt) {
             return this.lowerLetStatement(stmt);
@@ -397,7 +445,7 @@ export class AstToSsaCtx {
             let ty = AstToSsaCtx.translateTypeNode(stmt.type);
             if (this.isImplicitUnitTypeNode(stmt.type)) {
                 const inferred = this.resolveValueType(initResult.value);
-                if (inferred !== undefined) {
+                if (inferred) {
                     ty = inferred;
                 }
             }
@@ -435,6 +483,7 @@ export class AstToSsaCtx {
             visitLiteralExpr: (expr: LiteralExpr) => this.lowerLiteral(expr),
             visitIdentifierExpr: (expr: IdentifierExpr) =>
                 this.lowerIdentifier(expr),
+            visitPathExpr: (expr: PathExpr) => this.visitPathExpr(expr),
             visitBinaryExpr: (expr: BinaryExpr) => this.lowerBinary(expr),
             visitUnaryExpr: (expr: UnaryExpr) => this.lowerUnary(expr),
             visitAssignExpr: (expr: AssignExpr) => this.lowerAssign(expr),
@@ -486,6 +535,7 @@ export class AstToSsaCtx {
         return {
             visitLiteralExpr: expressionVisitors.visitLiteralExpr,
             visitIdentifierExpr: expressionVisitors.visitIdentifierExpr,
+            visitPathExpr: expressionVisitors.visitPathExpr,
             visitBinaryExpr: expressionVisitors.visitBinaryExpr,
             visitUnaryExpr: expressionVisitors.visitUnaryExpr,
             visitAssignExpr: expressionVisitors.visitAssignExpr,
@@ -575,11 +625,12 @@ export class AstToSsaCtx {
                 return AstToSsaCtx.handleInstructionId(constInst.id);
             }
             case LiteralKind.Char: {
-                const cp =
-                    typeof expr.value === "string"
-                        ? (expr.value.codePointAt(STRING_FIRST_CHAR_INDEX) ??
-                          DEFAULT_CHAR_CODE)
-                        : Number(expr.value);
+                let cp = Number(expr.value);
+                if (typeof expr.value === "string") {
+                    cp =
+                        expr.value.codePointAt(STRING_FIRST_CHAR_INDEX) ??
+                        DEFAULT_CHAR_CODE;
+                }
                 const constInst = this.builder.iconst(cp, IntWidth.U32);
                 return AstToSsaCtx.handleInstructionId(constInst.id);
             }
@@ -597,7 +648,7 @@ export class AstToSsaCtx {
         expr: IdentifierExpr,
     ): Result<ValueId, LoweringError> {
         const binding = this.locals.get(expr.name);
-        if (binding !== undefined) {
+        if (binding) {
             const loadInst = this.builder.load(binding.ptr, binding.ty);
             return AstToSsaCtx.handleInstructionId(loadInst.id);
         }
@@ -618,17 +669,21 @@ export class AstToSsaCtx {
         return AstToSsaCtx.handleInstructionId(constInst.id);
     }
 
-    private resolveEnumTypeForVariant(variantPath: string): IRType {
+    visitPathExpr(expr: PathExpr): Result<ValueId, LoweringError> {
+        return this.lowerIdentifier(expr);
+    }
+
+    private resolveEnumTypeForVariant(variantPath: string): EnumType {
         const colonColon = "::";
         const sepIndex = variantPath.indexOf(colonColon);
         if (sepIndex !== -1) {
             const enumName = variantPath.slice(0, sepIndex);
             const found = this.irModule.enums.get(enumName);
-            if (found !== undefined) {
+            if (found) {
                 return found;
             }
         }
-        return makeIRUnitType();
+        return makeIREnumType("__anon_enum", []);
     }
 
     private lowerAssign(expr: AssignExpr): Result<ValueId, LoweringError> {
@@ -641,7 +696,7 @@ export class AstToSsaCtx {
         }
 
         const binding = this.locals.get(expr.target.name);
-        if (binding === undefined) {
+        if (!binding) {
             return loweringError(
                 LoweringErrorKind.UnknownVariable,
                 `Unknown variable '${expr.target.name}'`,
@@ -1222,7 +1277,7 @@ export class AstToSsaCtx {
         if (expr.callee instanceof IdentifierExpr) {
             // Check if this is a call to a generic function
             const resolvedName = this.resolveGenericCallName(expr);
-            if (resolvedName !== undefined) {
+            if (resolvedName) {
                 return this.lowerResolvedCall(resolvedName, args, retTy);
             }
             return this.lowerIdentifierCall(expr.callee, args, retTy);
@@ -1292,10 +1347,10 @@ export class AstToSsaCtx {
             callee.field,
             receiverType,
         );
-        const defaultReturnType =
-            receiverType instanceof StructType
-                ? receiverType
-                : makeIRIntType(IntWidth.I64);
+        let defaultReturnType: IRType = makeIRIntType(IntWidth.I64);
+        if (receiverType instanceof StructType) {
+            defaultReturnType = receiverType;
+        }
         const returnType = this.resolveNamedCallReturnType(
             qualifiedName,
             defaultReturnType,
@@ -1330,7 +1385,7 @@ export class AstToSsaCtx {
             return receiverValue;
         }
         const binding = this.locals.get(callee.receiver.name);
-        return binding ? binding.ptr : receiverValue;
+        return binding?.ptr ?? receiverValue;
     }
 
     private resolveQualifiedMethodName(
@@ -1341,9 +1396,10 @@ export class AstToSsaCtx {
             return methodName;
         }
         const maybeQualified = `${receiverType.name}::${methodName}`;
-        return this.functionIds.has(maybeQualified)
-            ? maybeQualified
-            : methodName;
+        if (this.functionIds.has(maybeQualified)) {
+            return maybeQualified;
+        }
+        return methodName;
     }
 
     private lowerIdentifierCall(
@@ -1352,17 +1408,17 @@ export class AstToSsaCtx {
         defaultReturnType: IRType,
     ): Result<ValueId, LoweringError> {
         const localBinding = this.locals.get(callee.name);
-        if (localBinding !== undefined) {
+        if (localBinding) {
             const fnIdInst = this.builder.load(
                 localBinding.ptr,
                 localBinding.ty,
             );
-            const returnType =
-                localBinding.typeNode instanceof FnTypeNode
-                    ? AstToSsaCtx.translateTypeNode(
-                          localBinding.typeNode.returnType,
-                      )
-                    : defaultReturnType;
+            let returnType = defaultReturnType;
+            if (localBinding.typeNode instanceof FnTypeNode) {
+                returnType = AstToSsaCtx.translateTypeNode(
+                    localBinding.typeNode.returnType,
+                );
+            }
             const callInst = this.builder.callDyn(
                 fnIdInst.id,
                 args,
@@ -1386,6 +1442,13 @@ export class AstToSsaCtx {
         // Derive the unqualified function name (e.g. "Point::create" → "create").
         const parts = name.split("::");
         const unqualifiedName = parts[parts.length - 1];
+
+        const seededReturnType =
+            this.functionReturnTypes.get(name) ??
+            this.functionReturnTypes.get(unqualifiedName);
+        if (seededReturnType) {
+            return seededReturnType;
+        }
 
         // Look up the return type of the already-lowered function.
         const fn = this.irModule.functions.find(
@@ -1433,10 +1496,11 @@ export class AstToSsaCtx {
             elementValues.push(result.value);
         }
 
-        const elemTy =
-            elementValues.length > 0
-                ? (this.resolveValueType(elementValues[0]) ?? makeIRUnitType())
-                : makeIRUnitType();
+        let elemTy = makeIRUnitType();
+        if (elementValues.length > 0) {
+            elemTy =
+                this.resolveValueType(elementValues[0]) ?? makeIRUnitType();
+        }
 
         const arrayType = makeIRArrayType(elemTy, expr.args.length);
         const arrPtr = this.builder.alloca(arrayType);
@@ -1523,9 +1587,9 @@ export class AstToSsaCtx {
             ).id;
         } else if (
             leftType instanceof IntType ||
-            (leftType !== undefined && leftType.kind === IRTypeKind.Bool) ||
+            (leftType && leftType.kind === IRTypeKind.Bool) ||
             rightType instanceof IntType ||
-            (rightType !== undefined && rightType.kind === IRTypeKind.Bool)
+            (rightType && rightType.kind === IRTypeKind.Bool)
         ) {
             cmpId = this.builder.icmp(
                 IcmpOp.Eq,
@@ -1556,9 +1620,10 @@ export class AstToSsaCtx {
         if (!preparedArgs.isOk()) {
             return preparedArgs;
         }
-        const builtinName = appendNewline
-            ? BUILTIN_SYMBOLS.PRINTLN_FMT
-            : BUILTIN_SYMBOLS.PRINT_FMT;
+        let builtinName: string = BUILTIN_SYMBOLS.PRINT_FMT;
+        if (appendNewline) {
+            builtinName = BUILTIN_SYMBOLS.PRINTLN_FMT;
+        }
         const callInst = this.builder.call(
             this.resolveFunctionId(builtinName),
             preparedArgs.value,
@@ -1661,7 +1726,7 @@ export class AstToSsaCtx {
         }
         if (expr instanceof IdentifierExpr) {
             const local = this.locals.get(expr.name);
-            return local ? local.formatTag : undefined;
+            return local?.formatTag;
         }
         return undefined;
     }
@@ -1839,7 +1904,7 @@ export class AstToSsaCtx {
     ): IRType | undefined {
         let result: IRType | undefined;
         walkAst(body, (node) => {
-            if (result !== undefined) return;
+            if (result) return;
             if (!(node instanceof BinaryExpr)) return;
             const { left, right } = node;
             const leftIsParam =
@@ -2047,7 +2112,17 @@ export class AstToSsaCtx {
             const arm = expr.arms[index];
             if ("literalKind" in arm.pattern && "value" in arm.pattern) {
                 const raw = arm.pattern.value;
-                const value = typeof raw === "number" ? raw : Number(raw);
+                let value = Number(raw);
+                if (typeof raw === "number") {
+                    value = raw;
+                } else if (
+                    arm.pattern.literalKind === LiteralKind.Char &&
+                    typeof raw === "string"
+                ) {
+                    value =
+                        raw.codePointAt(STRING_FIRST_CHAR_INDEX) ??
+                        DEFAULT_CHAR_CODE;
+                }
                 cases.push({ value, target: armBlocks[index], args: [] });
             } else if (arm.pattern instanceof IdentPattern) {
                 const tag = this.enumVariantTags.get(arm.pattern.name);
@@ -2066,19 +2141,17 @@ export class AstToSsaCtx {
             }
         }
 
-        const switchValue = usesEnumPatterns
-            ? this.builder.enumGetTag(scrutinee.value).id
-            : scrutinee.value;
+        const switchValue = match(usesEnumPatterns)
+            .with(true, () => this.builder.enumGetTag(scrutinee.value).id)
+            .otherwise(() => scrutinee.value);
 
-        let defaultBlock: BlockId;
+        let defaultBlock: BlockId | undefined;
         if (defaultArmIndex !== undefined) {
             defaultBlock = armBlocks[defaultArmIndex];
-        } else if (armBlocks.length > 0) {
-            const [firstArmBlock] = armBlocks;
-            defaultBlock = firstArmBlock;
         } else {
-            defaultBlock = this.builder.createBlock("match_default");
+            [defaultBlock] = armBlocks;
         }
+        defaultBlock ??= this.builder.createBlock("match_default");
 
         this.builder.switch(switchValue, cases, defaultBlock, []);
 
@@ -2089,61 +2162,24 @@ export class AstToSsaCtx {
         arms: MatchArmNode[],
         armBlocks: BlockId[],
     ): Result<ValueId, LoweringError> {
-        const armValues: (ValueId | undefined)[] = [];
-
-        for (let index = 0; index < arms.length; index++) {
-            const arm = arms[index];
-            this.builder.switchToBlock(armBlocks[index]);
-            const body = this.lowerExpression(arm.body);
-            if (!body.isOk()) {
-                return body;
-            }
-            armValues.push(
-                this.isCurrentBlockTerminated() ? undefined : body.value,
-            );
+        const armResult = this.lowerMatchArmBodies(arms, armBlocks);
+        if (!armResult.isOk()) {
+            return armResult;
         }
+        const { armExitBlocks, armValues } = armResult.value;
+        const resultType = this.resolveMergeResultType(armValues);
 
-        const allProduceValues = armValues.every((v) => v !== undefined);
-        const [firstArmValue] = armValues;
-        const resultType =
-            allProduceValues && firstArmValue !== undefined
-                ? (this.resolveValueType(firstArmValue) ?? undefined)
-                : undefined;
+        const mergeId = this.createMergeBlock("match_merge", resultType);
 
-        const mergeId =
-            resultType !== undefined
-                ? this.builder.createBlock("match_merge", [resultType])
-                : this.builder.createBlock("match_merge");
-
-        for (let index = 0; index < arms.length; index++) {
-            this.builder.switchToBlock(armBlocks[index]);
-            if (!this.isCurrentBlockTerminated()) {
-                const armValue = armValues[index];
-                this.builder.br(
-                    mergeId,
-                    armValue !== undefined && resultType !== undefined
-                        ? [armValue]
-                        : [],
-                );
-            }
-        }
+        this.connectMergePredecessors(
+            armExitBlocks,
+            armValues,
+            mergeId,
+            resultType,
+        );
 
         this.builder.switchToBlock(mergeId);
-
-        if (resultType !== undefined) {
-            const currentFn = this.builder.currentFunction;
-            if (currentFn !== undefined) {
-                const mergeBlock = currentFn.blocks.find(
-                    (b) => b.id === mergeId,
-                );
-                if (mergeBlock !== undefined) {
-                    const [param] = mergeBlock.params;
-                    return Result.ok(param.id);
-                }
-            }
-        }
-
-        return Result.ok(this.unitValue());
+        return Result.ok(this.mergeBlockResultValue(mergeId) ?? this.unitValue());
     }
 
     private lowerIf(expr: IfExpr): Result<ValueId, LoweringError> {
@@ -2160,76 +2196,89 @@ export class AstToSsaCtx {
         if (!thenResult.isOk()) {
             return thenResult;
         }
-        const thenValue = this.isCurrentBlockTerminated()
-            ? undefined
-            : thenResult.value;
+        const thenValue = this.currentBlockValue(thenResult.value);
+        const thenExitId = this.currentBlockId();
 
         this.builder.switchToBlock(elseId);
         let elseValue: ValueId | undefined;
+        let elseExitId: BlockId | undefined = elseId;
         if (expr.elseBranch) {
             const elseResult = this.lowerExpression(expr.elseBranch);
             if (!elseResult.isOk()) return elseResult;
-            elseValue = this.isCurrentBlockTerminated()
-                ? undefined
-                : elseResult.value;
+            elseValue = this.currentBlockValue(elseResult.value);
+            elseExitId = this.currentBlockId();
         }
 
-        return this.terminateIfBranches(thenId, thenValue, elseId, elseValue);
+        return this.terminateIfBranches(
+            thenExitId,
+            thenValue,
+            elseExitId,
+            elseValue,
+        );
     }
 
     private terminateIfBranches(
-        thenId: BlockId,
+        thenId: BlockId | undefined,
         thenValue: ValueId | undefined,
-        elseId: BlockId,
+        elseId: BlockId | undefined,
         elseValue: ValueId | undefined,
     ): Result<ValueId, LoweringError> {
-        const bothProduceValue =
-            thenValue !== undefined && elseValue !== undefined;
-        const resultType = bothProduceValue
-            ? (this.resolveValueType(thenValue) ?? undefined)
-            : undefined;
+        // A merge only carries a value when every reachable predecessor supplies one.
+        let hasValuelessReachableBranch = false;
+        const reachableValues: ValueId[] = [];
 
-        const mergeId =
-            resultType !== undefined
-                ? this.builder.createBlock("if_merge", [resultType])
-                : this.builder.createBlock("if_merge");
-
-        this.builder.switchToBlock(thenId);
-        if (!this.isCurrentBlockTerminated()) {
-            this.builder.br(
-                mergeId,
-                thenValue !== undefined && resultType !== undefined
-                    ? [thenValue]
-                    : [],
-            );
-        }
-
-        this.builder.switchToBlock(elseId);
-        if (!this.isCurrentBlockTerminated()) {
-            this.builder.br(
-                mergeId,
-                elseValue !== undefined && resultType !== undefined
-                    ? [elseValue]
-                    : [],
-            );
-        }
-
-        this.builder.switchToBlock(mergeId);
-
-        if (resultType !== undefined) {
-            const currentFn = this.builder.currentFunction;
-            if (currentFn !== undefined) {
-                const mergeBlock = currentFn.blocks.find(
-                    (b) => b.id === mergeId,
-                );
-                if (mergeBlock !== undefined) {
-                    const [param] = mergeBlock.params;
-                    return Result.ok(param.id);
+        if (thenId !== undefined) {
+            this.builder.switchToBlock(thenId);
+            if (!this.isCurrentBlockTerminated()) {
+                if (thenValue === undefined) {
+                    hasValuelessReachableBranch = true;
+                } else {
+                    reachableValues.push(thenValue);
                 }
             }
         }
 
-        return Result.ok(this.unitValue());
+        if (elseId !== undefined) {
+            this.builder.switchToBlock(elseId);
+            if (!this.isCurrentBlockTerminated()) {
+                if (elseValue === undefined) {
+                    hasValuelessReachableBranch = true;
+                } else {
+                    reachableValues.push(elseValue);
+                }
+            }
+        }
+
+        let resultType: IRType | undefined;
+        if (!hasValuelessReachableBranch && reachableValues.length > 0) {
+            resultType = this.resolveValueType(reachableValues[0]);
+        }
+
+        const mergeId = this.createMergeBlock("if_merge", resultType);
+
+        if (thenId !== undefined) {
+            this.builder.switchToBlock(thenId);
+            if (!this.isCurrentBlockTerminated()) {
+                this.builder.br(
+                    mergeId,
+                    this.mergeBlockArgs(thenValue, resultType),
+                );
+            }
+        }
+
+        if (elseId !== undefined) {
+            this.builder.switchToBlock(elseId);
+            if (!this.isCurrentBlockTerminated()) {
+                this.builder.br(
+                    mergeId,
+                    this.mergeBlockArgs(elseValue, resultType),
+                );
+            }
+        }
+
+        this.builder.switchToBlock(mergeId);
+
+        return Result.ok(this.mergeBlockResultValue(mergeId) ?? this.unitValue());
     }
 
     private lowerReturn(expr: ReturnExpr): Result<ValueId, LoweringError> {
@@ -2330,7 +2379,7 @@ export class AstToSsaCtx {
     static translateTypeNode(typeNode: TypeNode): IRType {
         if (typeNode instanceof NamedTypeNode) {
             const builtin = AstToSsaCtx.namedBuiltin(typeNode.name);
-            if (builtin !== undefined) {
+            if (builtin) {
                 return AstToSsaCtx.builtinToIrType(builtin);
             }
             return makeIRStructType(typeNode.name, []);
@@ -2656,6 +2705,84 @@ export class AstToSsaCtx {
         return block.terminator !== undefined;
     }
 
+    private lowerMatchArmBodies(
+        arms: MatchArmNode[],
+        armBlocks: BlockId[],
+    ): Result<
+        {
+            armExitBlocks: (BlockId | undefined)[];
+            armValues: (ValueId | undefined)[];
+        },
+        LoweringError
+    > {
+        const armExitBlocks: (BlockId | undefined)[] = [];
+        const armValues: (ValueId | undefined)[] = [];
+
+        for (let index = 0; index < arms.length; index++) {
+            const arm = arms[index];
+            this.builder.switchToBlock(armBlocks[index]);
+            const body = this.lowerExpression(arm.body);
+            if (!body.isOk()) {
+                return body;
+            }
+            armValues.push(this.currentBlockValue(body.value));
+            armExitBlocks.push(this.currentBlockId());
+        }
+
+        return Result.ok({ armExitBlocks, armValues });
+    }
+
+    private resolveMergeResultType(
+        values: (ValueId | undefined)[],
+    ): IRType | undefined {
+        const firstValue = values.find(
+            (value): value is ValueId => value !== undefined,
+        );
+
+        if (firstValue === undefined) {
+            return undefined;
+        }
+
+        return this.resolveValueType(firstValue);
+    }
+
+    private connectMergePredecessors(
+        exitBlockIds: (BlockId | undefined)[],
+        values: (ValueId | undefined)[],
+        mergeId: BlockId,
+        resultType: IRType | undefined,
+    ): void {
+        for (let index = 0; index < exitBlockIds.length; index++) {
+            const exitBlockId = exitBlockIds[index];
+            if (exitBlockId === undefined) {
+                continue;
+            }
+            this.builder.switchToBlock(exitBlockId);
+            if (!this.isCurrentBlockTerminated()) {
+                const value = values[index];
+                this.builder.br(
+                    mergeId,
+                    this.mergeBlockArgs(value, resultType),
+                );
+            }
+        }
+    }
+
+    private mergeBlockResultValue(mergeId: BlockId): ValueId | undefined {
+        const currentFn = this.builder.currentFunction;
+        if (!currentFn) {
+            return undefined;
+        }
+
+        const mergeBlock = currentFn.blocks.find((block) => block.id === mergeId);
+        if (!mergeBlock) {
+            return undefined;
+        }
+
+        const [param] = mergeBlock.params;
+        return param.id;
+    }
+
     private isImplicitUnitTypeNode(typeNode: TypeNode): boolean {
         return (
             typeNode instanceof InferredTypeNode ||
@@ -2745,7 +2872,7 @@ function seedStructMetadataForItems(
     modulePrefix: string,
 ): void {
     const qualify = (name: string): string =>
-        modulePrefix ? `${modulePrefix}::${name}` : name;
+        qualifyModuleName(modulePrefix, name);
 
     const registerStruct = (
         name: string,
@@ -2827,13 +2954,23 @@ function collectFunctionIds(moduleNode: ModuleNode): Map<string, number> {
     return fnIdMap;
 }
 
+function collectFunctionReturnTypes(
+    moduleNode: ModuleNode,
+): Map<string, IRType> {
+    const returnTypes = new Map<string, IRType>();
+    for (const item of moduleNode.items) {
+        collectItemReturnTypes(item, returnTypes);
+    }
+    return returnTypes;
+}
+
 function collectItemFunctionIds(
     item: ModuleNode["items"][number],
     fnIdMap: Map<string, number>,
     modulePrefix = "",
 ): void {
     const qualify = (name: string): string =>
-        modulePrefix ? `${modulePrefix}::${name}` : name;
+        qualifyModuleName(modulePrefix, name);
 
     if (item instanceof GenericFnItem) {
         // Generic functions are templates — skip lowering, but register the id
@@ -2881,6 +3018,50 @@ function collectItemFunctionIds(
     }
 }
 
+function collectItemReturnTypes(
+    item: ModuleNode["items"][number],
+    returnTypes: Map<string, IRType>,
+    modulePrefix = "",
+): void {
+    const qualify = (name: string): string =>
+        qualifyModuleName(modulePrefix, name);
+
+    if (item instanceof GenericFnItem || item instanceof GenericStructItem) {
+        return;
+    }
+    if (item instanceof FnItem && item.body) {
+        const returnType = AstToSsaCtx.translateTypeNode(item.returnType);
+        returnTypes.set(item.name, returnType);
+        if (modulePrefix) {
+            returnTypes.set(qualify(item.name), returnType);
+        }
+        return;
+    }
+    if (item instanceof ImplItem) {
+        collectImplReturnTypes(item, returnTypes, modulePrefix);
+        return;
+    }
+    if (item instanceof TraitImplItem) {
+        const targetName = item.target.name;
+        for (const method of item.fnImpls) {
+            if (!method.body) {
+                continue;
+            }
+            const returnType = AstToSsaCtx.translateTypeNode(
+                resolveSelfInTypeNode(method.returnType, targetName),
+            );
+            returnTypes.set(method.name, returnType);
+            returnTypes.set(`${targetName}::${method.name}`, returnType);
+        }
+        return;
+    }
+    if (item instanceof ModItem) {
+        for (const modItem of item.items) {
+            collectItemReturnTypes(modItem, returnTypes, qualify(item.name));
+        }
+    }
+}
+
 function collectImplFunctionIds(
     item: ImplItem,
     fnIdMap: Map<string, number>,
@@ -2888,7 +3069,7 @@ function collectImplFunctionIds(
 ): void {
     const implTarget = item.target.name;
     const qualify = (name: string): string =>
-        modulePrefix ? `${modulePrefix}::${name}` : name;
+        qualifyModuleName(modulePrefix, name);
     const qImplTarget = qualify(implTarget);
     for (const method of item.methods) {
         fnIdMap.set(method.name, hashName(method.name));
@@ -2902,9 +3083,90 @@ function collectImplFunctionIds(
     }
 }
 
+function resolveSelfInTypeNode(ty: TypeNode, selfName: string): TypeNode {
+    if (ty instanceof NamedTypeNode) {
+        let args: GenericArgsNode | undefined;
+        if (ty.args) {
+            args = new GenericArgsNode(
+                ty.args.span,
+                ty.args.args.map((arg) => resolveSelfInTypeNode(arg, selfName)),
+            );
+        }
+        if (ty.name === "Self") {
+            return new NamedTypeNode(ty.span, selfName, args);
+        }
+        if (args) {
+            return new NamedTypeNode(ty.span, ty.name, args);
+        }
+        return ty;
+    }
+    if (ty instanceof TupleTypeNode) {
+        return new TupleTypeNode(
+            ty.span,
+            ty.elements.map((element) =>
+                resolveSelfInTypeNode(element, selfName),
+            ),
+        );
+    }
+    if (ty instanceof ArrayTypeNode) {
+        return new ArrayTypeNode(
+            ty.span,
+            resolveSelfInTypeNode(ty.element, selfName),
+            ty.length,
+        );
+    }
+    if (ty instanceof RefTypeNode) {
+        return new RefTypeNode(
+            ty.span,
+            ty.mutability,
+            resolveSelfInTypeNode(ty.inner, selfName),
+        );
+    }
+    if (ty instanceof PtrTypeNode) {
+        return new PtrTypeNode(
+            ty.span,
+            ty.mutability,
+            resolveSelfInTypeNode(ty.inner, selfName),
+        );
+    }
+    if (ty instanceof FnTypeNode) {
+        return new FnTypeNode(
+            ty.span,
+            ty.params.map((param) => resolveSelfInTypeNode(param, selfName)),
+            resolveSelfInTypeNode(ty.returnType, selfName),
+        );
+    }
+    return ty;
+}
+
+function collectImplReturnTypes(
+    item: ImplItem,
+    returnTypes: Map<string, IRType>,
+    modulePrefix = "",
+): void {
+    const implTarget = item.target.name;
+    const qualify = (name: string): string =>
+        qualifyModuleName(modulePrefix, name);
+    const qImplTarget = qualify(implTarget);
+    for (const method of item.methods) {
+        if (!method.body) {
+            continue;
+        }
+        const returnType = AstToSsaCtx.translateTypeNode(
+            resolveSelfInTypeNode(method.returnType, implTarget),
+        );
+        returnTypes.set(method.name, returnType);
+        returnTypes.set(`${implTarget}::${method.name}`, returnType);
+        if (qImplTarget !== implTarget) {
+            returnTypes.set(`${qImplTarget}::${method.name}`, returnType);
+        }
+    }
+}
+
 function lowerOwnedFunction(
     fnItem: FnItem,
     irModule: IRModule,
+    functionReturnTypes: Map<string, IRType>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
     fnIdMap: Map<string, number>,
@@ -2912,6 +3174,7 @@ function lowerOwnedFunction(
 ): void {
     const ctx = new AstToSsaCtx({
         irModule,
+        functionReturnTypes,
         structFieldNames,
         enumVariantTags,
         monoRegistry,
@@ -2983,17 +3246,22 @@ function rewriteSelfInMethod(method: FnItem, implTarget: string): FnItem {
                 p.receiverKind === ReceiverKind.ref ||
                 p.receiverKind === ReceiverKind.refMut
             ) {
-                const mut =
-                    p.receiverKind === ReceiverKind.refMut
-                        ? Mutability.Mutable
-                        : Mutability.Immutable;
+                let mut = Mutability.Immutable;
+                if (p.receiverKind === ReceiverKind.refMut) {
+                    mut = Mutability.Mutable;
+                }
                 ty = new RefTypeNode(p.span, mut, ty);
             }
+        }
+        const { name: originalName } = p;
+        let name = originalName;
+        if (p.isReceiver) {
+            name = "self";
         }
         return {
             ...p,
             // Normalize receiver name: parser produces "Self" (capital) but the body uses "self".
-            name: p.isReceiver ? "self" : p.name,
+            name,
             ty,
         };
     });
@@ -3014,6 +3282,7 @@ function rewriteSelfInMethod(method: FnItem, implTarget: string): FnItem {
 function lowerImplMethods(
     item: ImplItem,
     irModule: IRModule,
+    functionReturnTypes: Map<string, IRType>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
     fnIdMap: Map<string, number>,
@@ -3031,6 +3300,7 @@ function lowerImplMethods(
         lowerOwnedFunction(
             rewriteSelfInMethod(method, implTarget),
             irModule,
+            functionReturnTypes,
             structFieldNames,
             enumVariantTags,
             fnIdMap,
@@ -3042,6 +3312,7 @@ function lowerImplMethods(
 function lowerModuleItem(
     item: ModuleNode["items"][number],
     irModule: IRModule,
+    functionReturnTypes: Map<string, IRType>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
     fnIdMap: Map<string, number>,
@@ -3054,6 +3325,7 @@ function lowerModuleItem(
         lowerOwnedFunction(
             item,
             irModule,
+            functionReturnTypes,
             structFieldNames,
             enumVariantTags,
             fnIdMap,
@@ -3065,6 +3337,7 @@ function lowerModuleItem(
         lowerImplMethods(
             item,
             irModule,
+            functionReturnTypes,
             structFieldNames,
             enumVariantTags,
             fnIdMap,
@@ -3073,14 +3346,17 @@ function lowerModuleItem(
         return;
     }
     if (item instanceof TraitImplItem) {
-        const implTarget =
-            item.target instanceof NamedTypeNode ? item.target.name : "Self";
+        let implTarget = "Self";
+        if (item.target instanceof NamedTypeNode) {
+            implTarget = item.target.name;
+        }
         for (const method of item.fnImpls) {
             if (!method.body) continue;
             ensureImplStructMetadata(irModule, structFieldNames, implTarget);
             lowerOwnedFunction(
                 rewriteSelfInMethod(method, implTarget),
                 irModule,
+                functionReturnTypes,
                 structFieldNames,
                 enumVariantTags,
                 fnIdMap,
@@ -3094,6 +3370,7 @@ function lowerModuleItem(
             lowerModuleItem(
                 modItem,
                 irModule,
+                functionReturnTypes,
                 structFieldNames,
                 enumVariantTags,
                 fnIdMap,
@@ -3117,8 +3394,13 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
 
     // Register specialization function IDs
     const fnIdMap = collectFunctionIds(moduleNode);
+    const functionReturnTypes = collectFunctionReturnTypes(moduleNode);
     for (const spec of specializations) {
         fnIdMap.set(spec.name, hashName(spec.name));
+        functionReturnTypes.set(
+            spec.name,
+            AstToSsaCtx.translateTypeNode(spec.returnType),
+        );
     }
 
     // Lower regular items (pass registry so calls to generics get rewritten)
@@ -3126,6 +3408,7 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
         lowerModuleItem(
             item,
             irModule,
+            functionReturnTypes,
             structFieldNames,
             enumVariantTags,
             fnIdMap,
@@ -3138,6 +3421,7 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
         lowerOwnedFunction(
             spec,
             irModule,
+            functionReturnTypes,
             structFieldNames,
             enumVariantTags,
             fnIdMap,

@@ -530,7 +530,7 @@ export class IRSerializer {
         for (const global of module.globals) {
             size += U32_BYTE_WIDTH; // Name string id
             size += this.calculateTypeSize(global.ty);
-            if (global.init) {
+            if (global.init !== undefined) {
                 size += BYTE_WIDTH; // Has_init = 1
                 size += this.calculateConstantSize(global.init);
             } else {
@@ -930,7 +930,11 @@ export class IRSerializer {
             }
         } else if (ty.kind === IRTypeKind.Bool) {
             if (typeof value === "boolean") {
-                this.writeU8(value ? 1 : 0);
+                let encoded = 0;
+                if (value) {
+                    encoded = 1;
+                }
+                this.writeU8(encoded);
             }
         }
     }
@@ -1021,7 +1025,11 @@ export class IRSerializer {
                 this.writeF64(i.value);
             },
             visitBconstInst: (i: BconstInst): void => {
-                this.writeU8(i.value ? 1 : 0);
+                let encoded = 0;
+                if (i.value) {
+                    encoded = 1;
+                }
+                this.writeU8(encoded);
             },
             visitNullInst(): void {
                 // No additional data
@@ -1207,7 +1215,7 @@ export class IRSerializer {
 
     private requireValueType(valueId: ValueId): IRType {
         const valueType = this.currentValueTypes.get(valueId);
-        if (valueType !== undefined) {
+        if (valueType) {
             return valueType;
         }
         throw new Error(`Missing value type for operand v${String(valueId)}`);
