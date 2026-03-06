@@ -45,6 +45,9 @@ import {
     TraitImplItem,
     TraitItem,
     ArrayTypeNode,
+    FnTypeNode,
+    GenericArgsNode,
+    PtrTypeNode,
     TupleTypeNode,
     type TypeNode,
     UnaryExpr,
@@ -787,6 +790,13 @@ function substituteTypeNode(
     if (ty instanceof NamedTypeNode) {
         const replacement = subs.get(ty.name);
         if (replacement) return replacement;
+        if (ty.args) {
+            const newArgs = new GenericArgsNode(
+                ty.args.span,
+                ty.args.args.map((a) => substituteTypeNode(a, subs)),
+            );
+            return new NamedTypeNode(ty.span, ty.name, newArgs);
+        }
         return ty;
     }
     if (ty instanceof RefTypeNode) {
@@ -800,6 +810,27 @@ function substituteTypeNode(
         return new TupleTypeNode(
             ty.span,
             ty.elements.map((el) => substituteTypeNode(el, subs)),
+        );
+    }
+    if (ty instanceof ArrayTypeNode) {
+        return new ArrayTypeNode(
+            ty.span,
+            substituteTypeNode(ty.element, subs),
+            ty.length,
+        );
+    }
+    if (ty instanceof PtrTypeNode) {
+        return new PtrTypeNode(
+            ty.span,
+            ty.mutability,
+            substituteTypeNode(ty.inner, subs),
+        );
+    }
+    if (ty instanceof FnTypeNode) {
+        return new FnTypeNode(
+            ty.span,
+            ty.params.map((p) => substituteTypeNode(p, subs)),
+            substituteTypeNode(ty.returnType, subs),
         );
     }
     return ty;
@@ -1043,12 +1074,15 @@ function inferLetStmt(
 
 /**
  * Resolve `Self` to the concrete impl target type, if known.
+ * Recursively descends into nested type positions (references, generics, etc.)
+ * so that types like `&Self` or `Vec<Self>` are fully resolved.
  */
 function resolveSelf(ty: TypeNode, selfTypeName: string | undefined): TypeNode {
-    if (selfTypeName && ty instanceof NamedTypeNode && ty.name === "Self") {
-        return new NamedTypeNode(ty.span, selfTypeName);
-    }
-    return ty;
+    if (!selfTypeName) return ty;
+    const subs = new Map<string, TypeNode>([
+        ["Self", new NamedTypeNode(ty.span, selfTypeName)],
+    ]);
+    return substituteTypeNode(ty, subs);
 }
 
 function inferFnBody(
@@ -1069,7 +1103,10 @@ function inferFnBody(
         if (param.isReceiver) {
             bindName = "self";
         }
-        typeCtx.setVariable(bindName, param.ty);
+        // Resolve `Self` to the concrete impl target type for all params, so that
+        // lookups like `self.foo()` and arguments typed `&Self` are handled correctly.
+        const ty = resolveSelf(param.ty, selfTypeName);
+        typeCtx.setVariable(bindName, ty);
     }
 
     // Infer body statements

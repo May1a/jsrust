@@ -96,6 +96,7 @@ type ExpressionVisitor<T> = Pick<
 import {
     addIREnum,
     addIRFunction,
+    type EnumType,
     FcmpOp,
     FloatWidth,
     IcmpOp,
@@ -662,7 +663,7 @@ export class AstToSsaCtx {
         return AstToSsaCtx.handleInstructionId(constInst.id);
     }
 
-    private resolveEnumTypeForVariant(variantPath: string): IRType {
+    private resolveEnumTypeForVariant(variantPath: string): EnumType {
         const colonColon = "::";
         const sepIndex = variantPath.indexOf(colonColon);
         if (sepIndex !== -1) {
@@ -672,7 +673,7 @@ export class AstToSsaCtx {
                 return found;
             }
         }
-        return makeIRUnitType();
+        return makeIREnumType("__anon_enum", []);
     }
 
     private lowerAssign(expr: AssignExpr): Result<ValueId, LoweringError> {
@@ -2205,11 +2206,19 @@ export class AstToSsaCtx {
         elseId: BlockId | undefined,
         elseValue: ValueId | undefined,
     ): Result<ValueId, LoweringError> {
-        const bothProduceValue =
-            thenValue !== undefined && elseValue !== undefined;
+        // Determine resultType from branches that will actually reach the merge block.
         let resultType: IRType | undefined;
-        if (bothProduceValue) {
-            resultType = this.resolveValueType(thenValue);
+        if (thenId !== undefined) {
+            this.builder.switchToBlock(thenId);
+            if (!this.isCurrentBlockTerminated() && thenValue !== undefined) {
+                resultType = this.resolveValueType(thenValue);
+            }
+        }
+        if (resultType === undefined && elseId !== undefined) {
+            this.builder.switchToBlock(elseId);
+            if (!this.isCurrentBlockTerminated() && elseValue !== undefined) {
+                resultType = this.resolveValueType(elseValue);
+            }
         }
 
         const mergeId = this.createMergeBlock("if_merge", resultType);
@@ -2693,10 +2702,11 @@ export class AstToSsaCtx {
     private resolveMergeResultType(
         values: (ValueId | undefined)[],
     ): IRType | undefined {
-        const allProduceValues = values.every((value) => value !== undefined);
-        const [firstValue] = values;
+        const firstValue = values.find(
+            (value): value is ValueId => value !== undefined,
+        );
 
-        if (!allProduceValues || firstValue === undefined) {
+        if (firstValue === undefined) {
             return undefined;
         }
 

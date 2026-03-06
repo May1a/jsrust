@@ -476,7 +476,7 @@ function renderSnippet(
     const displayEnd = Math.min(ctx.lineCount, endLine + contextLines);
     for (let lineNum = displayStart; lineNum <= displayEnd; lineNum++) {
         const line = ctx.getLine(lineNum);
-        if (!line) continue;
+        if (line === undefined) continue;
         const lineNumStr = String(lineNum).padStart(width);
         const gutter = `${dim}${lineNumStr} |${reset}`;
         if (lineNum >= startLine && lineNum <= endLine) {

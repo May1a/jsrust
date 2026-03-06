@@ -285,7 +285,18 @@ function parseCompileArgs(
             options.outputFile = args[i];
         } else if (arg === "-h" || arg === "--help") {
             printCompileHelp(0);
-        } else if (!arg.startsWith("-")) {
+        } else if (arg.startsWith("-")) {
+            return Result.err(
+                new CliArgError({ message: `unknown flag: ${arg}` }),
+            );
+        } else {
+            if (inputFile !== undefined) {
+                return Result.err(
+                    new CliArgError({
+                        message: `extra positional argument: ${arg}`,
+                    }),
+                );
+            }
             inputFile = arg;
         }
     }

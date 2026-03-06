@@ -197,9 +197,10 @@ const COMPARISON_PRECEDENCE = 5;
 const BIT_OR_PRECEDENCE = 6;
 const BIT_XOR_PRECEDENCE = 7;
 const BIT_AND_PRECEDENCE = 8;
-const ADDITIVE_PRECEDENCE = 9;
-const MULTIPLICATIVE_PRECEDENCE = 10;
-const POSTFIX_PRECEDENCE = 11;
+const SHIFT_PRECEDENCE = 9;
+const ADDITIVE_PRECEDENCE = 10;
+const MULTIPLICATIVE_PRECEDENCE = 11;
+const POSTFIX_PRECEDENCE = 12;
 const UNIT_LITERAL_VALUE = 0;
 const ERROR_LITERAL_VALUE = 0;
 
@@ -849,11 +850,21 @@ class Parser {
             };
         }
 
-        this.eat(TokenType.Mut);
+        const isMut = this.eat(TokenType.Mut) !== undefined;
 
         let name: string;
         if (this.check(TokenType.Identifier) || this.check(TokenType.Self)) {
-            name = this.advance().value;
+            const tok = this.advance();
+            name = tok.value;
+            if (isMut && tok.type === TokenType.Self) {
+                return {
+                    span: this.spanFrom(paramStart),
+                    isReceiver: true,
+                    receiverKind: ReceiverKind.value,
+                    name: "Self",
+                    ty: new NamedTypeNode(this.spanFrom(paramStart), "Self"),
+                };
+            }
         } else {
             return undefined;
         }
@@ -2004,13 +2015,13 @@ class Parser {
         }
         if (tok === TokenType.Lt) {
             if (this.peekAt(1).type === TokenType.Lt) {
-                return ADDITIVE_PRECEDENCE;
+                return SHIFT_PRECEDENCE;
             }
             return COMPARISON_PRECEDENCE;
         }
         if (tok === TokenType.Gt) {
             if (this.peekAt(1).type === TokenType.Gt) {
-                return ADDITIVE_PRECEDENCE;
+                return SHIFT_PRECEDENCE;
             }
             return COMPARISON_PRECEDENCE;
         }

@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Result, TaggedError } from "better-result";
+import { match } from "ts-pattern";
 
 const REPO_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const BACKEND_DIR = path.join(REPO_ROOT, "backend");
@@ -359,10 +360,7 @@ function emptyBytes(): Uint8Array {
 }
 
 function booleanFlag(value: boolean | undefined): number {
-    if (value === true) {
-        return 1;
-    }
-    return 0;
+    return match(value).with(true, () => 1).otherwise(() => 0);
 }
 
 function getNumberExport(

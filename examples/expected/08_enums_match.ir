@@ -11,11 +11,11 @@ module main {
 
   fn f949693 test_example() -> () {
     b0 (entry):
-      v0: enum __anon_enum      = enum_create __anon_enum tag=1
-      v1: ptr<enum __anon_enum> = alloca enum __anon_enum
+      v0: enum Color      = enum_create Color tag=1
+      v1: ptr<enum Color> = alloca enum Color
       store v0 -> v1
-      v3: enum __anon_enum      = load v1
-      v4: usize                 = enum_get_tag v3
+      v3: enum Color      = load v1
+      v4: usize           = enum_get_tag v3
       switch v4 [ 0 => b1, 1 => b2, 2 => b3 ] default: b1
   
     b1 (match_arm_0):

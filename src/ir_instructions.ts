@@ -51,6 +51,7 @@ import {
     type FcmpOp,
     type FnType,
     type IcmpOp,
+    type EnumType,
     type IRInst,
     type IRType,
     StructType,
@@ -307,9 +308,8 @@ export function makeStructGet(
 export function makeEnumCreate(
     variant: number,
     data: number | undefined,
-    _type: IRType,
+    enumType: EnumType,
 ): IRInst {
-    const enumType = unknownEnumType();
     return new EnumCreateInst(freshValueId(), variant, data, enumType);
 }
 

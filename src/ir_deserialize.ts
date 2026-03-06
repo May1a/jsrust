@@ -1040,10 +1040,14 @@ class IRDeserializer {
             indices.push(this.readU32());
         }
         // ty is PtrType(resultType) from the instruction header; no extra type in stream
-        let resultType = ty;
-        if (ty instanceof PtrType) {
-            resultType = ty.inner;
+        if (!(ty instanceof PtrType)) {
+            return Result.err({
+                kind: DeserializeErrorKind.InvalidTypeTag,
+                message: `GEP instruction expected pointer header type, got unexpected type`,
+                pos: this.pos,
+            });
         }
+        const resultType = ty.inner;
         return Result.ok(new GepInst(id, ptr, indices, resultType));
     }
 
