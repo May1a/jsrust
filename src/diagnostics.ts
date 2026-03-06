@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { Span } from "./ast";
+import { match } from "ts-pattern";
 
 // ============================================================================
 // Task 13.1: Source Location
@@ -151,7 +152,7 @@ function withRelated(
     span: SourceSpan,
     message: string,
 ): Diagnostic {
-    const related = diag.related === undefined ? [] : [...diag.related];
+    const related = [...(diag.related ?? [])];
     related.push({ span, message });
     return {
         level: diag.level,
@@ -364,11 +365,17 @@ const BOLD = "\x1b[1m";
 const DIM = "\x1b[2m";
 const BLUE = "\x1b[34m";
 
+function ansi(enabled: boolean | undefined, code: string | undefined): string {
+    return match(enabled)
+        .with(true, () => code ?? "")
+        .otherwise(() => "");
+}
+
 function renderHeader(diag: Diagnostic, color: boolean | undefined): string {
-    const levelName = LEVEL_NAMES[diag.level] || "unknown";
-    const levelColor = color ? LEVEL_COLORS[diag.level] || "" : "";
-    const reset = color ? RESET : "";
-    const bold = color ? BOLD : "";
+    const levelName = LEVEL_NAMES[diag.level] ?? "unknown";
+    const levelColor = ansi(color, LEVEL_COLORS[diag.level]);
+    const reset = ansi(color, RESET);
+    const bold = ansi(color, BOLD);
 
     let header = `${levelColor}${bold}${levelName}${reset}`;
     if (diag.code) {
@@ -398,8 +405,8 @@ function renderRelated(
     if (diag.related && diag.related.length > 0) {
         for (const rel of diag.related) {
             lines.push("");
-            const noteColor = color ? LEVEL_COLORS[Level.Note] || "" : "";
-            const reset = color ? RESET : "";
+            const noteColor = ansi(color, LEVEL_COLORS[Level.Note]);
+            const reset = ansi(color, RESET);
             lines.push(`  ${noteColor}note${reset}: ${rel.message}`);
             if (rel.span.start.file) {
                 lines.push(
@@ -439,8 +446,8 @@ function renderDiagnostic(
     }
     // Hint
     if (diag.hint) {
-        const helpColor = color ? LEVEL_COLORS[Level.Help] || "" : "";
-        const reset = color ? RESET : "";
+        const helpColor = ansi(color, LEVEL_COLORS[Level.Help]);
+        const reset = ansi(color, RESET);
         lines.push(`  ${helpColor}hint${reset}: ${diag.hint}`);
     }
 
@@ -459,8 +466,8 @@ function renderSnippet(
 ): string {
     const lines = [];
     const width = ctx.lineNumberWidth;
-    const reset = color ? RESET : "";
-    const dim = color ? DIM : "";
+    const reset = ansi(color, RESET);
+    const dim = ansi(color, DIM);
     const startLine = span.start.line;
     const endLine = span.end.line;
     // Calculate display range (show context around the span)
@@ -469,7 +476,7 @@ function renderSnippet(
     const displayEnd = Math.min(ctx.lineCount, endLine + contextLines);
     for (let lineNum = displayStart; lineNum <= displayEnd; lineNum++) {
         const line = ctx.getLine(lineNum);
-        if (line === undefined) continue;
+        if (!line) continue;
         const lineNumStr = String(lineNum).padStart(width);
         const gutter = `${dim}${lineNumStr} |${reset}`;
         if (lineNum >= startLine && lineNum <= endLine) {
@@ -503,9 +510,9 @@ function renderSnippet(
  * Build an underline string
  */
 function buildUnderline(start: number, end: number, color = true): string {
-    const reset = color ? RESET : "";
-    const bold = color ? BOLD : "";
-    const blue = color ? BLUE : "";
+    const reset = ansi(color, RESET);
+    const bold = ansi(color, BOLD);
+    const blue = ansi(color, BLUE);
     const spaces = " ".repeat(start);
     const carets = "^".repeat(Math.max(1, end - start));
     return `${spaces}${blue}${bold}${carets}${reset}`;
@@ -570,8 +577,12 @@ function formatArityMismatch(
     found: number,
     span: SourceSpan,
 ): Diagnostic {
-    const expectedStr = expected === 1 ? "1 argument" : `${expected} arguments`;
-    const foundStr = found === 1 ? "1 argument" : `${found} arguments`;
+    const expectedStr = match(expected)
+        .with(1, () => "1 argument")
+        .otherwise((count) => `${count} arguments`);
+    const foundStr = match(found)
+        .with(1, () => "1 argument")
+        .otherwise((count) => `${count} arguments`);
     return error(`Expected ${expectedStr}, found ${foundStr}`, span);
 }
 /**

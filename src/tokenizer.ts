@@ -92,6 +92,13 @@ export interface LexerState {
     column: number;
 }
 
+function chooseNumericTokenType(isFloat: boolean): TokenType {
+    if (isFloat) {
+        return TokenType.Float;
+    }
+    return TokenType.Integer;
+}
+
 const Keywords: Record<string, TokenType> = {
     fn: TokenType.Fn,
     let: TokenType.Let,
@@ -267,7 +274,7 @@ function readDecimalNumber(
     }
 
     return makeToken(
-        isFloat ? TokenType.Float : TokenType.Integer,
+        chooseNumericTokenType(isFloat),
         value,
         startLine,
         startColumn,
@@ -458,7 +465,10 @@ function readNextToken(state: LexerState): Token | undefined {
     }
 
     if (ch === "'") {
-        return isLifetimeStart(state) ? readLifetime(state) : readString(state);
+        if (isLifetimeStart(state)) {
+            return readLifetime(state);
+        }
+        return readString(state);
     }
 
     if (ch === '"') {

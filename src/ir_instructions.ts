@@ -307,10 +307,9 @@ export function makeStructGet(
 export function makeEnumCreate(
     variant: number,
     data: number | undefined,
-    type: IRType,
+    _type: IRType,
 ): IRInst {
-    const enumType =
-        type instanceof StructType ? unknownEnumType() : unknownEnumType();
+    const enumType = unknownEnumType();
     return new EnumCreateInst(freshValueId(), variant, data, enumType);
 }
 

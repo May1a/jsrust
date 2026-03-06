@@ -70,6 +70,7 @@ import {
     type IRTerm,
     type IRType,
 } from "./ir";
+import { match } from "ts-pattern";
 
 // ============================================================================
 // Helpers
@@ -105,6 +106,18 @@ function castRhs(
     return `${name} ${val(operand)} : ${printType(from)} -> ${printType(to)}`;
 }
 
+function printAlignment(alignment: number | undefined): string {
+    return match(alignment)
+        .with(undefined, () => "")
+        .otherwise((value) => `, align ${value}`);
+}
+
+function printOptionalData(data: number | undefined): string {
+    return match(data)
+        .with(undefined, () => "")
+        .otherwise((value) => `, data: ${val(value)}`);
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -115,10 +128,12 @@ function printType(type: IRType): string {
         const entry = Object.entries(IntWidth).find(
             ([, v]) => v === type.width,
         );
-        return entry !== undefined ? entry[0].toLowerCase() : "i?";
+        return entry?.[0].toLowerCase() ?? "i?";
     }
     if (type instanceof FloatType) {
-        return type.width === FloatWidth.F32 ? "f32" : "f64";
+        return match(type.width)
+            .with(FloatWidth.F32, () => "f32")
+            .otherwise(() => "f64");
     }
     if (type instanceof BoolType) {
         return "bool";
@@ -204,7 +219,7 @@ class InstPrinterVisitor implements IRInstVisitor<InstLine, IRModule> {
 
     private resolveCallee(id: number, module: IRModule): string {
         const fn = module.functions.find((f) => f.id === id);
-        return fn !== undefined ? fn.name : `f${id}`;
+        return fn?.name ?? `f${id}`;
     }
 
     // --- Constants ---
@@ -320,21 +335,18 @@ class InstPrinterVisitor implements IRInstVisitor<InstLine, IRModule> {
     // --- Memory ---
 
     visitAllocaInst(inst: AllocaInst, _mod: IRModule): InstLine {
-        const align =
-            inst.alignment !== undefined ? `, align ${inst.alignment}` : "";
+        const align = printAlignment(inst.alignment);
         return this.mkDef(inst, `alloca ${printType(inst.allocType)}${align}`);
     }
 
     visitLoadInst(inst: LoadInst, _mod: IRModule): InstLine {
-        const align =
-            inst.alignment !== undefined ? `, align ${inst.alignment}` : "";
+        const align = printAlignment(inst.alignment);
         return this.mkDef(inst, `load ${val(inst.ptr)}${align}`);
     }
 
     // Store always returns () and its result is never used — emit as a pure effect.
     visitStoreInst(inst: StoreInst, _mod: IRModule): InstLine {
-        const align =
-            inst.alignment !== undefined ? `, align ${inst.alignment}` : "";
+        const align = printAlignment(inst.alignment);
         return this.mkEffect(
             `store ${val(inst.value)} -> ${val(inst.ptr)}${align}`,
         );
@@ -458,7 +470,7 @@ class InstPrinterVisitor implements IRInstVisitor<InstLine, IRModule> {
     }
 
     visitEnumCreateInst(inst: EnumCreateInst, _mod: IRModule): InstLine {
-        const data = inst.data !== undefined ? `, data: ${val(inst.data)}` : "";
+        const data = printOptionalData(inst.data);
         return this.mkDef(
             inst,
             `enum_create ${inst.enumType.name} tag=${inst.tag}${data}`,
@@ -485,9 +497,10 @@ const instPrinterVisitor = new InstPrinterVisitor();
 
 function printTerminator(term: IRTerm): string {
     if (term instanceof RetTerm) {
-        return typeof term.value === "number"
-            ? `ret ${val(term.value)}`
-            : "ret";
+        if (typeof term.value === "number") {
+            return `ret ${val(term.value)}`;
+        }
+        return "ret";
     }
     if (term instanceof BrTerm) {
         return `br ${blockRef(term.target, term.args)}`;
@@ -521,10 +534,10 @@ function printBlock(block: IRBlock, module: IRModule): string {
     const lines: string[] = [];
 
     // Block header: "b{id}[(params)] (name):"
-    const paramList =
-        block.params.length > 0
-            ? `(${block.params.map((p) => `${val(p.id)}: ${printType(p.ty)}`).join(", ")})`
-            : "";
+    let paramList = "";
+    if (block.params.length > 0) {
+        paramList = `(${block.params.map((p) => `${val(p.id)}: ${printType(p.ty)}`).join(", ")})`;
+    }
     lines.push(`  b${block.id}${paramList} (${block.name}):`);
 
     // Collect all instruction outputs.

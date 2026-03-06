@@ -74,6 +74,7 @@ import {
     type TypeNode,
     ReceiverKind,
 } from "./ast";
+import { match } from "ts-pattern";
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -88,50 +89,68 @@ export type ParseResult<T> =
     | { ok: true; value: T }
     | { ok: false; errors: ParseDiagnostic[] };
 
+function parseResult<T>(errors: ParseDiagnostic[], value: T): ParseResult<T> {
+    if (errors.length > 0) {
+        return { ok: false, errors };
+    }
+    return { ok: true, value };
+}
+
+function mutabilityFromFlag(mut: boolean): Mutability {
+    if (mut) {
+        return Mutability.Mutable;
+    }
+    return Mutability.Immutable;
+}
+
+function literalKindFromNumberToken(isFloat: boolean): LiteralKind {
+    if (isFloat) {
+        return LiteralKind.Float;
+    }
+    return LiteralKind.Int;
+}
+
+function literalKindFromStringToken(raw: string): LiteralKind {
+    if (isCharLiteral(raw)) {
+        return LiteralKind.Char;
+    }
+    return LiteralKind.String;
+}
+
 export function parseModule(source: string): ParseResult<ModuleNode> {
     const p = new Parser(tokenize(source));
     const value = p.parseModuleNode();
-    return p.errors.length > 0
-        ? { ok: false, errors: p.errors }
-        : { ok: true, value };
+    return parseResult(p.errors, value);
 }
 
 export function parseExpression(source: string): ParseResult<Expression> {
     const p = new Parser(tokenize(source));
     const value = p.parseExpr(0);
-    return p.errors.length > 0
-        ? { ok: false, errors: p.errors }
-        : { ok: true, value };
+    return parseResult(p.errors, value);
 }
 
 export function parseStatement(source: string): ParseResult<Statement> {
     const p = new Parser(tokenize(source));
     const value = p.parseStatement();
-    if (value === undefined) {
+    if (!value) {
         return {
             ok: false,
             errors: [{ message: "Expected statement", line: 1, column: 1 }],
         };
     }
-    return p.errors.length > 0
-        ? { ok: false, errors: p.errors }
-        : { ok: true, value };
+    return parseResult(p.errors, value);
 }
 
 export function parseType(source: string): ParseResult<TypeNode> {
     const p = new Parser(tokenize(source));
     const value = p.parseTypeNode();
-    return p.errors.length > 0
-        ? { ok: false, errors: p.errors }
-        : { ok: true, value };
+    return parseResult(p.errors, value);
 }
 
 export function parsePattern(source: string): ParseResult<Pattern> {
     const p = new Parser(tokenize(source));
     const value = p.parsePattern();
-    return p.errors.length > 0
-        ? { ok: false, errors: p.errors }
-        : { ok: true, value };
+    return parseResult(p.errors, value);
 }
 
 // ---------------------------------------------------------------------------
@@ -624,7 +643,10 @@ class Parser {
         isTest: boolean,
     ): Item[] | undefined {
         // `const fn` — consume `const` and treat as a regular function
-        if (this.check(TokenType.Const) && this.peekAt(1).type === TokenType.Fn) {
+        if (
+            this.check(TokenType.Const) &&
+            this.peekAt(1).type === TokenType.Fn
+        ) {
             this.advance();
         }
         if (this.eat(TokenType.Fn)) {
@@ -770,85 +792,87 @@ class Parser {
         ) {
             const paramStart = this.peek();
 
-            // &self / &mut self
-            if (this.check(TokenType.And)) {
-                this.advance(); // Consume &
-                const isMut = this.eat(TokenType.Mut) !== undefined;
-                if (this.eat(TokenType.Self)) {
-                    params.push({
-                        span: this.spanFrom(paramStart),
-                        isReceiver: true,
-                        receiverKind: isMut
-                            ? ReceiverKind.refMut
-                            : ReceiverKind.ref,
-                        ty: new NamedTypeNode(
-                            this.spanFrom(paramStart),
-                            "Self",
-                        ),
-                        name: "Self",
-                    });
-                    this.eat(TokenType.Comma);
-                    continue;
-                }
-                // Not self — backtrack by reparsing as type
-                // (rare: &Type param)
-                this.pos -= isMut ? 2 : 1; // Undo & (and mut if consumed)
-            }
-
-            // Self
-            if (this.eat(TokenType.Self)) {
-                params.push({
-                    span: this.spanFrom(paramStart),
-                    isReceiver: true,
-                    receiverKind: ReceiverKind.value,
-                    name: "Self",
-                    ty: new NamedTypeNode(this.spanFrom(paramStart), "Self"),
-                });
+            const receiverParam = this.parseReceiverRefParam(paramStart);
+            if (receiverParam) {
+                params.push(receiverParam);
                 this.eat(TokenType.Comma);
                 continue;
             }
 
-            // Mut (for mut self or mut name: type)
-            this.eat(TokenType.Mut);
-
-            // _ or name
-            let name: string;
-            if (
-                this.check(TokenType.Identifier) ||
-                this.check(TokenType.Self)
-            ) {
-                name = this.advance().value;
-            } else {
-                // Unexpected
+            const param = this.parseValueOrNamedParam(paramStart);
+            if (!param) {
                 break;
             }
-
-            // If followed by colon, it's name: Type
-            if (!this.eat(TokenType.Colon)) {
-                // No colon; this might be just a type name used as a param.
-                // Treat it as a name with inferred type.
-                params.push({
-                    span: this.spanFrom(paramStart),
-                    name,
-                    ty: new InferredTypeNode(this.spanFrom(paramStart)),
-                    isReceiver: false,
-                });
-                this.eat(TokenType.Comma);
-                continue;
-            }
-
-            const ty = this.parseTypeNode();
-            params.push({
-                span: this.spanFrom(paramStart),
-                name,
-                ty,
-                isReceiver: false,
-            });
+            params.push(param);
 
             if (!this.eat(TokenType.Comma)) break;
         }
 
         return params;
+    }
+
+    private parseReceiverRefParam(paramStart: Token): ParamNode | undefined {
+        if (!this.check(TokenType.And)) {
+            return undefined;
+        }
+        this.advance();
+        const isMut = this.eat(TokenType.Mut) !== undefined;
+        if (this.eat(TokenType.Self)) {
+            let receiverKind = ReceiverKind.ref;
+            if (isMut) {
+                receiverKind = ReceiverKind.refMut;
+            }
+            return {
+                span: this.spanFrom(paramStart),
+                isReceiver: true,
+                receiverKind,
+                ty: new NamedTypeNode(this.spanFrom(paramStart), "Self"),
+                name: "Self",
+            };
+        }
+        let backtrackCount = 1;
+        if (isMut) {
+            backtrackCount = 2;
+        }
+        this.pos -= backtrackCount;
+        return undefined;
+    }
+
+    private parseValueOrNamedParam(paramStart: Token): ParamNode | undefined {
+        if (this.eat(TokenType.Self)) {
+            return {
+                span: this.spanFrom(paramStart),
+                isReceiver: true,
+                receiverKind: ReceiverKind.value,
+                name: "Self",
+                ty: new NamedTypeNode(this.spanFrom(paramStart), "Self"),
+            };
+        }
+
+        this.eat(TokenType.Mut);
+
+        let name: string;
+        if (this.check(TokenType.Identifier) || this.check(TokenType.Self)) {
+            name = this.advance().value;
+        } else {
+            return undefined;
+        }
+
+        if (!this.eat(TokenType.Colon)) {
+            return {
+                span: this.spanFrom(paramStart),
+                name,
+                ty: new InferredTypeNode(this.spanFrom(paramStart)),
+                isReceiver: false,
+            };
+        }
+
+        return {
+            span: this.spanFrom(paramStart),
+            name,
+            ty: this.parseTypeNode(),
+            isReceiver: false,
+        };
     }
 
     // -----------------------------------------------------------------------
@@ -1229,7 +1253,9 @@ class Parser {
         }
 
         if (segments.length === 0) return [];
-        return [new UseItem(this.spanFrom(startTok), segments, undefined, alias)];
+        return [
+            new UseItem(this.spanFrom(startTok), segments, undefined, alias),
+        ];
     }
 
     // -----------------------------------------------------------------------
@@ -1379,7 +1405,7 @@ class Parser {
         const inner = this.parseTypeNode();
         return new RefTypeNode(
             this.spanFrom(start),
-            mut ? Mutability.Mutable : Mutability.Immutable,
+            mutabilityFromFlag(mut),
             inner,
         );
     }
@@ -1391,7 +1417,7 @@ class Parser {
         const inner = this.parseTypeNode();
         return new PtrTypeNode(
             this.spanFrom(start),
-            mut ? Mutability.Mutable : Mutability.Immutable,
+            mutabilityFromFlag(mut),
             inner,
         );
     }
@@ -1478,9 +1504,10 @@ class Parser {
             this.eatColonColon();
             name += `::${this.advance().value}`;
         }
-        const args = this.check(TokenType.Lt)
-            ? this.parseGenericArgs()
-            : undefined;
+        let args: GenericArgsNode | undefined;
+        if (this.check(TokenType.Lt)) {
+            args = this.parseGenericArgs();
+        }
         return new NamedTypeNode(this.spanFrom(start), name, args);
     }
 
@@ -1571,7 +1598,7 @@ class Parser {
 
     private parseNumericPattern(start: Token): Pattern | undefined {
         const literal = this.tryParseNumericLiteralPattern(start);
-        if (literal === undefined) return undefined;
+        if (!literal) return undefined;
         if (this.checkDotDotEq()) {
             this.eatDotDotEq();
             return new RangePattern(
@@ -1611,13 +1638,17 @@ class Parser {
             this.advance();
         }
         const isFloat = tok.type === TokenType.Float;
-        const rawValue = isFloat
-            ? Number.parseFloat(tok.value)
-            : parseIntValue(tok.value);
-        const value = isNegative ? -rawValue : rawValue;
+        let rawValue = parseIntValue(tok.value);
+        if (isFloat) {
+            rawValue = Number.parseFloat(tok.value);
+        }
+        let value = rawValue;
+        if (isNegative) {
+            value = -rawValue;
+        }
         return new LiteralPattern(
             this.spanFrom(start),
-            isFloat ? LiteralKind.Float : LiteralKind.Int,
+            literalKindFromNumberToken(isFloat),
             value,
         );
     }
@@ -1639,7 +1670,7 @@ class Parser {
         const tok = this.advance();
         return new LiteralPattern(
             this.spanFrom(start),
-            isCharLiteral(tok.value) ? LiteralKind.Char : LiteralKind.String,
+            literalKindFromStringToken(tok.value),
             processStringValue(tok.value),
         );
     }
@@ -1728,12 +1759,16 @@ class Parser {
             segments.push(this.advance().value);
         }
         const lastName = segments[segments.length - 1];
+        let pathExpr: Expression = new IdentifierExpr(
+            this.spanFrom(start),
+            lastName,
+        );
+        if (segments.length > 1) {
+            pathExpr = new PathExpr(this.spanFrom(start), segments);
+        }
         return {
             lastName,
-            pathExpr:
-                segments.length > 1
-                    ? new PathExpr(this.spanFrom(start), segments)
-                    : new IdentifierExpr(this.spanFrom(start), lastName),
+            pathExpr,
         };
     }
 
@@ -1750,14 +1785,18 @@ class Parser {
                 break;
             }
             const fieldName = this.expect(TokenType.Identifier).value;
-            const pattern = this.eat(TokenType.Colon)
-                ? this.parsePattern()
-                : new IdentPattern(
-                      this.spanFrom(start),
-                      fieldName,
-                      Mutability.Immutable,
-                      new InferredTypeNode(this.spanFrom(start)),
-                  );
+            const pattern = match(this.eat(TokenType.Colon))
+                .with(
+                    undefined,
+                    () =>
+                        new IdentPattern(
+                            this.spanFrom(start),
+                            fieldName,
+                            Mutability.Immutable,
+                            new InferredTypeNode(this.spanFrom(start)),
+                        ),
+                )
+                .otherwise(() => this.parsePattern());
             fields.push({ name: fieldName, pattern });
             if (!this.eat(TokenType.Comma)) break;
         }
@@ -1815,13 +1854,17 @@ class Parser {
                 this.advance();
             }
             const isFloat = tok.type === TokenType.Float;
-            const rawVal = isFloat
-                ? Number.parseFloat(tok.value)
-                : parseIntValue(tok.value);
-            const v = hasMinus ? -rawVal : rawVal;
+            let rawVal = parseIntValue(tok.value);
+            if (isFloat) {
+                rawVal = Number.parseFloat(tok.value);
+            }
+            let v = rawVal;
+            if (hasMinus) {
+                v = -rawVal;
+            }
             return new LiteralPattern(
                 this.spanFrom(start),
-                isFloat ? LiteralKind.Float : LiteralKind.Int,
+                literalKindFromNumberToken(isFloat),
                 v,
             );
         }
@@ -1829,9 +1872,7 @@ class Parser {
             const tok = this.advance();
             return new LiteralPattern(
                 this.spanFrom(start),
-                isCharLiteral(tok.value)
-                    ? LiteralKind.Char
-                    : LiteralKind.String,
+                literalKindFromStringToken(tok.value),
                 processStringValue(tok.value),
             );
         }
@@ -1851,7 +1892,7 @@ class Parser {
 
         for (;;) {
             const nextLeft = this.parsePostfixExpr(left, minPrec);
-            if (nextLeft === undefined) break;
+            if (!nextLeft) break;
             left = nextLeft;
         }
 
@@ -1956,19 +1997,22 @@ class Parser {
     private getInfixPrec(): number {
         const tok = this.peek().type;
         if (tok === TokenType.Dot) {
-            return this.checkDotDot() || this.checkDotDotEq()
-                ? RANGE_PRECEDENCE
-                : 0;
+            if (this.checkDotDot() || this.checkDotDotEq()) {
+                return RANGE_PRECEDENCE;
+            }
+            return 0;
         }
         if (tok === TokenType.Lt) {
-            return this.peekAt(1).type === TokenType.Lt
-                ? ADDITIVE_PRECEDENCE
-                : COMPARISON_PRECEDENCE;
+            if (this.peekAt(1).type === TokenType.Lt) {
+                return ADDITIVE_PRECEDENCE;
+            }
+            return COMPARISON_PRECEDENCE;
         }
         if (tok === TokenType.Gt) {
-            return this.peekAt(1).type === TokenType.Gt
-                ? ADDITIVE_PRECEDENCE
-                : COMPARISON_PRECEDENCE;
+            if (this.peekAt(1).type === TokenType.Gt) {
+                return ADDITIVE_PRECEDENCE;
+            }
+            return COMPARISON_PRECEDENCE;
         }
         return INFIX_PRECEDENCE.get(tok) ?? 0;
     }
@@ -2030,7 +2074,7 @@ class Parser {
             );
         }
         const compoundOp = COMPOUND_ASSIGNMENT_OPERATORS[this.peek().type];
-        if (compoundOp === undefined) return undefined;
+        if (!compoundOp) return undefined;
         this.advance();
         const right = this.parseExpr(prec - 1, noStructLiteral);
         return new AssignExpr(
@@ -2076,7 +2120,7 @@ class Parser {
         noStructLiteral: boolean,
     ): BinaryExpr | undefined {
         const op = BINARY_OPERATORS[this.peek().type];
-        if (op === undefined) return undefined;
+        if (!op) return undefined;
         this.advance();
         return new BinaryExpr(
             this.spanFrom(start),
@@ -2165,7 +2209,7 @@ class Parser {
         const tok = this.advance();
         return new LiteralExpr(
             this.spanFrom(start),
-            isCharLiteral(tok.value) ? LiteralKind.Char : LiteralKind.String,
+            literalKindFromStringToken(tok.value),
             processStringValue(tok.value),
         );
     }
@@ -2213,16 +2257,18 @@ class Parser {
         if (this.eat(TokenType.If)) return this.parseIfExpr(start);
         if (this.eat(TokenType.Match)) return this.parseMatchExpr(start);
         if (this.eat(TokenType.Return)) {
-            const value = this.canStartExpression()
-                ? this.parseExpr(0, noStructLiteral)
-                : undefined;
+            let value: Expression | undefined;
+            if (this.canStartExpression()) {
+                value = this.parseExpr(0, noStructLiteral);
+            }
             return new ReturnExpr(this.spanFrom(start), value);
         }
         if (this.eat(TokenType.Break)) {
             if (this.check(TokenType.Lifetime)) this.advance();
-            const value = this.canStartExpression()
-                ? this.parseExpr(0, noStructLiteral)
-                : undefined;
+            let value: Expression | undefined;
+            if (this.canStartExpression()) {
+                value = this.parseExpr(0, noStructLiteral);
+            }
             return new BreakExpr(this.spanFrom(start), value);
         }
         if (this.eat(TokenType.Continue)) {
@@ -2275,7 +2321,7 @@ class Parser {
             );
             return new RefExpr(
                 this.spanFrom(start),
-                mut ? Mutability.Mutable : Mutability.Immutable,
+                mutabilityFromFlag(mut),
                 inner,
             );
         }
@@ -2388,11 +2434,15 @@ class Parser {
             segments.push(this.advance().value);
         }
         const lastName = segments[segments.length - 1];
+        let baseExpr: IdentifierExpr | PathExpr = new IdentifierExpr(
+            this.spanFrom(startTok),
+            lastName,
+        );
+        if (segments.length > 1) {
+            baseExpr = new PathExpr(this.spanFrom(startTok), segments);
+        }
         return {
-            baseExpr:
-                segments.length > 1
-                    ? new PathExpr(this.spanFrom(startTok), segments)
-                    : new IdentifierExpr(this.spanFrom(startTok), lastName),
+            baseExpr,
             lastName,
         };
     }
@@ -2573,9 +2623,10 @@ class Parser {
 
     private parseElseBranch(): IfExpr | BlockExpr | undefined {
         if (!this.eat(TokenType.Else)) return undefined;
-        return this.eat(TokenType.If)
-            ? this.parseIfExpr(this.tokens[this.pos - 1])
-            : this.parseBlock();
+        if (this.eat(TokenType.If)) {
+            return this.parseIfExpr(this.tokens[this.pos - 1]);
+        }
+        return this.parseBlock();
     }
 
     private parseMatchExpr(startTok: Token): MatchExpr {

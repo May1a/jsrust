@@ -64,6 +64,7 @@ import {
 } from "./monomorphize";
 import { Result } from "better-result";
 import { BUILTIN_SYMBOLS } from "./builtin_symbols";
+import { match } from "ts-pattern";
 
 // Type alias for expression visitor to reduce complexity
 type ExpressionVisitor<T> = Pick<
@@ -181,6 +182,13 @@ const DEFAULT_CHAR_CODE = 0;
 const HASH_FACTOR = 31;
 const HASH_MODULUS = 1_000_000;
 const EMPTY_FORMAT = "";
+
+function qualifyModuleName(modulePrefix: string, name: string): string {
+    if (modulePrefix === "") {
+        return name;
+    }
+    return `${modulePrefix}::${name}`;
+}
 
 // Loop frame access
 const LAST_FRAME_INDEX = -1;
@@ -368,6 +376,33 @@ export class AstToSsaCtx {
         return Result.ok(exprResult.value);
     }
 
+    private currentBlockValue(value: ValueId | undefined): ValueId | undefined {
+        if (value === undefined || this.isCurrentBlockTerminated()) {
+            return undefined;
+        }
+        return value;
+    }
+
+    private mergeBlockArgs(
+        value: ValueId | undefined,
+        resultType: IRType | undefined,
+    ): ValueId[] {
+        if (value === undefined || !resultType) {
+            return [];
+        }
+        return [value];
+    }
+
+    private createMergeBlock(
+        name: string,
+        resultType: IRType | undefined,
+    ): BlockId {
+        if (resultType) {
+            return this.builder.createBlock(name);
+        }
+        return this.builder.createBlock(name, [resultType]);
+    }
+
     private lowerStatement(stmt: Statement): Result<void, LoweringError> {
         if (stmt instanceof LetStmt) {
             return this.lowerLetStatement(stmt);
@@ -397,7 +432,7 @@ export class AstToSsaCtx {
             let ty = AstToSsaCtx.translateTypeNode(stmt.type);
             if (this.isImplicitUnitTypeNode(stmt.type)) {
                 const inferred = this.resolveValueType(initResult.value);
-                if (inferred !== undefined) {
+                if (inferred) {
                     ty = inferred;
                 }
             }
@@ -575,11 +610,12 @@ export class AstToSsaCtx {
                 return AstToSsaCtx.handleInstructionId(constInst.id);
             }
             case LiteralKind.Char: {
-                const cp =
-                    typeof expr.value === "string"
-                        ? (expr.value.codePointAt(STRING_FIRST_CHAR_INDEX) ??
-                          DEFAULT_CHAR_CODE)
-                        : Number(expr.value);
+                let cp = Number(expr.value);
+                if (typeof expr.value === "string") {
+                    cp =
+                        expr.value.codePointAt(STRING_FIRST_CHAR_INDEX) ??
+                        DEFAULT_CHAR_CODE;
+                }
                 const constInst = this.builder.iconst(cp, IntWidth.U32);
                 return AstToSsaCtx.handleInstructionId(constInst.id);
             }
@@ -597,7 +633,7 @@ export class AstToSsaCtx {
         expr: IdentifierExpr,
     ): Result<ValueId, LoweringError> {
         const binding = this.locals.get(expr.name);
-        if (binding !== undefined) {
+        if (binding) {
             const loadInst = this.builder.load(binding.ptr, binding.ty);
             return AstToSsaCtx.handleInstructionId(loadInst.id);
         }
@@ -624,7 +660,7 @@ export class AstToSsaCtx {
         if (sepIndex !== -1) {
             const enumName = variantPath.slice(0, sepIndex);
             const found = this.irModule.enums.get(enumName);
-            if (found !== undefined) {
+            if (found) {
                 return found;
             }
         }
@@ -641,7 +677,7 @@ export class AstToSsaCtx {
         }
 
         const binding = this.locals.get(expr.target.name);
-        if (binding === undefined) {
+        if (!binding) {
             return loweringError(
                 LoweringErrorKind.UnknownVariable,
                 `Unknown variable '${expr.target.name}'`,
@@ -1222,7 +1258,7 @@ export class AstToSsaCtx {
         if (expr.callee instanceof IdentifierExpr) {
             // Check if this is a call to a generic function
             const resolvedName = this.resolveGenericCallName(expr);
-            if (resolvedName !== undefined) {
+            if (resolvedName) {
                 return this.lowerResolvedCall(resolvedName, args, retTy);
             }
             return this.lowerIdentifierCall(expr.callee, args, retTy);
@@ -1292,10 +1328,10 @@ export class AstToSsaCtx {
             callee.field,
             receiverType,
         );
-        const defaultReturnType =
-            receiverType instanceof StructType
-                ? receiverType
-                : makeIRIntType(IntWidth.I64);
+        let defaultReturnType: IRType = makeIRIntType(IntWidth.I64);
+        if (receiverType instanceof StructType) {
+            defaultReturnType = receiverType;
+        }
         const returnType = this.resolveNamedCallReturnType(
             qualifiedName,
             defaultReturnType,
@@ -1330,7 +1366,7 @@ export class AstToSsaCtx {
             return receiverValue;
         }
         const binding = this.locals.get(callee.receiver.name);
-        return binding ? binding.ptr : receiverValue;
+        return binding?.ptr ?? receiverValue;
     }
 
     private resolveQualifiedMethodName(
@@ -1341,9 +1377,10 @@ export class AstToSsaCtx {
             return methodName;
         }
         const maybeQualified = `${receiverType.name}::${methodName}`;
-        return this.functionIds.has(maybeQualified)
-            ? maybeQualified
-            : methodName;
+        if (this.functionIds.has(maybeQualified)) {
+            return maybeQualified;
+        }
+        return methodName;
     }
 
     private lowerIdentifierCall(
@@ -1352,17 +1389,17 @@ export class AstToSsaCtx {
         defaultReturnType: IRType,
     ): Result<ValueId, LoweringError> {
         const localBinding = this.locals.get(callee.name);
-        if (localBinding !== undefined) {
+        if (localBinding) {
             const fnIdInst = this.builder.load(
                 localBinding.ptr,
                 localBinding.ty,
             );
-            const returnType =
-                localBinding.typeNode instanceof FnTypeNode
-                    ? AstToSsaCtx.translateTypeNode(
-                          localBinding.typeNode.returnType,
-                      )
-                    : defaultReturnType;
+            let returnType = defaultReturnType;
+            if (localBinding.typeNode instanceof FnTypeNode) {
+                returnType = AstToSsaCtx.translateTypeNode(
+                    localBinding.typeNode.returnType,
+                );
+            }
             const callInst = this.builder.callDyn(
                 fnIdInst.id,
                 args,
@@ -1433,10 +1470,11 @@ export class AstToSsaCtx {
             elementValues.push(result.value);
         }
 
-        const elemTy =
-            elementValues.length > 0
-                ? (this.resolveValueType(elementValues[0]) ?? makeIRUnitType())
-                : makeIRUnitType();
+        let elemTy = makeIRUnitType();
+        if (elementValues.length > 0) {
+            elemTy =
+                this.resolveValueType(elementValues[0]) ?? makeIRUnitType();
+        }
 
         const arrayType = makeIRArrayType(elemTy, expr.args.length);
         const arrPtr = this.builder.alloca(arrayType);
@@ -1523,9 +1561,9 @@ export class AstToSsaCtx {
             ).id;
         } else if (
             leftType instanceof IntType ||
-            (leftType !== undefined && leftType.kind === IRTypeKind.Bool) ||
+            (leftType && leftType.kind === IRTypeKind.Bool) ||
             rightType instanceof IntType ||
-            (rightType !== undefined && rightType.kind === IRTypeKind.Bool)
+            (rightType && rightType.kind === IRTypeKind.Bool)
         ) {
             cmpId = this.builder.icmp(
                 IcmpOp.Eq,
@@ -1556,9 +1594,10 @@ export class AstToSsaCtx {
         if (!preparedArgs.isOk()) {
             return preparedArgs;
         }
-        const builtinName = appendNewline
-            ? BUILTIN_SYMBOLS.PRINTLN_FMT
-            : BUILTIN_SYMBOLS.PRINT_FMT;
+        let builtinName: string = BUILTIN_SYMBOLS.PRINT_FMT;
+        if (appendNewline) {
+            builtinName = BUILTIN_SYMBOLS.PRINTLN_FMT;
+        }
         const callInst = this.builder.call(
             this.resolveFunctionId(builtinName),
             preparedArgs.value,
@@ -1661,7 +1700,7 @@ export class AstToSsaCtx {
         }
         if (expr instanceof IdentifierExpr) {
             const local = this.locals.get(expr.name);
-            return local ? local.formatTag : undefined;
+            return local?.formatTag;
         }
         return undefined;
     }
@@ -1839,7 +1878,7 @@ export class AstToSsaCtx {
     ): IRType | undefined {
         let result: IRType | undefined;
         walkAst(body, (node) => {
-            if (result !== undefined) return;
+            if (result) return;
             if (!(node instanceof BinaryExpr)) return;
             const { left, right } = node;
             const leftIsParam =
@@ -2047,7 +2086,10 @@ export class AstToSsaCtx {
             const arm = expr.arms[index];
             if ("literalKind" in arm.pattern && "value" in arm.pattern) {
                 const raw = arm.pattern.value;
-                const value = typeof raw === "number" ? raw : Number(raw);
+                let value = Number(raw);
+                if (typeof raw === "number") {
+                    value = raw;
+                }
                 cases.push({ value, target: armBlocks[index], args: [] });
             } else if (arm.pattern instanceof IdentPattern) {
                 const tag = this.enumVariantTags.get(arm.pattern.name);
@@ -2066,19 +2108,17 @@ export class AstToSsaCtx {
             }
         }
 
-        const switchValue = usesEnumPatterns
-            ? this.builder.enumGetTag(scrutinee.value).id
-            : scrutinee.value;
+        const switchValue = match(usesEnumPatterns)
+            .with(true, () => this.builder.enumGetTag(scrutinee.value).id)
+            .otherwise(() => scrutinee.value);
 
-        let defaultBlock: BlockId;
+        let defaultBlock: BlockId | undefined;
         if (defaultArmIndex !== undefined) {
             defaultBlock = armBlocks[defaultArmIndex];
-        } else if (armBlocks.length > 0) {
-            const [firstArmBlock] = armBlocks;
-            defaultBlock = firstArmBlock;
         } else {
-            defaultBlock = this.builder.createBlock("match_default");
+            [defaultBlock] = armBlocks;
         }
+        defaultBlock ??= this.builder.createBlock("match_default");
 
         this.builder.switch(switchValue, cases, defaultBlock, []);
 
@@ -2098,22 +2138,17 @@ export class AstToSsaCtx {
             if (!body.isOk()) {
                 return body;
             }
-            armValues.push(
-                this.isCurrentBlockTerminated() ? undefined : body.value,
-            );
+            armValues.push(this.currentBlockValue(body.value));
         }
 
         const allProduceValues = armValues.every((v) => v !== undefined);
         const [firstArmValue] = armValues;
-        const resultType =
-            allProduceValues && firstArmValue !== undefined
-                ? (this.resolveValueType(firstArmValue) ?? undefined)
-                : undefined;
+        let resultType: IRType | undefined;
+        if (allProduceValues && firstArmValue !== undefined) {
+            resultType = this.resolveValueType(firstArmValue);
+        }
 
-        const mergeId =
-            resultType !== undefined
-                ? this.builder.createBlock("match_merge", [resultType])
-                : this.builder.createBlock("match_merge");
+        const mergeId = this.createMergeBlock("match_merge", resultType);
 
         for (let index = 0; index < arms.length; index++) {
             this.builder.switchToBlock(armBlocks[index]);
@@ -2121,22 +2156,20 @@ export class AstToSsaCtx {
                 const armValue = armValues[index];
                 this.builder.br(
                     mergeId,
-                    armValue !== undefined && resultType !== undefined
-                        ? [armValue]
-                        : [],
+                    this.mergeBlockArgs(armValue, resultType),
                 );
             }
         }
 
         this.builder.switchToBlock(mergeId);
 
-        if (resultType !== undefined) {
+        if (resultType) {
             const currentFn = this.builder.currentFunction;
-            if (currentFn !== undefined) {
+            if (currentFn) {
                 const mergeBlock = currentFn.blocks.find(
                     (b) => b.id === mergeId,
                 );
-                if (mergeBlock !== undefined) {
+                if (mergeBlock) {
                     const [param] = mergeBlock.params;
                     return Result.ok(param.id);
                 }
@@ -2160,18 +2193,14 @@ export class AstToSsaCtx {
         if (!thenResult.isOk()) {
             return thenResult;
         }
-        const thenValue = this.isCurrentBlockTerminated()
-            ? undefined
-            : thenResult.value;
+        const thenValue = this.currentBlockValue(thenResult.value);
 
         this.builder.switchToBlock(elseId);
         let elseValue: ValueId | undefined;
         if (expr.elseBranch) {
             const elseResult = this.lowerExpression(expr.elseBranch);
             if (!elseResult.isOk()) return elseResult;
-            elseValue = this.isCurrentBlockTerminated()
-                ? undefined
-                : elseResult.value;
+            elseValue = this.currentBlockValue(elseResult.value);
         }
 
         return this.terminateIfBranches(thenId, thenValue, elseId, elseValue);
@@ -2185,22 +2214,18 @@ export class AstToSsaCtx {
     ): Result<ValueId, LoweringError> {
         const bothProduceValue =
             thenValue !== undefined && elseValue !== undefined;
-        const resultType = bothProduceValue
-            ? (this.resolveValueType(thenValue) ?? undefined)
-            : undefined;
+        let resultType: IRType | undefined;
+        if (bothProduceValue) {
+            resultType = this.resolveValueType(thenValue);
+        }
 
-        const mergeId =
-            resultType !== undefined
-                ? this.builder.createBlock("if_merge", [resultType])
-                : this.builder.createBlock("if_merge");
+        const mergeId = this.createMergeBlock("if_merge", resultType);
 
         this.builder.switchToBlock(thenId);
         if (!this.isCurrentBlockTerminated()) {
             this.builder.br(
                 mergeId,
-                thenValue !== undefined && resultType !== undefined
-                    ? [thenValue]
-                    : [],
+                this.mergeBlockArgs(thenValue, resultType),
             );
         }
 
@@ -2208,21 +2233,19 @@ export class AstToSsaCtx {
         if (!this.isCurrentBlockTerminated()) {
             this.builder.br(
                 mergeId,
-                elseValue !== undefined && resultType !== undefined
-                    ? [elseValue]
-                    : [],
+                this.mergeBlockArgs(elseValue, resultType),
             );
         }
 
         this.builder.switchToBlock(mergeId);
 
-        if (resultType !== undefined) {
+        if (resultType) {
             const currentFn = this.builder.currentFunction;
-            if (currentFn !== undefined) {
+            if (currentFn) {
                 const mergeBlock = currentFn.blocks.find(
                     (b) => b.id === mergeId,
                 );
-                if (mergeBlock !== undefined) {
+                if (mergeBlock) {
                     const [param] = mergeBlock.params;
                     return Result.ok(param.id);
                 }
@@ -2330,7 +2353,7 @@ export class AstToSsaCtx {
     static translateTypeNode(typeNode: TypeNode): IRType {
         if (typeNode instanceof NamedTypeNode) {
             const builtin = AstToSsaCtx.namedBuiltin(typeNode.name);
-            if (builtin !== undefined) {
+            if (builtin) {
                 return AstToSsaCtx.builtinToIrType(builtin);
             }
             return makeIRStructType(typeNode.name, []);
@@ -2745,7 +2768,7 @@ function seedStructMetadataForItems(
     modulePrefix: string,
 ): void {
     const qualify = (name: string): string =>
-        modulePrefix ? `${modulePrefix}::${name}` : name;
+        qualifyModuleName(modulePrefix, name);
 
     const registerStruct = (
         name: string,
@@ -2833,7 +2856,7 @@ function collectItemFunctionIds(
     modulePrefix = "",
 ): void {
     const qualify = (name: string): string =>
-        modulePrefix ? `${modulePrefix}::${name}` : name;
+        qualifyModuleName(modulePrefix, name);
 
     if (item instanceof GenericFnItem) {
         // Generic functions are templates — skip lowering, but register the id
@@ -2888,7 +2911,7 @@ function collectImplFunctionIds(
 ): void {
     const implTarget = item.target.name;
     const qualify = (name: string): string =>
-        modulePrefix ? `${modulePrefix}::${name}` : name;
+        qualifyModuleName(modulePrefix, name);
     const qImplTarget = qualify(implTarget);
     for (const method of item.methods) {
         fnIdMap.set(method.name, hashName(method.name));
@@ -2983,17 +3006,22 @@ function rewriteSelfInMethod(method: FnItem, implTarget: string): FnItem {
                 p.receiverKind === ReceiverKind.ref ||
                 p.receiverKind === ReceiverKind.refMut
             ) {
-                const mut =
-                    p.receiverKind === ReceiverKind.refMut
-                        ? Mutability.Mutable
-                        : Mutability.Immutable;
+                let mut = Mutability.Immutable;
+                if (p.receiverKind === ReceiverKind.refMut) {
+                    mut = Mutability.Mutable;
+                }
                 ty = new RefTypeNode(p.span, mut, ty);
             }
+        }
+        const { name: originalName } = p;
+        let name = originalName;
+        if (p.isReceiver) {
+            name = "self";
         }
         return {
             ...p,
             // Normalize receiver name: parser produces "Self" (capital) but the body uses "self".
-            name: p.isReceiver ? "self" : p.name,
+            name,
             ty,
         };
     });
@@ -3073,8 +3101,10 @@ function lowerModuleItem(
         return;
     }
     if (item instanceof TraitImplItem) {
-        const implTarget =
-            item.target instanceof NamedTypeNode ? item.target.name : "Self";
+        let implTarget = "Self";
+        if (item.target instanceof NamedTypeNode) {
+            implTarget = item.target.name;
+        }
         for (const method of item.fnImpls) {
             if (!method.body) continue;
             ensureImplStructMetadata(irModule, structFieldNames, implTarget);
@@ -3172,13 +3202,13 @@ function collectAndMonomorphize(
         if (!(node.callee instanceof IdentifierExpr)) return;
 
         const generic = registry.lookupGenericFn(node.callee.name);
-        if (generic === undefined) return;
+        if (generic) return;
 
         // Infer type arguments from the call expression's explicit type args
         // Use explicit args or infer from literals; full inference happens
         // In the inference pass which stores substitutions on TypeContext
         const subs = inferCallSiteTypeArgs(generic, node);
-        if (subs === undefined) return;
+        if (subs) return;
 
         registry.getOrCreateFn(generic, subs);
     });

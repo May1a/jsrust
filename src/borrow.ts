@@ -38,6 +38,7 @@ import {
     BindingPattern,
     IdentPattern,
 } from "./ast";
+import { match } from "ts-pattern";
 import type { TypeContext } from "./type_context";
 
 const PARAM_DEPTH = -1;
@@ -100,7 +101,7 @@ function defineBinding(env: FnEnv, name: string, info: BindingInfo): void {
 
 function lookupBinding(env: FnEnv, name: string): BindingInfo | undefined {
     const stack = env.bindings.get(name);
-    return stack && stack.length > 0 ? stack[stack.length - 1] : undefined;
+    return stack?.[stack.length - 1];
 }
 
 function collectPatternBindings(
@@ -143,7 +144,10 @@ function getSingleSegmentPathName(
     expr: IdentifierExpr | PathExpr,
 ): string | undefined {
     if (expr instanceof PathExpr) {
-        return expr.segments.length === 1 ? expr.segments[0] : undefined;
+        if (expr.segments.length === 1) {
+            return expr.segments[0];
+        }
+        return undefined;
     }
     return expr.name;
 }
@@ -157,7 +161,7 @@ function getBindingRefOrigin(
         return undefined;
     }
     const binding = lookupBinding(env, name);
-    return binding ? binding.refOrigin : undefined;
+    return binding?.refOrigin;
 }
 
 function getRefOrigin(expr: ExpressionLike, env: FnEnv): RefOrigin | undefined {
@@ -210,7 +214,10 @@ function getPlaceOrigin(
     }
     if (place instanceof PathExpr) {
         const name = getSingleSegmentPathName(place);
-        return name ? getBindingPlaceOrigin(env, name) : undefined;
+        if (!name) {
+            return undefined;
+        }
+        return getBindingPlaceOrigin(env, name);
     }
     if (place instanceof FieldExpr || place instanceof IndexExpr) {
         return getPlaceOrigin(place.receiver, env);
@@ -232,9 +239,14 @@ function getBindingPlaceOrigin(
     if (binding.refOrigin) {
         return binding.refOrigin;
     }
-    return binding.kind === "param"
-        ? { kind: "param", name }
-        : { kind: "local", name, depth: binding.depth };
+    return match(binding.kind)
+        .with("param", () => ({ kind: "param" as const, name }))
+        .with("local", () => ({
+            kind: "local" as const,
+            name,
+            depth: binding.depth,
+        }))
+        .exhaustive();
 }
 
 function isInvalidReturnOrigin(origin: RefOrigin | undefined): boolean {
@@ -257,7 +269,10 @@ function isEscapingStore(
     if (origin.kind !== "local") {
         return false;
     }
-    const targetDepth = target.kind === "param" ? PARAM_DEPTH : target.depth;
+    const targetDepth = match(target.kind)
+        .with("param", () => PARAM_DEPTH)
+        .with("local", () => target.depth)
+        .exhaustive();
     return targetDepth < origin.depth;
 }
 
@@ -277,7 +292,10 @@ function getTargetBinding(
     }
     if (target instanceof PathExpr) {
         const name = getSingleSegmentPathName(target);
-        return name ? lookupBinding(env, name) : undefined;
+        if (!name) {
+            return undefined;
+        }
+        return lookupBinding(env, name);
     }
     const targetOrigin = getPlaceOrigin(target, env);
     if (!targetOrigin) {
@@ -652,5 +670,7 @@ export function checkBorrowLite(
     for (const item of moduleAst.items) {
         checkItem(item, errors);
     }
-    return errors.length > 0 ? { ok: false, errors } : { ok: true };
+    return match(errors.length > 0)
+        .with(true, () => ({ ok: false as const, errors }))
+        .otherwise(() => ({ ok: true as const }));
 }

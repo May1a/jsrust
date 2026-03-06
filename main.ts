@@ -2,6 +2,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Result, TaggedError } from "better-result";
+import { match } from "ts-pattern";
 import {
     compile,
     compileFile,
@@ -82,7 +83,7 @@ const ERROR_KIND_CODES: Record<string, string> = {
 };
 
 function errorKindCode(kind?: string): string {
-    return (kind && ERROR_KIND_CODES[kind]) ?? "E0000";
+    return ERROR_KIND_CODES[kind ?? ""] ?? "E0000";
 }
 
 function compileDiagnosticToDisplay(
@@ -115,7 +116,10 @@ function printDiagnostics(
         );
     }
     if (errors.length > 0) {
-        const s = errors.length === 1 ? "" : "s";
+        let s = "s";
+        if (errors.length === 1) {
+            s = "";
+        }
         console.error(`\naborting due to ${errors.length} error${s}`);
     }
 }
@@ -212,6 +216,13 @@ function firstDiffLine(a: string, b: string): number {
         if (aLines[i] !== bLines[i]) return i + 1;
     }
     return NO_DIFF;
+}
+
+function lineAt(text: string, line: number): string {
+    if (line <= 0) {
+        return "";
+    }
+    return text.split("\n")[line - 1] ?? "";
 }
 
 // ---------------------------------------------------------------------------
@@ -391,9 +402,13 @@ function runSingleTest(
     bytes: Uint8Array,
     codegenWasm: boolean,
 ): TestRunResult {
-    const runResult = codegenWasm
-        ? runBackendCodegenWasm(bytes, { entry: testFn.name, trace: false })
-        : runBackendWasm(bytes, { entry: testFn.name, trace: false });
+    const runResult = match(codegenWasm)
+        .with(true, () =>
+            runBackendCodegenWasm(bytes, { entry: testFn.name, trace: false }),
+        )
+        .otherwise(() =>
+            runBackendWasm(bytes, { entry: testFn.name, trace: false }),
+        );
 
     if (runResult.isErr()) {
         return { passed: false, reason: runResult.error.message };
@@ -404,10 +419,8 @@ function runSingleTest(
         const expected = normalizeNewlines(testFn.expectedOutput);
         if (actual !== expected) {
             const line = firstDiffLine(actual, expected);
-            const actualLine =
-                line > 0 ? (actual.split("\n")[line - 1] ?? "") : "";
-            const expectedLine =
-                line > 0 ? (expected.split("\n")[line - 1] ?? "") : "";
+            const actualLine = lineAt(actual, line);
+            const expectedLine = lineAt(expected, line);
             return {
                 passed: false,
                 reason: `stdout mismatch at line ${line}\n  expected: ${JSON.stringify(expectedLine)}\n  actual:   ${JSON.stringify(actualLine)}`,
@@ -476,10 +489,17 @@ function reportTestSuite(
     }
 
     console.log("");
+    let status = "FAILED";
+    if (failed === 0) {
+        status = "ok";
+    }
     console.log(
-        `test result: ${failed === 0 ? "ok" : "FAILED"}. ${passed} passed; ${failed} failed; 0 ignored`,
+        `test result: ${status}. ${passed} passed; ${failed} failed; 0 ignored`,
     );
-    return failed > 0 ? 1 : 0;
+    if (failed > 0) {
+        return 1;
+    }
+    return 0;
 }
 
 function runTestCli(args: string[]): number {
@@ -619,12 +639,19 @@ function parseRunArgs(
 }
 
 function executeAndReport(bytes: Uint8Array, options: RunOptions): number {
-    const runResult = options.codegenWasm
-        ? runBackendCodegenWasm(bytes, {
-              entry: options.entry,
-              trace: options.trace,
-          })
-        : runBackendWasm(bytes, { entry: options.entry, trace: options.trace });
+    const runResult = match(options.codegenWasm)
+        .with(true, () =>
+            runBackendCodegenWasm(bytes, {
+                entry: options.entry,
+                trace: options.trace,
+            }),
+        )
+        .otherwise(() =>
+            runBackendWasm(bytes, {
+                entry: options.entry,
+                trace: options.trace,
+            }),
+        );
 
     if (runResult.isErr()) {
         console.error(
@@ -636,11 +663,11 @@ function executeAndReport(bytes: Uint8Array, options: RunOptions): number {
     if (runResult.value.stdoutBytes.length > 0) {
         process.stdout.write(Buffer.from(runResult.value.stdoutBytes));
     }
-    process.stdout.write(
-        runResult.value.hasExitValue
-            ? `ok exit=${runResult.value.exitValue}\n`
-            : "ok\n",
-    );
+    let exitLine = "ok\n";
+    if (runResult.value.hasExitValue) {
+        exitLine = `ok exit=${runResult.value.exitValue}\n`;
+    }
+    process.stdout.write(exitLine);
 
     if (options.traceOutPath) {
         const writeResult = writeFileAtomic(

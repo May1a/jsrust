@@ -24,9 +24,19 @@ function toExampleFileNames(args: string[]): string[] {
             .toSorted();
     }
 
-    return args.map((fileName) =>
-        fileName.endsWith(".rs") ? fileName : `${fileName}.rs`,
-    );
+    return args.map((fileName) => {
+        if (fileName.endsWith(".rs")) {
+            return fileName;
+        }
+        return `${fileName}.rs`;
+    });
+}
+
+function causeMessage(cause: unknown): string {
+    if (cause instanceof Error) {
+        return cause.message;
+    }
+    return String(cause);
 }
 
 function writeExpectedFile(outputPath: string, ir: string) {
@@ -36,7 +46,7 @@ function writeExpectedFile(outputPath: string, ir: string) {
         },
         catch: (cause) =>
             new Error(
-                `failed to write ${outputPath}: ${cause instanceof Error ? cause.message : String(cause)}`,
+                `failed to write ${outputPath}: ${causeMessage(cause)}`,
             ),
     });
 }
@@ -77,4 +87,7 @@ for (const file of files) {
 }
 
 console.log(`\n${updated} updated, ${failed} failed`);
-process.exit(failed > 0 ? 1 : 0);
+if (failed > 0) {
+    process.exit(1);
+}
+process.exit(0);

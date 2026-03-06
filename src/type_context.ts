@@ -73,7 +73,7 @@ export class TypeContext {
 
     setVariable(name: string, ty: TypeNode): void {
         const scope = this.scopes[this.scopes.length - 1] as Scope | undefined;
-        if (scope !== undefined) {
+        if (scope) {
             scope.setVariable(name, ty);
         }
     }
@@ -81,7 +81,7 @@ export class TypeContext {
     lookupVariable(name: string): TypeNode | undefined {
         for (let i = this.scopes.length - 1; i >= 0; i--) {
             const ty = this.scopes[i].getVariable(name);
-            if (ty !== undefined) {
+            if (ty) {
                 return ty;
             }
         }
@@ -98,11 +98,14 @@ export class TypeContext {
         return this.structFields.get(name);
     }
 
-    lookupStructField(structName: string, fieldName: string): TypeNode | undefined {
+    lookupStructField(
+        structName: string,
+        fieldName: string,
+    ): TypeNode | undefined {
         const fields = this.structFields.get(structName);
         if (!fields) return undefined;
-        const field = fields.find(f => f.name === fieldName);
-        if (field === undefined) return undefined;
+        const field = fields.find((f) => f.name === fieldName);
+        if (!field) return undefined;
         return field.ty;
     }
 
