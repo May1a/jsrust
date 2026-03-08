@@ -1202,8 +1202,8 @@ export class IRSerializer {
             },
             visitEnumGetDataInst: (i: EnumGetDataInst): void => {
                 this.writeU32(i.enum_);
-                this.writeU32(0);
-                this.writeU32(0);
+                this.writeU32(i.variant);
+                this.writeU32(i.index);
             },
         };
         inst.accept(visitor, undefined);

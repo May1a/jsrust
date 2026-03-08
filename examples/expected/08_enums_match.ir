@@ -7,6 +7,8 @@ module main {
     s3 = "{}"
   }
 
+  enum Option { [], [()] }
+
   enum Color { [], [], [] }
 
   fn f949693 test_example() -> () {

@@ -6,6 +6,8 @@ module main {
 
   struct Pair { i32, i32 }
 
+  enum Option { [], [()] }
+
   fn f756189 clone(v0 arg0: ptr<struct Pair>) -> struct Pair {
     b0 (entry):
       v1: ptr<ptr<struct Pair>> = alloca ptr<struct Pair>

@@ -1,5 +1,7 @@
 module main {
 
+  enum Option { [], [()] }
+
   fn f789996 passthrough(v0 arg0: ptr<i32>) -> ptr<i32> {
     b0 (entry):
       v1: ptr<ptr<i32>> = alloca ptr<i32>

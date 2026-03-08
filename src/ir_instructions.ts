@@ -319,8 +319,8 @@ export function makeEnumGetTag(enumValue: number): IRInst {
 
 export function makeEnumGetData(
     enumValue: number,
-    _variant: number,
-    _index: number,
+    variant: number,
+    index: number,
     dataType: IRType,
 ): IRInst {
     return new EnumGetDataInst(
@@ -328,5 +328,7 @@ export function makeEnumGetData(
         enumValue,
         unknownEnumType(),
         dataType,
+        variant,
+        index,
     );
 }

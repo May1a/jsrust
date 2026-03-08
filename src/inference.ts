@@ -106,6 +106,7 @@ const BUILTIN_TYPE_NAMES = new Set([
     "char",
     "str",
     "Self",
+    "Option",
 ]);
 
 function isBuiltinTypeName(name: string): boolean {
@@ -569,6 +570,11 @@ function inferIdentifier(
         return undefined;
     }
 
+    // Option constructors used as bare identifiers
+    if (expr.name === "None" || expr.name === "Some") {
+        return new NamedTypeNode(expr.span, "Option");
+    }
+
     // Qualified paths (e.g. `Color::Green`, `Vec::new`) are enum variants or
     // associated items — not yet tracked in the type context. Return undefined
     // without an error; type propagation will handle the absence.
@@ -736,62 +742,95 @@ function inferCall(
         argTypes.push(inferExprType(typeCtx, arg, errors));
     }
 
-    // Resolve the callee
     if (expr.callee instanceof IdentifierExpr) {
-        const genericResult = resolveGenericCall(typeCtx, expr, argTypes);
-        if (genericResult) {
-            return genericResult;
-        }
-
-        const sig = typeCtx.lookupFnSignature(expr.callee.name);
-        if (sig) {
-            return sig.returnType;
-        }
-
-        // Qualified paths (e.g. `Vec::new`) are not yet tracked — skip
-        if (!expr.callee.name.includes("::")) {
-            errors.push({
-                message: `cannot find function \`${expr.callee.name}\` in this scope`,
-                span: expr.callee.span,
-            });
-        }
-        return undefined;
+        return inferIdentifierCallType(typeCtx, expr, expr.callee, argTypes, errors);
     }
 
-    // Method call: callee is a FieldExpr (e.g., `obj.method(...)`)
     if (expr.callee instanceof FieldExpr) {
-        const receiverTy = inferExprType(typeCtx, expr.callee.receiver, errors);
-        if (receiverTy instanceof NamedTypeNode) {
-            const methodSig = typeCtx.lookupFnSignature(
-                `${receiverTy.name}::${expr.callee.field}`,
-            );
-            if (methodSig) {
-                return methodSig.returnType;
-            }
-        }
-        // Try through references
-        if (
-            receiverTy instanceof RefTypeNode &&
-            receiverTy.inner instanceof NamedTypeNode
-        ) {
-            const methodSig = typeCtx.lookupFnSignature(
-                `${receiverTy.inner.name}::${expr.callee.field}`,
-            );
-            if (methodSig) {
-                return methodSig.returnType;
-            }
-        }
-
-        // Receiver type is known but no matching method signature was found
-        if (receiverTy) {
-            errors.push({
-                message: `no method \`${expr.callee.field}\` found for type \`${typeToString(receiverTy)}\``,
-                span: expr.callee.span,
-            });
-        }
-        return undefined;
+        return inferMethodCallType(typeCtx, expr.callee, errors);
     }
 
+    return undefined;
+}
+
+function inferIdentifierCallType(
+    typeCtx: TypeContext,
+    expr: CallExpr,
+    callee: IdentifierExpr,
+    argTypes: (TypeNode | undefined)[],
+    errors: TypeError[],
+): TypeNode | undefined {
+    const { name: calleeName } = callee;
+
+    if (calleeName === "Some" || calleeName === "Option::Some") {
+        const [innerTy] = argTypes;
+        if (innerTy) {
+            return new NamedTypeNode(
+                expr.span,
+                "Option",
+                new GenericArgsNode(expr.span, [innerTy]),
+            );
+        }
+        return new NamedTypeNode(expr.span, "Option");
+    }
+    if (calleeName === "None" || calleeName === "Option::None") {
+        return new NamedTypeNode(expr.span, "Option");
+    }
+
+    const genericResult = resolveGenericCall(typeCtx, expr, argTypes);
+    if (genericResult) {
+        return genericResult;
+    }
+
+    const sig = typeCtx.lookupFnSignature(calleeName);
+    if (sig) {
+        return sig.returnType;
+    }
+
+    // Qualified paths (e.g. `Vec::new`) are not yet tracked — skip
+    if (!calleeName.includes("::")) {
+        errors.push({
+            message: `cannot find function \`${calleeName}\` in this scope`,
+            span: callee.span,
+        });
+    }
+    return undefined;
+}
+
+function inferMethodCallType(
+    typeCtx: TypeContext,
+    callee: FieldExpr,
+    errors: TypeError[],
+): TypeNode | undefined {
+    const receiverTy = inferExprType(typeCtx, callee.receiver, errors);
+    if (receiverTy instanceof NamedTypeNode) {
+        const methodSig = typeCtx.lookupFnSignature(
+            `${receiverTy.name}::${callee.field}`,
+        );
+        if (methodSig) {
+            return methodSig.returnType;
+        }
+    }
+    // Try through references
+    if (
+        receiverTy instanceof RefTypeNode &&
+        receiverTy.inner instanceof NamedTypeNode
+    ) {
+        const methodSig = typeCtx.lookupFnSignature(
+            `${receiverTy.inner.name}::${callee.field}`,
+        );
+        if (methodSig) {
+            return methodSig.returnType;
+        }
+    }
+
+    // Receiver type is known but no matching method signature was found
+    if (receiverTy) {
+        errors.push({
+            message: `no method \`${callee.field}\` found for type \`${typeToString(receiverTy)}\``,
+            span: callee.span,
+        });
+    }
     return undefined;
 }
 

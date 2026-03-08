@@ -6,6 +6,8 @@ module main {
 
   struct Point { i32, i32 }
 
+  enum Option { [], [()] }
+
   fn f949693 test_example() -> () {
     b0 (entry):
       v0: i32               = iconst 1

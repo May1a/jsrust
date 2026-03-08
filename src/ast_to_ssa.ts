@@ -22,6 +22,7 @@ import {
     ImplItem,
     IdentPattern,
     IdentifierExpr,
+    LiteralPattern,
     InferredTypeNode,
     type IndexExpr,
     type IfExpr,
@@ -46,6 +47,7 @@ import {
     type Statement,
     StructItem,
     type StructExpr,
+    StructPattern,
     TraitImplItem,
     type TypeNode,
     TupleTypeNode,
@@ -100,7 +102,7 @@ type ExpressionVisitor<T> = Pick<
 import {
     addIREnum,
     addIRFunction,
-    type EnumType,
+    EnumType,
     FcmpOp,
     FloatWidth,
     IcmpOp,
@@ -682,6 +684,18 @@ export class AstToSsaCtx {
             if (found) {
                 return found;
             }
+        }
+        const OPTION_VARIANTS = new Set([
+            "None",
+            "Some",
+            "Option::None",
+            "Option::Some",
+        ]);
+        if (OPTION_VARIANTS.has(variantPath)) {
+            return (
+                this.irModule.enums.get("Option") ??
+                makeIREnumType("Option", [[], [makeIRUnitType()]])
+            );
         }
         return makeIREnumType("__anon_enum", []);
     }
@@ -1275,6 +1289,10 @@ export class AstToSsaCtx {
 
         const retTy: IRType = makeIRIntType(IntWidth.I64);
         if (expr.callee instanceof IdentifierExpr) {
+            const calleeName = expr.callee.name;
+            if (calleeName === "Some" || calleeName === "Option::Some") {
+                return this.lowerSomeConstructor(expr.span, args);
+            }
             // Check if this is a call to a generic function
             const resolvedName = this.resolveGenericCallName(expr);
             if (resolvedName) {
@@ -1293,6 +1311,27 @@ export class AstToSsaCtx {
             retTy,
         );
         return Result.ok(callDynInst.id);
+    }
+
+    private lowerSomeConstructor(
+        span: Span,
+        args: ValueId[],
+    ): Result<ValueId, LoweringError> {
+        if (args.length !== 1) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                "Some() requires exactly one argument",
+                span,
+            );
+        }
+        const dataTy = this.resolveValueType(args[0]) ?? makeIRUnitType();
+        const optEnumType = makeIREnumType("Option", [[], [dataTy]]);
+        const inst = this.builder.enumCreate(
+            1 /* SOME_TAG */,
+            args[0],
+            optEnumType,
+        );
+        return AstToSsaCtx.handleInstructionId(inst.id);
     }
 
     private resolveGenericCallName(expr: CallExpr): string | undefined {
@@ -1596,6 +1635,18 @@ export class AstToSsaCtx {
                 leftResult.value,
                 rightResult.value,
             ).id;
+        } else if (leftType instanceof EnumType) {
+            return this.lowerAssertEqEnum(
+                leftResult.value,
+                rightResult.value,
+                leftType,
+            );
+        } else if (rightType instanceof EnumType) {
+            return this.lowerAssertEqEnum(
+                leftResult.value,
+                rightResult.value,
+                rightType,
+            );
         } else {
             // Cannot statically compare values of this type; treat as no-op
             return Result.ok(this.unitValue());
@@ -1609,6 +1660,46 @@ export class AstToSsaCtx {
         this.builder.unreachable();
 
         this.builder.switchToBlock(continueBlock);
+        return Result.ok(this.unitValue());
+    }
+
+    private lowerAssertEqEnum(
+        left: ValueId,
+        right: ValueId,
+        enumTy: EnumType,
+    ): Result<ValueId, LoweringError> {
+        const SOME_TAG = 1;
+
+        const tagL = this.builder.enumGetTag(left).id;
+        const tagR = this.builder.enumGetTag(right).id;
+        const tagsEq = this.builder.icmp(IcmpOp.Eq, tagL, tagR).id;
+
+        const tagsMatchBlock = this.builder.createBlock("enum_eq_tags_match");
+        const failBlock = this.builder.createBlock("assert_fail");
+        const doneBlock = this.builder.createBlock("assert_ok");
+
+        this.builder.brIf(tagsEq, tagsMatchBlock, [], failBlock, []);
+
+        // tags_match_block: if Some (tag == 1), compare payload; else done
+        this.builder.switchToBlock(tagsMatchBlock);
+        const someTagConst = this.builder.iconst(SOME_TAG, IntWidth.Usize).id;
+        const isSome = this.builder.icmp(IcmpOp.Eq, tagL, someTagConst).id;
+        const cmpDataBlock = this.builder.createBlock("enum_eq_cmp_data");
+        this.builder.brIf(isSome, cmpDataBlock, [], doneBlock, []);
+
+        // cmp_data_block: extract payloads and compare
+        this.builder.switchToBlock(cmpDataBlock);
+        const innerTy = enumTy.variants[SOME_TAG]?.[0] ?? makeIRUnitType();
+        const valL = this.builder.enumGetData(left, SOME_TAG, 0, innerTy).id;
+        const valR = this.builder.enumGetData(right, SOME_TAG, 0, innerTy).id;
+        const dataEq = this.builder.icmp(IcmpOp.Eq, valL, valR).id;
+        this.builder.brIf(dataEq, doneBlock, [], failBlock, []);
+
+        // fail_block
+        this.builder.switchToBlock(failBlock);
+        this.builder.unreachable();
+
+        this.builder.switchToBlock(doneBlock);
         return Result.ok(this.unitValue());
     }
 
@@ -2104,42 +2195,8 @@ export class AstToSsaCtx {
         const armBlocks: BlockId[] = expr.arms.map((_, index) =>
             this.builder.createBlock(`match_arm_${index}`),
         );
-        const cases: { value: number; target: BlockId; args: ValueId[] }[] = [];
-        let defaultArmIndex: number | undefined;
-        let usesEnumPatterns = false;
-
-        for (let index = 0; index < expr.arms.length; index++) {
-            const arm = expr.arms[index];
-            if ("literalKind" in arm.pattern && "value" in arm.pattern) {
-                const raw = arm.pattern.value;
-                let value = Number(raw);
-                if (typeof raw === "number") {
-                    value = raw;
-                } else if (
-                    arm.pattern.literalKind === LiteralKind.Char &&
-                    typeof raw === "string"
-                ) {
-                    value =
-                        raw.codePointAt(STRING_FIRST_CHAR_INDEX) ??
-                        DEFAULT_CHAR_CODE;
-                }
-                cases.push({ value, target: armBlocks[index], args: [] });
-            } else if (arm.pattern instanceof IdentPattern) {
-                const tag = this.enumVariantTags.get(arm.pattern.name);
-                if (tag !== undefined) {
-                    cases.push({
-                        value: tag,
-                        target: armBlocks[index],
-                        args: [],
-                    });
-                    usesEnumPatterns = true;
-                } else {
-                    defaultArmIndex = index;
-                }
-            } else {
-                defaultArmIndex = index;
-            }
-        }
+        const { cases, defaultArmIndex, usesEnumPatterns } =
+            this.buildMatchCases(expr.arms, armBlocks);
 
         const switchValue = match(usesEnumPatterns)
             .with(true, () => this.builder.enumGetTag(scrutinee.value).id)
@@ -2155,14 +2212,80 @@ export class AstToSsaCtx {
 
         this.builder.switch(switchValue, cases, defaultBlock, []);
 
-        return this.lowerMatchArms(expr.arms, armBlocks);
+        return this.lowerMatchArms(expr.arms, armBlocks, scrutinee.value);
+    }
+
+    private buildMatchCases(
+        arms: MatchArmNode[],
+        armBlocks: BlockId[],
+    ): {
+        cases: { value: number; target: BlockId; args: ValueId[] }[];
+        defaultArmIndex: number | undefined;
+        usesEnumPatterns: boolean;
+    } {
+        const cases: { value: number; target: BlockId; args: ValueId[] }[] = [];
+        let defaultArmIndex: number | undefined;
+        let usesEnumPatterns = false;
+
+        for (let index = 0; index < arms.length; index++) {
+            const arm = arms[index];
+            if (arm.pattern instanceof LiteralPattern) {
+                cases.push({
+                    value: this.resolveLiteralPatternValue(arm.pattern),
+                    target: armBlocks[index],
+                    args: [],
+                });
+            } else if (arm.pattern instanceof IdentPattern) {
+                const tag = this.enumVariantTags.get(arm.pattern.name);
+                if (tag !== undefined) {
+                    cases.push({ value: tag, target: armBlocks[index], args: [] });
+                    usesEnumPatterns = true;
+                } else {
+                    defaultArmIndex = index;
+                }
+            } else if (arm.pattern instanceof StructPattern) {
+                const tag = this.resolveStructPatternTag(arm.pattern);
+                if (tag !== undefined) {
+                    cases.push({ value: tag, target: armBlocks[index], args: [] });
+                    usesEnumPatterns = true;
+                } else {
+                    defaultArmIndex = index;
+                }
+            } else {
+                defaultArmIndex = index;
+            }
+        }
+
+        return { cases, defaultArmIndex, usesEnumPatterns };
+    }
+
+    private resolveLiteralPatternValue(pattern: LiteralPattern): number {
+        const raw = pattern.value;
+        if (typeof raw === "number") {
+            return raw;
+        }
+        if (
+            pattern.literalKind === LiteralKind.Char &&
+            typeof raw === "string"
+        ) {
+            return raw.codePointAt(STRING_FIRST_CHAR_INDEX) ?? DEFAULT_CHAR_CODE;
+        }
+        return Number(raw);
+    }
+
+    private resolveStructPatternTag(pat: StructPattern): number | undefined {
+        if (!(pat.path instanceof IdentifierExpr)) {
+            return undefined;
+        }
+        return this.enumVariantTags.get(pat.path.name);
     }
 
     private lowerMatchArms(
         arms: MatchArmNode[],
         armBlocks: BlockId[],
+        scrutinee?: ValueId,
     ): Result<ValueId, LoweringError> {
-        const armResult = this.lowerMatchArmBodies(arms, armBlocks);
+        const armResult = this.lowerMatchArmBodies(arms, armBlocks, scrutinee);
         if (!armResult.isOk()) {
             return armResult;
         }
@@ -2378,6 +2501,15 @@ export class AstToSsaCtx {
 
     static translateTypeNode(typeNode: TypeNode): IRType {
         if (typeNode instanceof NamedTypeNode) {
+            if (typeNode.name === "Option") {
+                let innerIrType: IRType = makeIRUnitType();
+                if (typeNode.args?.args[0]) {
+                    innerIrType = AstToSsaCtx.translateTypeNode(
+                        typeNode.args.args[0],
+                    );
+                }
+                return makeIREnumType("Option", [[], [innerIrType]]);
+            }
             const builtin = AstToSsaCtx.namedBuiltin(typeNode.name);
             if (builtin) {
                 return AstToSsaCtx.builtinToIrType(builtin);
@@ -2708,6 +2840,7 @@ export class AstToSsaCtx {
     private lowerMatchArmBodies(
         arms: MatchArmNode[],
         armBlocks: BlockId[],
+        scrutinee?: ValueId,
     ): Result<
         {
             armExitBlocks: (BlockId | undefined)[];
@@ -2721,6 +2854,13 @@ export class AstToSsaCtx {
         for (let index = 0; index < arms.length; index++) {
             const arm = arms[index];
             this.builder.switchToBlock(armBlocks[index]);
+            if (arm.pattern instanceof StructPattern && scrutinee !== undefined) {
+                const bindResult = this.bindStructPatternPayload(
+                    arm.pattern,
+                    scrutinee,
+                );
+                if (!bindResult.isOk()) return bindResult;
+            }
             const body = this.lowerExpression(arm.body);
             if (!body.isOk()) {
                 return body;
@@ -2730,6 +2870,41 @@ export class AstToSsaCtx {
         }
 
         return Result.ok({ armExitBlocks, armValues });
+    }
+
+    private bindStructPatternPayload(
+        pat: StructPattern,
+        scrutinee: ValueId,
+    ): Result<void, LoweringError> {
+        if (!(pat.path instanceof IdentifierExpr)) return Result.ok(undefined);
+        const variantName = pat.path.name;
+        const tag = this.enumVariantTags.get(variantName);
+        if (tag === undefined) return Result.ok(undefined);
+
+        const scrutineeTy = this.resolveValueType(scrutinee);
+
+        for (const field of pat.fields) {
+            if (!(field.pattern instanceof IdentPattern)) continue;
+            const fieldIndex = Number(field.name);
+            if (Number.isNaN(fieldIndex)) continue;
+
+            let dataTy: IRType = makeIRUnitType();
+            if (scrutineeTy instanceof EnumType) {
+                dataTy =
+                    scrutineeTy.variants[tag]?.[fieldIndex] ?? makeIRUnitType();
+            }
+
+            const dataVal = this.builder.enumGetData(
+                scrutinee,
+                tag,
+                fieldIndex,
+                dataTy,
+            );
+            const allocaId = this.builder.alloca(dataTy).id;
+            this.builder.store(allocaId, dataVal.id, dataTy);
+            this.locals.set(field.pattern.name, { ptr: allocaId, ty: dataTy });
+        }
+        return Result.ok(undefined);
     }
 
     private resolveMergeResultType(
@@ -2920,6 +3095,22 @@ function seedStructMetadata(
         structFieldNames,
         "",
     );
+}
+
+function seedBuiltinOptionMetadata(
+    irModule: IRModule,
+    enumVariantTags: Map<string, number>,
+): void {
+    const NONE_TAG = 0;
+    const SOME_TAG = 1;
+    const optionEnumType = makeIREnumType("Option", [[], [makeIRUnitType()]]);
+    if (!irModule.enums.has("Option")) {
+        addIREnum(irModule, "Option", optionEnumType);
+    }
+    enumVariantTags.set("None", NONE_TAG);
+    enumVariantTags.set("Option::None", NONE_TAG);
+    enumVariantTags.set("Some", SOME_TAG);
+    enumVariantTags.set("Option::Some", SOME_TAG);
 }
 
 function seedEnumMetadata(
@@ -3385,6 +3576,7 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
     const structFieldNames = new Map<string, string[]>();
     const enumVariantTags = new Map<string, number>();
     seedStructMetadata(moduleNode, irModule, structFieldNames);
+    seedBuiltinOptionMetadata(irModule, enumVariantTags);
     seedEnumMetadata(moduleNode, irModule, enumVariantTags);
 
     // Collect generic items and generate monomorphized specializations

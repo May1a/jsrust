@@ -4,6 +4,8 @@ module main {
     s0 = "{}"
   }
 
+  enum Option { [], [()] }
+
   fn f96417 add(v0 arg0: i32, v1 arg1: i32) -> i32 {
     b0 (entry):
       v2: ptr<i32> = alloca i32

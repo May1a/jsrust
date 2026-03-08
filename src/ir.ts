@@ -1129,17 +1129,23 @@ export class EnumGetDataInst extends IRInst {
     readonly enum_: ValueId;
     readonly enumType: EnumType;
     readonly dataType: IRType;
+    readonly variant: number;
+    readonly index: number;
 
     constructor(
         id: ValueId,
         enum_: ValueId,
         enumType: EnumType,
         dataType: IRType,
+        variant: number,
+        index: number,
     ) {
-        super(IRInstKind.EnumGetData, id, new PtrType(dataType));
+        super(IRInstKind.EnumGetData, id, dataType);
         this.enum_ = enum_;
         this.enumType = enumType;
         this.dataType = dataType;
+        this.variant = variant;
+        this.index = index;
     }
 
     accept<R, C>(visitor: IRInstVisitor<R, C>, ctx: C): R {

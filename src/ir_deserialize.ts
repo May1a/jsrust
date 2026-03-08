@@ -1195,6 +1195,8 @@ class IRDeserializer {
 
     readEnumGetDataInstruction(id: number): Result<IRInst, DeserializeError> {
         const enumValue = this.readU32();
+        const variant = this.readU32();
+        const index = this.readU32();
         const enumTypeResult = this.readType();
         if (!enumTypeResult.isOk()) {
             return enumTypeResult;
@@ -1215,6 +1217,8 @@ class IRDeserializer {
                 enumValue,
                 enumTypeResult.value,
                 dataTypeResult.value,
+                variant,
+                index,
             ),
         );
     }
