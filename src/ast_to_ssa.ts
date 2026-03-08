@@ -2906,7 +2906,6 @@ export class AstToSsaCtx {
         }
         return Result.ok(undefined);
     }
-
     private resolveMergeResultType(
         values: (ValueId | undefined)[],
     ): IRType | undefined {

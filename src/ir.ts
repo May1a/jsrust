@@ -201,7 +201,7 @@ export class EnumType extends IRType {
             const bv = cmpType.variants[i];
             if (av.length !== bv.length) return false;
             for (let j = 0; j < av.length; j++) {
-                if (av[j].typeEq(bv[j])) return false;
+                if (!av[j].typeEq(bv[j])) return false;
             }
         }
         return true;
