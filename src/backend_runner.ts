@@ -190,7 +190,7 @@ function canBuildBackend(): Result<void, BackendBuildError> {
         );
     }
 
-    return Result.ok(undefined);
+    return Result.ok();
 }
 
 /**
@@ -225,7 +225,7 @@ function canCompileBackendWasm(): Result<void, BackendBuildError> {
         );
     }
 
-    return Result.ok(undefined);
+    return Result.ok();
 }
 
 interface ResolveBackendWasmOptions {
@@ -360,7 +360,9 @@ function emptyBytes(): Uint8Array {
 }
 
 function booleanFlag(value: boolean | undefined): number {
-    return match(value).with(true, () => 1).otherwise(() => 0);
+    return match(value)
+        .with(true, () => 1)
+        .otherwise(() => 0);
 }
 
 function getNumberExport(
@@ -809,7 +811,7 @@ function ensureCodegenWasmExports(
         );
     }
 
-    return Result.ok(undefined);
+    return Result.ok();
 }
 
 function rebuildBackendWasm(): Result<void, BackendBuildError> {
@@ -845,7 +847,7 @@ function rebuildBackendWasm(): Result<void, BackendBuildError> {
         );
     }
     wasmRuntime = undefined;
-    return Result.ok(undefined);
+    return Result.ok();
 }
 
 function runGeneratedWasmBytes(generatedWasmBytes: Uint8Array): Result<
@@ -1489,7 +1491,7 @@ function canRunBackendIntegrationTests(): Result<void, BackendBuildError> {
         );
     }
     if (fileExists(resolved.value.path)) {
-        return Result.ok(undefined);
+        return Result.ok();
     }
     if (resolved.value.source !== "default") {
         return Result.err(
@@ -1507,7 +1509,7 @@ function canRunBackendIntegrationTests(): Result<void, BackendBuildError> {
     if (clangCheck.isErr()) {
         return clangCheck;
     }
-    return Result.ok(undefined);
+    return Result.ok();
 }
 
 export {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { compile, compileToBinary, formatCompileError } from "../src/compile";
 import { deserializeModule } from "../src/ir_deserialize";
+import { EnumGetDataInst } from "../src/ir";
 import { compileToIR } from "./helpers";
 
 describe("compile", () => {
@@ -33,6 +34,25 @@ describe("compile", () => {
 
         const deserialized = deserializeModule(result.value.bytes);
         expect(deserialized.isOk()).toBe(true);
+        if (deserialized.isErr()) return;
+
+        // Verify that EnumGetDataInst round-trips with the concrete enum name,
+        // not the anonymous placeholder used before this fix.
+        const module = deserialized.value;
+        const enumGetDataInsts: EnumGetDataInst[] = [];
+        for (const fn of module.functions) {
+            for (const block of fn.blocks) {
+                for (const inst of block.instructions) {
+                    if (inst instanceof EnumGetDataInst) {
+                        enumGetDataInsts.push(inst);
+                    }
+                }
+            }
+        }
+        expect(enumGetDataInsts.length).toBeGreaterThan(0);
+        for (const inst of enumGetDataInsts) {
+            expect(inst.enumType.name).toBe("Option");
+        }
     });
 
     test("routes non-exhaustive matches to a trap block", () => {
@@ -65,6 +85,15 @@ describe("compile", () => {
 
         expect(result.value).toContain("enum Maybe { [], [] }");
         expect(result.value).toContain("enum_create Maybe tag=1");
+    });
+
+    test("infers user-defined enum variant types rather than builtin Option", () => {
+        // The return type annotation `Maybe` should be satisfied even though
+        // the body contains bare `Some`, which is a variant of Maybe here.
+        const result = compile(
+            "enum Maybe { None, Some } fn test() -> Maybe { Some }",
+        );
+        expect(result.isOk()).toBe(true);
     });
 
     test("rejects Some with the wrong arity", () => {

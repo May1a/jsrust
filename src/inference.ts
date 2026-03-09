@@ -192,10 +192,7 @@ function typesEqual(a: TypeNode, b: TypeNode): boolean {
     return false;
 }
 
-function makeOptionType(
-    span: Span,
-    innerTy?: TypeNode,
-): NamedTypeNode {
+function makeOptionType(span: Span, innerTy?: TypeNode): NamedTypeNode {
     const optionInnerTy = innerTy ?? new InferredTypeNode(span);
     return new NamedTypeNode(
         span,
@@ -296,6 +293,22 @@ function registerTraitImplMethodsWithPrefix(
     }
 }
 
+function registerEnumItemType(
+    typeCtx: TypeContext,
+    node: EnumItem,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+): void {
+    const qualName = qualify(node.name);
+    typeCtx.registerNamedType(qualName, new TupleTypeNode(node.span, []));
+    if (modulePrefix) {
+        typeCtx.registerNamedType(node.name, new TupleTypeNode(node.span, []));
+    }
+    for (const variant of node.variants) {
+        typeCtx.registerVariantOwner(variant.name, node.name);
+    }
+}
+
 function registerItemTypesWithPrefix(
     typeCtx: TypeContext,
     items: Item[],
@@ -314,17 +327,7 @@ function registerItemTypesWithPrefix(
             continue;
         }
         if (node instanceof EnumItem) {
-            const qualName = qualify(node.name);
-            typeCtx.registerNamedType(
-                qualName,
-                new TupleTypeNode(node.span, []),
-            );
-            if (modulePrefix) {
-                typeCtx.registerNamedType(
-                    node.name,
-                    new TupleTypeNode(node.span, []),
-                );
-            }
+            registerEnumItemType(typeCtx, node, qualify, modulePrefix);
             continue;
         }
         if (node instanceof GenericFnItem) {
@@ -582,11 +585,14 @@ function inferIdentifier(
         return undefined;
     }
 
-    // `None` is a value with an inferred inner type.
-    if (expr.name === "None") {
-        return makeOptionType(expr.span);
-    }
-    if (expr.name === "Some") {
+    // `None` and `Some` refer to builtin Option variants unless a user-defined
+    // enum has a variant with the same name, in which case we let the type
+    // propagate naturally (return undefined, no error).
+    if (expr.name === "None" || expr.name === "Some") {
+        const owner = typeCtx.lookupVariantOwner(expr.name);
+        if (owner && owner !== "Option") {
+            return undefined;
+        }
         return makeOptionType(expr.span);
     }
 
@@ -758,7 +764,13 @@ function inferCall(
     }
 
     if (expr.callee instanceof IdentifierExpr) {
-        return inferIdentifierCallType(typeCtx, expr, expr.callee, argTypes, errors);
+        return inferIdentifierCallType(
+            typeCtx,
+            expr,
+            expr.callee,
+            argTypes,
+            errors,
+        );
     }
 
     if (expr.callee instanceof FieldExpr) {
@@ -1429,5 +1441,5 @@ export function inferModule(
     if (errors.length > 0) {
         return Result.err(errors);
     }
-    return Result.ok(undefined);
+    return Result.ok();
 }

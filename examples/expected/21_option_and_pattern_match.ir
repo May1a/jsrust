@@ -25,7 +25,7 @@ module main {
       v12: i8 = iconst 0
       ret
   
-    b4 (enum_eq_cmp_data):
+    b4 (enum_eq_cmp_v1):
       v9: i32   = enum_get_data v1 variant=1 index=0 as i32
       v10: i32  = enum_get_data v3 variant=1 index=0 as i32
       v11: bool = icmp.eq v9, v10

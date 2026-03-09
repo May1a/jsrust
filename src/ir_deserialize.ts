@@ -304,6 +304,10 @@ class IRDeserializer {
     pos: number;
     strings: string[];
     end: number;
+    /** Maps value IDs to their IR types, built incrementally as instructions
+     *  are read. Used to recover the concrete enum type in EnumGetDataInst and
+     *  EnumGetTagInst without changing the binary format. */
+    private readonly valueTypes: Map<number, IRType>;
 
     constructor(
         buffer: ArrayBuffer,
@@ -314,6 +318,7 @@ class IRDeserializer {
         this.pos = 0;
         this.strings = [];
         this.end = byteLength;
+        this.valueTypes = new Map();
     }
 
     deserializeModule(): Result<IRModule, DeserializeError> {
@@ -530,7 +535,7 @@ class IRDeserializer {
             });
         }
 
-        return Result.ok(undefined);
+        return Result.ok();
     }
 
     readConstant(
@@ -579,7 +584,7 @@ class IRDeserializer {
             addIRFunction(module, fnResult.value);
         }
 
-        return Result.ok(undefined);
+        return Result.ok();
     }
 
     readFunction(): Result<IRFunction, DeserializeError> {
@@ -595,7 +600,9 @@ class IRDeserializer {
             if (!typeResult.isOk()) {
                 return typeResult;
             }
-            params.push(makeIRParam(this.readU32(), "", typeResult.value));
+            const paramId = this.readU32();
+            this.valueTypes.set(paramId, typeResult.value);
+            params.push(makeIRParam(paramId, "", typeResult.value));
         }
 
         const returnResult = this.readType();
@@ -640,7 +647,9 @@ class IRDeserializer {
             if (!typeResult.isOk()) {
                 return typeResult;
             }
-            addIRBlockParam(block, this.readU32(), typeResult.value);
+            const paramId = this.readU32();
+            this.valueTypes.set(paramId, typeResult.value);
+            addIRBlockParam(block, paramId, typeResult.value);
         }
 
         const instCount = this.readU32();
@@ -679,6 +688,9 @@ class IRDeserializer {
         const typeResult = this.readType();
         if (!typeResult.isOk()) {
             return typeResult;
+        }
+        if (instructionHasResult(opcode)) {
+            this.valueTypes.set(id, typeResult.value);
         }
         const reader = INSTRUCTION_READERS[opcode];
         if (!reader) {
@@ -1188,8 +1200,16 @@ class IRDeserializer {
         if (!isIRIntType(ty)) {
             return this.invalidInstructionType(IRInstKind.EnumGetTag, ty);
         }
+        const srcTy = this.valueTypes.get(enumValue);
+        if (srcTy && isIREnumType(srcTy)) {
+            return Result.ok(new EnumGetTagInst(id, enumValue, srcTy));
+        }
         return Result.ok(
-            new EnumGetTagInst(id, enumValue, makeIREnumType("__anon_enum", [])),
+            new EnumGetTagInst(
+                id,
+                enumValue,
+                makeIREnumType("__anon_enum", []),
+            ),
         );
     }
 
@@ -1200,6 +1220,15 @@ class IRDeserializer {
         const enumValue = this.readU32();
         const variant = this.readU32();
         const index = this.readU32();
+        // Recover the concrete enum type from the source value's type, which
+        // was registered as instructions were read. Falls back to an anonymous
+        // enum if the source value hasn't been seen yet.
+        const srcTy = this.valueTypes.get(enumValue);
+        if (srcTy && isIREnumType(srcTy)) {
+            return Result.ok(
+                new EnumGetDataInst(id, enumValue, srcTy, ty, variant, index),
+            );
+        }
         return Result.ok(
             new EnumGetDataInst(
                 id,
