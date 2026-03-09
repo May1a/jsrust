@@ -1536,6 +1536,37 @@ function isIRFnType(type: IRType): type is FnType {
     return type.kind === IRTypeKind.Fn;
 }
 
+function getIRTypeKey(type: IRType): string {
+    const visitor: IRTypeVisitor<string, void> = {
+        visitIntType: (intTy: IntType): string => `int:${String(intTy.width)}`,
+        visitFloatType: (floatTy: FloatType): string =>
+            `float:${String(floatTy.width)}`,
+        visitBoolType: (): string => "bool",
+        visitPtrType: (ptrTy: PtrType): string =>
+            `ptr<${getIRTypeKey(ptrTy.inner)}>`,
+        visitUnitType: (): string => "unit",
+        visitStructType: (structTy: StructType): string => {
+            const fieldKeys = structTy.fields.map((field) => getIRTypeKey(field));
+            return `struct:${structTy.name}{${fieldKeys.join(",")}}`;
+        },
+        visitEnumType: (enumTy: EnumType): string => getIREnumTypeKey(enumTy),
+        visitArrayType: (arrayTy: ArrayType): string =>
+            `array:${String(arrayTy.length)}<${getIRTypeKey(arrayTy.element)}>`,
+        visitFnType: (fnTy: FnType): string => {
+            const paramKeys = fnTy.params.map((param) => getIRTypeKey(param));
+            return `fn(${paramKeys.join(",")})->${getIRTypeKey(fnTy.returnType)}`;
+        },
+    };
+    return type.accept(visitor, undefined);
+}
+
+function getIREnumTypeKey(enumTy: EnumType): string {
+    const variantKeys = enumTy.variants.map((variant) =>
+        `[${variant.map((field) => getIRTypeKey(field)).join(",")}]`,
+    );
+    return `enum:${enumTy.name}{${variantKeys.join(",")}}`;
+}
+
 // ============================================================================
 // Type Equality
 // ============================================================================
@@ -1702,6 +1733,8 @@ export {
     isIREnumType,
     isIRArrayType,
     isIRFnType,
+    getIRTypeKey,
+    getIREnumTypeKey,
 
     // Type equality
     irTypeEquals,

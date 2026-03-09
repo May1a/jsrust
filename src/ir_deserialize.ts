@@ -308,6 +308,8 @@ class IRDeserializer {
      *  are read. Used to recover the concrete enum type in EnumGetDataInst and
      *  EnumGetTagInst without changing the binary format. */
     private readonly valueTypes: Map<number, IRType>;
+    private knownStructTypes: Map<string, StructType>;
+    private knownEnumTypes: Map<string, EnumType>;
 
     constructor(
         buffer: ArrayBuffer,
@@ -319,6 +321,8 @@ class IRDeserializer {
         this.strings = [];
         this.end = byteLength;
         this.valueTypes = new Map();
+        this.knownStructTypes = new Map();
+        this.knownEnumTypes = new Map();
     }
 
     deserializeModule(): Result<IRModule, DeserializeError> {
@@ -339,6 +343,8 @@ class IRDeserializer {
         if (!typesResult.isOk()) {
             return typesResult;
         }
+        this.knownStructTypes = typesResult.value.structs;
+        this.knownEnumTypes = typesResult.value.enums;
 
         const module = makeIRModule("module");
         this.addTypesToModule(module, typesResult.value);
@@ -818,6 +824,10 @@ class IRDeserializer {
         if (!nameResult.isOk()) {
             return nameResult;
         }
+        const displayNameResult = this.getString(this.readU32());
+        if (!displayNameResult.isOk()) {
+            return displayNameResult;
+        }
         const variantCount = this.readU32();
         const variants: IRType[][] = [];
         for (let i = 0; i < variantCount; i++) {
@@ -829,7 +839,7 @@ class IRDeserializer {
         }
         return Result.ok({
             name: nameResult.value,
-            enumType: makeIREnumType(nameResult.value, variants),
+            enumType: makeIREnumType(displayNameResult.value, variants),
         });
     }
 
@@ -838,6 +848,10 @@ class IRDeserializer {
         if (!nameResult.isOk()) {
             return nameResult;
         }
+        const known = this.knownStructTypes.get(nameResult.value);
+        if (known) {
+            return Result.ok(known);
+        }
         return Result.ok(makeIRStructType(nameResult.value, []));
     }
 
@@ -845,6 +859,10 @@ class IRDeserializer {
         const nameResult = this.getString(this.readU32());
         if (!nameResult.isOk()) {
             return nameResult;
+        }
+        const known = this.knownEnumTypes.get(nameResult.value);
+        if (known) {
+            return Result.ok(known);
         }
         return Result.ok(makeIREnumType(nameResult.value, []));
     }
@@ -1220,20 +1238,21 @@ class IRDeserializer {
         const enumValue = this.readU32();
         const variant = this.readU32();
         const index = this.readU32();
-        // Recover the concrete enum type from the source value's type, which
-        // was registered as instructions were read. Falls back to an anonymous
-        // enum if the source value hasn't been seen yet.
-        const srcTy = this.valueTypes.get(enumValue);
-        if (srcTy && isIREnumType(srcTy)) {
-            return Result.ok(
-                new EnumGetDataInst(id, enumValue, srcTy, ty, variant, index),
+        const enumTypeResult = this.readType();
+        if (!enumTypeResult.isOk()) {
+            return enumTypeResult;
+        }
+        if (!isIREnumType(enumTypeResult.value)) {
+            return this.invalidInstructionType(
+                IRInstKind.EnumGetData,
+                enumTypeResult.value,
             );
         }
         return Result.ok(
             new EnumGetDataInst(
                 id,
                 enumValue,
-                makeIREnumType("__anon_enum", []),
+                enumTypeResult.value,
                 ty,
                 variant,
                 index,

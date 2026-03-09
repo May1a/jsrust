@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { compile, compileToBinary, formatCompileError } from "../src/compile";
 import { deserializeModule } from "../src/ir_deserialize";
-import { EnumGetDataInst } from "../src/ir";
+import { EnumGetDataInst, IRTypeKind } from "../src/ir";
 import { compileToIR } from "./helpers";
 
 describe("compile", () => {
@@ -52,7 +52,28 @@ describe("compile", () => {
         expect(enumGetDataInsts.length).toBeGreaterThan(0);
         for (const inst of enumGetDataInsts) {
             expect(inst.enumType.name).toBe("Option");
+            expect(inst.enumType.variants[1]).toHaveLength(1);
+            expect(inst.enumType.variants[1]?.[0]?.kind).toBe(IRTypeKind.Int);
         }
+    });
+
+    test("preserves distinct concrete Option metadata entries", () => {
+        const result = compileToBinary(
+            "fn test() { let x: Option<i32> = None; let y: Option<bool> = None; let _ = x; let _ = y; }",
+        );
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+
+        const deserialized = deserializeModule(result.value.bytes);
+        expect(deserialized.isOk()).toBe(true);
+        if (deserialized.isErr()) return;
+
+        const optionPayloadKinds = [...deserialized.value.enums.values()]
+            .filter((enumTy) => enumTy.name === "Option")
+            .map((enumTy) => enumTy.variants[1]?.[0]?.kind);
+
+        expect(optionPayloadKinds).toContain(IRTypeKind.Int);
+        expect(optionPayloadKinds).toContain(IRTypeKind.Bool);
     });
 
     test("routes non-exhaustive matches to a trap block", () => {

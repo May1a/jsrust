@@ -66,6 +66,7 @@ import {
     type IRInstVisitor,
     type IRTermVisitor,
     type ValueId,
+    getIREnumTypeKey,
 } from "./ir";
 import { toBinaryInstKind } from "./ir_binary_opcode";
 
@@ -73,7 +74,7 @@ import { toBinaryInstKind } from "./ir_binary_opcode";
 export const MAGIC = 0x52_53_4a_53; // "JSRS" in little-endian
 
 // Current version
-export const VERSION = 2;
+export const VERSION = 3;
 
 // Flags
 export const FLAGS = 0;
@@ -217,8 +218,9 @@ export class IRSerializer {
         }
 
         // Enum names
-        for (const name of module.enums.keys()) {
-            this.strings.addString(name);
+        for (const [key, enumTy] of module.enums) {
+            this.strings.addString(key);
+            this.strings.addString(enumTy.name);
         }
 
         // Global names and types
@@ -274,7 +276,7 @@ export class IRSerializer {
                 this.strings.addString(structTy.name);
             },
             visitEnumType: (enumTy: EnumType): void => {
-                this.strings.addString(enumTy.name);
+                this.strings.addString(getIREnumTypeKey(enumTy));
             },
             visitArrayType: (arrayTy: ArrayType): void => {
                 this.collectTypeStrings(arrayTy.element);
@@ -433,7 +435,9 @@ export class IRSerializer {
             visitEnumGetTagInst: (egt: EnumGetTagInst): void => {
                 this.collectTypeStrings(egt.enumType);
             },
-            visitEnumGetDataInst: (): void => undefined,
+            visitEnumGetDataInst: (egd: EnumGetDataInst): void => {
+                this.collectTypeStrings(egd.enumType);
+            },
         };
         inst.accept(visitor, undefined);
     }
@@ -470,6 +474,7 @@ export class IRSerializer {
         size += U32_BYTE_WIDTH; // Enum count
         for (const enum_ of module.enums.values()) {
             size += U32_BYTE_WIDTH; // Name string id
+            size += U32_BYTE_WIDTH; // Display name string id
             size += U32_BYTE_WIDTH; // Variant count
             for (const variant of enum_.variants) {
                 size += U32_BYTE_WIDTH; // Field count
@@ -691,7 +696,8 @@ export class IRSerializer {
                 return s;
             },
             visitEnumGetTagInst: (): number => U32_BYTE_WIDTH,
-            visitEnumGetDataInst: (): number => THREE_U32_WIDTH,
+            visitEnumGetDataInst: (egd: EnumGetDataInst): number =>
+                THREE_U32_WIDTH + this.calculateTypeSize(egd.enumType),
         };
         size += inst.accept(visitor, undefined);
         return size;
@@ -824,8 +830,9 @@ export class IRSerializer {
 
         // Write enums
         this.writeU32(module.enums.size);
-        for (const [name, enum_] of module.enums) {
-            this.writeU32(this.strings.addString(name));
+        for (const [key, enum_] of module.enums) {
+            this.writeU32(this.strings.addString(key));
+            this.writeU32(this.strings.addString(enum_.name));
             this.writeU32(enum_.variants.length);
             for (const variant of enum_.variants) {
                 this.writeU32(variant.length);
@@ -892,7 +899,7 @@ export class IRSerializer {
                 this.writeU32(this.strings.addString(structTy.name));
             },
             visitEnumType: (enumTy: EnumType): void => {
-                this.writeU32(this.strings.addString(enumTy.name));
+                this.writeU32(this.strings.addString(getIREnumTypeKey(enumTy)));
             },
             visitArrayType: (arrayTy: ArrayType): void => {
                 this.writeU32(arrayTy.length);
@@ -1201,6 +1208,7 @@ export class IRSerializer {
                 this.writeU32(i.enum_);
                 this.writeU32(i.variant);
                 this.writeU32(i.index);
+                this.writeType(i.enumType);
             },
         };
         inst.accept(visitor, undefined);

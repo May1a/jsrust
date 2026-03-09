@@ -121,6 +121,7 @@ import {
     makeIRArrayType,
     type BlockId,
     FloatType,
+    getIREnumTypeKey,
     type IRBlock,
     type IRFunction,
     type IRModule,
@@ -434,46 +435,7 @@ export class AstToSsaCtx {
         if (!(ty instanceof EnumType)) {
             return;
         }
-
-        const existing = this.irModule.enums.get(ty.name);
-        if (!existing) {
-            this.irModule.enums.set(ty.name, ty);
-            return;
-        }
-
-        if (existing.typeEq(ty)) {
-            return;
-        }
-
-        if (!this.shouldReplaceEnumMetadata(existing, ty)) {
-            return;
-        }
-
-        this.irModule.enums.set(ty.name, ty);
-    }
-
-    private shouldReplaceEnumMetadata(
-        current: EnumType,
-        next: EnumType,
-    ): boolean {
-        if (current.name !== next.name) {
-            return false;
-        }
-
-        if (current.name !== "Option") {
-            return false;
-        }
-
-        const [, currentVariant] = current.variants;
-        const [, nextVariant] = next.variants;
-        const [currentPayload] = currentVariant;
-        const [nextPayload] = nextVariant;
-
-        if (!currentPayload.typeEq(makeIRUnitType())) {
-            return false;
-        }
-
-        return !nextPayload.typeEq(makeIRUnitType());
+        this.irModule.enums.set(getIREnumTypeKey(ty), ty);
     }
 
     private mergeBlockArgs(
@@ -760,7 +722,7 @@ export class AstToSsaCtx {
         const sepIndex = variantPath.indexOf(colonColon);
         if (sepIndex !== -1) {
             const enumName = variantPath.slice(0, sepIndex);
-            const found = this.irModule.enums.get(enumName);
+            const found = this.findEnumTypeByName(enumName);
             if (found) {
                 return found;
             }
@@ -768,7 +730,7 @@ export class AstToSsaCtx {
 
         const ownerName = this.enumVariantOwners.get(variantPath);
         if (ownerName) {
-            const found = this.irModule.enums.get(ownerName);
+            const found = this.findEnumTypeByName(ownerName);
             if (found) {
                 return found;
             }
@@ -777,11 +739,21 @@ export class AstToSsaCtx {
         const OPTION_VARIANTS = new Set(["Option::None", "Option::Some"]);
         if (OPTION_VARIANTS.has(variantPath)) {
             return (
-                this.irModule.enums.get("Option") ??
+                this.findEnumTypeByName("Option") ??
                 makeIREnumType("Option", [[], [makeIRUnitType()]])
             );
         }
         return makeIREnumType("__anon_enum", []);
+    }
+
+    private findEnumTypeByName(name: string): EnumType | undefined {
+        let matched: EnumType | undefined;
+        for (const enumTy of this.irModule.enums.values()) {
+            if (enumTy.name === name) {
+                matched = enumTy;
+            }
+        }
+        return matched;
     }
 
     private lowerAssign(expr: AssignExpr): Result<ValueId, LoweringError> {
@@ -3335,8 +3307,9 @@ function seedBuiltinOptionMetadata(
     const NONE_TAG = 0;
     const SOME_TAG = 1;
     const optionEnumType = makeIREnumType("Option", [[], [makeIRUnitType()]]);
-    if (!irModule.enums.has("Option")) {
-        addIREnum(irModule, "Option", optionEnumType);
+    const optionKey = getIREnumTypeKey(optionEnumType);
+    if (!irModule.enums.has(optionKey)) {
+        addIREnum(irModule, optionKey, optionEnumType);
     }
     enumVariantTags.set("None", NONE_TAG);
     enumVariantTags.set("Option::None", NONE_TAG);
@@ -3360,8 +3333,9 @@ function seedEnumMetadata(
         }
         const variantTypes: IRType[][] = item.variants.map(() => []);
         const enumType = makeIREnumType(item.name, variantTypes);
-        if (!irModule.enums.has(item.name)) {
-            addIREnum(irModule, item.name, enumType);
+        const enumKey = getIREnumTypeKey(enumType);
+        if (!irModule.enums.has(enumKey)) {
+            addIREnum(irModule, enumKey, enumType);
         }
         for (let index = 0; index < item.variants.length; index++) {
             const variant = item.variants[index];
