@@ -29,16 +29,14 @@ export type CompileOptions = {
     sourcePath?: string;
 };
 
-const taggedError = TaggedError;
-
-const CompileDiagnosticsErrorBase = taggedError("CompileDiagnosticsError")<{
+const CompileDiagnosticsErrorBase = TaggedError("CompileDiagnosticsError")<{
     diagnostics: CompileDiagnostic[];
     message: string;
 }>();
 
 export class CompileDiagnosticsError extends CompileDiagnosticsErrorBase {}
 
-const CompileInternalErrorBase = taggedError("CompileInternalError")<{
+const CompileInternalErrorBase = TaggedError("CompileInternalError")<{
     phase: "lower" | "serialize";
     message: string;
     cause: unknown;
@@ -46,7 +44,7 @@ const CompileInternalErrorBase = taggedError("CompileInternalError")<{
 
 export class CompileInternalError extends CompileInternalErrorBase {}
 
-const CompileFileReadErrorBase = taggedError("CompileFileReadError")<{
+const CompileFileReadErrorBase = TaggedError("CompileFileReadError")<{
     filePath: string;
     message: string;
     cause: unknown;

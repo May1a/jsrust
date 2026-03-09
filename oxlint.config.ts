@@ -30,6 +30,7 @@ const disabledRules: DummyRuleMap = {
     "oxc/no-async-await": "off",
     "unicorn/no-process-exit": "off",
     "unicorn/prefer-ternary": "off",
+    "eslint/new-cap": "off",
 };
 
 const stricterRules: DummyRuleMap = {

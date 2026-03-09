@@ -5,8 +5,6 @@ module main {
     s1 = "Hello, world!"
   }
 
-  enum Option { [], [()] }
-
   fn f951474 print_str_slice(v0 arg0: ptr<ptr<u8>>) -> () {
     b0 (entry):
       v1: ptr<ptr<ptr<u8>>> = alloca ptr<ptr<u8>>

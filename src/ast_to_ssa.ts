@@ -3306,11 +3306,6 @@ function seedBuiltinOptionMetadata(
 ): void {
     const NONE_TAG = 0;
     const SOME_TAG = 1;
-    const optionEnumType = makeIREnumType("Option", [[], [makeIRUnitType()]]);
-    const optionKey = getIREnumTypeKey(optionEnumType);
-    if (!irModule.enums.has(optionKey)) {
-        addIREnum(irModule, optionKey, optionEnumType);
-    }
     enumVariantTags.set("None", NONE_TAG);
     enumVariantTags.set("Option::None", NONE_TAG);
     enumVariantTags.set("Some", SOME_TAG);
