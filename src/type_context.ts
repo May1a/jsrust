@@ -34,6 +34,7 @@ export class TypeContext {
     private readonly fnSignatures: Map<string, FnSignature>;
     private readonly genericFnItems: Map<string, GenericFnItem>;
     private readonly callSubstitutions: WeakMap<CallExpr, SubstitutionMap>;
+    private readonly variantOwners: Map<string, string>;
 
     constructor() {
         this.expressionTypes = new WeakMap();
@@ -43,6 +44,7 @@ export class TypeContext {
         this.fnSignatures = new Map();
         this.genericFnItems = new Map();
         this.callSubstitutions = new WeakMap();
+        this.variantOwners = new Map();
     }
 
     setExpressionType(expr: Expression, ty: TypeNode): void {
@@ -131,6 +133,16 @@ export class TypeContext {
 
     lookupGenericFn(name: string): GenericFnItem | undefined {
         return this.genericFnItems.get(name);
+    }
+
+    // --- Enum variant owner tracking ---
+
+    registerVariantOwner(variantName: string, enumName: string): void {
+        this.variantOwners.set(variantName, enumName);
+    }
+
+    lookupVariantOwner(variantName: string): string | undefined {
+        return this.variantOwners.get(variantName);
     }
 
     // --- Call-site generic substitution tracking ---

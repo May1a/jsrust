@@ -8,6 +8,8 @@ module main {
 
   struct Self { i32, i32 }
 
+  enum Option { [], [()] }
+
   fn f294148 create(v0 arg0: i32, v1 arg1: i32) -> struct Point {
     b0 (entry):
       v2: ptr<i32>     = alloca i32

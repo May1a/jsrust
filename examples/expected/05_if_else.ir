@@ -4,6 +4,8 @@ module main {
     s0 = "{}"
   }
 
+  enum Option { [], [()] }
+
   fn f379446 simple_if() -> () {
     b0 (entry):
       v0: bool = bconst true

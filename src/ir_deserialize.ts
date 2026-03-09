@@ -288,8 +288,8 @@ const INSTRUCTION_READERS: Partial<Record<IRInstKind, InstructionReader>> = {
         deserializer.readEnumCreateInstruction(id, ty),
     [IRInstKind.EnumGetTag]: (deserializer, id, ty) =>
         deserializer.readEnumGetTagInstruction(id, ty),
-    [IRInstKind.EnumGetData]: (deserializer, id) =>
-        deserializer.readEnumGetDataInstruction(id),
+    [IRInstKind.EnumGetData]: (deserializer, id, ty) =>
+        deserializer.readEnumGetDataInstruction(id, ty),
 };
 
 const TERMINATOR_READERS: Partial<Record<IRTermKind, TerminatorReader>> = {
@@ -304,6 +304,12 @@ class IRDeserializer {
     pos: number;
     strings: string[];
     end: number;
+    /** Maps value IDs to their IR types, built incrementally as instructions
+     *  are read. Used to recover the concrete enum type in EnumGetDataInst and
+     *  EnumGetTagInst without changing the binary format. */
+    private readonly valueTypes: Map<number, IRType>;
+    private knownStructTypes: Map<string, StructType>;
+    private knownEnumTypes: Map<string, EnumType>;
 
     constructor(
         buffer: ArrayBuffer,
@@ -314,6 +320,9 @@ class IRDeserializer {
         this.pos = 0;
         this.strings = [];
         this.end = byteLength;
+        this.valueTypes = new Map();
+        this.knownStructTypes = new Map();
+        this.knownEnumTypes = new Map();
     }
 
     deserializeModule(): Result<IRModule, DeserializeError> {
@@ -334,6 +343,8 @@ class IRDeserializer {
         if (!typesResult.isOk()) {
             return typesResult;
         }
+        this.knownStructTypes = typesResult.value.structs;
+        this.knownEnumTypes = typesResult.value.enums;
 
         const module = makeIRModule("module");
         this.addTypesToModule(module, typesResult.value);
@@ -530,7 +541,7 @@ class IRDeserializer {
             });
         }
 
-        return Result.ok(undefined);
+        return Result.ok();
     }
 
     readConstant(
@@ -579,7 +590,7 @@ class IRDeserializer {
             addIRFunction(module, fnResult.value);
         }
 
-        return Result.ok(undefined);
+        return Result.ok();
     }
 
     readFunction(): Result<IRFunction, DeserializeError> {
@@ -595,7 +606,9 @@ class IRDeserializer {
             if (!typeResult.isOk()) {
                 return typeResult;
             }
-            params.push(makeIRParam(this.readU32(), "", typeResult.value));
+            const paramId = this.readU32();
+            this.valueTypes.set(paramId, typeResult.value);
+            params.push(makeIRParam(paramId, "", typeResult.value));
         }
 
         const returnResult = this.readType();
@@ -640,7 +653,9 @@ class IRDeserializer {
             if (!typeResult.isOk()) {
                 return typeResult;
             }
-            addIRBlockParam(block, this.readU32(), typeResult.value);
+            const paramId = this.readU32();
+            this.valueTypes.set(paramId, typeResult.value);
+            addIRBlockParam(block, paramId, typeResult.value);
         }
 
         const instCount = this.readU32();
@@ -679,6 +694,9 @@ class IRDeserializer {
         const typeResult = this.readType();
         if (!typeResult.isOk()) {
             return typeResult;
+        }
+        if (instructionHasResult(opcode)) {
+            this.valueTypes.set(id, typeResult.value);
         }
         const reader = INSTRUCTION_READERS[opcode];
         if (!reader) {
@@ -806,6 +824,10 @@ class IRDeserializer {
         if (!nameResult.isOk()) {
             return nameResult;
         }
+        const displayNameResult = this.getString(this.readU32());
+        if (!displayNameResult.isOk()) {
+            return displayNameResult;
+        }
         const variantCount = this.readU32();
         const variants: IRType[][] = [];
         for (let i = 0; i < variantCount; i++) {
@@ -817,7 +839,7 @@ class IRDeserializer {
         }
         return Result.ok({
             name: nameResult.value,
-            enumType: makeIREnumType(nameResult.value, variants),
+            enumType: makeIREnumType(displayNameResult.value, variants),
         });
     }
 
@@ -826,6 +848,10 @@ class IRDeserializer {
         if (!nameResult.isOk()) {
             return nameResult;
         }
+        const known = this.knownStructTypes.get(nameResult.value);
+        if (known) {
+            return Result.ok(known);
+        }
         return Result.ok(makeIRStructType(nameResult.value, []));
     }
 
@@ -833,6 +859,10 @@ class IRDeserializer {
         const nameResult = this.getString(this.readU32());
         if (!nameResult.isOk()) {
             return nameResult;
+        }
+        const known = this.knownEnumTypes.get(nameResult.value);
+        if (known) {
+            return Result.ok(known);
         }
         return Result.ok(makeIREnumType(nameResult.value, []));
     }
@@ -1188,13 +1218,26 @@ class IRDeserializer {
         if (!isIRIntType(ty)) {
             return this.invalidInstructionType(IRInstKind.EnumGetTag, ty);
         }
+        const srcTy = this.valueTypes.get(enumValue);
+        if (srcTy && isIREnumType(srcTy)) {
+            return Result.ok(new EnumGetTagInst(id, enumValue, srcTy));
+        }
         return Result.ok(
-            new EnumGetTagInst(id, enumValue, makeIREnumType("__anon_enum", [])),
+            new EnumGetTagInst(
+                id,
+                enumValue,
+                makeIREnumType("__anon_enum", []),
+            ),
         );
     }
 
-    readEnumGetDataInstruction(id: number): Result<IRInst, DeserializeError> {
+    readEnumGetDataInstruction(
+        id: number,
+        ty: IRType,
+    ): Result<IRInst, DeserializeError> {
         const enumValue = this.readU32();
+        const variant = this.readU32();
+        const index = this.readU32();
         const enumTypeResult = this.readType();
         if (!enumTypeResult.isOk()) {
             return enumTypeResult;
@@ -1205,16 +1248,14 @@ class IRDeserializer {
                 enumTypeResult.value,
             );
         }
-        const dataTypeResult = this.readType();
-        if (!dataTypeResult.isOk()) {
-            return dataTypeResult;
-        }
         return Result.ok(
             new EnumGetDataInst(
                 id,
                 enumValue,
                 enumTypeResult.value,
-                dataTypeResult.value,
+                ty,
+                variant,
+                index,
             ),
         );
     }

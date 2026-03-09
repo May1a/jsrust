@@ -7,6 +7,8 @@ module main {
     s3 = "{}"
   }
 
+  enum Option { [], [()] }
+
   enum Color { [], [], [] }
 
   fn f949693 test_example() -> () {
@@ -16,21 +18,24 @@ module main {
       store v0 -> v1
       v3: enum Color      = load v1
       v4: usize           = enum_get_tag v3
-      switch v4 [ 0 => b1, 1 => b2, 2 => b3 ] default: b1
+      switch v4 [ 0 => b1, 1 => b2, 2 => b3 ] default: b4
   
     b1 (match_arm_0):
       v5: ptr = sconst s0
-      br b4(v5)
+      br b5(v5)
   
     b2 (match_arm_1):
       v6: ptr = sconst s1
-      br b4(v6)
+      br b5(v6)
   
     b3 (match_arm_2):
       v7: ptr = sconst s2
-      br b4(v7)
+      br b5(v7)
   
-    b4(v8: ptr) (match_merge):
+    b4 (match_trap):
+      unreachable
+  
+    b5(v8: ptr) (match_merge):
       v9: ptr<ptr> = alloca ptr
       store v8 -> v9
       v11: ptr     = sconst s3
