@@ -4,8 +4,6 @@ module main {
     s0 = "hello"
   }
 
-  enum Option { [], [()] }
-
   fn f949693 test_example() -> () {
     b0 (entry):
       v0: i32       = iconst 42

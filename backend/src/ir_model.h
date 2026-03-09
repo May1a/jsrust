@@ -141,6 +141,7 @@ typedef struct {
     uint32_t data;
     uint32_t enumValue;
     uint32_t index;
+    IRType* enumType;
     uint32_t literalId;
 } IRInstruction;
 
@@ -191,6 +192,8 @@ typedef struct {
 typedef struct {
     ByteSpan name;
     uint32_t nameStringId;
+    ByteSpan displayName;
+    uint32_t displayNameStringId;
     uint32_t variantCount;
     IREnumVariant* variants;
 } IREnumDef;

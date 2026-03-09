@@ -3,7 +3,7 @@
 #include "bytes.h"
 
 #define IR_MAGIC 0x52534A53u
-#define IR_VERSION 2u
+#define IR_VERSION 3u
 #define IR_HEADER_SIZE 32u
 #define IR_MAX_TYPE_DEPTH 64u
 
@@ -335,6 +335,10 @@ static bool IRReader_readTypesSection(IRReader* reader, size_t start, size_t end
             return false;
         if (!IRReader_getString(reader, def->nameStringId, &def->name))
             return false;
+        if (!IRReader_readU32(reader, &def->displayNameStringId))
+            return false;
+        if (!IRReader_getString(reader, def->displayNameStringId, &def->displayName))
+            return false;
         if (!IRReader_readU32(reader, &def->variantCount))
             return false;
 
@@ -544,7 +548,8 @@ static bool IRReader_readInstruction(IRReader* reader, IRInstruction* inst)
     case IRInstKind_EnumGetTag:
         return IRReader_readU32(reader, &inst->enumValue);
     case IRInstKind_EnumGetData:
-        return IRReader_readU32(reader, &inst->enumValue) && IRReader_readU32(reader, &inst->variant) && IRReader_readU32(reader, &inst->index);
+        return IRReader_readU32(reader, &inst->enumValue) && IRReader_readU32(reader, &inst->variant) && IRReader_readU32(reader, &inst->index)
+            && IRReader_readType(reader, 0, &inst->enumType);
     case IRInstKind_Sconst:
         return IRReader_readU32(reader, &inst->literalId);
     default:
