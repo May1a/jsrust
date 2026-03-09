@@ -433,10 +433,7 @@ export class IRSerializer {
             visitEnumGetTagInst: (egt: EnumGetTagInst): void => {
                 this.collectTypeStrings(egt.enumType);
             },
-            visitEnumGetDataInst: (egd: EnumGetDataInst): void => {
-                this.collectTypeStrings(egd.enumType);
-                this.collectTypeStrings(egd.dataType);
-            },
+            visitEnumGetDataInst: (): void => undefined,
         };
         inst.accept(visitor, undefined);
     }
@@ -694,10 +691,7 @@ export class IRSerializer {
                 return s;
             },
             visitEnumGetTagInst: (): number => U32_BYTE_WIDTH,
-            visitEnumGetDataInst: (egd: EnumGetDataInst): number =>
-                THREE_U32_WIDTH +
-                this.calculateTypeSize(egd.enumType) +
-                this.calculateTypeSize(egd.dataType),
+            visitEnumGetDataInst: (): number => THREE_U32_WIDTH,
         };
         size += inst.accept(visitor, undefined);
         return size;
@@ -1207,8 +1201,6 @@ export class IRSerializer {
                 this.writeU32(i.enum_);
                 this.writeU32(i.variant);
                 this.writeU32(i.index);
-                this.writeType(i.enumType);
-                this.writeType(i.dataType);
             },
         };
         inst.accept(visitor, undefined);

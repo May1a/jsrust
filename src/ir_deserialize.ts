@@ -288,8 +288,8 @@ const INSTRUCTION_READERS: Partial<Record<IRInstKind, InstructionReader>> = {
         deserializer.readEnumCreateInstruction(id, ty),
     [IRInstKind.EnumGetTag]: (deserializer, id, ty) =>
         deserializer.readEnumGetTagInstruction(id, ty),
-    [IRInstKind.EnumGetData]: (deserializer, id) =>
-        deserializer.readEnumGetDataInstruction(id),
+    [IRInstKind.EnumGetData]: (deserializer, id, ty) =>
+        deserializer.readEnumGetDataInstruction(id, ty),
 };
 
 const TERMINATOR_READERS: Partial<Record<IRTermKind, TerminatorReader>> = {
@@ -1193,30 +1193,19 @@ class IRDeserializer {
         );
     }
 
-    readEnumGetDataInstruction(id: number): Result<IRInst, DeserializeError> {
+    readEnumGetDataInstruction(
+        id: number,
+        ty: IRType,
+    ): Result<IRInst, DeserializeError> {
         const enumValue = this.readU32();
         const variant = this.readU32();
         const index = this.readU32();
-        const enumTypeResult = this.readType();
-        if (!enumTypeResult.isOk()) {
-            return enumTypeResult;
-        }
-        if (!isIREnumType(enumTypeResult.value)) {
-            return this.invalidInstructionType(
-                IRInstKind.EnumGetData,
-                enumTypeResult.value,
-            );
-        }
-        const dataTypeResult = this.readType();
-        if (!dataTypeResult.isOk()) {
-            return dataTypeResult;
-        }
         return Result.ok(
             new EnumGetDataInst(
                 id,
                 enumValue,
-                enumTypeResult.value,
-                dataTypeResult.value,
+                makeIREnumType("__anon_enum", []),
+                ty,
                 variant,
                 index,
             ),
