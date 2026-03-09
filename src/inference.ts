@@ -192,6 +192,18 @@ function typesEqual(a: TypeNode, b: TypeNode): boolean {
     return false;
 }
 
+function makeOptionType(
+    span: Span,
+    innerTy?: TypeNode,
+): NamedTypeNode {
+    const optionInnerTy = innerTy ?? new InferredTypeNode(span);
+    return new NamedTypeNode(
+        span,
+        "Option",
+        new GenericArgsNode(span, [optionInnerTy]),
+    );
+}
+
 // --- Comparison and logical ops that return bool ---
 const COMPARISON_OPS = new Set([
     BinaryOp.Eq,
@@ -570,9 +582,12 @@ function inferIdentifier(
         return undefined;
     }
 
-    // Option constructors used as bare identifiers
-    if (expr.name === "None" || expr.name === "Some") {
-        return new NamedTypeNode(expr.span, "Option");
+    // `None` is a value with an inferred inner type.
+    if (expr.name === "None") {
+        return makeOptionType(expr.span);
+    }
+    if (expr.name === "Some") {
+        return makeOptionType(expr.span);
     }
 
     // Qualified paths (e.g. `Color::Green`, `Vec::new`) are enum variants or
@@ -763,18 +778,25 @@ function inferIdentifierCallType(
     const { name: calleeName } = callee;
 
     if (calleeName === "Some" || calleeName === "Option::Some") {
-        const [innerTy] = argTypes;
-        if (innerTy) {
-            return new NamedTypeNode(
-                expr.span,
-                "Option",
-                new GenericArgsNode(expr.span, [innerTy]),
-            );
+        if (expr.args.length !== 1) {
+            errors.push({
+                message: "`Some` requires exactly one argument",
+                span: expr.span,
+            });
+            return undefined;
         }
-        return new NamedTypeNode(expr.span, "Option");
+        const [innerTy] = argTypes;
+        return makeOptionType(expr.span, innerTy);
     }
     if (calleeName === "None" || calleeName === "Option::None") {
-        return new NamedTypeNode(expr.span, "Option");
+        if (expr.args.length !== 0) {
+            errors.push({
+                message: "`None` does not take any arguments",
+                span: expr.span,
+            });
+            return undefined;
+        }
+        return makeOptionType(expr.span);
     }
 
     const genericResult = resolveGenericCall(typeCtx, expr, argTypes);

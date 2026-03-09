@@ -321,12 +321,13 @@ export function makeEnumGetData(
     enumValue: number,
     variant: number,
     index: number,
+    enumType: EnumType,
     dataType: IRType,
 ): IRInst {
     return new EnumGetDataInst(
         freshValueId(),
         enumValue,
-        unknownEnumType(),
+        enumType,
         dataType,
         variant,
         index,

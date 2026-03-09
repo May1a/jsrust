@@ -238,6 +238,7 @@ export class AstToSsaCtx {
     private readonly functionReturnTypes: Map<string, IRType>;
     private readonly structFieldNames: Map<string, string[]>;
     private readonly enumVariantTags: Map<string, number>;
+    private readonly enumVariantOwners: Map<string, string>;
     private readonly monoRegistry?: MonomorphizationRegistry;
     private loopStack: LoopFrame[];
     private currentReturnType: IRType;
@@ -248,6 +249,7 @@ export class AstToSsaCtx {
             functionReturnTypes?: Map<string, IRType>;
             structFieldNames?: Map<string, string[]>;
             enumVariantTags?: Map<string, number>;
+            enumVariantOwners?: Map<string, string>;
             monoRegistry?: MonomorphizationRegistry;
         } = {},
     ) {
@@ -261,6 +263,8 @@ export class AstToSsaCtx {
             options.structFieldNames ?? new Map<string, string[]>();
         this.enumVariantTags =
             options.enumVariantTags ?? new Map<string, number>();
+        this.enumVariantOwners =
+            options.enumVariantOwners ?? new Map<string, string>();
         this.monoRegistry = options.monoRegistry;
         this.loopStack = [];
         this.currentReturnType = makeIRUnitType();
@@ -286,6 +290,7 @@ export class AstToSsaCtx {
         this.currentReturnType = AstToSsaCtx.translateTypeNode(
             fnDecl.returnType,
         );
+        this.registerEnumTypeMetadata(this.currentReturnType);
 
         this.startFunction(fnDecl.name, paramTypes);
         this.bindFunctionParams(paramEntries.value);
@@ -351,12 +356,8 @@ export class AstToSsaCtx {
         for (let i = 0; i < params.length; i++) {
             const paramEntry = params[i];
             const irType = AstToSsaCtx.translateTypeNode(paramEntry.ty);
-            const allocaId = this.builder.alloca(irType).id;
             const param = currentFunction.params[i];
-            this.builder.store(allocaId, param.id, irType);
-            this.locals.set(paramEntry.name ?? "_", {
-                ptr: allocaId,
-                ty: irType,
+            this.bindLocalValue(paramEntry.name ?? "_", param.id, irType, {
                 formatTag: AstToSsaCtx.formatTagFromTypeNode(paramEntry.ty),
                 typeNode: paramEntry.ty,
             });
@@ -396,6 +397,83 @@ export class AstToSsaCtx {
 
     private currentBlockId(): BlockId | undefined {
         return this.builder.currentBlock?.id;
+    }
+
+    private cloneLocals(): Map<string, LocalBinding> {
+        return new Map(this.locals);
+    }
+
+    private restoreLocals(snapshot: Map<string, LocalBinding>): void {
+        this.locals.clear();
+        for (const [name, binding] of snapshot) {
+            this.locals.set(name, binding);
+        }
+    }
+
+    private bindLocalValue(
+        name: string,
+        value: ValueId,
+        ty: IRType,
+        options: {
+            formatTag?: FormatTag;
+            typeNode?: TypeNode;
+        } = {},
+    ): void {
+        this.registerEnumTypeMetadata(ty);
+        const allocaId = this.builder.alloca(ty).id;
+        this.builder.store(allocaId, value, ty);
+        this.locals.set(name, {
+            ptr: allocaId,
+            ty,
+            formatTag: options.formatTag,
+            typeNode: options.typeNode,
+        });
+    }
+
+    private registerEnumTypeMetadata(ty: IRType): void {
+        if (!(ty instanceof EnumType)) {
+            return;
+        }
+
+        const existing = this.irModule.enums.get(ty.name);
+        if (existing === undefined) {
+            this.irModule.enums.set(ty.name, ty);
+            return;
+        }
+
+        if (existing.typeEq(ty)) {
+            return;
+        }
+
+        if (!this.shouldReplaceEnumMetadata(existing, ty)) {
+            return;
+        }
+
+        this.irModule.enums.set(ty.name, ty);
+    }
+
+    private shouldReplaceEnumMetadata(
+        current: EnumType,
+        next: EnumType,
+    ): boolean {
+        if (current.name !== next.name) {
+            return false;
+        }
+
+        if (current.name !== "Option") {
+            return false;
+        }
+
+        const [, currentVariant] = current.variants;
+        const [, nextVariant] = next.variants;
+        const [currentPayload] = currentVariant;
+        const [nextPayload] = nextVariant;
+
+        if (!currentPayload.typeEq(makeIRUnitType())) {
+            return false;
+        }
+
+        return !nextPayload.typeEq(makeIRUnitType());
     }
 
     private mergeBlockArgs(
@@ -451,12 +529,7 @@ export class AstToSsaCtx {
                     ty = inferred;
                 }
             }
-            const slot = this.builder.alloca(ty);
-            const slotId = slot.id;
-            this.builder.store(slotId, initResult.value, ty);
-            this.locals.set(stmt.pattern.name, {
-                ptr: slotId,
-                ty,
+            this.bindLocalValue(stmt.pattern.name, initResult.value, ty, {
                 formatTag: this.inferExpressionFormatTag(stmt.init),
             });
         }
@@ -658,6 +731,7 @@ export class AstToSsaCtx {
         const variantTag = this.enumVariantTags.get(expr.name);
         if (variantTag !== undefined) {
             const enumType = this.resolveEnumTypeForVariant(expr.name);
+            this.registerEnumTypeMetadata(enumType);
             const inst = this.builder.enumCreate(
                 variantTag,
                 undefined,
@@ -685,12 +759,16 @@ export class AstToSsaCtx {
                 return found;
             }
         }
-        const OPTION_VARIANTS = new Set([
-            "None",
-            "Some",
-            "Option::None",
-            "Option::Some",
-        ]);
+
+        const ownerName = this.enumVariantOwners.get(variantPath);
+        if (ownerName) {
+            const found = this.irModule.enums.get(ownerName);
+            if (found) {
+                return found;
+            }
+        }
+
+        const OPTION_VARIANTS = new Set(["Option::None", "Option::Some"]);
         if (OPTION_VARIANTS.has(variantPath)) {
             return (
                 this.irModule.enums.get("Option") ??
@@ -1326,6 +1404,7 @@ export class AstToSsaCtx {
         }
         const dataTy = this.resolveValueType(args[0]) ?? makeIRUnitType();
         const optEnumType = makeIREnumType("Option", [[], [dataTy]]);
+        this.registerEnumTypeMetadata(optEnumType);
         const inst = this.builder.enumCreate(
             1 /* SOME_TAG */,
             args[0],
@@ -1690,8 +1769,20 @@ export class AstToSsaCtx {
         // cmp_data_block: extract payloads and compare
         this.builder.switchToBlock(cmpDataBlock);
         const innerTy = enumTy.variants[SOME_TAG]?.[0] ?? makeIRUnitType();
-        const valL = this.builder.enumGetData(left, SOME_TAG, 0, innerTy).id;
-        const valR = this.builder.enumGetData(right, SOME_TAG, 0, innerTy).id;
+        const valL = this.builder.enumGetData(
+            left,
+            SOME_TAG,
+            0,
+            enumTy,
+            innerTy,
+        ).id;
+        const valR = this.builder.enumGetData(
+            right,
+            SOME_TAG,
+            0,
+            enumTy,
+            innerTy,
+        ).id;
         const dataEq = this.builder.icmp(IcmpOp.Eq, valL, valR).id;
         this.builder.brIf(dataEq, doneBlock, [], failBlock, []);
 
@@ -2084,17 +2175,14 @@ export class AstToSsaCtx {
             for (let i = 0; i < paramEntries.length; i++) {
                 const paramEntry = paramEntries[i];
                 const irType = paramTypes[i];
-                const allocaId = this.builder.alloca(irType).id;
-                this.builder.store(
-                    allocaId,
+                this.bindLocalValue(
+                    paramEntry.name,
                     currentFunction.params[i].id,
                     irType,
+                    {
+                        typeNode: paramEntry.ty,
+                    },
                 );
-                this.locals.set(paramEntry.name, {
-                    ptr: allocaId,
-                    ty: irType,
-                    typeNode: paramEntry.ty,
-                });
             }
         }
 
@@ -2203,16 +2291,35 @@ export class AstToSsaCtx {
             .otherwise(() => scrutinee.value);
 
         let defaultBlock: BlockId | undefined;
+        let trapBlock: BlockId | undefined;
         if (defaultArmIndex !== undefined) {
             defaultBlock = armBlocks[defaultArmIndex];
         } else {
-            [defaultBlock] = armBlocks;
+            trapBlock = this.builder.createBlock("match_trap");
+            defaultBlock = trapBlock;
         }
-        defaultBlock ??= this.builder.createBlock("match_default");
 
         this.builder.switch(switchValue, cases, defaultBlock, []);
 
-        return this.lowerMatchArms(expr.arms, armBlocks, scrutinee.value);
+        const matchResult = this.lowerMatchArms(
+            expr.arms,
+            armBlocks,
+            scrutinee.value,
+        );
+        if (!matchResult.isOk()) {
+            return matchResult;
+        }
+
+        if (trapBlock !== undefined) {
+            const resumeBlock = this.currentBlockId();
+            this.builder.switchToBlock(trapBlock);
+            this.builder.unreachable();
+            if (resumeBlock !== undefined) {
+                this.builder.switchToBlock(resumeBlock);
+            }
+        }
+
+        return matchResult;
     }
 
     private buildMatchCases(
@@ -2850,26 +2957,54 @@ export class AstToSsaCtx {
     > {
         const armExitBlocks: (BlockId | undefined)[] = [];
         const armValues: (ValueId | undefined)[] = [];
+        const outerLocals = this.cloneLocals();
 
         for (let index = 0; index < arms.length; index++) {
             const arm = arms[index];
+            this.restoreLocals(outerLocals);
             this.builder.switchToBlock(armBlocks[index]);
-            if (arm.pattern instanceof StructPattern && scrutinee !== undefined) {
-                const bindResult = this.bindStructPatternPayload(
-                    arm.pattern,
-                    scrutinee,
-                );
-                if (!bindResult.isOk()) return bindResult;
+            if (scrutinee !== undefined) {
+                const bindResult = this.bindMatchArmPattern(arm, scrutinee);
+                if (!bindResult.isOk()) {
+                    this.restoreLocals(outerLocals);
+                    return bindResult;
+                }
             }
             const body = this.lowerExpression(arm.body);
             if (!body.isOk()) {
+                this.restoreLocals(outerLocals);
                 return body;
             }
             armValues.push(this.currentBlockValue(body.value));
             armExitBlocks.push(this.currentBlockId());
+            this.restoreLocals(outerLocals);
         }
 
+        this.restoreLocals(outerLocals);
         return Result.ok({ armExitBlocks, armValues });
+    }
+
+    private bindMatchArmPattern(
+        arm: MatchArmNode,
+        scrutinee: ValueId,
+    ): Result<void, LoweringError> {
+        if (arm.pattern instanceof StructPattern) {
+            return this.bindStructPatternPayload(arm.pattern, scrutinee);
+        }
+
+        if (!(arm.pattern instanceof IdentPattern)) {
+            return Result.ok(undefined);
+        }
+
+        if (this.enumVariantTags.get(arm.pattern.name) !== undefined) {
+            return Result.ok(undefined);
+        }
+
+        const scrutineeTy = this.resolveValueType(scrutinee) ?? makeIRUnitType();
+        this.bindLocalValue(arm.pattern.name, scrutinee, scrutineeTy, {
+            typeNode: arm.pattern.type,
+        });
+        return Result.ok(undefined);
     }
 
     private bindStructPatternPayload(
@@ -2894,15 +3029,20 @@ export class AstToSsaCtx {
                     scrutineeTy.variants[tag]?.[fieldIndex] ?? makeIRUnitType();
             }
 
+            let enumTy = makeIREnumType("__anon_enum", []);
+            if (scrutineeTy instanceof EnumType) {
+                enumTy = scrutineeTy;
+            }
             const dataVal = this.builder.enumGetData(
                 scrutinee,
                 tag,
                 fieldIndex,
+                enumTy,
                 dataTy,
             );
-            const allocaId = this.builder.alloca(dataTy).id;
-            this.builder.store(allocaId, dataVal.id, dataTy);
-            this.locals.set(field.pattern.name, { ptr: allocaId, ty: dataTy });
+            this.bindLocalValue(field.pattern.name, dataVal.id, dataTy, {
+                typeNode: field.pattern.type,
+            });
         }
         return Result.ok(undefined);
     }
@@ -3099,6 +3239,7 @@ function seedStructMetadata(
 function seedBuiltinOptionMetadata(
     irModule: IRModule,
     enumVariantTags: Map<string, number>,
+    enumVariantOwners: Map<string, string>,
 ): void {
     const NONE_TAG = 0;
     const SOME_TAG = 1;
@@ -3110,12 +3251,17 @@ function seedBuiltinOptionMetadata(
     enumVariantTags.set("Option::None", NONE_TAG);
     enumVariantTags.set("Some", SOME_TAG);
     enumVariantTags.set("Option::Some", SOME_TAG);
+    enumVariantOwners.set("None", "Option");
+    enumVariantOwners.set("Option::None", "Option");
+    enumVariantOwners.set("Some", "Option");
+    enumVariantOwners.set("Option::Some", "Option");
 }
 
 function seedEnumMetadata(
     moduleNode: ModuleNode,
     irModule: IRModule,
     enumVariantTags: Map<string, number>,
+    enumVariantOwners: Map<string, string>,
 ): void {
     for (const item of moduleNode.items) {
         if (!(item instanceof EnumItem)) {
@@ -3132,6 +3278,8 @@ function seedEnumMetadata(
             // Fully-qualified name (for expression lowering)
             enumVariantTags.set(variant.name, index);
             enumVariantTags.set(`${item.name}::${variant.name}`, index);
+            enumVariantOwners.set(variant.name, item.name);
+            enumVariantOwners.set(`${item.name}::${variant.name}`, item.name);
         }
     }
 }
@@ -3359,6 +3507,7 @@ function lowerOwnedFunction(
     functionReturnTypes: Map<string, IRType>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
+    enumVariantOwners: Map<string, string>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
 ): void {
@@ -3367,6 +3516,7 @@ function lowerOwnedFunction(
         functionReturnTypes,
         structFieldNames,
         enumVariantTags,
+        enumVariantOwners,
         monoRegistry,
     });
     ctx.seedFunctionIds(fnIdMap);
@@ -3475,6 +3625,7 @@ function lowerImplMethods(
     functionReturnTypes: Map<string, IRType>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
+    enumVariantOwners: Map<string, string>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
 ): void {
@@ -3493,6 +3644,7 @@ function lowerImplMethods(
             functionReturnTypes,
             structFieldNames,
             enumVariantTags,
+            enumVariantOwners,
             fnIdMap,
             monoRegistry,
         );
@@ -3505,6 +3657,7 @@ function lowerModuleItem(
     functionReturnTypes: Map<string, IRType>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
+    enumVariantOwners: Map<string, string>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
 ): void {
@@ -3518,6 +3671,7 @@ function lowerModuleItem(
             functionReturnTypes,
             structFieldNames,
             enumVariantTags,
+            enumVariantOwners,
             fnIdMap,
             monoRegistry,
         );
@@ -3530,6 +3684,7 @@ function lowerModuleItem(
             functionReturnTypes,
             structFieldNames,
             enumVariantTags,
+            enumVariantOwners,
             fnIdMap,
             monoRegistry,
         );
@@ -3549,6 +3704,7 @@ function lowerModuleItem(
                 functionReturnTypes,
                 structFieldNames,
                 enumVariantTags,
+                enumVariantOwners,
                 fnIdMap,
                 monoRegistry,
             );
@@ -3563,6 +3719,7 @@ function lowerModuleItem(
                 functionReturnTypes,
                 structFieldNames,
                 enumVariantTags,
+                enumVariantOwners,
                 fnIdMap,
                 monoRegistry,
             );
@@ -3574,9 +3731,15 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
     const irModule = makeIRModule(moduleNode.name);
     const structFieldNames = new Map<string, string[]>();
     const enumVariantTags = new Map<string, number>();
+    const enumVariantOwners = new Map<string, string>();
     seedStructMetadata(moduleNode, irModule, structFieldNames);
-    seedBuiltinOptionMetadata(irModule, enumVariantTags);
-    seedEnumMetadata(moduleNode, irModule, enumVariantTags);
+    seedBuiltinOptionMetadata(irModule, enumVariantTags, enumVariantOwners);
+    seedEnumMetadata(
+        moduleNode,
+        irModule,
+        enumVariantTags,
+        enumVariantOwners,
+    );
 
     // Collect generic items and generate monomorphized specializations
     const registry = new MonomorphizationRegistry();
@@ -3602,6 +3765,7 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
             functionReturnTypes,
             structFieldNames,
             enumVariantTags,
+            enumVariantOwners,
             fnIdMap,
             registry,
         );
@@ -3615,6 +3779,7 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
             functionReturnTypes,
             structFieldNames,
             enumVariantTags,
+            enumVariantOwners,
             fnIdMap,
             registry,
         );
