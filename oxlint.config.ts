@@ -11,6 +11,7 @@ const disabledRules: DummyRuleMap = {
     "class-methods-use-this": "off",
     "no-continue": "off",
     "no-bitwise": "off",
+    "no-ternary": "off",
     "no-plusplus": "off",
     "no-undefined": "off",
     "filename-case": "off",
@@ -28,6 +29,7 @@ const disabledRules: DummyRuleMap = {
     "eslint/no-sequences": "off",
     "oxc/no-async-await": "off",
     "unicorn/no-process-exit": "off",
+    "unicorn/prefer-ternary": "off",
 };
 
 const stricterRules: DummyRuleMap = {
