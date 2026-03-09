@@ -14,6 +14,8 @@ module main {
 
   struct Self { struct Bar, i32 }
 
+  enum Option { [], [()] }
+
   fn f108960 new(v0 arg0: struct Bar, v1 arg1: i32) -> struct Foo {
     b0 (entry):
       v2: ptr<struct Bar> = alloca struct Bar

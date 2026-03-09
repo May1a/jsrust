@@ -464,10 +464,11 @@ export class IRBuilder {
         enum_: ValueId,
         variant: number,
         index: number,
+        enumTy: EnumType,
         dataTy: IRType,
     ): IRInst {
         return this.appendInstruction(
-            makeEnumGetData(enum_, variant, index, dataTy),
+            makeEnumGetData(enum_, variant, index, enumTy, dataTy),
         );
     }
 

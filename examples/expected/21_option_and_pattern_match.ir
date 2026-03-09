@@ -1,0 +1,44 @@
+module main {
+
+  enum Option { [], [i32] }
+
+  fn f247194 simple_opt() -> () {
+    b0 (entry):
+      v0: i32         = iconst 5
+      v1: enum Option = call as_opt_i32(v0)
+      v2: i32         = iconst 5
+      v3: enum Option = enum_create Option tag=1, data: v2
+      v4: usize       = enum_get_tag v1
+      v5: usize       = enum_get_tag v3
+      v6: bool        = icmp.eq v4, v5
+      br_if v6, then: b1, else: b2
+  
+    b1 (enum_eq_tags_match):
+      v7: usize = iconst 1
+      v8: bool  = icmp.eq v4, v7
+      br_if v8, then: b4, else: b3
+  
+    b2 (assert_fail):
+      unreachable
+  
+    b3 (assert_ok):
+      v12: i8 = iconst 0
+      ret
+  
+    b4 (enum_eq_cmp_v1):
+      v9: i32   = enum_get_data v1 variant=1 index=0 as i32
+      v10: i32  = enum_get_data v3 variant=1 index=0 as i32
+      v11: bool = icmp.eq v9, v10
+      br_if v11, then: b3, else: b2
+  }
+
+  fn f637551 as_opt_i32(v13 arg0: i32) -> enum Option {
+    b0 (entry):
+      v14: ptr<i32>    = alloca i32
+      store v13 -> v14
+      v16: i32         = load v14
+      v17: enum Option = enum_create Option tag=1, data: v16
+      ret v17
+  }
+
+}

@@ -484,7 +484,7 @@ class InstPrinterVisitor implements IRInstVisitor<InstLine, IRModule> {
     visitEnumGetDataInst(inst: EnumGetDataInst, _mod: IRModule): InstLine {
         return this.mkDef(
             inst,
-            `enum_get_data ${val(inst.enum_)} as ${printType(inst.dataType)}`,
+            `enum_get_data ${val(inst.enum_)} variant=${inst.variant} index=${inst.index} as ${printType(inst.dataType)}`,
         );
     }
 }

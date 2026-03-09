@@ -22,6 +22,7 @@ import {
     ImplItem,
     IdentPattern,
     IdentifierExpr,
+    LiteralPattern,
     InferredTypeNode,
     type IndexExpr,
     type IfExpr,
@@ -46,6 +47,7 @@ import {
     type Statement,
     StructItem,
     type StructExpr,
+    StructPattern,
     TraitImplItem,
     type TypeNode,
     TupleTypeNode,
@@ -100,7 +102,7 @@ type ExpressionVisitor<T> = Pick<
 import {
     addIREnum,
     addIRFunction,
-    type EnumType,
+    EnumType,
     FcmpOp,
     FloatWidth,
     IcmpOp,
@@ -119,6 +121,7 @@ import {
     makeIRArrayType,
     type BlockId,
     FloatType,
+    getIREnumTypeKey,
     type IRBlock,
     type IRFunction,
     type IRModule,
@@ -236,6 +239,7 @@ export class AstToSsaCtx {
     private readonly functionReturnTypes: Map<string, IRType>;
     private readonly structFieldNames: Map<string, string[]>;
     private readonly enumVariantTags: Map<string, number>;
+    private readonly enumVariantOwners: Map<string, string>;
     private readonly monoRegistry?: MonomorphizationRegistry;
     private loopStack: LoopFrame[];
     private currentReturnType: IRType;
@@ -246,6 +250,7 @@ export class AstToSsaCtx {
             functionReturnTypes?: Map<string, IRType>;
             structFieldNames?: Map<string, string[]>;
             enumVariantTags?: Map<string, number>;
+            enumVariantOwners?: Map<string, string>;
             monoRegistry?: MonomorphizationRegistry;
         } = {},
     ) {
@@ -259,6 +264,8 @@ export class AstToSsaCtx {
             options.structFieldNames ?? new Map<string, string[]>();
         this.enumVariantTags =
             options.enumVariantTags ?? new Map<string, number>();
+        this.enumVariantOwners =
+            options.enumVariantOwners ?? new Map<string, string>();
         this.monoRegistry = options.monoRegistry;
         this.loopStack = [];
         this.currentReturnType = makeIRUnitType();
@@ -284,6 +291,7 @@ export class AstToSsaCtx {
         this.currentReturnType = AstToSsaCtx.translateTypeNode(
             fnDecl.returnType,
         );
+        this.registerEnumTypeMetadata(this.currentReturnType);
 
         this.startFunction(fnDecl.name, paramTypes);
         this.bindFunctionParams(paramEntries.value);
@@ -349,12 +357,8 @@ export class AstToSsaCtx {
         for (let i = 0; i < params.length; i++) {
             const paramEntry = params[i];
             const irType = AstToSsaCtx.translateTypeNode(paramEntry.ty);
-            const allocaId = this.builder.alloca(irType).id;
             const param = currentFunction.params[i];
-            this.builder.store(allocaId, param.id, irType);
-            this.locals.set(paramEntry.name ?? "_", {
-                ptr: allocaId,
-                ty: irType,
+            this.bindLocalValue(paramEntry.name ?? "_", param.id, irType, {
                 formatTag: AstToSsaCtx.formatTagFromTypeNode(paramEntry.ty),
                 typeNode: paramEntry.ty,
             });
@@ -396,6 +400,44 @@ export class AstToSsaCtx {
         return this.builder.currentBlock?.id;
     }
 
+    private cloneLocals(): Map<string, LocalBinding> {
+        return new Map(this.locals);
+    }
+
+    private restoreLocals(snapshot: Map<string, LocalBinding>): void {
+        this.locals.clear();
+        for (const [name, binding] of snapshot) {
+            this.locals.set(name, binding);
+        }
+    }
+
+    private bindLocalValue(
+        name: string,
+        value: ValueId,
+        ty: IRType,
+        options: {
+            formatTag?: FormatTag;
+            typeNode?: TypeNode;
+        } = {},
+    ): void {
+        this.registerEnumTypeMetadata(ty);
+        const allocaId = this.builder.alloca(ty).id;
+        this.builder.store(allocaId, value, ty);
+        this.locals.set(name, {
+            ptr: allocaId,
+            ty,
+            formatTag: options.formatTag,
+            typeNode: options.typeNode,
+        });
+    }
+
+    private registerEnumTypeMetadata(ty: IRType): void {
+        if (!(ty instanceof EnumType)) {
+            return;
+        }
+        this.irModule.enums.set(getIREnumTypeKey(ty), ty);
+    }
+
     private mergeBlockArgs(
         value: ValueId | undefined,
         resultType: IRType | undefined,
@@ -410,7 +452,7 @@ export class AstToSsaCtx {
         name: string,
         resultType: IRType | undefined,
     ): BlockId {
-        if (resultType === undefined) {
+        if (!resultType) {
             return this.builder.createBlock(name);
         }
         return this.builder.createBlock(name, [resultType]);
@@ -422,10 +464,10 @@ export class AstToSsaCtx {
         }
         if (stmt instanceof ExprStmt) {
             const exprResult = this.lowerExpression(stmt.expr);
-            if (!exprResult.isOk()) {
+            if (exprResult.isErr()) {
                 return exprResult;
             }
-            return Result.ok(undefined);
+            return Result.ok();
         }
 
         return loweringError(
@@ -436,29 +478,30 @@ export class AstToSsaCtx {
     }
 
     private lowerLetStatement(stmt: LetStmt): Result<void, LoweringError> {
+        // Translate and register the annotated type before lowering the init
+        // expression so that enum constructors like `None` resolve to the
+        // correct concrete enum type (e.g. Option<i32>) rather than the
+        // seeded placeholder Option<()>.
+        let ty = AstToSsaCtx.translateTypeNode(stmt.type);
+        this.registerEnumTypeMetadata(ty);
+
         const initResult = this.lowerExpression(stmt.init);
         if (!initResult.isOk()) {
             return initResult;
         }
 
         if (stmt.pattern instanceof IdentPattern) {
-            let ty = AstToSsaCtx.translateTypeNode(stmt.type);
             if (this.isImplicitUnitTypeNode(stmt.type)) {
                 const inferred = this.resolveValueType(initResult.value);
                 if (inferred) {
                     ty = inferred;
                 }
             }
-            const slot = this.builder.alloca(ty);
-            const slotId = slot.id;
-            this.builder.store(slotId, initResult.value, ty);
-            this.locals.set(stmt.pattern.name, {
-                ptr: slotId,
-                ty,
+            this.bindLocalValue(stmt.pattern.name, initResult.value, ty, {
                 formatTag: this.inferExpressionFormatTag(stmt.init),
             });
         }
-        return Result.ok(undefined);
+        return Result.ok();
     }
 
     private lowerExpression(expr: Expression): Result<ValueId, LoweringError> {
@@ -656,6 +699,7 @@ export class AstToSsaCtx {
         const variantTag = this.enumVariantTags.get(expr.name);
         if (variantTag !== undefined) {
             const enumType = this.resolveEnumTypeForVariant(expr.name);
+            this.registerEnumTypeMetadata(enumType);
             const inst = this.builder.enumCreate(
                 variantTag,
                 undefined,
@@ -678,12 +722,38 @@ export class AstToSsaCtx {
         const sepIndex = variantPath.indexOf(colonColon);
         if (sepIndex !== -1) {
             const enumName = variantPath.slice(0, sepIndex);
-            const found = this.irModule.enums.get(enumName);
+            const found = this.findEnumTypeByName(enumName);
             if (found) {
                 return found;
             }
         }
+
+        const ownerName = this.enumVariantOwners.get(variantPath);
+        if (ownerName) {
+            const found = this.findEnumTypeByName(ownerName);
+            if (found) {
+                return found;
+            }
+        }
+
+        const OPTION_VARIANTS = new Set(["Option::None", "Option::Some"]);
+        if (OPTION_VARIANTS.has(variantPath)) {
+            return (
+                this.findEnumTypeByName("Option") ??
+                makeIREnumType("Option", [[], [makeIRUnitType()]])
+            );
+        }
         return makeIREnumType("__anon_enum", []);
+    }
+
+    private findEnumTypeByName(name: string): EnumType | undefined {
+        let matched: EnumType | undefined;
+        for (const enumTy of this.irModule.enums.values()) {
+            if (enumTy.name === name) {
+                matched = enumTy;
+            }
+        }
+        return matched;
     }
 
     private lowerAssign(expr: AssignExpr): Result<ValueId, LoweringError> {
@@ -1275,6 +1345,10 @@ export class AstToSsaCtx {
 
         const retTy: IRType = makeIRIntType(IntWidth.I64);
         if (expr.callee instanceof IdentifierExpr) {
+            const calleeName = expr.callee.name;
+            if (calleeName === "Some" || calleeName === "Option::Some") {
+                return this.lowerSomeConstructor(expr.span, args);
+            }
             // Check if this is a call to a generic function
             const resolvedName = this.resolveGenericCallName(expr);
             if (resolvedName) {
@@ -1293,6 +1367,28 @@ export class AstToSsaCtx {
             retTy,
         );
         return Result.ok(callDynInst.id);
+    }
+
+    private lowerSomeConstructor(
+        span: Span,
+        args: ValueId[],
+    ): Result<ValueId, LoweringError> {
+        if (args.length !== 1) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                "Some() requires exactly one argument",
+                span,
+            );
+        }
+        const dataTy = this.resolveValueType(args[0]) ?? makeIRUnitType();
+        const optEnumType = makeIREnumType("Option", [[], [dataTy]]);
+        this.registerEnumTypeMetadata(optEnumType);
+        const inst = this.builder.enumCreate(
+            1 /* SOME_TAG */,
+            args[0],
+            optEnumType,
+        );
+        return AstToSsaCtx.handleInstructionId(inst.id);
     }
 
     private resolveGenericCallName(expr: CallExpr): string | undefined {
@@ -1596,6 +1692,18 @@ export class AstToSsaCtx {
                 leftResult.value,
                 rightResult.value,
             ).id;
+        } else if (leftType instanceof EnumType) {
+            return this.lowerAssertEqEnum(
+                leftResult.value,
+                rightResult.value,
+                leftType,
+            );
+        } else if (rightType instanceof EnumType) {
+            return this.lowerAssertEqEnum(
+                leftResult.value,
+                rightResult.value,
+                rightType,
+            );
         } else {
             // Cannot statically compare values of this type; treat as no-op
             return Result.ok(this.unitValue());
@@ -1609,6 +1717,126 @@ export class AstToSsaCtx {
         this.builder.unreachable();
 
         this.builder.switchToBlock(continueBlock);
+        return Result.ok(this.unitValue());
+    }
+
+    private lowerEnumVariantFieldCmp(
+        left: ValueId,
+        right: ValueId,
+        variantIdx: number,
+        enumTy: EnumType,
+        failBlock: BlockId,
+        doneBlock: BlockId,
+    ): void {
+        const fields = enumTy.variants[variantIdx];
+        for (let fieldIdx = 0; fieldIdx < fields.length; fieldIdx++) {
+            const fieldTy = fields[fieldIdx];
+            const valL = this.builder.enumGetData(
+                left,
+                variantIdx,
+                fieldIdx,
+                enumTy,
+                fieldTy,
+            ).id;
+            const valR = this.builder.enumGetData(
+                right,
+                variantIdx,
+                fieldIdx,
+                enumTy,
+                fieldTy,
+            ).id;
+            const cmpId = match(fieldTy instanceof FloatType)
+                .with(true, () => this.builder.fcmp(FcmpOp.Oeq, valL, valR).id)
+                .otherwise(() => this.builder.icmp(IcmpOp.Eq, valL, valR).id);
+            if (fieldIdx < fields.length - 1) {
+                const nextFieldBlock = this.builder.createBlock(
+                    `enum_eq_v${variantIdx}_f${fieldIdx + 1}`,
+                );
+                this.builder.brIf(cmpId, nextFieldBlock, [], failBlock, []);
+                this.builder.switchToBlock(nextFieldBlock);
+            } else {
+                this.builder.brIf(cmpId, doneBlock, [], failBlock, []);
+            }
+        }
+    }
+
+    private lowerAssertEqEnum(
+        left: ValueId,
+        right: ValueId,
+        enumTy: EnumType,
+    ): Result<ValueId, LoweringError> {
+        const tagL = this.builder.enumGetTag(left).id;
+        const tagR = this.builder.enumGetTag(right).id;
+        const tagsEq = this.builder.icmp(IcmpOp.Eq, tagL, tagR).id;
+
+        const tagsMatchBlock = this.builder.createBlock("enum_eq_tags_match");
+        const failBlock = this.builder.createBlock("assert_fail");
+        const doneBlock = this.builder.createBlock("assert_ok");
+
+        this.builder.brIf(tagsEq, tagsMatchBlock, [], failBlock, []);
+
+        // tags_match_block: for each variant with payload(s), check if the
+        // matched tag corresponds to that variant and compare fields; variants
+        // with no payload are implicitly equal when tags match.
+        this.builder.switchToBlock(tagsMatchBlock);
+
+        const payloadVariants = enumTy.variants
+            .map((fields, index) => ({ index, fields }))
+            .filter(({ fields }) => fields.length > 0);
+
+        if (payloadVariants.length === 0) {
+            // All variants are unit variants — matching tags means equal.
+            this.builder.br(doneBlock, []);
+        } else {
+            for (let pi = 0; pi < payloadVariants.length; pi++) {
+                const { index: variantIdx } = payloadVariants[pi];
+                const isLast = pi === payloadVariants.length - 1;
+
+                const variantTagConst = this.builder.iconst(
+                    variantIdx,
+                    IntWidth.Usize,
+                ).id;
+                const isVariant = this.builder.icmp(
+                    IcmpOp.Eq,
+                    tagL,
+                    variantTagConst,
+                ).id;
+
+                const cmpBlock = this.builder.createBlock(
+                    `enum_eq_cmp_v${variantIdx}`,
+                );
+                // If this is the last payload variant and the tag doesn't
+                // match it, all remaining variants must be unit variants so
+                // we can jump directly to done.
+                const elseBlock = match(isLast)
+                    .with(true, () => doneBlock)
+                    .otherwise(() =>
+                        this.builder.createBlock(
+                            `enum_eq_check_v${variantIdx + 1}`,
+                        ),
+                    );
+                this.builder.brIf(isVariant, cmpBlock, [], elseBlock, []);
+
+                this.builder.switchToBlock(cmpBlock);
+                this.lowerEnumVariantFieldCmp(
+                    left,
+                    right,
+                    variantIdx,
+                    enumTy,
+                    failBlock,
+                    doneBlock,
+                );
+
+                if (!isLast) {
+                    this.builder.switchToBlock(elseBlock);
+                }
+            }
+        }
+
+        this.builder.switchToBlock(failBlock);
+        this.builder.unreachable();
+
+        this.builder.switchToBlock(doneBlock);
         return Result.ok(this.unitValue());
     }
 
@@ -1993,17 +2221,14 @@ export class AstToSsaCtx {
             for (let i = 0; i < paramEntries.length; i++) {
                 const paramEntry = paramEntries[i];
                 const irType = paramTypes[i];
-                const allocaId = this.builder.alloca(irType).id;
-                this.builder.store(
-                    allocaId,
+                this.bindLocalValue(
+                    paramEntry.name,
                     currentFunction.params[i].id,
                     irType,
+                    {
+                        typeNode: paramEntry.ty,
+                    },
                 );
-                this.locals.set(paramEntry.name, {
-                    ptr: allocaId,
-                    ty: irType,
-                    typeNode: paramEntry.ty,
-                });
             }
         }
 
@@ -2104,28 +2329,79 @@ export class AstToSsaCtx {
         const armBlocks: BlockId[] = expr.arms.map((_, index) =>
             this.builder.createBlock(`match_arm_${index}`),
         );
+        const { cases, defaultArmIndex, usesEnumPatterns } =
+            this.buildMatchCases(expr.arms, armBlocks);
+
+        const switchValue = match(usesEnumPatterns)
+            .with(true, () => this.builder.enumGetTag(scrutinee.value).id)
+            .otherwise(() => scrutinee.value);
+
+        let defaultBlock: BlockId | undefined;
+        let trapBlock: BlockId | undefined;
+        if (defaultArmIndex !== undefined) {
+            defaultBlock = armBlocks[defaultArmIndex];
+        } else {
+            trapBlock = this.builder.createBlock("match_trap");
+            defaultBlock = trapBlock;
+        }
+
+        this.builder.switch(switchValue, cases, defaultBlock, []);
+
+        const matchResult = this.lowerMatchArms(
+            expr.arms,
+            armBlocks,
+            scrutinee.value,
+        );
+        if (!matchResult.isOk()) {
+            return matchResult;
+        }
+
+        if (trapBlock !== undefined) {
+            const resumeBlock = this.currentBlockId();
+            this.builder.switchToBlock(trapBlock);
+            this.builder.unreachable();
+            if (resumeBlock !== undefined) {
+                this.builder.switchToBlock(resumeBlock);
+            }
+        }
+
+        return matchResult;
+    }
+
+    private buildMatchCases(
+        arms: MatchArmNode[],
+        armBlocks: BlockId[],
+    ): {
+        cases: { value: number; target: BlockId; args: ValueId[] }[];
+        defaultArmIndex: number | undefined;
+        usesEnumPatterns: boolean;
+    } {
         const cases: { value: number; target: BlockId; args: ValueId[] }[] = [];
         let defaultArmIndex: number | undefined;
         let usesEnumPatterns = false;
 
-        for (let index = 0; index < expr.arms.length; index++) {
-            const arm = expr.arms[index];
-            if ("literalKind" in arm.pattern && "value" in arm.pattern) {
-                const raw = arm.pattern.value;
-                let value = Number(raw);
-                if (typeof raw === "number") {
-                    value = raw;
-                } else if (
-                    arm.pattern.literalKind === LiteralKind.Char &&
-                    typeof raw === "string"
-                ) {
-                    value =
-                        raw.codePointAt(STRING_FIRST_CHAR_INDEX) ??
-                        DEFAULT_CHAR_CODE;
-                }
-                cases.push({ value, target: armBlocks[index], args: [] });
+        for (let index = 0; index < arms.length; index++) {
+            const arm = arms[index];
+            if (arm.pattern instanceof LiteralPattern) {
+                cases.push({
+                    value: this.resolveLiteralPatternValue(arm.pattern),
+                    target: armBlocks[index],
+                    args: [],
+                });
             } else if (arm.pattern instanceof IdentPattern) {
                 const tag = this.enumVariantTags.get(arm.pattern.name);
+                if (tag !== undefined) {
+                    cases.push({
+                        value: tag,
+                        target: armBlocks[index],
+                        args: [],
+                    });
+                    usesEnumPatterns = true;
+                } else {
+                    defaultArmIndex = index;
+                }
+            } else if (arm.pattern instanceof StructPattern) {
+                const tag = this.resolveStructPatternTag(arm.pattern);
                 if (tag !== undefined) {
                     cases.push({
                         value: tag,
@@ -2141,28 +2417,38 @@ export class AstToSsaCtx {
             }
         }
 
-        const switchValue = match(usesEnumPatterns)
-            .with(true, () => this.builder.enumGetTag(scrutinee.value).id)
-            .otherwise(() => scrutinee.value);
+        return { cases, defaultArmIndex, usesEnumPatterns };
+    }
 
-        let defaultBlock: BlockId | undefined;
-        if (defaultArmIndex !== undefined) {
-            defaultBlock = armBlocks[defaultArmIndex];
-        } else {
-            [defaultBlock] = armBlocks;
+    private resolveLiteralPatternValue(pattern: LiteralPattern): number {
+        const raw = pattern.value;
+        if (typeof raw === "number") {
+            return raw;
         }
-        defaultBlock ??= this.builder.createBlock("match_default");
+        if (
+            pattern.literalKind === LiteralKind.Char &&
+            typeof raw === "string"
+        ) {
+            return (
+                raw.codePointAt(STRING_FIRST_CHAR_INDEX) ?? DEFAULT_CHAR_CODE
+            );
+        }
+        return Number(raw);
+    }
 
-        this.builder.switch(switchValue, cases, defaultBlock, []);
-
-        return this.lowerMatchArms(expr.arms, armBlocks);
+    private resolveStructPatternTag(pat: StructPattern): number | undefined {
+        if (!(pat.path instanceof IdentifierExpr)) {
+            return undefined;
+        }
+        return this.enumVariantTags.get(pat.path.name);
     }
 
     private lowerMatchArms(
         arms: MatchArmNode[],
         armBlocks: BlockId[],
+        scrutinee?: ValueId,
     ): Result<ValueId, LoweringError> {
-        const armResult = this.lowerMatchArmBodies(arms, armBlocks);
+        const armResult = this.lowerMatchArmBodies(arms, armBlocks, scrutinee);
         if (!armResult.isOk()) {
             return armResult;
         }
@@ -2179,7 +2465,9 @@ export class AstToSsaCtx {
         );
 
         this.builder.switchToBlock(mergeId);
-        return Result.ok(this.mergeBlockResultValue(mergeId) ?? this.unitValue());
+        return Result.ok(
+            this.mergeBlockResultValue(mergeId) ?? this.unitValue(),
+        );
     }
 
     private lowerIf(expr: IfExpr): Result<ValueId, LoweringError> {
@@ -2278,7 +2566,9 @@ export class AstToSsaCtx {
 
         this.builder.switchToBlock(mergeId);
 
-        return Result.ok(this.mergeBlockResultValue(mergeId) ?? this.unitValue());
+        return Result.ok(
+            this.mergeBlockResultValue(mergeId) ?? this.unitValue(),
+        );
     }
 
     private lowerReturn(expr: ReturnExpr): Result<ValueId, LoweringError> {
@@ -2378,6 +2668,15 @@ export class AstToSsaCtx {
 
     static translateTypeNode(typeNode: TypeNode): IRType {
         if (typeNode instanceof NamedTypeNode) {
+            if (typeNode.name === "Option") {
+                let innerIrType: IRType = makeIRUnitType();
+                if (typeNode.args?.args[0]) {
+                    innerIrType = AstToSsaCtx.translateTypeNode(
+                        typeNode.args.args[0],
+                    );
+                }
+                return makeIREnumType("Option", [[], [innerIrType]]);
+            }
             const builtin = AstToSsaCtx.namedBuiltin(typeNode.name);
             if (builtin) {
                 return AstToSsaCtx.builtinToIrType(builtin);
@@ -2708,6 +3007,7 @@ export class AstToSsaCtx {
     private lowerMatchArmBodies(
         arms: MatchArmNode[],
         armBlocks: BlockId[],
+        scrutinee?: ValueId,
     ): Result<
         {
             armExitBlocks: (BlockId | undefined)[];
@@ -2717,21 +3017,96 @@ export class AstToSsaCtx {
     > {
         const armExitBlocks: (BlockId | undefined)[] = [];
         const armValues: (ValueId | undefined)[] = [];
+        const outerLocals = this.cloneLocals();
 
         for (let index = 0; index < arms.length; index++) {
             const arm = arms[index];
+            this.restoreLocals(outerLocals);
             this.builder.switchToBlock(armBlocks[index]);
+            if (scrutinee !== undefined) {
+                const bindResult = this.bindMatchArmPattern(arm, scrutinee);
+                if (!bindResult.isOk()) {
+                    this.restoreLocals(outerLocals);
+                    return bindResult;
+                }
+            }
             const body = this.lowerExpression(arm.body);
             if (!body.isOk()) {
+                this.restoreLocals(outerLocals);
                 return body;
             }
             armValues.push(this.currentBlockValue(body.value));
             armExitBlocks.push(this.currentBlockId());
+            this.restoreLocals(outerLocals);
         }
 
+        this.restoreLocals(outerLocals);
         return Result.ok({ armExitBlocks, armValues });
     }
 
+    private bindMatchArmPattern(
+        arm: MatchArmNode,
+        scrutinee: ValueId,
+    ): Result<void, LoweringError> {
+        if (arm.pattern instanceof StructPattern) {
+            return this.bindStructPatternPayload(arm.pattern, scrutinee);
+        }
+
+        if (!(arm.pattern instanceof IdentPattern)) {
+            return Result.ok();
+        }
+
+        if (this.enumVariantTags.get(arm.pattern.name) !== undefined) {
+            return Result.ok();
+        }
+
+        const scrutineeTy =
+            this.resolveValueType(scrutinee) ?? makeIRUnitType();
+        this.bindLocalValue(arm.pattern.name, scrutinee, scrutineeTy, {
+            typeNode: arm.pattern.type,
+        });
+        return Result.ok();
+    }
+
+    private bindStructPatternPayload(
+        pat: StructPattern,
+        scrutinee: ValueId,
+    ): Result<void, LoweringError> {
+        if (!(pat.path instanceof IdentifierExpr)) return Result.ok();
+        const variantName = pat.path.name;
+        const tag = this.enumVariantTags.get(variantName);
+        if (tag === undefined) return Result.ok();
+
+        const scrutineeTy = this.resolveValueType(scrutinee);
+
+        for (const field of pat.fields) {
+            if (!(field.pattern instanceof IdentPattern)) continue;
+            const fieldIndex = Number(field.name);
+            if (Number.isNaN(fieldIndex)) continue;
+
+            let dataTy: IRType = makeIRUnitType();
+            if (scrutineeTy instanceof EnumType) {
+                dataTy =
+                    scrutineeTy.variants[tag]?.[fieldIndex] ?? makeIRUnitType();
+            }
+
+            let enumTy = makeIREnumType("__anon_enum", []);
+            if (scrutineeTy instanceof EnumType) {
+                enumTy = scrutineeTy;
+            }
+            const dataVal = this.builder.enumGetData(
+                scrutinee,
+                tag,
+                fieldIndex,
+                enumTy,
+                dataTy,
+            );
+            this.bindLocalValue(field.pattern.name, dataVal.id, dataTy, {
+                typeNode: field.pattern.type,
+            });
+        }
+        return Result.ok();
+    }
     private resolveMergeResultType(
         values: (ValueId | undefined)[],
     ): IRType | undefined {
@@ -2774,7 +3149,9 @@ export class AstToSsaCtx {
             return undefined;
         }
 
-        const mergeBlock = currentFn.blocks.find((block) => block.id === mergeId);
+        const mergeBlock = currentFn.blocks.find(
+            (block) => block.id === mergeId,
+        );
         if (!mergeBlock) {
             return undefined;
         }
@@ -2922,10 +3299,33 @@ function seedStructMetadata(
     );
 }
 
+function seedBuiltinOptionMetadata(
+    irModule: IRModule,
+    enumVariantTags: Map<string, number>,
+    enumVariantOwners: Map<string, string>,
+): void {
+    const NONE_TAG = 0;
+    const SOME_TAG = 1;
+    const optionEnumType = makeIREnumType("Option", [[], [makeIRUnitType()]]);
+    const optionKey = getIREnumTypeKey(optionEnumType);
+    if (!irModule.enums.has(optionKey)) {
+        addIREnum(irModule, optionKey, optionEnumType);
+    }
+    enumVariantTags.set("None", NONE_TAG);
+    enumVariantTags.set("Option::None", NONE_TAG);
+    enumVariantTags.set("Some", SOME_TAG);
+    enumVariantTags.set("Option::Some", SOME_TAG);
+    enumVariantOwners.set("None", "Option");
+    enumVariantOwners.set("Option::None", "Option");
+    enumVariantOwners.set("Some", "Option");
+    enumVariantOwners.set("Option::Some", "Option");
+}
+
 function seedEnumMetadata(
     moduleNode: ModuleNode,
     irModule: IRModule,
     enumVariantTags: Map<string, number>,
+    enumVariantOwners: Map<string, string>,
 ): void {
     for (const item of moduleNode.items) {
         if (!(item instanceof EnumItem)) {
@@ -2933,8 +3333,9 @@ function seedEnumMetadata(
         }
         const variantTypes: IRType[][] = item.variants.map(() => []);
         const enumType = makeIREnumType(item.name, variantTypes);
-        if (!irModule.enums.has(item.name)) {
-            addIREnum(irModule, item.name, enumType);
+        const enumKey = getIREnumTypeKey(enumType);
+        if (!irModule.enums.has(enumKey)) {
+            addIREnum(irModule, enumKey, enumType);
         }
         for (let index = 0; index < item.variants.length; index++) {
             const variant = item.variants[index];
@@ -2942,6 +3343,8 @@ function seedEnumMetadata(
             // Fully-qualified name (for expression lowering)
             enumVariantTags.set(variant.name, index);
             enumVariantTags.set(`${item.name}::${variant.name}`, index);
+            enumVariantOwners.set(variant.name, item.name);
+            enumVariantOwners.set(`${item.name}::${variant.name}`, item.name);
         }
     }
 }
@@ -3169,6 +3572,7 @@ function lowerOwnedFunction(
     functionReturnTypes: Map<string, IRType>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
+    enumVariantOwners: Map<string, string>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
 ): void {
@@ -3177,6 +3581,7 @@ function lowerOwnedFunction(
         functionReturnTypes,
         structFieldNames,
         enumVariantTags,
+        enumVariantOwners,
         monoRegistry,
     });
     ctx.seedFunctionIds(fnIdMap);
@@ -3285,6 +3690,7 @@ function lowerImplMethods(
     functionReturnTypes: Map<string, IRType>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
+    enumVariantOwners: Map<string, string>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
 ): void {
@@ -3303,6 +3709,7 @@ function lowerImplMethods(
             functionReturnTypes,
             structFieldNames,
             enumVariantTags,
+            enumVariantOwners,
             fnIdMap,
             monoRegistry,
         );
@@ -3315,6 +3722,7 @@ function lowerModuleItem(
     functionReturnTypes: Map<string, IRType>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
+    enumVariantOwners: Map<string, string>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
 ): void {
@@ -3328,6 +3736,7 @@ function lowerModuleItem(
             functionReturnTypes,
             structFieldNames,
             enumVariantTags,
+            enumVariantOwners,
             fnIdMap,
             monoRegistry,
         );
@@ -3340,6 +3749,7 @@ function lowerModuleItem(
             functionReturnTypes,
             structFieldNames,
             enumVariantTags,
+            enumVariantOwners,
             fnIdMap,
             monoRegistry,
         );
@@ -3359,6 +3769,7 @@ function lowerModuleItem(
                 functionReturnTypes,
                 structFieldNames,
                 enumVariantTags,
+                enumVariantOwners,
                 fnIdMap,
                 monoRegistry,
             );
@@ -3373,6 +3784,7 @@ function lowerModuleItem(
                 functionReturnTypes,
                 structFieldNames,
                 enumVariantTags,
+                enumVariantOwners,
                 fnIdMap,
                 monoRegistry,
             );
@@ -3384,8 +3796,10 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
     const irModule = makeIRModule(moduleNode.name);
     const structFieldNames = new Map<string, string[]>();
     const enumVariantTags = new Map<string, number>();
+    const enumVariantOwners = new Map<string, string>();
     seedStructMetadata(moduleNode, irModule, structFieldNames);
-    seedEnumMetadata(moduleNode, irModule, enumVariantTags);
+    seedBuiltinOptionMetadata(irModule, enumVariantTags, enumVariantOwners);
+    seedEnumMetadata(moduleNode, irModule, enumVariantTags, enumVariantOwners);
 
     // Collect generic items and generate monomorphized specializations
     const registry = new MonomorphizationRegistry();
@@ -3411,6 +3825,7 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
             functionReturnTypes,
             structFieldNames,
             enumVariantTags,
+            enumVariantOwners,
             fnIdMap,
             registry,
         );
@@ -3424,6 +3839,7 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
             functionReturnTypes,
             structFieldNames,
             enumVariantTags,
+            enumVariantOwners,
             fnIdMap,
             registry,
         );
