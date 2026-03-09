@@ -11,8 +11,6 @@ module main {
     s7 = "No placeholders here"
   }
 
-  enum Option { [], [()] }
-
   fn f949693 test_example() -> () {
     b0 (entry):
       v0: ptr  = sconst s0

@@ -1,7 +1,5 @@
 module main {
 
-  enum Option { [], [()] }
-
   fn f949693 test_example() -> () {
     b0 (entry):
       ret
