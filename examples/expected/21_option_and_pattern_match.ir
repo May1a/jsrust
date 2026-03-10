@@ -32,13 +32,67 @@ module main {
       br_if v11, then: b3, else: b2
   }
 
-  fn f637551 as_opt_i32(v13 arg0: i32) -> enum Option {
+  fn f980619 test_option_methods() -> () {
     b0 (entry):
-      v14: ptr<i32>    = alloca i32
-      store v13 -> v14
-      v16: i32         = load v14
-      v17: enum Option = enum_create Option tag=1, data: v16
-      ret v17
+      v13: i32              = iconst 42
+      v14: enum Option      = enum_create Option tag=1, data: v13
+      v15: ptr<enum Option> = alloca enum Option
+      store v14 -> v15
+      v17: enum Option      = enum_create Option tag=0
+      v18: ptr<enum Option> = alloca enum Option
+      store v17 -> v18
+      v20: enum Option      = load v15
+      v21: usize            = enum_get_tag v20
+      v22: usize            = iconst 1
+      v23: bool             = icmp.eq v21, v22
+      br_if v23, then: b2, else: b1
+  
+    b1 (assert_fail):
+      unreachable
+  
+    b2 (assert_ok):
+      v24: i8          = iconst 0
+      v25: enum Option = load v18
+      v26: usize       = enum_get_tag v25
+      v27: usize       = iconst 0
+      v28: bool        = icmp.eq v26, v27
+      br_if v28, then: b4, else: b3
+  
+    b3 (assert_fail):
+      unreachable
+  
+    b4 (assert_ok):
+      v29: i8          = iconst 0
+      v30: enum Option = load v15
+      v31: usize       = enum_get_tag v30
+      v32: usize       = iconst 1
+      v33: bool        = icmp.eq v31, v32
+      br_if v33, then: b5, else: b6
+  
+    b5 (unwrap_ok):
+      v34: i32  = enum_get_data v30 variant=1 index=0 as i32
+      v35: i32  = iconst 42
+      v36: bool = icmp.eq v34, v35
+      br_if v36, then: b8, else: b7
+  
+    b6 (unwrap_panic):
+      unreachable
+  
+    b7 (assert_fail):
+      unreachable
+  
+    b8 (assert_ok):
+      v37: i8 = iconst 0
+      ret
+  }
+
+  fn f637551 as_opt_i32(v38 arg0: i32) -> enum Option {
+    b0 (entry):
+      v39: ptr<i32>    = alloca i32
+      store v38 -> v39
+      v41: i32         = load v39
+      v42: enum Option = enum_create Option tag=1, data: v41
+      ret v42
   }
 
 }

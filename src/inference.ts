@@ -107,6 +107,7 @@ const BUILTIN_TYPE_NAMES = new Set([
     "str",
     "Self",
     "Option",
+    "Result",
 ]);
 
 function isBuiltinTypeName(name: string): boolean {
@@ -199,6 +200,16 @@ function makeOptionType(span: Span, innerTy?: TypeNode): NamedTypeNode {
         "Option",
         new GenericArgsNode(span, [optionInnerTy]),
     );
+}
+
+function makeResultType(
+    span: Span,
+    okTy?: TypeNode,
+    errTy?: TypeNode,
+): NamedTypeNode {
+    const ok = okTy ?? new InferredTypeNode(span);
+    const err = errTy ?? new InferredTypeNode(span);
+    return new NamedTypeNode(span, "Result", new GenericArgsNode(span, [ok, err]));
 }
 
 // --- Comparison and logical ops that return bool ---
@@ -596,6 +607,19 @@ function inferIdentifier(
         return makeOptionType(expr.span);
     }
 
+    if (
+        expr.name === "Ok" ||
+        expr.name === "Result::Ok" ||
+        expr.name === "Err" ||
+        expr.name === "Result::Err"
+    ) {
+        const owner = typeCtx.lookupVariantOwner(expr.name);
+        if (owner && owner !== "Result") {
+            return undefined;
+        }
+        return makeResultType(expr.span);
+    }
+
     // Qualified paths (e.g. `Color::Green`, `Vec::new`) are enum variants or
     // associated items — not yet tracked in the type context. Return undefined
     // without an error; type propagation will handle the absence.
@@ -780,6 +804,55 @@ function inferCall(
     return undefined;
 }
 
+const BUILTIN_ENUM_CONSTRUCTOR_NAMES = new Set([
+    "Some",
+    "Option::Some",
+    "None",
+    "Option::None",
+    "Ok",
+    "Result::Ok",
+    "Err",
+    "Result::Err",
+]);
+
+function inferBuiltinEnumCallType(
+    expr: CallExpr,
+    calleeName: string,
+    argTypes: (TypeNode | undefined)[],
+    errors: TypeError[],
+): TypeNode | undefined {
+    if (calleeName === "Some" || calleeName === "Option::Some") {
+        if (expr.args.length !== 1) {
+            errors.push({ message: "`Some` requires exactly one argument", span: expr.span });
+            return undefined;
+        }
+        const [innerTy] = argTypes;
+        return makeOptionType(expr.span, innerTy);
+    }
+    if (calleeName === "None" || calleeName === "Option::None") {
+        if (expr.args.length !== 0) {
+            errors.push({ message: "`None` does not take any arguments", span: expr.span });
+            return undefined;
+        }
+        return makeOptionType(expr.span);
+    }
+    if (calleeName === "Ok" || calleeName === "Result::Ok") {
+        if (expr.args.length !== 1) {
+            errors.push({ message: "`Ok` requires exactly one argument", span: expr.span });
+            return undefined;
+        }
+        const [okTy] = argTypes;
+        return makeResultType(expr.span, okTy);
+    }
+    // Err or Result::Err
+    if (expr.args.length !== 1) {
+        errors.push({ message: "`Err` requires exactly one argument", span: expr.span });
+        return undefined;
+    }
+    const [errTy] = argTypes;
+    return makeResultType(expr.span, undefined, errTy);
+}
+
 function inferIdentifierCallType(
     typeCtx: TypeContext,
     expr: CallExpr,
@@ -789,26 +862,8 @@ function inferIdentifierCallType(
 ): TypeNode | undefined {
     const { name: calleeName } = callee;
 
-    if (calleeName === "Some" || calleeName === "Option::Some") {
-        if (expr.args.length !== 1) {
-            errors.push({
-                message: "`Some` requires exactly one argument",
-                span: expr.span,
-            });
-            return undefined;
-        }
-        const [innerTy] = argTypes;
-        return makeOptionType(expr.span, innerTy);
-    }
-    if (calleeName === "None" || calleeName === "Option::None") {
-        if (expr.args.length !== 0) {
-            errors.push({
-                message: "`None` does not take any arguments",
-                span: expr.span,
-            });
-            return undefined;
-        }
-        return makeOptionType(expr.span);
+    if (BUILTIN_ENUM_CONSTRUCTOR_NAMES.has(calleeName)) {
+        return inferBuiltinEnumCallType(expr, calleeName, argTypes, errors);
     }
 
     const genericResult = resolveGenericCall(typeCtx, expr, argTypes);
@@ -831,12 +886,57 @@ function inferIdentifierCallType(
     return undefined;
 }
 
+function inferOptionMethodType(
+    callee: FieldExpr,
+    receiverTy: NamedTypeNode,
+): TypeNode | undefined {
+    const inner = receiverTy.args?.args[0];
+    const boolTy = new NamedTypeNode(callee.span, "bool");
+    if (callee.field === "is_some" || callee.field === "is_none") {
+        return boolTy;
+    }
+    if (callee.field === "unwrap" || callee.field === "expect") {
+        return inner ?? new InferredTypeNode(callee.span);
+    }
+    return undefined;
+}
+
+function inferResultMethodType(
+    callee: FieldExpr,
+    receiverTy: NamedTypeNode,
+): TypeNode | undefined {
+    const okTy = receiverTy.args?.args[0];
+    const errTy = receiverTy.args?.args[1];
+    const boolTy = new NamedTypeNode(callee.span, "bool");
+    if (callee.field === "is_ok" || callee.field === "is_err") {
+        return boolTy;
+    }
+    if (callee.field === "unwrap" || callee.field === "expect") {
+        return okTy ?? new InferredTypeNode(callee.span);
+    }
+    if (callee.field === "unwrap_err") {
+        return errTy ?? new InferredTypeNode(callee.span);
+    }
+    return undefined;
+}
+
 function inferMethodCallType(
     typeCtx: TypeContext,
     callee: FieldExpr,
     errors: TypeError[],
 ): TypeNode | undefined {
     const receiverTy = inferExprType(typeCtx, callee.receiver, errors);
+
+    // Builtin Option methods
+    if (receiverTy instanceof NamedTypeNode && receiverTy.name === "Option") {
+        return inferOptionMethodType(callee, receiverTy);
+    }
+
+    // Builtin Result methods
+    if (receiverTy instanceof NamedTypeNode && receiverTy.name === "Result") {
+        return inferResultMethodType(callee, receiverTy);
+    }
+
     if (receiverTy instanceof NamedTypeNode) {
         const methodSig = typeCtx.lookupFnSignature(
             `${receiverTy.name}::${callee.field}`,

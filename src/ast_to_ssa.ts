@@ -117,6 +117,7 @@ import {
     makeIRPtrType,
     makeIRStructType,
     makeIRUnitType,
+    isIRUnitType,
     ArrayType,
     makeIRArrayType,
     type BlockId,
@@ -743,6 +744,13 @@ export class AstToSsaCtx {
                 makeIREnumType("Option", [[], [makeIRUnitType()]])
             );
         }
+        const RESULT_VARIANTS = new Set(["Result::Ok", "Result::Err"]);
+        if (RESULT_VARIANTS.has(variantPath)) {
+            return (
+                this.findEnumTypeByName("Result") ??
+                makeIREnumType("Result", [[makeIRUnitType()], [makeIRUnitType()]])
+            );
+        }
         return makeIREnumType("__anon_enum", []);
     }
 
@@ -1349,6 +1357,12 @@ export class AstToSsaCtx {
             if (calleeName === "Some" || calleeName === "Option::Some") {
                 return this.lowerSomeConstructor(expr.span, args);
             }
+            if (calleeName === "Ok" || calleeName === "Result::Ok") {
+                return this.lowerOkConstructor(expr.span, args);
+            }
+            if (calleeName === "Err" || calleeName === "Result::Err") {
+                return this.lowerErrConstructor(expr.span, args);
+            }
             // Check if this is a call to a generic function
             const resolvedName = this.resolveGenericCallName(expr);
             if (resolvedName) {
@@ -1389,6 +1403,58 @@ export class AstToSsaCtx {
             optEnumType,
         );
         return AstToSsaCtx.handleInstructionId(inst.id);
+    }
+
+    private resolveResultOkType(): IRType | undefined {
+        if (!(this.currentReturnType instanceof EnumType)) return undefined;
+        if (this.currentReturnType.name !== "Result") return undefined;
+        return this.currentReturnType.variants[0]?.[0];
+    }
+
+    private resolveResultErrType(): IRType | undefined {
+        if (!(this.currentReturnType instanceof EnumType)) return undefined;
+        if (this.currentReturnType.name !== "Result") return undefined;
+        return this.currentReturnType.variants[1]?.[0];
+    }
+
+    private lowerOkConstructor(
+        span: Span,
+        args: ValueId[],
+    ): Result<ValueId, LoweringError> {
+        if (args.length !== 1) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                "Ok() requires exactly one argument",
+                span,
+            );
+        }
+        const okTy = this.resolveValueType(args[0]) ?? makeIRUnitType();
+        const errTy = this.resolveResultErrType() ?? makeIRUnitType();
+        const ty = makeIREnumType("Result", [[okTy], [errTy]]);
+        this.registerEnumTypeMetadata(ty);
+        return AstToSsaCtx.handleInstructionId(
+            this.builder.enumCreate(0 /* OK_TAG */, args[0], ty).id,
+        );
+    }
+
+    private lowerErrConstructor(
+        span: Span,
+        args: ValueId[],
+    ): Result<ValueId, LoweringError> {
+        if (args.length !== 1) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                "Err() requires exactly one argument",
+                span,
+            );
+        }
+        const errTy = this.resolveValueType(args[0]) ?? makeIRUnitType();
+        const okTy = this.resolveResultOkType() ?? makeIRUnitType();
+        const ty = makeIREnumType("Result", [[okTy], [errTy]]);
+        this.registerEnumTypeMetadata(ty);
+        return AstToSsaCtx.handleInstructionId(
+            this.builder.enumCreate(1 /* ERR_TAG */, args[0], ty).id,
+        );
     }
 
     private resolveGenericCallName(expr: CallExpr): string | undefined {
@@ -1459,18 +1525,97 @@ export class AstToSsaCtx {
         return Result.ok(callInst.id);
     }
 
+    private lowerEnumIsTag(
+        enumValue: ValueId,
+        tag: number,
+    ): Result<ValueId, LoweringError> {
+        const tagId = this.builder.enumGetTag(enumValue).id;
+        const tagConst = this.builder.iconst(tag, IntWidth.Usize).id;
+        return Result.ok(this.builder.icmp(IcmpOp.Eq, tagId, tagConst).id);
+    }
+
+    private lowerEnumUnwrap(
+        enumValue: ValueId,
+        enumTy: EnumType,
+        successTag: number,
+    ): Result<ValueId, LoweringError> {
+        const tagId = this.builder.enumGetTag(enumValue).id;
+        const tagConst = this.builder.iconst(successTag, IntWidth.Usize).id;
+        const isSuccess = this.builder.icmp(IcmpOp.Eq, tagId, tagConst).id;
+        const okBlock = this.builder.createBlock("unwrap_ok");
+        const panicBlock = this.builder.createBlock("unwrap_panic");
+        this.builder.brIf(isSuccess, okBlock, [], panicBlock, []);
+        this.builder.switchToBlock(panicBlock);
+        this.builder.unreachable();
+        this.builder.switchToBlock(okBlock);
+        const variantPayloads = enumTy.variants[successTag] ?? [];
+        if (variantPayloads.length === 0) {
+            return Result.ok(this.unitValue());
+        }
+        const [payloadTy] = variantPayloads;
+        if (isIRUnitType(payloadTy)) {
+            return Result.ok(this.unitValue());
+        }
+        return AstToSsaCtx.handleInstructionId(
+            this.builder.enumGetData(enumValue, successTag, 0, enumTy, payloadTy).id,
+        );
+    }
+
+    private tryLowerBuiltinIsMethod(
+        field: string,
+        receiverType: IRType | undefined,
+        receiverValue: ValueId,
+    ): Result<ValueId, LoweringError> | undefined {
+        if (!(receiverType instanceof EnumType)) return undefined;
+        if (field === "is_some" && receiverType.name === "Option") {
+            return this.lowerEnumIsTag(receiverValue, 1 /* SOME_TAG */);
+        }
+        if (field === "is_none" && receiverType.name === "Option") {
+            return this.lowerEnumIsTag(receiverValue, 0 /* NONE_TAG */);
+        }
+        if (field === "is_ok" && receiverType.name === "Result") {
+            return this.lowerEnumIsTag(receiverValue, 0 /* OK_TAG */);
+        }
+        if (field === "is_err" && receiverType.name === "Result") {
+            return this.lowerEnumIsTag(receiverValue, 1 /* ERR_TAG */);
+        }
+        return undefined;
+    }
+
+    private tryLowerBuiltinUnwrapMethod(
+        field: string,
+        receiverType: IRType | undefined,
+        receiverValue: ValueId,
+    ): Result<ValueId, LoweringError> | undefined {
+        if (!(receiverType instanceof EnumType)) return undefined;
+        if (field === "unwrap" || field === "expect") {
+            if (receiverType.name === "Option") {
+                return this.lowerEnumUnwrap(receiverValue, receiverType, 1 /* SOME_TAG */);
+            }
+            if (receiverType.name === "Result") {
+                return this.lowerEnumUnwrap(receiverValue, receiverType, 0 /* OK_TAG */);
+            }
+        }
+        if (field === "unwrap_err" && receiverType.name === "Result") {
+            return this.lowerEnumUnwrap(receiverValue, receiverType, 1 /* ERR_TAG */);
+        }
+        return undefined;
+    }
+
     private tryLowerBuiltinMethod(
         callee: FieldExpr,
         receiverValue: ValueId,
     ): Result<ValueId, LoweringError> | undefined {
-        switch (callee.field) {
-            case "clone": {
-                return Result.ok(receiverValue);
-            }
-            default: {
-                return undefined;
-            }
+        if (callee.field === "clone") {
+            return Result.ok(receiverValue);
         }
+
+        const receiverType = this.resolveValueType(receiverValue);
+
+        return (
+            this.tryLowerBuiltinIsMethod(callee.field, receiverType, receiverValue) ??
+            this.tryLowerBuiltinUnwrapMethod(callee.field, receiverType, receiverValue)
+        );
     }
 
     private resolveReceiverArg(
@@ -2677,6 +2822,16 @@ export class AstToSsaCtx {
                 }
                 return makeIREnumType("Option", [[], [innerIrType]]);
             }
+            if (typeNode.name === "Result") {
+                const args = typeNode.args?.args ?? [];
+                const okTy = args[0]
+                    ? AstToSsaCtx.translateTypeNode(args[0])
+                    : makeIRUnitType();
+                const errTy = args[1]
+                    ? AstToSsaCtx.translateTypeNode(args[1])
+                    : makeIRUnitType();
+                return makeIREnumType("Result", [[okTy], [errTy]]);
+            }
             const builtin = AstToSsaCtx.namedBuiltin(typeNode.name);
             if (builtin) {
                 return AstToSsaCtx.builtinToIrType(builtin);
@@ -3316,6 +3471,23 @@ function seedBuiltinOptionMetadata(
     enumVariantOwners.set("Option::Some", "Option");
 }
 
+function seedBuiltinResultMetadata(
+    _irModule: IRModule,
+    enumVariantTags: Map<string, number>,
+    enumVariantOwners: Map<string, string>,
+): void {
+    const OK_TAG = 0;
+    const ERR_TAG = 1;
+    enumVariantTags.set("Ok", OK_TAG);
+    enumVariantTags.set("Result::Ok", OK_TAG);
+    enumVariantTags.set("Err", ERR_TAG);
+    enumVariantTags.set("Result::Err", ERR_TAG);
+    enumVariantOwners.set("Ok", "Result");
+    enumVariantOwners.set("Result::Ok", "Result");
+    enumVariantOwners.set("Err", "Result");
+    enumVariantOwners.set("Result::Err", "Result");
+}
+
 function seedEnumMetadata(
     moduleNode: ModuleNode,
     irModule: IRModule,
@@ -3794,6 +3966,7 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
     const enumVariantOwners = new Map<string, string>();
     seedStructMetadata(moduleNode, irModule, structFieldNames);
     seedBuiltinOptionMetadata(irModule, enumVariantTags, enumVariantOwners);
+    seedBuiltinResultMetadata(irModule, enumVariantTags, enumVariantOwners);
     seedEnumMetadata(moduleNode, irModule, enumVariantTags, enumVariantOwners);
 
     // Collect generic items and generate monomorphized specializations

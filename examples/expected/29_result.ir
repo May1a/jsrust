@@ -1,0 +1,123 @@
+module main {
+
+  enum Result { [i32], [i32] }
+
+  fn f601549 make_ok(v0 arg0: i32) -> enum Result {
+    b0 (entry):
+      v1: ptr<i32>    = alloca i32
+      store v0 -> v1
+      v3: i32         = load v1
+      v4: enum Result = enum_create Result tag=0, data: v3
+      ret v4
+  }
+
+  fn f834964 make_err(v5 arg0: i32) -> enum Result {
+    b0 (entry):
+      v6: ptr<i32>    = alloca i32
+      store v5 -> v6
+      v8: i32         = load v6
+      v9: enum Result = enum_create Result tag=1, data: v8
+      ret v9
+  }
+
+  fn f972847 test_result_ok() -> () {
+    b0 (entry):
+      v10: i32              = iconst 5
+      v11: enum Result      = call make_ok(v10)
+      v12: ptr<enum Result> = alloca enum Result
+      store v11 -> v12
+      v14: enum Result      = load v12
+      v15: usize            = enum_get_tag v14
+      v16: usize            = iconst 0
+      v17: bool             = icmp.eq v15, v16
+      br_if v17, then: b2, else: b1
+  
+    b1 (assert_fail):
+      unreachable
+  
+    b2 (assert_ok):
+      v18: i8          = iconst 0
+      v19: enum Result = load v12
+      v20: usize       = enum_get_tag v19
+      v21: usize       = iconst 0
+      v22: bool        = icmp.eq v20, v21
+      br_if v22, then: b3, else: b4
+  
+    b3 (unwrap_ok):
+      v23: i32  = enum_get_data v19 variant=0 index=0 as i32
+      v24: i32  = iconst 5
+      v25: bool = icmp.eq v23, v24
+      br_if v25, then: b6, else: b5
+  
+    b4 (unwrap_panic):
+      unreachable
+  
+    b5 (assert_fail):
+      unreachable
+  
+    b6 (assert_ok):
+      v26: i8 = iconst 0
+      ret
+  }
+
+  fn f559984 test_result_err() -> () {
+    b0 (entry):
+      v27: i32              = iconst 99
+      v28: enum Result      = call make_err(v27)
+      v29: ptr<enum Result> = alloca enum Result
+      store v28 -> v29
+      v31: enum Result      = load v29
+      v32: usize            = enum_get_tag v31
+      v33: usize            = iconst 1
+      v34: bool             = icmp.eq v32, v33
+      br_if v34, then: b2, else: b1
+  
+    b1 (assert_fail):
+      unreachable
+  
+    b2 (assert_ok):
+      v35: i8          = iconst 0
+      v36: enum Result = load v29
+      v37: usize       = enum_get_tag v36
+      v38: usize       = iconst 1
+      v39: bool        = icmp.eq v37, v38
+      br_if v39, then: b3, else: b4
+  
+    b3 (unwrap_ok):
+      v40: i32  = enum_get_data v36 variant=1 index=0 as i32
+      v41: i32  = iconst 99
+      v42: bool = icmp.eq v40, v41
+      br_if v42, then: b6, else: b5
+  
+    b4 (unwrap_panic):
+      unreachable
+  
+    b5 (assert_fail):
+      unreachable
+  
+    b6 (assert_ok):
+      v43: i8 = iconst 0
+      ret
+  }
+
+  fn f984513 test_result_pattern_match() -> () {
+    b0 (entry):
+      v44: i32              = iconst 42
+      v45: enum Result      = call make_ok(v44)
+      v46: ptr<enum Result> = alloca enum Result
+      store v45 -> v46
+      v48: enum Result      = load v46
+      v49: usize            = enum_get_tag v48
+      v50: usize            = iconst 0
+      v51: bool             = icmp.eq v49, v50
+      br_if v51, then: b2, else: b1
+  
+    b1 (assert_fail):
+      unreachable
+  
+    b2 (assert_ok):
+      v52: i8 = iconst 0
+      ret
+  }
+
+}
