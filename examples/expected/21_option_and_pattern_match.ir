@@ -1,5 +1,9 @@
 module main {
 
+  strings {
+    s0 = "expected value"
+  }
+
   enum Option { [], [i32] }
 
   fn f247194 simple_opt() -> () {
@@ -63,17 +67,18 @@ module main {
   
     b4 (assert_ok):
       v29: i8          = iconst 0
-      v30: enum Option = load v15
-      v31: usize       = enum_get_tag v30
-      v32: usize       = iconst 1
-      v33: bool        = icmp.eq v31, v32
-      br_if v33, then: b5, else: b6
+      v30: ptr         = sconst s0
+      v31: enum Option = load v15
+      v32: usize       = enum_get_tag v31
+      v33: usize       = iconst 1
+      v34: bool        = icmp.eq v32, v33
+      br_if v34, then: b5, else: b6
   
     b5 (unwrap_ok):
-      v34: i32  = enum_get_data v30 variant=1 index=0 as i32
-      v35: i32  = iconst 42
-      v36: bool = icmp.eq v34, v35
-      br_if v36, then: b8, else: b7
+      v35: i32  = enum_get_data v31 variant=1 index=0 as i32
+      v36: i32  = iconst 42
+      v37: bool = icmp.eq v35, v36
+      br_if v37, then: b8, else: b7
   
     b6 (unwrap_panic):
       unreachable
@@ -82,17 +87,37 @@ module main {
       unreachable
   
     b8 (assert_ok):
-      v37: i8 = iconst 0
+      v38: i8          = iconst 0
+      v39: enum Option = load v15
+      v40: usize       = enum_get_tag v39
+      v41: usize       = iconst 1
+      v42: bool        = icmp.eq v40, v41
+      br_if v42, then: b9, else: b10
+  
+    b9 (unwrap_ok):
+      v43: i32  = enum_get_data v39 variant=1 index=0 as i32
+      v44: i32  = iconst 42
+      v45: bool = icmp.eq v43, v44
+      br_if v45, then: b12, else: b11
+  
+    b10 (unwrap_panic):
+      unreachable
+  
+    b11 (assert_fail):
+      unreachable
+  
+    b12 (assert_ok):
+      v46: i8 = iconst 0
       ret
   }
 
-  fn f637551 as_opt_i32(v38 arg0: i32) -> enum Option {
+  fn f637551 as_opt_i32(v47 arg0: i32) -> enum Option {
     b0 (entry):
-      v39: ptr<i32>    = alloca i32
-      store v38 -> v39
-      v41: i32         = load v39
-      v42: enum Option = enum_create Option tag=1, data: v41
-      ret v42
+      v48: ptr<i32>    = alloca i32
+      store v47 -> v48
+      v50: i32         = load v48
+      v51: enum Option = enum_create Option tag=1, data: v50
+      ret v51
   }
 
 }

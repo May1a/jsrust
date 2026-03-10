@@ -1,10 +1,10 @@
 
-fn make_ok(x: i32) -> Result<i32, i32> {
+fn make_ok(x: i32) -> Result<i32, &'static str> {
     Ok(x)
 }
 
-fn make_err(e: i32) -> Result<i32, i32> {
-    Err(e)
+fn make_err() -> Result<i32, &'static str> {
+    Err("error")
 }
 
 #[test]
@@ -16,13 +16,16 @@ fn test_result_ok() {
 
 #[test]
 fn test_result_err() {
-    let r = make_err(99);
+    let r = make_err();
     assert!(r.is_err());
-    assert_eq!(r.unwrap_err(), 99);
+    assert_eq!(r.unwrap_err(), "error");
 }
 
 #[test]
 fn test_result_pattern_match() {
     let r = make_ok(42);
-    assert!(r.is_ok());
+    match r {
+        Ok(value) => assert_eq!(value, 42),
+        Err(_) => assert!(false),
+    }
 }

@@ -14,5 +14,6 @@ fn test_option_methods() {
     let n: Option<i32> = None;
     assert!(s.is_some());
     assert!(n.is_none());
+    assert_eq!(s.expect("expected value"), 42);
     assert_eq!(s.unwrap(), 42);
 }

@@ -69,7 +69,7 @@ import {
 } from "./monomorphize";
 import { Result } from "better-result";
 import { BUILTIN_SYMBOLS } from "./builtin_symbols";
-import { match } from "ts-pattern";
+import { match, P } from "ts-pattern";
 
 // Type alias for expression visitor to reduce complexity
 type ExpressionVisitor<T> = Pick<
@@ -172,6 +172,7 @@ interface BuilderSnapshot {
     locals: Map<string, LocalBinding>;
     loopStack: LoopFrame[];
     returnType: IRType;
+    expectedValueTypes: IRType[];
 }
 
 function loweringError<T>(
@@ -244,6 +245,7 @@ export class AstToSsaCtx {
     private readonly monoRegistry?: MonomorphizationRegistry;
     private loopStack: LoopFrame[];
     private currentReturnType: IRType;
+    private expectedValueTypes: IRType[];
 
     constructor(
         options: {
@@ -270,6 +272,7 @@ export class AstToSsaCtx {
         this.monoRegistry = options.monoRegistry;
         this.loopStack = [];
         this.currentReturnType = makeIRUnitType();
+        this.expectedValueTypes = [];
     }
 
     seedFunctionIds(ids: Map<string, number>): void {
@@ -486,7 +489,7 @@ export class AstToSsaCtx {
         let ty = AstToSsaCtx.translateTypeNode(stmt.type);
         this.registerEnumTypeMetadata(ty);
 
-        const initResult = this.lowerExpression(stmt.init);
+        const initResult = this.lowerExpressionWithExpected(stmt.init, ty);
         if (!initResult.isOk()) {
             return initResult;
         }
@@ -509,6 +512,16 @@ export class AstToSsaCtx {
         // Use visitor pattern to dispatch to appropriate handler
         const visitor = this.getExpressionVisitor();
         return expr.accept(visitor, this);
+    }
+
+    private lowerExpressionWithExpected(
+        expr: Expression,
+        expectedTy: IRType,
+    ): Result<ValueId, LoweringError> {
+        this.expectedValueTypes.push(expectedTy);
+        const lowered = this.lowerExpression(expr);
+        this.expectedValueTypes.pop();
+        return lowered;
     }
 
     private getExpressionVisitor(): AstVisitor<
@@ -782,7 +795,10 @@ export class AstToSsaCtx {
             );
         }
 
-        const valueResult = this.lowerExpression(expr.value);
+        const valueResult = this.lowerExpressionWithExpected(
+            expr.value,
+            binding.ty,
+        );
         if (!valueResult.isOk()) {
             return valueResult;
         }
@@ -1417,6 +1433,24 @@ export class AstToSsaCtx {
         return this.currentReturnType.variants[1]?.[0];
     }
 
+    private peekExpectedValueType(): IRType | undefined {
+        return this.expectedValueTypes.at(LAST_FRAME_INDEX);
+    }
+
+    private resolveExpectedResultType(): EnumType | undefined {
+        const contextualType = this.peekExpectedValueType();
+        if (contextualType instanceof EnumType && contextualType.name === "Result") {
+            this.registerEnumTypeMetadata(contextualType);
+            return contextualType;
+        }
+        const returnType = this.currentReturnType;
+        if (returnType instanceof EnumType && returnType.name === "Result") {
+            this.registerEnumTypeMetadata(returnType);
+            return returnType;
+        }
+        return undefined;
+    }
+
     private lowerOkConstructor(
         span: Span,
         args: ValueId[],
@@ -1426,6 +1460,12 @@ export class AstToSsaCtx {
                 LoweringErrorKind.UnsupportedNode,
                 "Ok() requires exactly one argument",
                 span,
+            );
+        }
+        const contextualResultTy = this.resolveExpectedResultType();
+        if (contextualResultTy) {
+            return AstToSsaCtx.handleInstructionId(
+                this.builder.enumCreate(0 /* OK_TAG */, args[0], contextualResultTy).id,
             );
         }
         const okTy = this.resolveValueType(args[0]) ?? makeIRUnitType();
@@ -1446,6 +1486,12 @@ export class AstToSsaCtx {
                 LoweringErrorKind.UnsupportedNode,
                 "Err() requires exactly one argument",
                 span,
+            );
+        }
+        const contextualResultTy = this.resolveExpectedResultType();
+        if (contextualResultTy) {
+            return AstToSsaCtx.handleInstructionId(
+                this.builder.enumCreate(1 /* ERR_TAG */, args[0], contextualResultTy).id,
             );
         }
         const errTy = this.resolveValueType(args[0]) ?? makeIRUnitType();
@@ -1498,6 +1544,7 @@ export class AstToSsaCtx {
         const methodBuiltin = this.tryLowerBuiltinMethod(
             callee,
             receiver.value,
+            args,
         );
         if (methodBuiltin) {
             return methodBuiltin;
@@ -1565,18 +1612,48 @@ export class AstToSsaCtx {
         field: string,
         receiverType: IRType | undefined,
         receiverValue: ValueId,
+        args: ValueId[],
+        span: Span,
     ): Result<ValueId, LoweringError> | undefined {
         if (!(receiverType instanceof EnumType)) return undefined;
         if (field === "is_some" && receiverType.name === "Option") {
+            if (args.length !== 0) {
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "`is_some` does not take any arguments",
+                    span,
+                );
+            }
             return this.lowerEnumIsTag(receiverValue, 1 /* SOME_TAG */);
         }
         if (field === "is_none" && receiverType.name === "Option") {
+            if (args.length !== 0) {
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "`is_none` does not take any arguments",
+                    span,
+                );
+            }
             return this.lowerEnumIsTag(receiverValue, 0 /* NONE_TAG */);
         }
         if (field === "is_ok" && receiverType.name === "Result") {
+            if (args.length !== 0) {
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "`is_ok` does not take any arguments",
+                    span,
+                );
+            }
             return this.lowerEnumIsTag(receiverValue, 0 /* OK_TAG */);
         }
         if (field === "is_err" && receiverType.name === "Result") {
+            if (args.length !== 0) {
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "`is_err` does not take any arguments",
+                    span,
+                );
+            }
             return this.lowerEnumIsTag(receiverValue, 1 /* ERR_TAG */);
         }
         return undefined;
@@ -1586,9 +1663,26 @@ export class AstToSsaCtx {
         field: string,
         receiverType: IRType | undefined,
         receiverValue: ValueId,
+        args: ValueId[],
+        span: Span,
     ): Result<ValueId, LoweringError> | undefined {
         if (!(receiverType instanceof EnumType)) return undefined;
         if (field === "unwrap" || field === "expect") {
+            const expectedArgCount = match(field)
+                .with("unwrap", () => 0)
+                .with("expect", () => 1)
+                .exhaustive();
+            if (args.length !== expectedArgCount) {
+                const message = match(field)
+                    .with("unwrap", () => "`unwrap` does not take any arguments")
+                    .with("expect", () => "`expect` requires exactly one argument")
+                    .exhaustive();
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    message,
+                    span,
+                );
+            }
             if (receiverType.name === "Option") {
                 return this.lowerEnumUnwrap(receiverValue, receiverType, 1 /* SOME_TAG */);
             }
@@ -1597,6 +1691,13 @@ export class AstToSsaCtx {
             }
         }
         if (field === "unwrap_err" && receiverType.name === "Result") {
+            if (args.length !== 0) {
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "`unwrap_err` does not take any arguments",
+                    span,
+                );
+            }
             return this.lowerEnumUnwrap(receiverValue, receiverType, 1 /* ERR_TAG */);
         }
         return undefined;
@@ -1605,16 +1706,36 @@ export class AstToSsaCtx {
     private tryLowerBuiltinMethod(
         callee: FieldExpr,
         receiverValue: ValueId,
+        args: ValueId[],
     ): Result<ValueId, LoweringError> | undefined {
         if (callee.field === "clone") {
+            if (args.length !== 0) {
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "`clone` does not take any arguments",
+                    callee.span,
+                );
+            }
             return Result.ok(receiverValue);
         }
 
         const receiverType = this.resolveValueType(receiverValue);
 
         return (
-            this.tryLowerBuiltinIsMethod(callee.field, receiverType, receiverValue) ??
-            this.tryLowerBuiltinUnwrapMethod(callee.field, receiverType, receiverValue)
+            this.tryLowerBuiltinIsMethod(
+                callee.field,
+                receiverType,
+                receiverValue,
+                args,
+                callee.span,
+            ) ??
+            this.tryLowerBuiltinUnwrapMethod(
+                callee.field,
+                receiverType,
+                receiverValue,
+                args,
+                callee.span,
+            )
         );
     }
 
@@ -2406,6 +2527,7 @@ export class AstToSsaCtx {
             locals: new Map(this.locals),
             loopStack: this.loopStack,
             returnType: this.currentReturnType,
+            expectedValueTypes: [...this.expectedValueTypes],
         };
     }
 
@@ -2423,6 +2545,7 @@ export class AstToSsaCtx {
         }
         this.loopStack = snap.loopStack;
         this.currentReturnType = snap.returnType;
+        this.expectedValueTypes = [...snap.expectedValueTypes];
     }
 
     private lowerNonCapturingClosure(
@@ -2722,7 +2845,10 @@ export class AstToSsaCtx {
             return Result.ok(this.unitValue());
         }
 
-        const valueResult = this.lowerExpression(expr.value);
+        const valueResult = this.lowerExpressionWithExpected(
+            expr.value,
+            this.currentReturnType,
+        );
         if (!valueResult.isOk()) {
             return valueResult;
         }
@@ -2824,12 +2950,19 @@ export class AstToSsaCtx {
             }
             if (typeNode.name === "Result") {
                 const args = typeNode.args?.args ?? [];
-                const okTy = args[0]
-                    ? AstToSsaCtx.translateTypeNode(args[0])
-                    : makeIRUnitType();
-                const errTy = args[1]
-                    ? AstToSsaCtx.translateTypeNode(args[1])
-                    : makeIRUnitType();
+                const okTy = match(args)
+                    .with([P.nonNullable, P._], ([okArg]) =>
+                        AstToSsaCtx.translateTypeNode(okArg),
+                    )
+                    .with([P.nonNullable], ([okArg]) =>
+                        AstToSsaCtx.translateTypeNode(okArg),
+                    )
+                    .otherwise(() => makeIRUnitType());
+                const errTy = match(args)
+                    .with([P._, P.nonNullable], ([, errArg]) =>
+                        AstToSsaCtx.translateTypeNode(errArg),
+                    )
+                    .otherwise(() => makeIRUnitType());
                 return makeIREnumType("Result", [[okTy], [errTy]]);
             }
             const builtin = AstToSsaCtx.namedBuiltin(typeNode.name);

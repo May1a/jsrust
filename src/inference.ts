@@ -40,6 +40,7 @@ import {
     type Span,
     type Statement,
     StructExpr,
+    StructPattern,
     StructItem,
     EnumItem,
     TraitImplItem,
@@ -48,6 +49,7 @@ import {
     FnTypeNode,
     GenericArgsNode,
     PtrTypeNode,
+    type Pattern,
     TupleTypeNode,
     type TypeNode,
     UnaryExpr,
@@ -798,7 +800,7 @@ function inferCall(
     }
 
     if (expr.callee instanceof FieldExpr) {
-        return inferMethodCallType(typeCtx, expr.callee, errors);
+        return inferMethodCallType(typeCtx, expr, errors);
     }
 
     return undefined;
@@ -887,34 +889,99 @@ function inferIdentifierCallType(
 }
 
 function inferOptionMethodType(
-    callee: FieldExpr,
+    expr: CallExpr,
     receiverTy: NamedTypeNode,
+    errors: TypeError[],
 ): TypeNode | undefined {
+    const { callee } = expr;
+    if (!(callee instanceof FieldExpr)) {
+        return undefined;
+    }
     const inner = receiverTy.args?.args[0];
     const boolTy = new NamedTypeNode(callee.span, "bool");
     if (callee.field === "is_some" || callee.field === "is_none") {
+        if (expr.args.length !== 0) {
+            errors.push({
+                message: `\`${callee.field}\` does not take any arguments`,
+                span: expr.span,
+            });
+            return undefined;
+        }
         return boolTy;
     }
-    if (callee.field === "unwrap" || callee.field === "expect") {
+    if (callee.field === "unwrap") {
+        if (expr.args.length !== 0) {
+            errors.push({
+                message: "`unwrap` does not take any arguments",
+                span: expr.span,
+            });
+            return undefined;
+        }
+        return inner ?? new InferredTypeNode(callee.span);
+    }
+    if (callee.field === "expect") {
+        if (expr.args.length !== 1) {
+            errors.push({
+                message: "`expect` requires exactly one argument",
+                span: expr.span,
+            });
+            return undefined;
+        }
         return inner ?? new InferredTypeNode(callee.span);
     }
     return undefined;
 }
 
 function inferResultMethodType(
-    callee: FieldExpr,
+    expr: CallExpr,
     receiverTy: NamedTypeNode,
+    errors: TypeError[],
 ): TypeNode | undefined {
+    const { callee } = expr;
+    if (!(callee instanceof FieldExpr)) {
+        return undefined;
+    }
     const okTy = receiverTy.args?.args[0];
     const errTy = receiverTy.args?.args[1];
     const boolTy = new NamedTypeNode(callee.span, "bool");
     if (callee.field === "is_ok" || callee.field === "is_err") {
+        if (expr.args.length !== 0) {
+            errors.push({
+                message: `\`${callee.field}\` does not take any arguments`,
+                span: expr.span,
+            });
+            return undefined;
+        }
         return boolTy;
     }
-    if (callee.field === "unwrap" || callee.field === "expect") {
+    if (callee.field === "unwrap") {
+        if (expr.args.length !== 0) {
+            errors.push({
+                message: "`unwrap` does not take any arguments",
+                span: expr.span,
+            });
+            return undefined;
+        }
+        return okTy ?? new InferredTypeNode(callee.span);
+    }
+    if (callee.field === "expect") {
+        if (expr.args.length !== 1) {
+            errors.push({
+                message: "`expect` requires exactly one argument",
+                span: expr.span,
+            });
+            return undefined;
+        }
         return okTy ?? new InferredTypeNode(callee.span);
     }
     if (callee.field === "unwrap_err") {
+        if (expr.args.length !== 0) {
+            errors.push({
+                message: "`unwrap_err` does not take any arguments",
+                span: expr.span,
+            });
+            return undefined;
+        }
         return errTy ?? new InferredTypeNode(callee.span);
     }
     return undefined;
@@ -922,19 +989,42 @@ function inferResultMethodType(
 
 function inferMethodCallType(
     typeCtx: TypeContext,
-    callee: FieldExpr,
+    expr: CallExpr,
     errors: TypeError[],
 ): TypeNode | undefined {
+    const { callee } = expr;
+    if (!(callee instanceof FieldExpr)) {
+        return undefined;
+    }
     const receiverTy = inferExprType(typeCtx, callee.receiver, errors);
+
+    if (callee.field === "clone") {
+        if (expr.args.length !== 0) {
+            errors.push({
+                message: "`clone` does not take any arguments",
+                span: expr.span,
+            });
+            return undefined;
+        }
+        if (receiverTy) {
+            return receiverTy;
+        }
+    }
 
     // Builtin Option methods
     if (receiverTy instanceof NamedTypeNode && receiverTy.name === "Option") {
-        return inferOptionMethodType(callee, receiverTy);
+        const inferred = inferOptionMethodType(expr, receiverTy, errors);
+        if (inferred !== undefined) {
+            return inferred;
+        }
     }
 
     // Builtin Result methods
     if (receiverTy instanceof NamedTypeNode && receiverTy.name === "Result") {
-        return inferResultMethodType(callee, receiverTy);
+        const inferred = inferResultMethodType(expr, receiverTy, errors);
+        if (inferred !== undefined) {
+            return inferred;
+        }
     }
 
     if (receiverTy instanceof NamedTypeNode) {
@@ -1196,10 +1286,13 @@ function inferMatch(
     expr: MatchExpr,
     errors: TypeError[],
 ): TypeNode | undefined {
-    inferExprType(typeCtx, expr.matchOn, errors);
+    const scrutineeTy = inferExprType(typeCtx, expr.matchOn, errors);
     let armTy: TypeNode | undefined;
     for (const arm of expr.arms) {
+        typeCtx.pushScope();
+        bindMatchArmPatternTypes(typeCtx, arm.pattern, scrutineeTy);
         const bodyTy = inferExprType(typeCtx, arm.body, errors);
+        typeCtx.popScope();
         if (!armTy) {
             armTy = bodyTy;
         } else if (bodyTy && !typesEqual(armTy, bodyTy)) {
@@ -1210,6 +1303,93 @@ function inferMatch(
         }
     }
     return armTy;
+}
+
+function bindMatchArmPatternTypes(
+    typeCtx: TypeContext,
+    pattern: Pattern,
+    scrutineeTy: TypeNode | undefined,
+): void {
+    if (pattern instanceof IdentPattern) {
+        if (pattern.name === "_" || scrutineeTy === undefined) {
+            return;
+        }
+        typeCtx.setVariable(pattern.name, scrutineeTy);
+        return;
+    }
+
+    if (!(pattern instanceof StructPattern)) {
+        return;
+    }
+
+    for (const field of pattern.fields) {
+        if (!(field.pattern instanceof IdentPattern)) {
+            continue;
+        }
+        if (field.pattern.name === "_") {
+            continue;
+        }
+
+        const fieldIndex = Number(field.name);
+        if (Number.isNaN(fieldIndex)) {
+            continue;
+        }
+
+        const fieldTy = resolveMatchPatternFieldType(
+            typeCtx,
+            pattern,
+            scrutineeTy,
+            fieldIndex,
+        );
+        if (fieldTy !== undefined) {
+            typeCtx.setVariable(field.pattern.name, fieldTy);
+        }
+    }
+}
+
+function resolveMatchPatternFieldType(
+    typeCtx: TypeContext,
+    pattern: StructPattern,
+    scrutineeTy: TypeNode | undefined,
+    fieldIndex: number,
+): TypeNode | undefined {
+    if (!(pattern.path instanceof IdentifierExpr)) {
+        return undefined;
+    }
+
+    let enumTy = scrutineeTy;
+    if (enumTy instanceof RefTypeNode) {
+        enumTy = enumTy.inner;
+    }
+    if (!(enumTy instanceof NamedTypeNode)) {
+        return undefined;
+    }
+
+    const variantName = pattern.path.name;
+    const variantOwner = typeCtx.lookupVariantOwner(variantName);
+    if (
+        variantOwner !== undefined &&
+        variantOwner !== enumTy.name
+    ) {
+        return undefined;
+    }
+
+    if (enumTy.name === "Option" && fieldIndex === 0) {
+        return enumTy.args?.args[0] ?? new InferredTypeNode(pattern.span);
+    }
+
+    if (enumTy.name !== "Result") {
+        return undefined;
+    }
+
+    if (variantName === "Ok" || variantName === "Result::Ok") {
+        return enumTy.args?.args[0] ?? new InferredTypeNode(pattern.span);
+    }
+    if (variantName === "Err" || variantName === "Result::Err") {
+        return enumTy.args?.args[1] ?? new InferredTypeNode(pattern.span);
+    }
+
+    return undefined;
 }
 
 // --- Statement Inference ---
