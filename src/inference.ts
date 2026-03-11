@@ -128,6 +128,10 @@ function isInferredPlaceholder(ty: TypeNode): boolean {
  */
 function typeToString(ty: TypeNode): string {
     if (ty instanceof NamedTypeNode) {
+        if (ty.args !== undefined) {
+            const args = ty.args.args.map(typeToString).join(", ");
+            return `${ty.name}<${args}>`;
+        }
         return ty.name;
     }
     if (ty instanceof TupleTypeNode) {
@@ -212,6 +216,141 @@ function makeResultType(
     const ok = okTy ?? new InferredTypeNode(span);
     const err = errTy ?? new InferredTypeNode(span);
     return new NamedTypeNode(span, "Result", new GenericArgsNode(span, [ok, err]));
+}
+
+function getOptionResultRefSuggestion(ty: RefTypeNode): string | undefined {
+    if (!(ty.inner instanceof NamedTypeNode) || ty.inner.args === undefined) {
+        return undefined;
+    }
+    if (ty.inner.name === "Option") {
+        if (ty.inner.args.args.length === 0) {
+            return undefined;
+        }
+        const [innerTy] = ty.inner.args.args;
+        return typeToString(
+            makeOptionType(
+                ty.span,
+                new RefTypeNode(ty.span, ty.mutability, innerTy),
+            ),
+        );
+    }
+    if (ty.inner.name === "Result") {
+        if (ty.inner.args.args.length < 2) {
+            return undefined;
+        }
+        const [okTy, errTy] = ty.inner.args.args;
+        return typeToString(
+            makeResultType(
+                ty.span,
+                new RefTypeNode(ty.span, ty.mutability, okTy),
+                errTy,
+            ),
+        );
+    }
+    return undefined;
+}
+
+function getRefOptionResultFallback(innerName: string, mutability: Mutability): string {
+    let refType = "&T";
+    if (mutability === Mutability.Mutable) {
+        refType = "&mut T";
+    }
+    return `${innerName}<${refType}>`;
+}
+
+function validateNamedTypeNode(
+    typeCtx: TypeContext,
+    ty: NamedTypeNode,
+    genericNames: Set<string>,
+    errors: TypeError[],
+): void {
+    const builtIn = isBuiltinTypeName(ty.name);
+    const known = typeCtx.lookupNamedType(ty.name);
+    const generic = genericNames.has(ty.name);
+    if (!known && !builtIn && !generic) {
+        errors.push({
+            message: `Unknown type \`${ty.name}\``,
+            span: ty.span,
+        });
+    }
+    if (ty.args !== undefined) {
+        for (const arg of ty.args.args) {
+            validateTypeNode(typeCtx, arg, genericNames, errors);
+        }
+    }
+}
+
+function validateRefTypeNode(
+    typeCtx: TypeContext,
+    ty: RefTypeNode,
+    genericNames: Set<string>,
+    errors: TypeError[],
+): void {
+    if (
+        ty.inner instanceof NamedTypeNode &&
+        (ty.inner.name === "Option" || ty.inner.name === "Result")
+    ) {
+        const suggestion = getOptionResultRefSuggestion(ty);
+        let suggestedType = suggestion;
+        suggestedType ??= getRefOptionResultFallback(
+            ty.inner.name,
+            ty.mutability,
+        );
+        errors.push({
+            message: `cannot use \`${typeToString(ty)}\`; use \`${suggestedType}\` instead`,
+            span: ty.span,
+        });
+    }
+    validateTypeNode(typeCtx, ty.inner, genericNames, errors);
+}
+
+function validateCompositeTypeNode(
+    typeCtx: TypeContext,
+    ty: TypeNode,
+    genericNames: Set<string>,
+    errors: TypeError[],
+): void {
+    if (ty instanceof TupleTypeNode) {
+        for (const element of ty.elements) {
+            validateTypeNode(typeCtx, element, genericNames, errors);
+        }
+        return;
+    }
+    if (ty instanceof ArrayTypeNode) {
+        validateTypeNode(typeCtx, ty.element, genericNames, errors);
+        return;
+    }
+    if (ty instanceof PtrTypeNode) {
+        validateTypeNode(typeCtx, ty.inner, genericNames, errors);
+        return;
+    }
+    if (ty instanceof FnTypeNode) {
+        for (const paramTy of ty.params) {
+            validateTypeNode(typeCtx, paramTy, genericNames, errors);
+        }
+        validateTypeNode(typeCtx, ty.returnType, genericNames, errors);
+        return;
+    }
+}
+
+function validateTypeNode(
+    typeCtx: TypeContext,
+    ty: TypeNode,
+    genericNames: Set<string>,
+    errors: TypeError[],
+): void {
+    if (ty instanceof InferredTypeNode) {
+        return;
+    }
+    if (ty instanceof NamedTypeNode) {
+        validateNamedTypeNode(typeCtx, ty, genericNames, errors);
+        return;
+    }
+    if (ty instanceof RefTypeNode) {
+        validateRefTypeNode(typeCtx, ty, genericNames, errors);
+        return;
+    }
+    validateCompositeTypeNode(typeCtx, ty, genericNames, errors);
 }
 
 // --- Comparison and logical ops that return bool ---
@@ -1502,6 +1641,10 @@ function inferLetStmt(
     const annotationTy = stmt.type;
     const hasAnnotation = !isInferredPlaceholder(annotationTy);
 
+    if (hasAnnotation) {
+        validateTypeNode(typeCtx, annotationTy, new Set<string>(), errors);
+    }
+
     let resolvedTy: TypeNode;
 
     if (hasAnnotation && initTy) {
@@ -1654,34 +1797,38 @@ function validateFnTypes(
     const genericNames = collectGenericParamNames(fnItem);
 
     for (const param of fnItem.params.filter((p) => !p.isReceiver)) {
-        const { name } = param;
-        const { ty } = param;
-        if (ty instanceof NamedTypeNode) {
-            const builtIn = isBuiltinTypeName(ty.name);
-            const known = typeCtx.lookupNamedType(ty.name);
-            const generic = genericNames.has(ty.name);
-            if (!known && !builtIn && !generic) {
-                errors.push({
-                    message: `Unknown parameter type \`${ty.name}\` for parameter \`${name}\``,
-                    span: ty.span,
-                });
-            }
-        }
+        validateTypeNode(typeCtx, param.ty, genericNames, errors);
     }
 
-    const { returnType }: { returnType: TypeNode } = fnItem;
-    if (returnType instanceof NamedTypeNode) {
-        const builtIn = isBuiltinTypeName(returnType.name);
-        const known = typeCtx.lookupNamedType(returnType.name);
-        const generic = genericNames.has(returnType.name);
-        if (!known && !builtIn && !generic) {
-            errors.push({
-                message: `Unknown return type \`${returnType.name}\` in function \`${fnItem.name}\``,
-                span: returnType.span,
-            });
-        }
+    validateTypeNode(typeCtx, fnItem.returnType, genericNames, errors);
+
+    return errors;
+}
+
+function validateStructFieldTypes(
+    typeCtx: TypeContext,
+    item: StructItem | GenericStructItem,
+): TypeError[] {
+    const errors: TypeError[] = [];
+    let genericNames = new Set<string>();
+    if (item instanceof GenericStructItem) {
+        genericNames = new Set(item.genericParams.map((param) => param.name));
     }
 
+    for (const field of item.fields) {
+        validateTypeNode(typeCtx, field.ty, genericNames, errors);
+    }
+
+    return errors;
+}
+
+function validateEnumItemTypes(typeCtx: TypeContext, item: EnumItem): TypeError[] {
+    const errors: TypeError[] = [];
+    for (const variant of item.variants) {
+        for (const field of variant.fields) {
+            validateTypeNode(typeCtx, field.ty, new Set<string>(), errors);
+        }
+    }
     return errors;
 }
 
@@ -1745,6 +1892,12 @@ export function inferModule(
 
     // Phase 2: Validate function signatures and infer function bodies
     for (const item of moduleNode.items) {
+        if (item instanceof StructItem || item instanceof GenericStructItem) {
+            errors.push(...validateStructFieldTypes(typeCtx, item));
+        }
+        if (item instanceof EnumItem) {
+            errors.push(...validateEnumItemTypes(typeCtx, item));
+        }
         if (item instanceof GenericFnItem) {
             errors.push(...validateFnTypes(typeCtx, item));
             // Skip deep body inference for generic functions — type params aren't concrete

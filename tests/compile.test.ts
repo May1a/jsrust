@@ -193,7 +193,29 @@ describe("compile", () => {
         if (result.isOk()) return;
 
         expect(formatCompileError(result.error)).toContain(
-            "no method `missing` found for type `Result`",
+            "no method `missing` found for type `Result<i32, i32>`",
+        );
+    });
+
+    test("rejects &Option annotations with a targeted suggestion", () => {
+        const result = compile("fn test() { let value: &Option<i32> = &Some(1); }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "cannot use `&Option<i32>`; use `Option<&i32>` instead",
+        );
+    });
+
+    test("rejects &Result signatures with a targeted suggestion", () => {
+        const result = compile(
+            "fn test(value: &Result<i32, bool>) -> &Result<i32, bool> { value }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "cannot use `&Result<i32, bool>`; use `Result<&i32, bool>` instead",
         );
     });
 });
