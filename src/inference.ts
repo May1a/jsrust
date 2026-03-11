@@ -987,6 +987,45 @@ function inferResultMethodType(
     return undefined;
 }
 
+const OPTION_RESULT_BUILTIN_METHODS = [
+    "is_some",
+    "is_none",
+    "unwrap",
+    "unwrap_or",
+    "unwrap_err",
+    "ok",
+    "err",
+] as const;
+
+function checkRefOptionResultMethodCall(
+    receiverTy: TypeNode | undefined,
+    callee: FieldExpr,
+    expr: CallExpr,
+    errors: TypeError[],
+): boolean {
+    if (!(receiverTy instanceof RefTypeNode)) {
+        return false;
+    }
+    let { inner }: { inner: TypeNode } = receiverTy;
+    while (inner instanceof RefTypeNode) {
+        ({ inner } = inner);
+    }
+    if (!(inner instanceof NamedTypeNode)) {
+        return false;
+    }
+    if (inner.name !== "Option" && inner.name !== "Result") {
+        return false;
+    }
+    if (!(OPTION_RESULT_BUILTIN_METHODS as readonly string[]).includes(callee.field)) {
+        return false;
+    }
+    errors.push({
+        message: `cannot call \`${callee.field}\` on \`${typeToString(receiverTy)}\`; method is defined on \`${inner.name}\`, not on a reference to it`,
+        span: expr.span,
+    });
+    return true;
+}
+
 function inferMethodCallType(
     typeCtx: TypeContext,
     expr: CallExpr,
@@ -1011,6 +1050,12 @@ function inferMethodCallType(
         }
     }
 
+    // Reject calling Option/Result builtin methods through a reference — it is a
+    // common mistake and the compiler should reject it explicitly.
+    if (checkRefOptionResultMethodCall(receiverTy, callee, expr, errors)) {
+        return undefined;
+    }
+
     // Builtin Option methods
     if (receiverTy instanceof NamedTypeNode && receiverTy.name === "Option") {
         const inferred = inferOptionMethodType(expr, receiverTy, errors);
@@ -1027,6 +1072,15 @@ function inferMethodCallType(
         }
     }
 
+    return inferUserDefinedMethodType(typeCtx, receiverTy, callee, errors);
+}
+
+function inferUserDefinedMethodType(
+    typeCtx: TypeContext,
+    receiverTy: TypeNode | undefined,
+    callee: FieldExpr,
+    errors: TypeError[],
+): TypeNode | undefined {
     if (receiverTy instanceof NamedTypeNode) {
         const methodSig = typeCtx.lookupFnSignature(
             `${receiverTy.name}::${callee.field}`,
@@ -1312,6 +1366,15 @@ function bindMatchArmPatternTypes(
 ): void {
     if (pattern instanceof IdentPattern) {
         if (pattern.name === "_" || scrutineeTy === undefined) {
+            return;
+        }
+        // Don't bind enum variant names as local variables (e.g. `None`, `Ok`)
+        const isBuiltinVariant =
+            pattern.name === "None" ||
+            pattern.name === "Some" ||
+            pattern.name === "Ok" ||
+            pattern.name === "Err";
+        if (isBuiltinVariant || typeCtx.lookupVariantOwner(pattern.name) !== undefined) {
             return;
         }
         typeCtx.setVariable(pattern.name, scrutineeTy);

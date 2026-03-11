@@ -1354,6 +1354,21 @@ export class AstToSsaCtx {
     }
 
     private lowerCall(expr: CallExpr): Result<ValueId, LoweringError> {
+        // Detect enum constructors before lowering args so we can propagate the
+        // expected payload type into nested constructor calls (e.g. Some(Ok(1))).
+        if (expr.callee instanceof IdentifierExpr) {
+            const calleeName = expr.callee.name;
+            if (calleeName === "Some" || calleeName === "Option::Some") {
+                return this.lowerEnumConstructorCall(expr, "Some");
+            }
+            if (calleeName === "Ok" || calleeName === "Result::Ok") {
+                return this.lowerEnumConstructorCall(expr, "Ok");
+            }
+            if (calleeName === "Err" || calleeName === "Result::Err") {
+                return this.lowerEnumConstructorCall(expr, "Err");
+            }
+        }
+
         const args: ValueId[] = [];
         for (const arg of expr.args) {
             const argResult = this.lowerExpression(arg);
@@ -1369,16 +1384,6 @@ export class AstToSsaCtx {
 
         const retTy: IRType = makeIRIntType(IntWidth.I64);
         if (expr.callee instanceof IdentifierExpr) {
-            const calleeName = expr.callee.name;
-            if (calleeName === "Some" || calleeName === "Option::Some") {
-                return this.lowerSomeConstructor(expr.span, args);
-            }
-            if (calleeName === "Ok" || calleeName === "Result::Ok") {
-                return this.lowerOkConstructor(expr.span, args);
-            }
-            if (calleeName === "Err" || calleeName === "Result::Err") {
-                return this.lowerErrConstructor(expr.span, args);
-            }
             // Check if this is a call to a generic function
             const resolvedName = this.resolveGenericCallName(expr);
             if (resolvedName) {
@@ -1397,6 +1402,56 @@ export class AstToSsaCtx {
             retTy,
         );
         return Result.ok(callDynInst.id);
+    }
+
+    private resolveExpectedOptionPayloadType(): IRType | undefined {
+        const contextual = this.peekExpectedValueType();
+        if (contextual instanceof EnumType && contextual.name === "Option") {
+            return contextual.variants[1]?.[0];
+        }
+        const returnTy = this.currentReturnType;
+        if (!(returnTy instanceof EnumType)) return undefined;
+        if (returnTy.name !== "Option") return undefined;
+        return returnTy.variants[1]?.[0];
+    }
+
+    private lowerEnumConstructorCall(
+        expr: CallExpr,
+        constructorName: "Some" | "Ok" | "Err",
+    ): Result<ValueId, LoweringError> {
+        let expectedArgTy: IRType | undefined;
+        if (constructorName === "Some") {
+            expectedArgTy = this.resolveExpectedOptionPayloadType();
+        } else {
+            const resultTy = this.resolveExpectedResultType();
+            if (resultTy) {
+                expectedArgTy = match(constructorName)
+                    .with("Ok", () => resultTy.variants[0]?.[0])
+                    .with("Err", () => resultTy.variants[1]?.[0])
+                    .exhaustive();
+            }
+        }
+
+        const args: ValueId[] = [];
+        for (const arg of expr.args) {
+            const argResult = match(expectedArgTy)
+                .with(P.nonNullable, (expectedType) =>
+                    this.lowerExpressionWithExpected(arg, expectedType)
+                )
+                .otherwise(() => this.lowerExpression(arg));
+            if (!argResult.isOk()) {
+                return argResult;
+            }
+            args.push(argResult.value);
+        }
+
+        if (constructorName === "Some") {
+            return this.lowerSomeConstructor(expr.span, args);
+        }
+        if (constructorName === "Ok") {
+            return this.lowerOkConstructor(expr.span, args);
+        }
+        return this.lowerErrConstructor(expr.span, args);
     }
 
     private lowerSomeConstructor(
