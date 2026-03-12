@@ -1,5 +1,5 @@
-import type { CallExpr, Expression, GenericFnItem, TypeNode } from "./ast";
-import type { SubstitutionMap } from "./monomorphize";
+import type { CallExpr, Expression, GenericFnItem, TypeNode } from "../parse/ast";
+import type { SubstitutionMap } from "../passes/monomorphize";
 
 interface StructFieldInfo {
     name: string;

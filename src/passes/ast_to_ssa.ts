@@ -60,7 +60,7 @@ import {
     Mutability,
     walkAst,
     ReceiverKind,
-} from "./ast";
+} from "../parse/ast";
 import {
     MonomorphizationRegistry,
     inferTypeArgs,
@@ -68,7 +68,7 @@ import {
     type SubstitutionMap,
 } from "./monomorphize";
 import { Result } from "better-result";
-import { BUILTIN_SYMBOLS } from "./builtin_symbols";
+import { BUILTIN_SYMBOLS } from "../utils/builtin_symbols";
 import { match, P } from "ts-pattern";
 
 // Type alias for expression visitor to reduce complexity
@@ -132,8 +132,8 @@ import {
     StructType,
     type ValueId,
     type BoolType,
-} from "./ir";
-import { IRBuilder } from "./ir_builder";
+} from "../ir/ir";
+import { IRBuilder } from "../ir/ir_builder";
 
 export enum LoweringErrorKind {
     UnsupportedNode,

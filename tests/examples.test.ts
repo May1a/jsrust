@@ -10,7 +10,7 @@ import {
 import {
     runBackendWasm,
     canRunBackendIntegrationTests,
-} from "../src/backend_runner";
+} from "../src/backend/backend_runner";
 
 const examplesDir = resolve(import.meta.dir, "../examples");
 const expectedDir = resolve(examplesDir, "expected");

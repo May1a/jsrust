@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { compile, compileToBinary, formatCompileError } from "../src/compile";
-import { deserializeModule } from "../src/ir_deserialize";
-import { EnumGetDataInst, IRTypeKind } from "../src/ir";
+import { deserializeModule } from "../src/ir/ir_deserialize";
+import { EnumGetDataInst, IRTypeKind } from "../src/ir/ir";
 import { compileToIR } from "./helpers";
 
 describe("compile", () => {
