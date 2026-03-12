@@ -1,6 +1,6 @@
-import { ModItem, ModuleNode, type Span } from "./ast";
+import { ModItem, ModuleNode, type Span } from "../parse/ast";
 
-export type { ModuleNode } from "./ast";
+export type { ModuleNode } from "../parse/ast";
 
 export interface ResolveError {
     message: string;

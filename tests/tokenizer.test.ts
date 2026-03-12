@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { tokenize, TokenType } from "../src/tokenizer";
+import { tokenize, TokenType } from "../src/parse/tokenizer";
 
 // Helper: tokenize a source fragment, appending a newline to avoid the
 // tokenizer's undefined-peek edge case at end-of-input.

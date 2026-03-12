@@ -12,7 +12,7 @@ import {
     type Item,
     type Span,
     ModuleNode,
-} from "./ast";
+} from "../parse/ast";
 
 export interface DeriveError {
     message: string;

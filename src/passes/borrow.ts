@@ -37,9 +37,9 @@ import {
     WhileExpr,
     BindingPattern,
     IdentPattern,
-} from "./ast";
+} from "../parse/ast";
 import { match } from "ts-pattern";
-import type { TypeContext } from "./type_context";
+import type { TypeContext } from "../utils/type_context";
 
 const PARAM_DEPTH = -1;
 

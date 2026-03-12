@@ -4,7 +4,7 @@
  * Allocates stack slots for local variables in functions.
  */
 
-import type { IRFunction, IRLocal } from "./ir";
+import type { IRFunction, IRLocal } from "../ir/ir";
 import type { LayoutCache } from "./memory_layout";
 
 // ============================================================================
