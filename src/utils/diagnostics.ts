@@ -2,7 +2,7 @@
 // Diagnostics and Error Reporting
 // ============================================================================
 
-import type { Span } from "./ast";
+import type { Span } from "../parse/ast";
 import { match } from "ts-pattern";
 
 // ============================================================================

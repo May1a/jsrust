@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { parseModule, parseExpression, parseStatement } from "../src/parser";
+import { parseModule, parseExpression, parseStatement } from "../src/parse/parser";
 import {
     BinaryExpr,
     BinaryOp,
@@ -19,7 +19,7 @@ import {
     StructItem,
     EnumItem,
     ImplItem,
-} from "../src/ast";
+} from "../src/parse/ast";
 
 function expectInstanceOf<T>(
     value: unknown,

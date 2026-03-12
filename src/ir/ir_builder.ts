@@ -11,6 +11,7 @@ import {
     type IntWidth,
     type LocalId,
     type ValueId,
+    type IRTerm,
     addIRBlock,
     addIRBlockParam,
     addIRInstruction,
@@ -156,16 +157,10 @@ export class IRBuilder {
     }
 
     getPredecessors(blockId: BlockId): BlockId[] {
-        if (this.currentFunction === undefined) {
-            return [];
-        }
-        const block = this.currentFunction.blocks.find(
+        const block = this.currentFunction?.blocks.find(
             (candidate) => candidate.id === blockId,
         );
-        if (!block) {
-            return [];
-        }
-        return block.predecessors;
+        return block?.predecessors ?? [];
     }
 
     // ============================================================================
@@ -219,7 +214,7 @@ export class IRBuilder {
             this.incompletePhis.set(name, phis);
         }
         const existing = phis.get(resolvedBlockId);
-        if (existing === undefined) {
+        if (!existing) {
             phis.set(resolvedBlockId, [phiValueId]);
         } else {
             existing.push(phiValueId);
@@ -247,7 +242,7 @@ export class IRBuilder {
         return inst;
     }
 
-    private setTerminator(term: ReturnType<typeof makeRet>): void {
+    private setTerminator(term: IRTerm): void {
         setIRTerminator(this.requireCurrentBlock(), term);
     }
 
@@ -452,7 +447,11 @@ export class IRBuilder {
         );
     }
 
-    enumCreate(variant: number, data: ValueId | undefined, ty: EnumType): IRInst {
+    enumCreate(
+        variant: number,
+        data: ValueId | undefined,
+        ty: EnumType,
+    ): IRInst {
         return this.appendInstruction(makeEnumCreate(variant, data, ty));
     }
 

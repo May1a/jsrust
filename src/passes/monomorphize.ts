@@ -42,7 +42,7 @@ import {
     PtrTypeNode,
     GenericArgsNode,
     ItemStmt,
-} from "./ast";
+} from "../parse/ast";
 
 /** Map from generic param name (e.g. "T") to concrete type. */
 export type SubstitutionMap = Map<string, TypeNode>;

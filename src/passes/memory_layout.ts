@@ -15,7 +15,7 @@ import {
     type IRType,
     type IntType,
     type StructType,
-} from "./ir";
+} from "../ir/ir";
 
 // Type guards for IRType narrowing
 function isIntType(type: IRType): type is IntType {

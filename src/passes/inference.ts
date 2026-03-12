@@ -57,10 +57,10 @@ import {
     UseItem,
     WhileExpr,
     type Item,
-} from "./ast";
+} from "../parse/ast";
 import { Result } from "better-result";
 import { inferTypeArgs, mangledName } from "./monomorphize";
-import type { TypeContext } from "./type_context";
+import type { TypeContext } from "../utils/type_context";
 
 interface FieldWithType {
     name: string;
