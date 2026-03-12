@@ -76,6 +76,30 @@ describe("compile", () => {
         expect(optionPayloadKinds).toContain(IRTypeKind.Bool);
     });
 
+    test("preserves contextual Result metadata for Ok and Err initializers", () => {
+        const result = compileToBinary(
+            "fn test() { let ok: Result<i32, bool> = Ok(1); let err: Result<i32, bool> = Err(true); let _ = ok; let _ = err; }",
+        );
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+
+        const deserialized = deserializeModule(result.value.bytes);
+        expect(deserialized.isOk()).toBe(true);
+        if (deserialized.isErr()) return;
+
+        const resultEnumVariants = [...deserialized.value.enums.values()]
+            .filter((enumTy) => enumTy.name === "Result")
+            .map((enumTy) => ({
+                okKind: enumTy.variants[0]?.[0]?.kind,
+                errKind: enumTy.variants[1]?.[0]?.kind,
+            }));
+
+        expect(resultEnumVariants).toContainEqual({
+            okKind: IRTypeKind.Int,
+            errKind: IRTypeKind.Bool,
+        });
+    });
+
     test("routes non-exhaustive matches to a trap block", () => {
         const result = compileToIR("fn test() -> i32 { match 3 { 1 => 10, 2 => 20 } }");
         expect(result.isOk()).toBe(true);
@@ -134,6 +158,64 @@ describe("compile", () => {
 
         expect(formatCompileError(result.error)).toContain(
             "`None` does not take any arguments",
+        );
+    });
+
+    test("rejects builtin Result methods with extra arguments", () => {
+        const result = compile(
+            "fn test() { let value: Result<i32, i32> = Ok(1); let _ = value.is_ok(123); }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "`is_ok` does not take any arguments",
+        );
+    });
+
+    test("rejects builtin expect without its message argument", () => {
+        const result = compile(
+            "fn test() { let value: Result<i32, i32> = Ok(1); let _ = value.expect(); }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "`expect` requires exactly one argument",
+        );
+    });
+
+    test("reports missing Result methods instead of swallowing the error", () => {
+        const result = compile(
+            "fn test() { let value: Result<i32, i32> = Ok(1); let _ = value.missing(); }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "no method `missing` found for type `Result<i32, i32>`",
+        );
+    });
+
+    test("rejects &Option annotations with a targeted suggestion", () => {
+        const result = compile("fn test() { let value: &Option<i32> = &Some(1); }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "cannot use `&Option<i32>`; use `Option<&i32>` instead",
+        );
+    });
+
+    test("rejects &Result signatures with a targeted suggestion", () => {
+        const result = compile(
+            "fn test(value: &Result<i32, bool>) -> &Result<i32, bool> { value }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "cannot use `&Result<i32, bool>`; use `Result<&i32, bool>` instead",
         );
     });
 });
