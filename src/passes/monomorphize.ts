@@ -452,7 +452,7 @@ export function monomorphizeStruct(
     const newFields: StructFieldNode[] = generic.fields.map((f) => ({
         span: f.span,
         name: f.name,
-        ty: substituteType(f.ty, subs),
+        typeNode: substituteType(f.typeNode, subs),
         defaultValue: f.defaultValue,
     }));
 
@@ -486,11 +486,11 @@ export function inferTypeArgs(
 
     const params = generic.params.filter((p) => !p.isReceiver);
     for (let i = 0; i < params.length && i < argTypes.length; i++) {
-        const paramTy = params[i].ty;
-        const argTy = argTypes[i];
-        if (!argTy) continue;
+        const paramType = params[i].ty;
+        const argType = argTypes[i];
+        if (!argType) continue;
 
-        unifyTypes(paramTy, argTy, subs);
+        unifyTypes(paramType, argType, subs);
     }
 
     for (const gp of generic.genericParams) {

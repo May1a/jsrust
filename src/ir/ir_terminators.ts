@@ -52,12 +52,12 @@ export function makeSwitch(
 export function makeSwitchCase(
     value: number,
     target: BlockId,
-    args?: ValueId[],
+    args: ValueId[] = [],
 ): SwitchCase {
     return {
         value,
         target,
-        args: args ?? [],
+        args: args,
     };
 }
 

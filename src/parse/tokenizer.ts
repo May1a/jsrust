@@ -290,21 +290,39 @@ function readNumber(state: LexerState): Token {
         peek(state) === "0" &&
         (peekAt(state, 1) === "x" || peekAt(state, 1) === "X")
     ) {
-        return readPrefixedInteger(state, "x", isHexDigit, startLine, startColumn);
+        return readPrefixedInteger(
+            state,
+            "x",
+            isHexDigit,
+            startLine,
+            startColumn,
+        );
     }
     // Octal digit (0o)
     if (
         peek(state) === "0" &&
         (peekAt(state, 1) === "o" || peekAt(state, 1) === "O")
     ) {
-        return readPrefixedInteger(state, "o", isOctalDigit, startLine, startColumn);
+        return readPrefixedInteger(
+            state,
+            "o",
+            isOctalDigit,
+            startLine,
+            startColumn,
+        );
     }
     // Binary digit (0b)
     if (
         peek(state) === "0" &&
         (peekAt(state, 1) === "b" || peekAt(state, 1) === "B")
     ) {
-        return readPrefixedInteger(state, "b", isBinaryDigit, startLine, startColumn);
+        return readPrefixedInteger(
+            state,
+            "b",
+            isBinaryDigit,
+            startLine,
+            startColumn,
+        );
     }
 
     return readDecimalNumber(state, startLine, startColumn);
@@ -439,21 +457,22 @@ function readOperatorOrDelimiter(state: LexerState): Token | undefined {
     return undefined;
 }
 
-function readNextToken(state: LexerState): Token | undefined {
+function readNextToken(state: LexerState): Token {
+    skipWhitespace(state);
     const ch = peek(state);
 
     if (ch === "/" && peekAt(state, 1) === "/") {
         advance(state);
         advance(state);
         skipLineComment(state);
-        return undefined;
+        return readNextToken(state);
     }
 
     if (ch === "/" && peekAt(state, 1) === "*") {
         advance(state);
         advance(state);
         skipBlockComment(state);
-        return undefined;
+        return readNextToken(state);
     }
 
     if (isIdentifierStart(ch)) {
@@ -495,9 +514,7 @@ export function tokenize(source: string): Token[] {
         if (!peek(state)) break;
 
         const token = readNextToken(state);
-        if (token) {
-            tokens.push(token);
-        }
+        tokens.push(token);
     }
 
     tokens.push(makeToken(TokenType.Eof, "", state.line, state.column));

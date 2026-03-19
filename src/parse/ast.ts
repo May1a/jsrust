@@ -338,10 +338,6 @@ export class MatchExpr extends Expression {
         this.arms = arms;
     }
 
-    get scrutinee(): Expression {
-        return this.matchOn;
-    }
-
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
         return visitor.visitMatchExpr(this, ctx);
     }
@@ -361,7 +357,10 @@ export class BlockExpr extends Expression {
         return visitor.visitBlockExpr(this, ctx);
     }
 }
-
+/**
+ * @todo TODO: consolidate all returns to a `ReturnExpr`
+ * -> Differenciate between inner/outer scope via enum
+ */
 export class ReturnExpr extends Expression {
     readonly value?: Expression;
 
@@ -774,7 +773,12 @@ export class UseItem extends Item {
     path: string[];
     alias?: string;
 
-    constructor(span: Span, path: string[], prefix?: UsePrefix, alias?: string) {
+    constructor(
+        span: Span,
+        path: string[],
+        prefix?: UsePrefix,
+        alias?: string,
+    ) {
         super(span);
         this.path = path;
         this.prefix = prefix;
@@ -1154,7 +1158,7 @@ export function mergeSpans(spanA: Span, spanB: Span): Span {
 export interface StructFieldNode {
     span: Span;
     name: string;
-    ty: TypeNode;
+    typeNode: TypeNode;
     defaultValue?: Expression;
 }
 

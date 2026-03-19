@@ -143,3 +143,14 @@ describe("identifiers", () => {
         expect(tokens[1].value).toBe("x");
     });
 });
+
+describe("comments", () => {
+    test("skips line comments without emitting invalid newline tokens", () => {
+        const tokens = tokenize("// comment\nprintln!(\"hi\");\n");
+        expect(tokens.some((token) => token.type === TokenType.Invalid)).toBe(
+            false,
+        );
+        expect(tokens[0]?.type).toBe(TokenType.Identifier);
+        expect(tokens[0]?.value).toBe("println");
+    });
+});

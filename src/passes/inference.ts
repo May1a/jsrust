@@ -215,7 +215,11 @@ function makeResultType(
 ): NamedTypeNode {
     const ok = okTy ?? new InferredTypeNode(span);
     const err = errTy ?? new InferredTypeNode(span);
-    return new NamedTypeNode(span, "Result", new GenericArgsNode(span, [ok, err]));
+    return new NamedTypeNode(
+        span,
+        "Result",
+        new GenericArgsNode(span, [ok, err]),
+    );
 }
 
 function getOptionResultRefSuggestion(ty: RefTypeNode): string | undefined {
@@ -250,7 +254,10 @@ function getOptionResultRefSuggestion(ty: RefTypeNode): string | undefined {
     return undefined;
 }
 
-function getRefOptionResultFallback(innerName: string, mutability: Mutability): string {
+function getRefOptionResultFallback(
+    innerName: string,
+    mutability: Mutability,
+): string {
     let refType = "&T";
     if (mutability === Mutability.Mutable) {
         refType = "&mut T";
@@ -376,7 +383,7 @@ function registerStructTypeWithPrefix(
     const qualName = qualify(node.name);
     const fields: FieldWithType[] = node.fields.map((f) => ({
         name: f.name,
-        ty: f.ty,
+        ty: f.typeNode,
     }));
     typeCtx.registerNamedType(qualName, new TupleTypeNode(node.span, []));
     typeCtx.registerStructFields(qualName, fields);
@@ -964,7 +971,10 @@ function inferBuiltinEnumCallType(
 ): TypeNode | undefined {
     if (calleeName === "Some" || calleeName === "Option::Some") {
         if (expr.args.length !== 1) {
-            errors.push({ message: "`Some` requires exactly one argument", span: expr.span });
+            errors.push({
+                message: "`Some` requires exactly one argument",
+                span: expr.span,
+            });
             return undefined;
         }
         const [innerTy] = argTypes;
@@ -972,14 +982,20 @@ function inferBuiltinEnumCallType(
     }
     if (calleeName === "None" || calleeName === "Option::None") {
         if (expr.args.length !== 0) {
-            errors.push({ message: "`None` does not take any arguments", span: expr.span });
+            errors.push({
+                message: "`None` does not take any arguments",
+                span: expr.span,
+            });
             return undefined;
         }
         return makeOptionType(expr.span);
     }
     if (calleeName === "Ok" || calleeName === "Result::Ok") {
         if (expr.args.length !== 1) {
-            errors.push({ message: "`Ok` requires exactly one argument", span: expr.span });
+            errors.push({
+                message: "`Ok` requires exactly one argument",
+                span: expr.span,
+            });
             return undefined;
         }
         const [okTy] = argTypes;
@@ -987,7 +1003,10 @@ function inferBuiltinEnumCallType(
     }
     // Err or Result::Err
     if (expr.args.length !== 1) {
-        errors.push({ message: "`Err` requires exactly one argument", span: expr.span });
+        errors.push({
+            message: "`Err` requires exactly one argument",
+            span: expr.span,
+        });
         return undefined;
     }
     const [errTy] = argTypes;
@@ -1155,7 +1174,11 @@ function checkRefOptionResultMethodCall(
     if (inner.name !== "Option" && inner.name !== "Result") {
         return false;
     }
-    if (!(OPTION_RESULT_BUILTIN_METHODS as readonly string[]).includes(callee.field)) {
+    if (
+        !(OPTION_RESULT_BUILTIN_METHODS as readonly string[]).includes(
+            callee.field,
+        )
+    ) {
         return false;
     }
     errors.push({
@@ -1513,7 +1536,10 @@ function bindMatchArmPatternTypes(
             pattern.name === "Some" ||
             pattern.name === "Ok" ||
             pattern.name === "Err";
-        if (isBuiltinVariant || typeCtx.lookupVariantOwner(pattern.name) !== undefined) {
+        if (
+            isBuiltinVariant ||
+            typeCtx.lookupVariantOwner(pattern.name) !== undefined
+        ) {
             return;
         }
         typeCtx.setVariable(pattern.name, scrutineeTy);
@@ -1569,10 +1595,7 @@ function resolveMatchPatternFieldType(
 
     const variantName = pattern.path.name;
     const variantOwner = typeCtx.lookupVariantOwner(variantName);
-    if (
-        variantOwner !== undefined &&
-        variantOwner !== enumTy.name
-    ) {
+    if (variantOwner !== undefined && variantOwner !== enumTy.name) {
         return undefined;
     }
 
@@ -1816,17 +1839,25 @@ function validateStructFieldTypes(
     }
 
     for (const field of item.fields) {
-        validateTypeNode(typeCtx, field.ty, genericNames, errors);
+        validateTypeNode(typeCtx, field.typeNode, genericNames, errors);
     }
 
     return errors;
 }
 
-function validateEnumItemTypes(typeCtx: TypeContext, item: EnumItem): TypeError[] {
+function validateEnumItemTypes(
+    typeCtx: TypeContext,
+    item: EnumItem,
+): TypeError[] {
     const errors: TypeError[] = [];
     for (const variant of item.variants) {
         for (const field of variant.fields) {
-            validateTypeNode(typeCtx, field.ty, new Set<string>(), errors);
+            validateTypeNode(
+                typeCtx,
+                field.typeNode,
+                new Set<string>(),
+                errors,
+            );
         }
     }
     return errors;

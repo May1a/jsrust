@@ -203,7 +203,7 @@ function printFcmpOp(op: FcmpOp): string {
 //   - an assignment: "v{id}: {type}" = "{rhs}"   (lhs is a string)
 //   - a pure effect: "{rhs}"                       (lhs is null, unit return)
 interface InstLine {
-    lhs: string | undefined;
+    lhs?: string;
     rhs: string;
 }
 

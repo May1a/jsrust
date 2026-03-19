@@ -761,7 +761,10 @@ export class AstToSsaCtx {
         if (RESULT_VARIANTS.has(variantPath)) {
             return (
                 this.findEnumTypeByName("Result") ??
-                makeIREnumType("Result", [[makeIRUnitType()], [makeIRUnitType()]])
+                makeIREnumType("Result", [
+                    [makeIRUnitType()],
+                    [makeIRUnitType()],
+                ])
             );
         }
         return makeIREnumType("__anon_enum", []);
@@ -1436,7 +1439,7 @@ export class AstToSsaCtx {
         for (const arg of expr.args) {
             const argResult = match(expectedArgTy)
                 .with(P.nonNullable, (expectedType) =>
-                    this.lowerExpressionWithExpected(arg, expectedType)
+                    this.lowerExpressionWithExpected(arg, expectedType),
                 )
                 .otherwise(() => this.lowerExpression(arg));
             if (!argResult.isOk()) {
@@ -1494,7 +1497,10 @@ export class AstToSsaCtx {
 
     private resolveExpectedResultType(): EnumType | undefined {
         const contextualType = this.peekExpectedValueType();
-        if (contextualType instanceof EnumType && contextualType.name === "Result") {
+        if (
+            contextualType instanceof EnumType &&
+            contextualType.name === "Result"
+        ) {
             this.registerEnumTypeMetadata(contextualType);
             return contextualType;
         }
@@ -1520,7 +1526,11 @@ export class AstToSsaCtx {
         const contextualResultTy = this.resolveExpectedResultType();
         if (contextualResultTy) {
             return AstToSsaCtx.handleInstructionId(
-                this.builder.enumCreate(0 /* OK_TAG */, args[0], contextualResultTy).id,
+                this.builder.enumCreate(
+                    0 /* OK_TAG */,
+                    args[0],
+                    contextualResultTy,
+                ).id,
             );
         }
         const okTy = this.resolveValueType(args[0]) ?? makeIRUnitType();
@@ -1546,7 +1556,11 @@ export class AstToSsaCtx {
         const contextualResultTy = this.resolveExpectedResultType();
         if (contextualResultTy) {
             return AstToSsaCtx.handleInstructionId(
-                this.builder.enumCreate(1 /* ERR_TAG */, args[0], contextualResultTy).id,
+                this.builder.enumCreate(
+                    1 /* ERR_TAG */,
+                    args[0],
+                    contextualResultTy,
+                ).id,
             );
         }
         const errTy = this.resolveValueType(args[0]) ?? makeIRUnitType();
@@ -1659,7 +1673,13 @@ export class AstToSsaCtx {
             return Result.ok(this.unitValue());
         }
         return AstToSsaCtx.handleInstructionId(
-            this.builder.enumGetData(enumValue, successTag, 0, enumTy, payloadTy).id,
+            this.builder.enumGetData(
+                enumValue,
+                successTag,
+                0,
+                enumTy,
+                payloadTy,
+            ).id,
         );
     }
 
@@ -1729,8 +1749,14 @@ export class AstToSsaCtx {
                 .exhaustive();
             if (args.length !== expectedArgCount) {
                 const message = match(field)
-                    .with("unwrap", () => "`unwrap` does not take any arguments")
-                    .with("expect", () => "`expect` requires exactly one argument")
+                    .with(
+                        "unwrap",
+                        () => "`unwrap` does not take any arguments",
+                    )
+                    .with(
+                        "expect",
+                        () => "`expect` requires exactly one argument",
+                    )
                     .exhaustive();
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
@@ -1739,10 +1765,18 @@ export class AstToSsaCtx {
                 );
             }
             if (receiverType.name === "Option") {
-                return this.lowerEnumUnwrap(receiverValue, receiverType, 1 /* SOME_TAG */);
+                return this.lowerEnumUnwrap(
+                    receiverValue,
+                    receiverType,
+                    1 /* SOME_TAG */,
+                );
             }
             if (receiverType.name === "Result") {
-                return this.lowerEnumUnwrap(receiverValue, receiverType, 0 /* OK_TAG */);
+                return this.lowerEnumUnwrap(
+                    receiverValue,
+                    receiverType,
+                    0 /* OK_TAG */,
+                );
             }
         }
         if (field === "unwrap_err" && receiverType.name === "Result") {
@@ -1753,7 +1787,11 @@ export class AstToSsaCtx {
                     span,
                 );
             }
-            return this.lowerEnumUnwrap(receiverValue, receiverType, 1 /* ERR_TAG */);
+            return this.lowerEnumUnwrap(
+                receiverValue,
+                receiverType,
+                1 /* ERR_TAG */,
+            );
         }
         return undefined;
     }
@@ -2995,17 +3033,18 @@ export class AstToSsaCtx {
     static translateTypeNode(typeNode: TypeNode): IRType {
         if (typeNode instanceof NamedTypeNode) {
             if (typeNode.name === "Option") {
-                let innerIrType: IRType = makeIRUnitType();
+                let innerIrType: IRType | undefined;
                 if (typeNode.args?.args[0]) {
                     innerIrType = AstToSsaCtx.translateTypeNode(
                         typeNode.args.args[0],
                     );
                 }
+                innerIrType ??= makeIRUnitType();
                 return makeIREnumType("Option", [[], [innerIrType]]);
             }
             if (typeNode.name === "Result") {
                 const args = typeNode.args?.args ?? [];
-                const okTy = match(args)
+                const okType = match(args)
                     .with([P.nonNullable, P._], ([okArg]) =>
                         AstToSsaCtx.translateTypeNode(okArg),
                     )
@@ -3013,12 +3052,12 @@ export class AstToSsaCtx {
                         AstToSsaCtx.translateTypeNode(okArg),
                     )
                     .otherwise(() => makeIRUnitType());
-                const errTy = match(args)
+                const errType = match(args)
                     .with([P._, P.nonNullable], ([, errArg]) =>
                         AstToSsaCtx.translateTypeNode(errArg),
                     )
                     .otherwise(() => makeIRUnitType());
-                return makeIREnumType("Result", [[okTy], [errTy]]);
+                return makeIREnumType("Result", [[okType], [errType]]);
             }
             const builtin = AstToSsaCtx.namedBuiltin(typeNode.name);
             if (builtin) {
@@ -3609,7 +3648,7 @@ function seedStructMetadataForItems(
         if (item instanceof StructItem || item instanceof GenericStructItem) {
             const names = item.fields.map((f) => f.name);
             const fieldTypes = item.fields.map((f) =>
-                AstToSsaCtx.translateTypeNode(f.ty),
+                AstToSsaCtx.translateTypeNode(f.typeNode),
             );
             const qualName = qualify(item.name);
             registerStruct(qualName, names, fieldTypes);
