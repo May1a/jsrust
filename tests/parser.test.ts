@@ -211,6 +211,18 @@ describe("items", () => {
         expect(fn.params.length).toBe(0);
     });
 
+    test("fn with mutable params", () => {
+        const result = mod("fn bump(mut value: i32) -> i32 { value }");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        const [firstItem] = result.value.items;
+        expectInstanceOf(firstItem, FnItem);
+        const fn = firstItem;
+        expect(fn.params.length).toBe(1);
+        expect(fn.params[0]?.name).toBe("value");
+        expectInstanceOf(fn.params[0]?.ty, NamedTypeNode);
+    });
+
     test("struct with fields", () => {
         const result = mod("struct Point { x: i32, y: i32 }");
         expect(result.isOk()).toBe(true);

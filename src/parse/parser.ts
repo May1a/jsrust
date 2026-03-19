@@ -661,6 +661,7 @@ class Parser {
         if (this.eat(TokenType.Trait)) return [this.parseTraitBody(start)];
         if (this.eat(TokenType.Mod)) return [this.parseModBody(start)];
         if (this.eat(TokenType.Use)) return this.parseUseBody(start);
+
         return undefined;
     }
 
@@ -719,6 +720,12 @@ class Parser {
     // Fn item
     // -----------------------------------------------------------------------
 
+    /**
+     * @todo
+     * # TODO: remove hardcoding of `#[test]` (isTest)
+     * -> instead a list of (possible) attributes should be passed in
+     *    (so that more attributes can be supported in the future)
+     */
     private parseFnBody(
         startTok: Token,
         derives: string[],
@@ -733,22 +740,15 @@ class Parser {
 
         this.skipWhereClause();
 
-        let returnType: TypeNode = new TupleTypeNode(
-            this.spanFrom(startTok),
-            [],
-        );
-        if (this.eatThinArrow()) {
-            returnType = this.parseTypeNode();
-        }
+        const returnType = match(this.eatThinArrow())
+            .with(true, () => this.parseTypeNode())
+            .otherwise(() => new TupleTypeNode(this.spanFrom(startTok), []));
 
         this.skipWhereClause();
 
-        let body: BlockExpr | undefined;
-        if (this.check(TokenType.OpenCurly)) {
-            body = this.parseBlock();
-        } else {
-            this.eat(TokenType.Semicolon);
-        }
+        const body = match(this.check(TokenType.OpenCurly))
+            .with(true, () => this.parseBlock())
+            .otherwise(() => void this.eat(TokenType.Semicolon));
 
         if (genericParams.length > 0 && !isTest) {
             return new GenericFnItem(
@@ -799,7 +799,7 @@ class Parser {
             }
 
             const param = this.parseValueOrNamedParam(paramStart);
-            if (param === undefined) {
+            if (!param) {
                 break;
             }
             params.push(param);
@@ -848,23 +848,28 @@ class Parser {
             };
         }
 
-        const isMut = this.eat(TokenType.Mut) !== undefined;
-
-        let name: string;
-        if (this.check(TokenType.Identifier) || this.check(TokenType.Self)) {
-            const tok = this.advance();
-            name = tok.value;
-            if (isMut && tok.type === TokenType.Self) {
-                return {
-                    span: this.spanFrom(paramStart),
-                    isReceiver: true,
-                    receiverKind: ReceiverKind.value,
-                    name: "Self",
-                    ty: new NamedTypeNode(this.spanFrom(paramStart), "Self"),
-                };
-            }
-        } else {
+        const startsNamedParam =
+            this.check(TokenType.Identifier) ||
+            this.check(TokenType.Self) ||
+            this.check(TokenType.Mut);
+        if (!startsNamedParam) {
             return undefined;
+        }
+
+        const isMut = this.eat(TokenType.Mut) !== undefined;
+        if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) {
+            return undefined;
+        }
+        const tok = this.advance();
+        const name = tok.value;
+        if (isMut && tok.type === TokenType.Self) {
+            return {
+                span: this.spanFrom(paramStart),
+                isReceiver: true,
+                receiverKind: ReceiverKind.value,
+                name: "Self",
+                ty: new NamedTypeNode(this.spanFrom(paramStart), "Self"),
+            };
         }
 
         if (!this.eat(TokenType.Colon)) {
@@ -912,7 +917,7 @@ class Parser {
                 fields.push({
                     span: this.spanFrom(fieldStart),
                     name: fieldName,
-                    ty,
+                    typeNode: ty,
                 });
                 if (!this.eat(TokenType.Comma)) break;
             }
@@ -930,7 +935,7 @@ class Parser {
                 fields.push({
                     span: this.spanFrom(fieldStart),
                     name: String(idx++),
-                    ty,
+                    typeNode: ty,
                 });
                 if (!this.eat(TokenType.Comma)) break;
             }
@@ -998,7 +1003,11 @@ class Parser {
             const fieldName = this.expect(TokenType.Identifier).value;
             this.expect(TokenType.Colon);
             const ty = this.parseTypeNode();
-            fields.push({ span: this.spanFrom(fs), name: fieldName, ty });
+            fields.push({
+                span: this.spanFrom(fs),
+                name: fieldName,
+                typeNode: ty,
+            });
             if (!this.eat(TokenType.Comma)) break;
         }
         this.expect(TokenType.CloseCurly);
@@ -1010,11 +1019,11 @@ class Parser {
         let index = 0;
         while (!this.check(closeToken) && !this.check(TokenType.Eof)) {
             const fieldStart = this.peek();
-            const ty = this.parseTypeNode();
+            const typeNode = this.parseTypeNode();
             fields.push({
                 span: this.spanFrom(fieldStart),
                 name: String(index++),
-                ty,
+                typeNode: typeNode,
             });
             if (!this.eat(TokenType.Comma)) break;
         }
@@ -1274,34 +1283,36 @@ class Parser {
     parseBlock(): BlockExpr {
         const start = this.peek();
         this.expect(TokenType.OpenCurly);
-        const stmts: Statement[] = [];
+        const statements: Statement[] = [];
         let tail: Expression | undefined;
 
         while (
             !this.check(TokenType.CloseCurly) &&
             !this.check(TokenType.Eof)
         ) {
-            const stmt = this.parseStatement();
-            if (!stmt) break;
+            const statement = this.parseStatement();
+            if (!statement) break;
 
-            if (stmt instanceof ExprStmt && stmt.isReturn) {
+            if (statement instanceof ExprStmt && statement.isReturn) {
                 // Block-like expressions (if/match/loop/while/for/block) don't
                 // Need a trailing semicolon to appear as statements mid-block.
                 if (
                     !this.check(TokenType.CloseCurly) &&
-                    isBlockLikeExpr(stmt.expr)
+                    isBlockLikeExpr(statement.expr)
                 ) {
-                    stmts.push(new ExprStmt(stmt.span, stmt.expr, false));
+                    statements.push(
+                        new ExprStmt(statement.span, statement.expr, false),
+                    );
                     continue;
                 }
-                tail = stmt.expr;
+                tail = statement.expr;
                 break;
             }
-            stmts.push(stmt);
+            statements.push(statement);
         }
 
         this.expect(TokenType.CloseCurly);
-        return new BlockExpr(this.spanFrom(start), stmts, tail);
+        return new BlockExpr(this.spanFrom(start), statements, tail);
     }
 
     private skipBlock(): void {
@@ -1332,15 +1343,15 @@ class Parser {
 
     private parseLetStatement(start: Token): Statement | undefined {
         if (!this.eat(TokenType.Let)) return undefined;
-        const pat = this.parsePattern();
-        let ty: TypeNode = new InferredTypeNode(this.spanFrom(start));
+        const pattern = this.parsePattern();
+        let typeNode: TypeNode = new InferredTypeNode(this.spanFrom(start));
         if (this.eat(TokenType.Colon)) {
-            ty = this.parseTypeNode();
+            typeNode = this.parseTypeNode();
         }
         this.expect(TokenType.Eq);
         const init = this.parseExpr(0);
         this.eat(TokenType.Semicolon);
-        return new LetStmt(this.spanFrom(start), pat, ty, init);
+        return new LetStmt(this.spanFrom(start), pattern, typeNode, init);
     }
 
     private parseItemStatement(start: Token): Statement | undefined {
@@ -1489,11 +1500,11 @@ class Parser {
             if (!this.eat(TokenType.Comma)) break;
         }
         this.expect(TokenType.CloseParen);
-        let retType: TypeNode = new TupleTypeNode(this.spanFrom(start), []);
+        let returnType: TypeNode = new TupleTypeNode(this.spanFrom(start), []);
         if (this.eatThinArrow()) {
-            retType = this.parseTypeNode();
+            returnType = this.parseTypeNode();
         }
-        return new FnTypeNode(this.spanFrom(start), params, retType);
+        return new FnTypeNode(this.spanFrom(start), params, returnType);
     }
 
     private parseNamedType(start: Token): NamedTypeNode | undefined {
@@ -1548,18 +1559,18 @@ class Parser {
 
     parsePattern(): Pattern {
         const start = this.peek();
-        const pat = this.parsePatternAtom();
+        const pattern = this.parsePatternAtom();
 
         // Or pattern
         if (this.check(TokenType.Pipe)) {
-            const alts: Pattern[] = [pat];
+            const alts: Pattern[] = [pattern];
             while (this.eat(TokenType.Pipe)) {
                 alts.push(this.parsePatternAtom());
             }
             return new OrPattern(this.spanFrom(start), alts);
         }
 
-        return pat;
+        return pattern;
     }
 
     private parsePatternAtom(): Pattern {
@@ -2563,15 +2574,17 @@ class Parser {
                     break;
                 }
 
-                let ty: TypeNode | undefined;
+                let typeNode: TypeNode;
                 if (this.eat(TokenType.Colon)) {
-                    ty = this.parseTypeNode();
+                    typeNode = this.parseTypeNode();
+                } else {
+                    typeNode = new InferredTypeNode(this.spanFrom(paramStart));
                 }
 
                 params.push({
                     span: this.spanFrom(paramStart),
                     name,
-                    ty: ty ?? new InferredTypeNode(this.spanFrom(paramStart)),
+                    ty: typeNode,
                     isReceiver: false,
                 });
 
@@ -2579,13 +2592,11 @@ class Parser {
             }
             this.expect(TokenType.Pipe);
         }
-
-        let returnType: TypeNode = new TupleTypeNode(
-            this.spanFrom(startTok),
-            [],
-        );
+        let returnType: TypeNode;
         if (this.eatThinArrow()) {
             returnType = this.parseTypeNode();
+        } else {
+            returnType = new TupleTypeNode(this.spanFrom(startTok), []);
         }
 
         const body = this.parseExpr(0);
@@ -2600,9 +2611,9 @@ class Parser {
     private parseIfExpr(startTok: Token): IfExpr {
         // Handle `if let pat = expr`
         if (this.eat(TokenType.Let)) {
-            const _pat = this.parsePattern();
+            const _pat = this.parsePattern(); // FIXME: unused variable
             this.expect(TokenType.Eq);
-            const _val = this.parseExpr(0, true);
+            const _val = this.parseExpr(0, true); // FIXME: unused variable
             // Represent as a synthetic true condition (if-let not lowered)
             const cond = new LiteralExpr(
                 this.spanFrom(startTok),
@@ -2652,7 +2663,7 @@ class Parser {
             // Leading | in pattern
             this.eat(TokenType.Pipe);
 
-            const pat = this.parsePattern();
+            const pattern = this.parsePattern();
             let guard: Expression | undefined;
             if (this.eat(TokenType.If)) {
                 guard = this.parseExpr(0, true);
@@ -2661,7 +2672,7 @@ class Parser {
             const body = this.parseExpr(0);
 
             arms.push(
-                new MatchArmNode(this.spanFrom(armStart), pat, body, guard),
+                new MatchArmNode(this.spanFrom(armStart), pattern, body, guard),
             );
 
             // Trailing comma: required unless body is a block

@@ -19,7 +19,7 @@ import {
     type CompileOptions,
     type TestFn,
 } from "./src/compile";
-import { runBackendCodegenWasm, runBackendWasm } from "./src/backend_runner";
+import { runBackendCodegenWasm, runBackendWasm } from "./src/backend";
 import {
     Level,
     makeDiagnostic,
@@ -30,7 +30,7 @@ import {
     renderDiagnostic,
     type Diagnostic,
     type SourceSpan,
-} from "./src/diagnostics";
+} from "./src/utils";
 
 // ---------------------------------------------------------------------------
 // Types

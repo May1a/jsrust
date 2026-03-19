@@ -367,7 +367,7 @@ function withPatternScope(pattern: Pattern, env: FnEnv, fn: () => void): void {
 }
 
 function checkMatchExpr(expr: MatchExpr, env: FnEnv): void {
-    checkExpr(expr.scrutinee, env);
+    checkExpr(expr.matchOn, env);
     for (const arm of expr.arms) {
         withPatternScope(arm.pattern, env, () => {
             checkExpr(arm.guard, env);

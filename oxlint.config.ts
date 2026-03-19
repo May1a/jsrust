@@ -30,6 +30,7 @@ const disabledRules: DummyRuleMap = {
     "unicorn/no-process-exit": "off",
     "unicorn/prefer-ternary": "off",
     "eslint/new-cap": "off",
+    "eslint/no-void": "off",
 };
 
 const stricterRules: DummyRuleMap = {
