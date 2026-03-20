@@ -36,6 +36,8 @@ import {
     ModItem,
     type ModuleNode,
     NamedTypeNode,
+    OptionTypeNode,
+    ResultTypeNode,
     type ParamNode,
     type PathExpr,
     PtrTypeNode,
@@ -98,6 +100,8 @@ type ExpressionVisitor<T> = Pick<
     | "visitMacroExpr"
     | "visitClosureExpr"
     | "visitMatchExpr"
+    | "visitOptionTypeNode"
+    | "visitResultTypeNode"
 >;
 import {
     addIREnum,
@@ -588,6 +592,8 @@ export class AstToSsaCtx {
             visitMacroExpr: (expr: MacroExpr) => this.lowerMacro(expr),
             visitClosureExpr: (expr: ClosureExpr) => this.lowerClosure(expr),
             visitMatchExpr: (expr: MatchExpr) => this.lowerMatchExpr(expr),
+            visitOptionTypeNode: () => unsupported("OptionTypeNode"),
+            visitResultTypeNode: () => unsupported("ResultTypeNode"),
         };
         return {
             visitLiteralExpr: expressionVisitors.visitLiteralExpr,
@@ -614,6 +620,8 @@ export class AstToSsaCtx {
             visitMacroExpr: expressionVisitors.visitMacroExpr,
             visitClosureExpr: expressionVisitors.visitClosureExpr,
             visitMatchExpr: expressionVisitors.visitMatchExpr,
+            visitOptionTypeNode: expressionVisitors.visitOptionTypeNode,
+            visitResultTypeNode: expressionVisitors.visitResultTypeNode,
             visitLetStmt: () => unsupported("LetStmt"),
             visitExprStmt: () => unsupported("ExprStmt"),
             visitItemStmt: () => unsupported("ItemStmt"),
@@ -1468,8 +1476,15 @@ export class AstToSsaCtx {
                 span,
             );
         }
-        const dataTy = this.resolveValueType(args[0]) ?? makeIRUnitType();
-        const optEnumType = makeIREnumType("Option", [[], [dataTy]]);
+        const resolvedDataTy = this.resolveValueType(args[0]);
+        if (!resolvedDataTy) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                "Cannot infer type of Some() argument",
+                span,
+            );
+        }
+        const optEnumType = makeIREnumType("Option", [[], [resolvedDataTy]]);
         this.registerEnumTypeMetadata(optEnumType);
         const inst = this.builder.enumCreate(
             1 /* SOME_TAG */,
@@ -1533,9 +1548,23 @@ export class AstToSsaCtx {
                 ).id,
             );
         }
-        const okTy = this.resolveValueType(args[0]) ?? makeIRUnitType();
-        const errTy = this.resolveResultErrType() ?? makeIRUnitType();
-        const ty = makeIREnumType("Result", [[okTy], [errTy]]);
+        const resolvedOkTy = this.resolveValueType(args[0]);
+        if (!resolvedOkTy) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                "Cannot infer type of Ok() argument",
+                span,
+            );
+        }
+        const resolvedErrTy = this.resolveResultErrType();
+        if (!resolvedErrTy) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                "Cannot infer error type for Ok() — no Result return type found",
+                span,
+            );
+        }
+        const ty = makeIREnumType("Result", [[resolvedOkTy], [resolvedErrTy]]);
         this.registerEnumTypeMetadata(ty);
         return AstToSsaCtx.handleInstructionId(
             this.builder.enumCreate(0 /* OK_TAG */, args[0], ty).id,
@@ -1563,8 +1592,24 @@ export class AstToSsaCtx {
                 ).id,
             );
         }
-        const errTy = this.resolveValueType(args[0]) ?? makeIRUnitType();
-        const okTy = this.resolveResultOkType() ?? makeIRUnitType();
+        const resolvedErrTy = this.resolveValueType(args[0]);
+        if (!resolvedErrTy) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                "Cannot infer type of Err() argument",
+                span,
+            );
+        }
+        const resolvedOkTy = this.resolveResultOkType();
+        if (!resolvedOkTy) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                "Cannot infer ok type for Err() — no Result return type found",
+                span,
+            );
+        }
+        const errTy = resolvedErrTy;
+        const okTy = resolvedOkTy;
         const ty = makeIREnumType("Result", [[okTy], [errTy]]);
         this.registerEnumTypeMetadata(ty);
         return AstToSsaCtx.handleInstructionId(
@@ -1692,7 +1737,7 @@ export class AstToSsaCtx {
     ): Result<ValueId, LoweringError> | undefined {
         if (!(receiverType instanceof EnumType)) return undefined;
         if (field === "is_some" && receiverType.name === "Option") {
-            if (args.length !== 0) {
+            if (args.length > 0) {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
                     "`is_some` does not take any arguments",
@@ -1702,7 +1747,7 @@ export class AstToSsaCtx {
             return this.lowerEnumIsTag(receiverValue, 1 /* SOME_TAG */);
         }
         if (field === "is_none" && receiverType.name === "Option") {
-            if (args.length !== 0) {
+            if (args.length > 0) {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
                     "`is_none` does not take any arguments",
@@ -1712,7 +1757,7 @@ export class AstToSsaCtx {
             return this.lowerEnumIsTag(receiverValue, 0 /* NONE_TAG */);
         }
         if (field === "is_ok" && receiverType.name === "Result") {
-            if (args.length !== 0) {
+            if (args.length > 0) {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
                     "`is_ok` does not take any arguments",
@@ -1722,7 +1767,7 @@ export class AstToSsaCtx {
             return this.lowerEnumIsTag(receiverValue, 0 /* OK_TAG */);
         }
         if (field === "is_err" && receiverType.name === "Result") {
-            if (args.length !== 0) {
+            if (args.length > 0) {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
                     "`is_err` does not take any arguments",
@@ -1780,7 +1825,7 @@ export class AstToSsaCtx {
             }
         }
         if (field === "unwrap_err" && receiverType.name === "Result") {
-            if (args.length !== 0) {
+            if (args.length > 0) {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
                     "`unwrap_err` does not take any arguments",
@@ -1802,7 +1847,7 @@ export class AstToSsaCtx {
         args: ValueId[],
     ): Result<ValueId, LoweringError> | undefined {
         if (callee.field === "clone") {
-            if (args.length !== 0) {
+            if (args.length > 0) {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
                     "`clone` does not take any arguments",
@@ -2000,7 +2045,7 @@ export class AstToSsaCtx {
     }
 
     private lowerAssert(expr: MacroExpr): Result<ValueId, LoweringError> {
-        if (expr.args.length < 1) {
+        if (expr.args.length === 0) {
             return Result.ok(this.unitValue());
         }
         const condResult = this.lowerExpression(expr.args[0]);
@@ -3031,34 +3076,16 @@ export class AstToSsaCtx {
     }
 
     static translateTypeNode(typeNode: TypeNode): IRType {
+        if (typeNode instanceof OptionTypeNode) {
+            const innerIrType = AstToSsaCtx.translateTypeNode(typeNode.inner);
+            return makeIREnumType("Option", [[], [innerIrType]]);
+        }
+        if (typeNode instanceof ResultTypeNode) {
+            const okType = AstToSsaCtx.translateTypeNode(typeNode.okType);
+            const errType = AstToSsaCtx.translateTypeNode(typeNode.errType);
+            return makeIREnumType("Result", [[okType], [errType]]);
+        }
         if (typeNode instanceof NamedTypeNode) {
-            if (typeNode.name === "Option") {
-                let innerIrType: IRType | undefined;
-                if (typeNode.args?.args[0]) {
-                    innerIrType = AstToSsaCtx.translateTypeNode(
-                        typeNode.args.args[0],
-                    );
-                }
-                innerIrType ??= makeIRUnitType();
-                return makeIREnumType("Option", [[], [innerIrType]]);
-            }
-            if (typeNode.name === "Result") {
-                const args = typeNode.args?.args ?? [];
-                const okType = match(args)
-                    .with([P.nonNullable, P._], ([okArg]) =>
-                        AstToSsaCtx.translateTypeNode(okArg),
-                    )
-                    .with([P.nonNullable], ([okArg]) =>
-                        AstToSsaCtx.translateTypeNode(okArg),
-                    )
-                    .otherwise(() => makeIRUnitType());
-                const errType = match(args)
-                    .with([P._, P.nonNullable], ([, errArg]) =>
-                        AstToSsaCtx.translateTypeNode(errArg),
-                    )
-                    .otherwise(() => makeIRUnitType());
-                return makeIREnumType("Result", [[okType], [errType]]);
-            }
             const builtin = AstToSsaCtx.namedBuiltin(typeNode.name);
             if (builtin) {
                 return AstToSsaCtx.builtinToIrType(builtin);
@@ -3213,7 +3240,7 @@ export class AstToSsaCtx {
                 return makeIRUnitType();
             }
             default: {
-                return makeIRUnitType();
+                throw new Error(`Unhandled builtin type: ${String(ty)}`);
             }
         }
     }

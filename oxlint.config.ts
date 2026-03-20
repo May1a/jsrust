@@ -58,6 +58,13 @@ const stricterRules: DummyRuleMap = {
     "unicorn/no-useless-switch-case": "error",
     "unicorn/no-useless-undefined": ["error", { checkArguments: false }],
     "no-self-compare": "error",
+    "unicorn/consistent-empty-array-spread": "error",
+    "unicorn/explicit-length-check": "error",
+    "no-else-return": "error",
+    "no-fallthrough": "error",
+    "no-negated-condition": "error",
+    "typescript/no-unsafe-return": "error",
+    "unicorn/prefer-array-some": "error",
 };
 
 const categoriesEnable: RuleCategories = {

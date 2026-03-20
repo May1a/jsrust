@@ -214,10 +214,10 @@ export class IRBuilder {
             this.incompletePhis.set(name, phis);
         }
         const existing = phis.get(resolvedBlockId);
-        if (!existing) {
-            phis.set(resolvedBlockId, [phiValueId]);
-        } else {
+        if (existing) {
             existing.push(phiValueId);
+        } else {
+            phis.set(resolvedBlockId, [phiValueId]);
         }
         return phiValueId;
     }

@@ -143,6 +143,8 @@ export interface AstVisitor<R, C> {
     visitPtrTypeNode(node: PtrTypeNode, ctx: C): R;
     visitFnTypeNode(node: FnTypeNode, ctx: C): R;
     visitGenericArgsNode(node: GenericArgsNode, ctx: C): R;
+    visitOptionTypeNode(node: OptionTypeNode, ctx: C): R;
+    visitResultTypeNode(node: ResultTypeNode, ctx: C): R;
     visitModuleNode(node: ModuleNode, ctx: C): R;
     visitMatchArmNode(node: MatchArmNode, ctx: C): R;
     visitTraitMethod(node: TraitMethod, ctx: C): R;
@@ -760,7 +762,7 @@ export class ModItem extends Item {
 }
 
 function pathToString(path: string[]): string {
-    if (!path.length) {
+    if (path.length === 0) {
         throw new Error("Assert: cannot resolve empty path");
     }
     return path.join("::");
@@ -1098,6 +1100,19 @@ export class GenericArgsNode extends TypeNode {
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
         return visitor.visitGenericArgsNode(this, ctx);
     }
+}
+
+export class OptionTypeNode extends TypeNode {
+    readonly inner: TypeNode;
+    constructor(span: Span, inner: TypeNode) { super(span); this.inner = inner; }
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R { return visitor.visitOptionTypeNode(this, ctx); }
+}
+
+export class ResultTypeNode extends TypeNode {
+    readonly okType: TypeNode;
+    readonly errType: TypeNode;
+    constructor(span: Span, okType: TypeNode, errType: TypeNode) { super(span); this.okType = okType; this.errType = errType; }
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R { return visitor.visitResultTypeNode(this, ctx); }
 }
 
 export class ModuleNode extends Node {

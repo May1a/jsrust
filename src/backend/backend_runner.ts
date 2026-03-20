@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Result, TaggedError } from "better-result";
 import { match } from "ts-pattern";
 
-const REPO_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const REPO_ROOT = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
 const BACKEND_DIR = path.join(REPO_ROOT, "backend");
 const DEFAULT_BACKEND_WASM = path.join(
     BACKEND_DIR,

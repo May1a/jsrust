@@ -43,6 +43,8 @@ import {
     ModuleNode,
     Mutability,
     NamedTypeNode,
+    OptionTypeNode,
+    ResultTypeNode,
     OrPattern,
     type ParamNode,
     PathExpr,
@@ -1035,52 +1037,63 @@ class Parser {
     // Impl item
     // -----------------------------------------------------------------------
 
+    private parseTraitImplBody(
+        startTok: Token,
+        traitType: NamedTypeNode,
+    ): TraitImplItem {
+        const target = this.parseNamedType(this.peek());
+        if (!target) {
+            throw new Error("TODO: Replace this with a proper diagnostic");
+        }
+        if (!(target instanceof NamedTypeNode)) {
+            throw new Error("impl target must be a named type");
+        }
+        this.skipWhereClause();
+        this.expect(TokenType.OpenCurly);
+        const allMethods: (FnItem | GenericFnItem)[] = [];
+        while (
+            !this.check(TokenType.CloseCurly) &&
+            !this.check(TokenType.Eof)
+        ) {
+            this.parseImplMember(allMethods);
+        }
+        this.expect(TokenType.CloseCurly);
+        const fnImpls = allMethods.filter(
+            (m): m is FnItem => m instanceof FnItem,
+        );
+        const traitName = traitType.name;
+        const traitItem =
+            this.parsedTraits.get(traitName) ??
+            new TraitItem(traitType.span, traitName, []);
+        if (!this.parsedTraits.has(traitName)) {
+            this.errors.push({
+                message: `Trait \`${traitName}\` not found`,
+                line: startTok.line,
+                column: startTok.column,
+            });
+        }
+        return new TraitImplItem(
+            this.spanFrom(startTok),
+            traitName,
+            traitItem,
+            target,
+            fnImpls,
+        );
+    }
+
     private parseImplBody(startTok: Token): ImplItem | TraitImplItem {
         this.parseGenericParams();
         const firstType = this.parseNamedType(this.peek());
         if (!firstType) {
             throw new Error("TODO: Replace this with a proper diagnostic");
         }
+        if (!(firstType instanceof NamedTypeNode)) {
+            throw new Error("impl target must be a named type");
+        }
 
         // impl Trait for Type { ... }
         if (this.eat(TokenType.For)) {
-            const target = this.parseNamedType(this.peek());
-            if (!target) {
-                throw new Error("TODO: Replace this with a proper diagnostic");
-            }
-            this.skipWhereClause();
-            this.expect(TokenType.OpenCurly);
-
-            const allMethods: (FnItem | GenericFnItem)[] = [];
-            while (
-                !this.check(TokenType.CloseCurly) &&
-                !this.check(TokenType.Eof)
-            ) {
-                this.parseImplMember(allMethods);
-            }
-            this.expect(TokenType.CloseCurly);
-
-            const fnImpls = allMethods.filter(
-                (m): m is FnItem => m instanceof FnItem,
-            );
-            const traitName = firstType.name;
-            const traitItem =
-                this.parsedTraits.get(traitName) ??
-                new TraitItem(firstType.span, traitName, []);
-            if (!this.parsedTraits.has(traitName)) {
-                this.errors.push({
-                    message: `Trait \`${traitName}\` not found`,
-                    line: startTok.line,
-                    column: startTok.column,
-                });
-            }
-            return new TraitImplItem(
-                this.spanFrom(startTok),
-                traitName,
-                traitItem,
-                target,
-                fnImpls,
-            );
+            return this.parseTraitImplBody(startTok, firstType);
         }
 
         // impl Type { ... }
@@ -1507,7 +1520,7 @@ class Parser {
         return new FnTypeNode(this.spanFrom(start), params, returnType);
     }
 
-    private parseNamedType(start: Token): NamedTypeNode | undefined {
+    private parseNamedType(start: Token): TypeNode | undefined {
         if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) {
             return undefined;
         }
@@ -1527,6 +1540,15 @@ class Parser {
         let args: GenericArgsNode | undefined;
         if (this.check(TokenType.Lt)) {
             args = this.parseGenericArgs();
+        }
+        if (name === "Option") {
+            const inner = args?.args[0] ?? new InferredTypeNode(this.spanFrom(start));
+            return new OptionTypeNode(this.spanFrom(start), inner);
+        }
+        if (name === "Result") {
+            const okType = args?.args[0] ?? new InferredTypeNode(this.spanFrom(start));
+            const errType = args?.args[1] ?? new InferredTypeNode(this.spanFrom(start));
+            return new ResultTypeNode(this.spanFrom(start), okType, errType);
         }
         return new NamedTypeNode(this.spanFrom(start), name, args);
     }
