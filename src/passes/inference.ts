@@ -32,6 +32,8 @@ import {
     ModuleNode,
     Mutability,
     NamedTypeNode,
+    OptionTypeNode,
+    ResultTypeNode,
     type ParamNode,
     RangeExpr,
     RefExpr,
@@ -108,8 +110,6 @@ const BUILTIN_TYPE_NAMES = new Set([
     "char",
     "str",
     "Self",
-    "Option",
-    "Result",
 ]);
 
 function isBuiltinTypeName(name: string): boolean {
@@ -145,6 +145,12 @@ function typeToString(ty: TypeNode): string {
         }
         return `&${mutStr}${typeToString(ty.inner)}`;
     }
+    if (ty instanceof OptionTypeNode) {
+        return `Option<${typeToString(ty.inner)}>`;
+    }
+    if (ty instanceof ResultTypeNode) {
+        return `Result<${typeToString(ty.okType)}, ${typeToString(ty.errType)}>`;
+    }
     return "<unknown>";
 }
 
@@ -171,10 +177,7 @@ function genericArgsEqual(
     return typesEqualList(left.args, right.args);
 }
 
-function typesEqual(a: TypeNode, b: TypeNode): boolean {
-    if (isInferredPlaceholder(a) || isInferredPlaceholder(b)) {
-        return true;
-    }
+function typesEqualSimple(a: TypeNode, b: TypeNode): boolean {
     if (a instanceof NamedTypeNode && b instanceof NamedTypeNode) {
         return a.name === b.name && genericArgsEqual(a.args, b.args);
     }
@@ -184,6 +187,10 @@ function typesEqual(a: TypeNode, b: TypeNode): boolean {
     if (a instanceof ArrayTypeNode && b instanceof ArrayTypeNode) {
         return a.length === b.length && typesEqual(a.element, b.element);
     }
+    return false;
+}
+
+function typesEqualCompound(a: TypeNode, b: TypeNode): boolean {
     if (a instanceof RefTypeNode && b instanceof RefTypeNode) {
         return a.mutability === b.mutability && typesEqual(a.inner, b.inner);
     }
@@ -196,58 +203,53 @@ function typesEqual(a: TypeNode, b: TypeNode): boolean {
             typesEqual(a.returnType, b.returnType)
         );
     }
+    if (a instanceof OptionTypeNode && b instanceof OptionTypeNode) {
+        return typesEqual(a.inner, b.inner);
+    }
+    if (a instanceof ResultTypeNode && b instanceof ResultTypeNode) {
+        return typesEqual(a.okType, b.okType) && typesEqual(a.errType, b.errType);
+    }
     return false;
 }
 
-function makeOptionType(span: Span, innerTy?: TypeNode): NamedTypeNode {
-    const optionInnerTy = innerTy ?? new InferredTypeNode(span);
-    return new NamedTypeNode(
-        span,
-        "Option",
-        new GenericArgsNode(span, [optionInnerTy]),
-    );
+function typesEqual(a: TypeNode, b: TypeNode): boolean {
+    if (isInferredPlaceholder(a) || isInferredPlaceholder(b)) {
+        return true;
+    }
+    return typesEqualSimple(a, b) || typesEqualCompound(a, b);
+}
+
+function makeOptionType(span: Span, innerTy?: TypeNode): OptionTypeNode {
+    return new OptionTypeNode(span, innerTy ?? new InferredTypeNode(span));
 }
 
 function makeResultType(
     span: Span,
     okTy?: TypeNode,
     errTy?: TypeNode,
-): NamedTypeNode {
-    const ok = okTy ?? new InferredTypeNode(span);
-    const err = errTy ?? new InferredTypeNode(span);
-    return new NamedTypeNode(
+): ResultTypeNode {
+    return new ResultTypeNode(
         span,
-        "Result",
-        new GenericArgsNode(span, [ok, err]),
+        okTy ?? new InferredTypeNode(span),
+        errTy ?? new InferredTypeNode(span),
     );
 }
 
 function getOptionResultRefSuggestion(ty: RefTypeNode): string | undefined {
-    if (!(ty.inner instanceof NamedTypeNode) || ty.inner.args === undefined) {
-        return undefined;
-    }
-    if (ty.inner.name === "Option") {
-        if (ty.inner.args.args.length === 0) {
-            return undefined;
-        }
-        const [innerTy] = ty.inner.args.args;
+    if (ty.inner instanceof OptionTypeNode) {
         return typeToString(
             makeOptionType(
                 ty.span,
-                new RefTypeNode(ty.span, ty.mutability, innerTy),
+                new RefTypeNode(ty.span, ty.mutability, ty.inner.inner),
             ),
         );
     }
-    if (ty.inner.name === "Result") {
-        if (ty.inner.args.args.length < 2) {
-            return undefined;
-        }
-        const [okTy, errTy] = ty.inner.args.args;
+    if (ty.inner instanceof ResultTypeNode) {
         return typeToString(
             makeResultType(
                 ty.span,
-                new RefTypeNode(ty.span, ty.mutability, okTy),
-                errTy,
+                new RefTypeNode(ty.span, ty.mutability, ty.inner.okType),
+                ty.inner.errType,
             ),
         );
     }
@@ -293,16 +295,18 @@ function validateRefTypeNode(
     genericNames: Set<string>,
     errors: TypeError[],
 ): void {
-    if (
-        ty.inner instanceof NamedTypeNode &&
-        (ty.inner.name === "Option" || ty.inner.name === "Result")
-    ) {
+    if (ty.inner instanceof OptionTypeNode) {
         const suggestion = getOptionResultRefSuggestion(ty);
         let suggestedType = suggestion;
-        suggestedType ??= getRefOptionResultFallback(
-            ty.inner.name,
-            ty.mutability,
-        );
+        suggestedType ??= getRefOptionResultFallback("Option", ty.mutability);
+        errors.push({
+            message: `cannot use \`${typeToString(ty)}\`; use \`${suggestedType}\` instead`,
+            span: ty.span,
+        });
+    } else if (ty.inner instanceof ResultTypeNode) {
+        const suggestion = getOptionResultRefSuggestion(ty);
+        let suggestedType = suggestion;
+        suggestedType ??= getRefOptionResultFallback("Result", ty.mutability);
         errors.push({
             message: `cannot use \`${typeToString(ty)}\`; use \`${suggestedType}\` instead`,
             span: ty.span,
@@ -355,6 +359,15 @@ function validateTypeNode(
     }
     if (ty instanceof RefTypeNode) {
         validateRefTypeNode(typeCtx, ty, genericNames, errors);
+        return;
+    }
+    if (ty instanceof OptionTypeNode) {
+        validateTypeNode(typeCtx, ty.inner, genericNames, errors);
+        return;
+    }
+    if (ty instanceof ResultTypeNode) {
+        validateTypeNode(typeCtx, ty.okType, genericNames, errors);
+        validateTypeNode(typeCtx, ty.errType, genericNames, errors);
         return;
     }
     validateCompositeTypeNode(typeCtx, ty, genericNames, errors);
@@ -981,7 +994,7 @@ function inferBuiltinEnumCallType(
         return makeOptionType(expr.span, innerTy);
     }
     if (calleeName === "None" || calleeName === "Option::None") {
-        if (expr.args.length !== 0) {
+        if (expr.args.length > 0) {
             errors.push({
                 message: "`None` does not take any arguments",
                 span: expr.span,
@@ -1048,17 +1061,17 @@ function inferIdentifierCallType(
 
 function inferOptionMethodType(
     expr: CallExpr,
-    receiverTy: NamedTypeNode,
+    receiverTy: OptionTypeNode,
     errors: TypeError[],
 ): TypeNode | undefined {
     const { callee } = expr;
     if (!(callee instanceof FieldExpr)) {
         return undefined;
     }
-    const inner = receiverTy.args?.args[0];
+    const { inner } = receiverTy;
     const boolTy = new NamedTypeNode(callee.span, "bool");
     if (callee.field === "is_some" || callee.field === "is_none") {
-        if (expr.args.length !== 0) {
+        if (expr.args.length > 0) {
             errors.push({
                 message: `\`${callee.field}\` does not take any arguments`,
                 span: expr.span,
@@ -1068,14 +1081,14 @@ function inferOptionMethodType(
         return boolTy;
     }
     if (callee.field === "unwrap") {
-        if (expr.args.length !== 0) {
+        if (expr.args.length > 0) {
             errors.push({
                 message: "`unwrap` does not take any arguments",
                 span: expr.span,
             });
             return undefined;
         }
-        return inner ?? new InferredTypeNode(callee.span);
+        return inner;
     }
     if (callee.field === "expect") {
         if (expr.args.length !== 1) {
@@ -1085,25 +1098,25 @@ function inferOptionMethodType(
             });
             return undefined;
         }
-        return inner ?? new InferredTypeNode(callee.span);
+        return inner;
     }
     return undefined;
 }
 
 function inferResultMethodType(
     expr: CallExpr,
-    receiverTy: NamedTypeNode,
+    receiverTy: ResultTypeNode,
     errors: TypeError[],
 ): TypeNode | undefined {
     const { callee } = expr;
     if (!(callee instanceof FieldExpr)) {
         return undefined;
     }
-    const okTy = receiverTy.args?.args[0];
-    const errTy = receiverTy.args?.args[1];
+    const okTy = receiverTy.okType;
+    const errTy = receiverTy.errType;
     const boolTy = new NamedTypeNode(callee.span, "bool");
     if (callee.field === "is_ok" || callee.field === "is_err") {
-        if (expr.args.length !== 0) {
+        if (expr.args.length > 0) {
             errors.push({
                 message: `\`${callee.field}\` does not take any arguments`,
                 span: expr.span,
@@ -1113,14 +1126,14 @@ function inferResultMethodType(
         return boolTy;
     }
     if (callee.field === "unwrap") {
-        if (expr.args.length !== 0) {
+        if (expr.args.length > 0) {
             errors.push({
                 message: "`unwrap` does not take any arguments",
                 span: expr.span,
             });
             return undefined;
         }
-        return okTy ?? new InferredTypeNode(callee.span);
+        return okTy;
     }
     if (callee.field === "expect") {
         if (expr.args.length !== 1) {
@@ -1130,17 +1143,17 @@ function inferResultMethodType(
             });
             return undefined;
         }
-        return okTy ?? new InferredTypeNode(callee.span);
+        return okTy;
     }
     if (callee.field === "unwrap_err") {
-        if (expr.args.length !== 0) {
+        if (expr.args.length > 0) {
             errors.push({
                 message: "`unwrap_err` does not take any arguments",
                 span: expr.span,
             });
             return undefined;
         }
-        return errTy ?? new InferredTypeNode(callee.span);
+        return errTy;
     }
     return undefined;
 }
@@ -1168,10 +1181,7 @@ function checkRefOptionResultMethodCall(
     while (inner instanceof RefTypeNode) {
         ({ inner } = inner);
     }
-    if (!(inner instanceof NamedTypeNode)) {
-        return false;
-    }
-    if (inner.name !== "Option" && inner.name !== "Result") {
+    if (!(inner instanceof OptionTypeNode) && !(inner instanceof ResultTypeNode)) {
         return false;
     }
     if (
@@ -1181,10 +1191,17 @@ function checkRefOptionResultMethodCall(
     ) {
         return false;
     }
-    errors.push({
-        message: `cannot call \`${callee.field}\` on \`${typeToString(receiverTy)}\`; method is defined on \`${inner.name}\`, not on a reference to it`,
-        span: expr.span,
-    });
+    if (inner instanceof OptionTypeNode) {
+        errors.push({
+            message: `cannot call \`${callee.field}\` on \`${typeToString(receiverTy)}\`; method is defined on \`Option\`, not on a reference to it`,
+            span: expr.span,
+        });
+    } else {
+        errors.push({
+            message: `cannot call \`${callee.field}\` on \`${typeToString(receiverTy)}\`; method is defined on \`Result\`, not on a reference to it`,
+            span: expr.span,
+        });
+    }
     return true;
 }
 
@@ -1200,7 +1217,7 @@ function inferMethodCallType(
     const receiverTy = inferExprType(typeCtx, callee.receiver, errors);
 
     if (callee.field === "clone") {
-        if (expr.args.length !== 0) {
+        if (expr.args.length > 0) {
             errors.push({
                 message: "`clone` does not take any arguments",
                 span: expr.span,
@@ -1219,7 +1236,7 @@ function inferMethodCallType(
     }
 
     // Builtin Option methods
-    if (receiverTy instanceof NamedTypeNode && receiverTy.name === "Option") {
+    if (receiverTy instanceof OptionTypeNode) {
         const inferred = inferOptionMethodType(expr, receiverTy, errors);
         if (inferred !== undefined) {
             return inferred;
@@ -1227,7 +1244,7 @@ function inferMethodCallType(
     }
 
     // Builtin Result methods
-    if (receiverTy instanceof NamedTypeNode && receiverTy.name === "Result") {
+    if (receiverTy instanceof ResultTypeNode) {
         const inferred = inferResultMethodType(expr, receiverTy, errors);
         if (inferred !== undefined) {
             return inferred;
@@ -1353,6 +1370,16 @@ function substituteTypeNode(
             ty.span,
             ty.params.map((p) => substituteTypeNode(p, subs)),
             substituteTypeNode(ty.returnType, subs),
+        );
+    }
+    if (ty instanceof OptionTypeNode) {
+        return new OptionTypeNode(ty.span, substituteTypeNode(ty.inner, subs));
+    }
+    if (ty instanceof ResultTypeNode) {
+        return new ResultTypeNode(
+            ty.span,
+            substituteTypeNode(ty.okType, subs),
+            substituteTypeNode(ty.errType, subs),
         );
     }
     return ty;
@@ -1589,6 +1616,33 @@ function resolveMatchPatternFieldType(
     if (enumTy instanceof RefTypeNode) {
         enumTy = enumTy.inner;
     }
+    if (enumTy instanceof OptionTypeNode) {
+        const variantName = pattern.path.name;
+        const variantOwner = typeCtx.lookupVariantOwner(variantName);
+        if (variantOwner !== undefined && variantOwner !== "Option") {
+            return undefined;
+        }
+        if (fieldIndex === 0) {
+            return enumTy.inner;
+        }
+        return undefined;
+    }
+
+    if (enumTy instanceof ResultTypeNode) {
+        const variantName = pattern.path.name;
+        const variantOwner = typeCtx.lookupVariantOwner(variantName);
+        if (variantOwner !== undefined && variantOwner !== "Result") {
+            return undefined;
+        }
+        if (variantName === "Ok" || variantName === "Result::Ok") {
+            return enumTy.okType;
+        }
+        if (variantName === "Err" || variantName === "Result::Err") {
+            return enumTy.errType;
+        }
+        return undefined;
+    }
+
     if (!(enumTy instanceof NamedTypeNode)) {
         return undefined;
     }
@@ -1597,21 +1651,6 @@ function resolveMatchPatternFieldType(
     const variantOwner = typeCtx.lookupVariantOwner(variantName);
     if (variantOwner !== undefined && variantOwner !== enumTy.name) {
         return undefined;
-    }
-
-    if (enumTy.name === "Option" && fieldIndex === 0) {
-        return enumTy.args?.args[0] ?? new InferredTypeNode(pattern.span);
-    }
-
-    if (enumTy.name !== "Result") {
-        return undefined;
-    }
-
-    if (variantName === "Ok" || variantName === "Result::Ok") {
-        return enumTy.args?.args[0] ?? new InferredTypeNode(pattern.span);
-    }
-    if (variantName === "Err" || variantName === "Result::Err") {
-        return enumTy.args?.args[1] ?? new InferredTypeNode(pattern.span);
     }
 
     return undefined;

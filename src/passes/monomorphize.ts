@@ -12,6 +12,8 @@ import {
     LiteralExpr,
     MatchExpr,
     NamedTypeNode,
+    OptionTypeNode,
+    ResultTypeNode,
     type ParamNode,
     RefExpr,
     RefTypeNode,
@@ -134,6 +136,16 @@ function substituteType(ty: TypeNode, subs: SubstitutionMap): TypeNode {
             ty.span,
             ty.params.map((p) => substituteType(p, subs)),
             substituteType(ty.returnType, subs),
+        );
+    }
+    if (ty instanceof OptionTypeNode) {
+        return new OptionTypeNode(ty.span, substituteType(ty.inner, subs));
+    }
+    if (ty instanceof ResultTypeNode) {
+        return new ResultTypeNode(
+            ty.span,
+            substituteType(ty.okType, subs),
+            substituteType(ty.errType, subs),
         );
     }
     return ty;

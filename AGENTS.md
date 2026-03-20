@@ -5,7 +5,7 @@
 - After working on a file run:
 
 ```bash
-bun typecheck <file>
+bun lint <file>
 ```
 
 ### Error handling and control-flow

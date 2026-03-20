@@ -3,7 +3,7 @@
     "scripts": {
         "test": "bun test",
         "compile": "bun build main.js --minify --target=bun --outdir dist",
-        "typecheck": "bunx oxlint --type-aware --type-check",
+        "lint": "bunx oxlint --type-aware --type-check",
         "format": "bunx prettier -w .",
         "update-expected": "bun run scripts/update-expected.ts"
     },
