@@ -555,17 +555,17 @@ function printBlock(block: IRBlock, module: IRModule): string {
     }
 
     for (const line of instLines) {
-        if (line.lhs !== undefined) {
-            lines.push(`    ${line.lhs.padEnd(maxLhs)} = ${line.rhs}`);
-        } else {
+        if (line.lhs === undefined) {
             lines.push(`    ${line.rhs}`);
+        } else {
+            lines.push(`    ${line.lhs.padEnd(maxLhs)} = ${line.rhs}`);
         }
     }
 
-    if (block.terminator !== undefined) {
-        lines.push(`    ${printTerminator(block.terminator)}`);
-    } else {
+    if (block.terminator === undefined) {
         lines.push("    <missing-terminator>");
+    } else {
+        lines.push(`    ${printTerminator(block.terminator)}`);
     }
 
     return lines.join("\n");

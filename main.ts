@@ -463,14 +463,14 @@ function parseTestArgs(
             return Result.err(
                 new CliArgError({ message: `unknown option for test: ${arg}` }),
             );
-        } else if (!inputFile) {
-            inputFile = arg;
-        } else {
+        } else if (inputFile) {
             return Result.err(
                 new CliArgError({
                     message: `unexpected positional argument: ${arg}`,
                 }),
             );
+        } else {
+            inputFile = arg;
         }
     }
 
@@ -635,14 +635,14 @@ function parseRunArgs(
             return Result.err(
                 new CliArgError({ message: `unknown option for run: ${arg}` }),
             );
-        } else if (!inputFile) {
-            inputFile = arg;
-        } else {
+        } else if (inputFile) {
             return Result.err(
                 new CliArgError({
                     message: `unexpected positional argument: ${arg}`,
                 }),
             );
+        } else {
+            inputFile = arg;
         }
     }
 

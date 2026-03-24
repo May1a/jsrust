@@ -2744,11 +2744,11 @@ export class AstToSsaCtx {
 
         let defaultBlock: BlockId | undefined;
         let trapBlock: BlockId | undefined;
-        if (defaultArmIndex !== undefined) {
-            defaultBlock = armBlocks[defaultArmIndex];
-        } else {
+        if (defaultArmIndex === undefined) {
             trapBlock = this.builder.createBlock("match_trap");
             defaultBlock = trapBlock;
+        } else {
+            defaultBlock = armBlocks[defaultArmIndex];
         }
 
         this.builder.switch(switchValue, cases, defaultBlock, []);
@@ -2796,27 +2796,27 @@ export class AstToSsaCtx {
                 });
             } else if (arm.pattern instanceof IdentPattern) {
                 const tag = this.enumVariantTags.get(arm.pattern.name);
-                if (tag !== undefined) {
+                if (tag === undefined) {
+                    defaultArmIndex = index;
+                } else {
                     cases.push({
                         value: tag,
                         target: armBlocks[index],
                         args: [],
                     });
                     usesEnumPatterns = true;
-                } else {
-                    defaultArmIndex = index;
                 }
             } else if (arm.pattern instanceof StructPattern) {
                 const tag = this.resolveStructPatternTag(arm.pattern);
-                if (tag !== undefined) {
+                if (tag === undefined) {
+                    defaultArmIndex = index;
+                } else {
                     cases.push({
                         value: tag,
                         target: armBlocks[index],
                         args: [],
                     });
                     usesEnumPatterns = true;
-                } else {
-                    defaultArmIndex = index;
                 }
             } else {
                 defaultArmIndex = index;
