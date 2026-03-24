@@ -532,11 +532,11 @@ export class IRSerializer {
         for (const global of module.globals) {
             size += U32_BYTE_WIDTH; // Name string id
             size += this.calculateTypeSize(global.ty);
-            if (global.init !== undefined) {
+            if (global.init === undefined) {
+                size += BYTE_WIDTH; // Has_init = 0
+            } else {
                 size += BYTE_WIDTH; // Has_init = 1
                 size += this.calculateConstantSize(global.init);
-            } else {
-                size += BYTE_WIDTH; // Has_init = 0
             }
         }
         return size;
@@ -857,11 +857,11 @@ export class IRSerializer {
         for (const global of module.globals) {
             this.writeU32(this.strings.addString(global.name));
             this.writeType(global.ty);
-            if (global.init !== undefined) {
+            if (global.init === undefined) {
+                this.writeU8(0);
+            } else {
                 this.writeU8(1);
                 this.writeConstant(global.init, global.ty);
-            } else {
-                this.writeU8(0);
             }
         }
     }
