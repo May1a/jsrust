@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import {
     BrIfTerm,
     BrTerm,
@@ -8,11 +9,6 @@ import {
 
 export interface IRValidationError {
     message: string;
-}
-
-export interface IRValidationResult {
-    ok: boolean;
-    errors?: IRValidationError[];
 }
 
 function blockIdsOf(fn: IRFunction): Set<number> {
@@ -71,7 +67,9 @@ function validateTerminator(
     return errors;
 }
 
-export function validateFunction(fn: IRFunction): IRValidationResult {
+export function validateFunction(
+    fn: IRFunction,
+): Result<void, IRValidationError[]> {
     const errors: IRValidationError[] = [];
 
     if (!fn.entry) {
@@ -87,7 +85,7 @@ export function validateFunction(fn: IRFunction): IRValidationResult {
     }
 
     if (errors.length > 0) {
-        return { ok: false, errors };
+        return Result.err(errors);
     }
-    return { ok: true };
+    return Result.ok();
 }
