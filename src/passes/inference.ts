@@ -61,6 +61,7 @@ import {
     type Item,
 } from "../parse/ast";
 import { Result } from "better-result";
+import { match, P } from "ts-pattern";
 import { inferTypeArgs, mangledName } from "./monomorphize";
 import type { TypeContext } from "../utils/type_context";
 
@@ -87,6 +88,16 @@ function buildParamList(params: ParamNode[]): ParamWithType[] {
 export interface TypeError {
     message: string;
     span?: Span;
+}
+
+type InferResult<T = TypeNode | undefined> = { value: T; errors: TypeError[] };
+
+function ok<T>(value: T): InferResult<T> {
+    return { value, errors: [] };
+}
+
+function withErrors<T>(value: T, errors: TypeError[]): InferResult<T> {
+    return { value, errors };
 }
 
 const BUILTIN_TYPE_NAMES = new Set([
@@ -127,31 +138,31 @@ function isInferredPlaceholder(ty: TypeNode): boolean {
  * Get a human-readable name for a TypeNode.
  */
 function typeToString(ty: TypeNode): string {
-    if (ty instanceof NamedTypeNode) {
-        if (ty.args !== undefined) {
-            const args = ty.args.args.map(typeToString).join(", ");
-            return `${ty.name}<${args}>`;
-        }
-        return ty.name;
-    }
-    if (ty instanceof TupleTypeNode) {
-        if (ty.elements.length === 0) return "()";
-        return `(${ty.elements.map(typeToString).join(", ")})`;
-    }
-    if (ty instanceof RefTypeNode) {
-        let mutStr = "";
-        if (ty.mutability === Mutability.Mutable) {
-            mutStr = "mut ";
-        }
-        return `&${mutStr}${typeToString(ty.inner)}`;
-    }
-    if (ty instanceof OptionTypeNode) {
-        return `Option<${typeToString(ty.inner)}>`;
-    }
-    if (ty instanceof ResultTypeNode) {
-        return `Result<${typeToString(ty.okType)}, ${typeToString(ty.errType)}>`;
-    }
-    return "<unknown>";
+    return match(ty)
+        .with(P.instanceOf(NamedTypeNode), (t) => {
+            if (t.args !== undefined) {
+                return `${t.name}<${t.args.args.map(typeToString).join(", ")}>`;
+            }
+            return t.name;
+        })
+        .with(P.instanceOf(TupleTypeNode), (t) => {
+            if (t.elements.length === 0) {
+                return "()";
+            }
+            return `(${t.elements.map(typeToString).join(", ")})`;
+        })
+        .with(P.instanceOf(RefTypeNode), (t) => {
+            const mutStr = match(t.mutability)
+                .with(Mutability.Mutable, () => "mut ")
+                .otherwise(() => "");
+            return `&${mutStr}${typeToString(t.inner)}`;
+        })
+        .with(P.instanceOf(OptionTypeNode), (t) => `Option<${typeToString(t.inner)}>`)
+        .with(
+            P.instanceOf(ResultTypeNode),
+            (t) => `Result<${typeToString(t.okType)}, ${typeToString(t.errType)}>`,
+        )
+        .otherwise(() => "<unknown>");
 }
 
 /**
@@ -178,38 +189,47 @@ function genericArgsEqual(
 }
 
 function typesEqualSimple(a: TypeNode, b: TypeNode): boolean {
-    if (a instanceof NamedTypeNode && b instanceof NamedTypeNode) {
-        return a.name === b.name && genericArgsEqual(a.args, b.args);
-    }
-    if (a instanceof TupleTypeNode && b instanceof TupleTypeNode) {
-        return typesEqualList(a.elements, b.elements);
-    }
-    if (a instanceof ArrayTypeNode && b instanceof ArrayTypeNode) {
-        return a.length === b.length && typesEqual(a.element, b.element);
-    }
-    return false;
+    return match([a, b] as const)
+        .with(
+            [P.instanceOf(NamedTypeNode), P.instanceOf(NamedTypeNode)],
+            ([x, y]) => x.name === y.name && genericArgsEqual(x.args, y.args),
+        )
+        .with(
+            [P.instanceOf(TupleTypeNode), P.instanceOf(TupleTypeNode)],
+            ([x, y]) => typesEqualList(x.elements, y.elements),
+        )
+        .with(
+            [P.instanceOf(ArrayTypeNode), P.instanceOf(ArrayTypeNode)],
+            ([x, y]) => x.length === y.length && typesEqual(x.element, y.element),
+        )
+        .otherwise(() => false);
 }
 
 function typesEqualCompound(a: TypeNode, b: TypeNode): boolean {
-    if (a instanceof RefTypeNode && b instanceof RefTypeNode) {
-        return a.mutability === b.mutability && typesEqual(a.inner, b.inner);
-    }
-    if (a instanceof PtrTypeNode && b instanceof PtrTypeNode) {
-        return a.mutability === b.mutability && typesEqual(a.inner, b.inner);
-    }
-    if (a instanceof FnTypeNode && b instanceof FnTypeNode) {
-        return (
-            typesEqualList(a.params, b.params) &&
-            typesEqual(a.returnType, b.returnType)
-        );
-    }
-    if (a instanceof OptionTypeNode && b instanceof OptionTypeNode) {
-        return typesEqual(a.inner, b.inner);
-    }
-    if (a instanceof ResultTypeNode && b instanceof ResultTypeNode) {
-        return typesEqual(a.okType, b.okType) && typesEqual(a.errType, b.errType);
-    }
-    return false;
+    return match([a, b] as const)
+        .with(
+            [P.instanceOf(RefTypeNode), P.instanceOf(RefTypeNode)],
+            ([x, y]) => x.mutability === y.mutability && typesEqual(x.inner, y.inner),
+        )
+        .with(
+            [P.instanceOf(PtrTypeNode), P.instanceOf(PtrTypeNode)],
+            ([x, y]) => x.mutability === y.mutability && typesEqual(x.inner, y.inner),
+        )
+        .with(
+            [P.instanceOf(FnTypeNode), P.instanceOf(FnTypeNode)],
+            ([x, y]) =>
+                typesEqualList(x.params, y.params) &&
+                typesEqual(x.returnType, y.returnType),
+        )
+        .with(
+            [P.instanceOf(OptionTypeNode), P.instanceOf(OptionTypeNode)],
+            ([x, y]) => typesEqual(x.inner, y.inner),
+        )
+        .with(
+            [P.instanceOf(ResultTypeNode), P.instanceOf(ResultTypeNode)],
+            ([x, y]) => typesEqual(x.okType, y.okType) && typesEqual(x.errType, y.errType),
+        )
+        .otherwise(() => false);
 }
 
 function typesEqual(a: TypeNode, b: TypeNode): boolean {
@@ -271,8 +291,8 @@ function validateNamedTypeNode(
     typeCtx: TypeContext,
     ty: NamedTypeNode,
     genericNames: Set<string>,
-    errors: TypeError[],
-): void {
+): TypeError[] {
+    const errors: TypeError[] = [];
     const builtIn = isBuiltinTypeName(ty.name);
     const known = typeCtx.lookupNamedType(ty.name);
     const generic = genericNames.has(ty.name);
@@ -284,17 +304,18 @@ function validateNamedTypeNode(
     }
     if (ty.args !== undefined) {
         for (const arg of ty.args.args) {
-            validateTypeNode(typeCtx, arg, genericNames, errors);
+            errors.push(...validateTypeNode(typeCtx, arg, genericNames));
         }
     }
+    return errors;
 }
 
 function validateRefTypeNode(
     typeCtx: TypeContext,
     ty: RefTypeNode,
     genericNames: Set<string>,
-    errors: TypeError[],
-): void {
+): TypeError[] {
+    const errors: TypeError[] = [];
     if (ty.inner instanceof OptionTypeNode) {
         const suggestion = getOptionResultRefSuggestion(ty);
         let suggestedType = suggestion;
@@ -312,65 +333,64 @@ function validateRefTypeNode(
             span: ty.span,
         });
     }
-    validateTypeNode(typeCtx, ty.inner, genericNames, errors);
+    errors.push(...validateTypeNode(typeCtx, ty.inner, genericNames));
+    return errors;
 }
 
 function validateCompositeTypeNode(
     typeCtx: TypeContext,
     ty: TypeNode,
     genericNames: Set<string>,
-    errors: TypeError[],
-): void {
+): TypeError[] {
+    const errors: TypeError[] = [];
     if (ty instanceof TupleTypeNode) {
         for (const element of ty.elements) {
-            validateTypeNode(typeCtx, element, genericNames, errors);
+            errors.push(...validateTypeNode(typeCtx, element, genericNames));
         }
-        return;
+        return errors;
     }
     if (ty instanceof ArrayTypeNode) {
-        validateTypeNode(typeCtx, ty.element, genericNames, errors);
-        return;
+        errors.push(...validateTypeNode(typeCtx, ty.element, genericNames));
+        return errors;
     }
     if (ty instanceof PtrTypeNode) {
-        validateTypeNode(typeCtx, ty.inner, genericNames, errors);
-        return;
+        errors.push(...validateTypeNode(typeCtx, ty.inner, genericNames));
+        return errors;
     }
     if (ty instanceof FnTypeNode) {
         for (const paramTy of ty.params) {
-            validateTypeNode(typeCtx, paramTy, genericNames, errors);
+            errors.push(...validateTypeNode(typeCtx, paramTy, genericNames));
         }
-        validateTypeNode(typeCtx, ty.returnType, genericNames, errors);
-        return;
+        errors.push(...validateTypeNode(typeCtx, ty.returnType, genericNames));
+        return errors;
     }
+    return errors;
 }
 
 function validateTypeNode(
     typeCtx: TypeContext,
     ty: TypeNode,
     genericNames: Set<string>,
-    errors: TypeError[],
-): void {
+): TypeError[] {
     if (ty instanceof InferredTypeNode) {
-        return;
+        return [];
     }
     if (ty instanceof NamedTypeNode) {
-        validateNamedTypeNode(typeCtx, ty, genericNames, errors);
-        return;
+        return validateNamedTypeNode(typeCtx, ty, genericNames);
     }
     if (ty instanceof RefTypeNode) {
-        validateRefTypeNode(typeCtx, ty, genericNames, errors);
-        return;
+        return validateRefTypeNode(typeCtx, ty, genericNames);
     }
     if (ty instanceof OptionTypeNode) {
-        validateTypeNode(typeCtx, ty.inner, genericNames, errors);
-        return;
+        return validateTypeNode(typeCtx, ty.inner, genericNames);
     }
     if (ty instanceof ResultTypeNode) {
-        validateTypeNode(typeCtx, ty.okType, genericNames, errors);
-        validateTypeNode(typeCtx, ty.errType, genericNames, errors);
-        return;
+        return [
+            ...validateTypeNode(typeCtx, ty.okType, genericNames),
+            ...validateTypeNode(typeCtx, ty.errType, genericNames),
+        ];
     }
-    validateCompositeTypeNode(typeCtx, ty, genericNames, errors);
+    return validateCompositeTypeNode(typeCtx, ty, genericNames);
 }
 
 // --- Comparison and logical ops that return bool ---
@@ -564,95 +584,141 @@ function registerUseItemAlias(typeCtx: TypeContext, node: UseItem): void {
 function inferExprType(
     typeCtx: TypeContext,
     expr: Expression,
-    errors: TypeError[],
-): TypeNode | undefined {
+): InferResult {
     // Check if we already resolved this expression
     const cached = typeCtx.getExpressionType(expr);
-    if (cached) return cached;
-
-    const resolved = inferExprTypeInner(typeCtx, expr, errors);
-    if (resolved) {
-        typeCtx.setExpressionType(expr, resolved);
+    if (cached) {
+        return ok(cached);
     }
-    return resolved;
+
+    const result = inferExprTypeInner(typeCtx, expr);
+    if (result.value) {
+        typeCtx.setExpressionType(expr, result.value);
+    }
+    return result;
 }
 
 function inferExprTypeInner(
     typeCtx: TypeContext,
     expr: Expression,
-    errors: TypeError[],
-): TypeNode | undefined {
+): InferResult {
     if (expr instanceof LiteralExpr) {
-        return inferLiteral(expr, errors);
+        return inferLiteral(expr);
     }
 
     if (expr instanceof IdentifierExpr) {
-        return inferIdentifier(typeCtx, expr, errors);
+        return inferIdentifier(typeCtx, expr);
     }
 
     if (expr instanceof BinaryExpr) {
-        return inferBinary(typeCtx, expr, errors);
+        return inferBinary(typeCtx, expr);
     }
 
     if (expr instanceof UnaryExpr) {
-        return inferUnary(typeCtx, expr, errors);
+        return inferUnary(typeCtx, expr);
     }
 
     if (expr instanceof CallExpr) {
-        return inferCall(typeCtx, expr, errors);
+        return inferCall(typeCtx, expr);
     }
 
     if (expr instanceof FieldExpr) {
-        return inferFieldAccess(typeCtx, expr, errors);
+        return inferFieldAccess(typeCtx, expr);
     }
 
     if (expr instanceof StructExpr) {
-        return inferStructLiteral(typeCtx, expr, errors);
+        return inferStructLiteral(typeCtx, expr);
     }
 
     if (expr instanceof BlockExpr) {
-        return inferBlock(typeCtx, expr, errors);
+        return inferBlock(typeCtx, expr);
     }
 
     if (expr instanceof IfExpr) {
-        return inferIf(typeCtx, expr, errors);
+        return inferIf(typeCtx, expr);
     }
 
     if (expr instanceof RefExpr) {
-        return inferRef(typeCtx, expr, errors);
+        return inferRef(typeCtx, expr);
     }
 
     if (expr instanceof MatchExpr) {
-        return inferMatch(typeCtx, expr, errors);
+        return inferMatch(typeCtx, expr);
     }
 
     if (expr instanceof ClosureExpr) {
-        return expr.returnType;
+        return ok(expr.returnType);
     }
 
-    return inferExprTypeExtended(typeCtx, expr, errors);
+    return inferExprTypeExtended(typeCtx, expr);
+}
+
+function inferVecMacro(
+    typeCtx: TypeContext,
+    expr: MacroExpr,
+): InferResult {
+    const errors: TypeError[] = [];
+    let elemType: TypeNode | undefined;
+    if (expr.args.length > 0) {
+        const [firstArg] = expr.args;
+        const firstResult = inferExprType(typeCtx, firstArg);
+        errors.push(...firstResult.errors);
+        elemType = firstResult.value;
+    }
+    for (const arg of expr.args) {
+        const argResult = inferExprType(typeCtx, arg);
+        errors.push(...argResult.errors);
+    }
+    if (!elemType) {
+        return withErrors(undefined, errors);
+    }
+    return withErrors(
+        new ArrayTypeNode(expr.span, elemType, undefined),
+        errors,
+    );
+}
+
+function inferIndexExpr(
+    typeCtx: TypeContext,
+    expr: IndexExpr,
+): InferResult {
+    const errors: TypeError[] = [];
+    const receiverResult = inferExprType(typeCtx, expr.receiver);
+    errors.push(...receiverResult.errors);
+    const indexResult = inferExprType(typeCtx, expr.index);
+    errors.push(...indexResult.errors);
+    if (receiverResult.value instanceof ArrayTypeNode) {
+        return withErrors(receiverResult.value.element, errors);
+    }
+    return withErrors(undefined, errors);
+}
+
+function inferRangeExpr(
+    typeCtx: TypeContext,
+    expr: RangeExpr,
+): InferResult {
+    const errors: TypeError[] = [];
+    if (expr.start !== undefined) {
+        const startResult = inferExprType(typeCtx, expr.start);
+        errors.push(...startResult.errors);
+    }
+    if (expr.end !== undefined) {
+        const endResult = inferExprType(typeCtx, expr.end);
+        errors.push(...endResult.errors);
+    }
+    return withErrors(undefined, errors);
 }
 
 function inferExprTypeExtended(
     typeCtx: TypeContext,
     expr: Expression,
-    errors: TypeError[],
-): TypeNode | undefined {
+): InferResult {
     if (expr instanceof DerefExpr) {
-        return inferDeref(typeCtx, expr, errors);
+        return inferDeref(typeCtx, expr);
     }
 
     if (expr instanceof MacroExpr && expr.name === "vec") {
-        let elemType: TypeNode | undefined;
-        if (expr.args.length > 0) {
-            const [firstArg] = expr.args;
-            elemType = inferExprType(typeCtx, firstArg, errors);
-        }
-        for (const arg of expr.args) {
-            inferExprType(typeCtx, arg, errors);
-        }
-        if (!elemType) return undefined;
-        return new ArrayTypeNode(expr.span, elemType, undefined);
+        return inferVecMacro(typeCtx, expr);
     }
 
     if (
@@ -662,7 +728,7 @@ function inferExprTypeExtended(
         expr instanceof LoopExpr ||
         expr instanceof AssignExpr
     ) {
-        return inferUnitExpr(typeCtx, expr, errors);
+        return inferUnitExpr(typeCtx, expr);
     }
 
     if (
@@ -670,63 +736,57 @@ function inferExprTypeExtended(
         expr instanceof BreakExpr ||
         expr instanceof ContinueExpr
     ) {
-        return inferDivergingExpr(typeCtx, expr, errors);
+        return inferDivergingExpr(typeCtx, expr);
     }
 
     if (expr instanceof IndexExpr) {
-        const receiverType = inferExprType(typeCtx, expr.receiver, errors);
-        inferExprType(typeCtx, expr.index, errors);
-        if (receiverType instanceof ArrayTypeNode) {
-            return receiverType.element;
-        }
-        return undefined;
+        return inferIndexExpr(typeCtx, expr);
     }
 
     if (expr instanceof RangeExpr) {
-        if (expr.start !== undefined) {
-            inferExprType(typeCtx, expr.start, errors);
-        }
-        if (expr.end !== undefined) inferExprType(typeCtx, expr.end, errors);
-        return undefined;
+        return inferRangeExpr(typeCtx, expr);
     }
 
-    errors.push({
-        message: `Unhandled expression type in inference: ${expr.constructor.name}`,
-        span: expr.span,
-    });
-    return undefined;
+    return withErrors(undefined, [
+        {
+            message: `Unhandled expression type in inference: ${expr.constructor.name}`,
+            span: expr.span,
+        },
+    ]);
 }
 
 function inferLiteral(
     expr: LiteralExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
+): InferResult {
     switch (expr.literalKind) {
         case LiteralKind.Int: {
-            return new NamedTypeNode(expr.span, "i32");
+            return ok(new NamedTypeNode(expr.span, "i32"));
         }
         case LiteralKind.Float: {
-            return new NamedTypeNode(expr.span, "f64");
+            return ok(new NamedTypeNode(expr.span, "f64"));
         }
         case LiteralKind.Bool: {
-            return new NamedTypeNode(expr.span, "bool");
+            return ok(new NamedTypeNode(expr.span, "bool"));
         }
         case LiteralKind.String: {
-            return new RefTypeNode(
-                expr.span,
-                Mutability.Immutable,
-                new NamedTypeNode(expr.span, "str"),
+            return ok(
+                new RefTypeNode(
+                    expr.span,
+                    Mutability.Immutable,
+                    new NamedTypeNode(expr.span, "str"),
+                ),
             );
         }
         case LiteralKind.Char: {
-            return new NamedTypeNode(expr.span, "char");
+            return ok(new NamedTypeNode(expr.span, "char"));
         }
         default: {
-            errors.push({
-                message: `Unhandled literal kind in inference: ${String(expr.literalKind)}`,
-                span: expr.span,
-            });
-            return undefined;
+            return withErrors(undefined, [
+                {
+                    message: `Unhandled literal kind in inference: ${String(expr.literalKind)}`,
+                    span: expr.span,
+                },
+            ]);
         }
     }
 }
@@ -734,27 +794,30 @@ function inferLiteral(
 function inferIdentifier(
     typeCtx: TypeContext,
     expr: IdentifierExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
+): InferResult {
     const varTy = typeCtx.lookupVariable(expr.name);
-    if (varTy) return varTy;
+    if (varTy) {
+        return ok(varTy);
+    }
 
     const fnSig = typeCtx.lookupFnSignature(expr.name);
     if (fnSig) {
-        errors.push({
-            message: `\`${expr.name}\` is a function and cannot be used as a first-class value`,
-            span: expr.span,
-        });
-        return undefined;
+        return withErrors(undefined, [
+            {
+                message: `\`${expr.name}\` is a function and cannot be used as a first-class value`,
+                span: expr.span,
+            },
+        ]);
     }
 
     const namedTy = typeCtx.lookupNamedType(expr.name);
     if (namedTy) {
-        errors.push({
-            message: `\`${expr.name}\` is a type and cannot be used as a value`,
-            span: expr.span,
-        });
-        return undefined;
+        return withErrors(undefined, [
+            {
+                message: `\`${expr.name}\` is a type and cannot be used as a value`,
+                span: expr.span,
+            },
+        ]);
     }
 
     // `None` and `Some` refer to builtin Option variants unless a user-defined
@@ -763,9 +826,9 @@ function inferIdentifier(
     if (expr.name === "None" || expr.name === "Some") {
         const owner = typeCtx.lookupVariantOwner(expr.name);
         if (owner && owner !== "Option") {
-            return undefined;
+            return ok(undefined);
         }
-        return makeOptionType(expr.span);
+        return ok(makeOptionType(expr.span));
     }
 
     if (
@@ -776,23 +839,24 @@ function inferIdentifier(
     ) {
         const owner = typeCtx.lookupVariantOwner(expr.name);
         if (owner && owner !== "Result") {
-            return undefined;
+            return ok(undefined);
         }
-        return makeResultType(expr.span);
+        return ok(makeResultType(expr.span));
     }
 
     // Qualified paths (e.g. `Color::Green`, `Vec::new`) are enum variants or
     // associated items — not yet tracked in the type context. Return undefined
     // without an error; type propagation will handle the absence.
     if (expr.name.includes("::")) {
-        return undefined;
+        return ok(undefined);
     }
 
-    errors.push({
-        message: `Cannot find value \`${expr.name}\` in this scope`,
-        span: expr.span,
-    });
-    return undefined;
+    return withErrors(undefined, [
+        {
+            message: `Cannot find value \`${expr.name}\` in this scope`,
+            span: expr.span,
+        },
+    ]);
 }
 
 function derefType(ty: TypeNode): TypeNode {
@@ -805,14 +869,18 @@ function derefType(ty: TypeNode): TypeNode {
 function inferBinary(
     typeCtx: TypeContext,
     expr: BinaryExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
-    const leftTy = inferExprType(typeCtx, expr.left, errors);
-    const rightTy = inferExprType(typeCtx, expr.right, errors);
+): InferResult {
+    const errors: TypeError[] = [];
+    const leftResult = inferExprType(typeCtx, expr.left);
+    errors.push(...leftResult.errors);
+    const rightResult = inferExprType(typeCtx, expr.right);
+    errors.push(...rightResult.errors);
+    const leftTy = leftResult.value;
+    const rightTy = rightResult.value;
 
     // Comparison and logical operators always produce bool
     if (COMPARISON_OPS.has(expr.op) || LOGICAL_OPS.has(expr.op)) {
-        return new NamedTypeNode(expr.span, "bool");
+        return withErrors(new NamedTypeNode(expr.span, "bool"), errors);
     }
 
     // Arithmetic/bitwise operators: auto-deref references (Rust coerces &T op &T → T op T → T)
@@ -838,37 +906,42 @@ function inferBinary(
         }
     }
 
-    return leftBase ?? rightBase;
+    return withErrors(leftBase ?? rightBase, errors);
 }
 
 function inferUnary(
     typeCtx: TypeContext,
     expr: UnaryExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
-    const operandTy = inferExprType(typeCtx, expr.operand, errors);
+): InferResult {
+    const errors: TypeError[] = [];
+    const operandResult = inferExprType(typeCtx, expr.operand);
+    errors.push(...operandResult.errors);
+    const operandTy = operandResult.value;
 
     if (expr.op === UnaryOp.Not) {
         // `!` on bool returns bool; on integers returns the integer type
         if (operandTy instanceof NamedTypeNode && operandTy.name === "bool") {
-            return new NamedTypeNode(expr.span, "bool");
+            return withErrors(new NamedTypeNode(expr.span, "bool"), errors);
         }
-        return operandTy;
+        return withErrors(operandTy, errors);
     }
 
     if (expr.op === UnaryOp.Neg) {
-        return operandTy;
+        return withErrors(operandTy, errors);
     }
 
     if (expr.op === UnaryOp.Ref) {
         if (operandTy) {
-            return new RefTypeNode(expr.span, Mutability.Immutable, operandTy);
+            return withErrors(
+                new RefTypeNode(expr.span, Mutability.Immutable, operandTy),
+                errors,
+            );
         }
     }
 
     if (expr.op === UnaryOp.Deref) {
         if (operandTy instanceof RefTypeNode) {
-            return operandTy.inner;
+            return withErrors(operandTy.inner, errors);
         }
         if (operandTy) {
             errors.push({
@@ -876,20 +949,22 @@ function inferUnary(
                 span: expr.span,
             });
         }
-        return undefined;
+        return withErrors(undefined, errors);
     }
 
-    return operandTy;
+    return withErrors(operandTy, errors);
 }
 
 function inferDeref(
     typeCtx: TypeContext,
     expr: DerefExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
-    const targetTy = inferExprType(typeCtx, expr.target, errors);
+): InferResult {
+    const errors: TypeError[] = [];
+    const targetResult = inferExprType(typeCtx, expr.target);
+    errors.push(...targetResult.errors);
+    const targetTy = targetResult.value;
     if (targetTy instanceof RefTypeNode) {
-        return targetTy.inner;
+        return withErrors(targetTy.inner, errors);
     }
     if (targetTy) {
         errors.push({
@@ -897,72 +972,87 @@ function inferDeref(
             span: expr.span,
         });
     }
-    return undefined;
+    return withErrors(undefined, errors);
 }
 
 function inferUnitExpr(
     typeCtx: TypeContext,
     expr: MacroExpr | WhileExpr | ForExpr | LoopExpr | AssignExpr,
-    errors: TypeError[],
-): TupleTypeNode {
+): InferResult<TupleTypeNode> {
+    const errors: TypeError[] = [];
     if (expr instanceof WhileExpr) {
-        inferExprType(typeCtx, expr.condition, errors);
-        inferBlock(typeCtx, expr.body, errors);
+        const condResult = inferExprType(typeCtx, expr.condition);
+        errors.push(...condResult.errors);
+        const bodyResult = inferBlock(typeCtx, expr.body);
+        errors.push(...bodyResult.errors);
     } else if (expr instanceof ForExpr) {
-        inferExprType(typeCtx, expr.iter, errors);
-        inferBlock(typeCtx, expr.body, errors);
+        const iterResult = inferExprType(typeCtx, expr.iter);
+        errors.push(...iterResult.errors);
+        const bodyResult = inferBlock(typeCtx, expr.body);
+        errors.push(...bodyResult.errors);
     } else if (expr instanceof LoopExpr) {
-        inferBlock(typeCtx, expr.body, errors);
+        const bodyResult = inferBlock(typeCtx, expr.body);
+        errors.push(...bodyResult.errors);
     } else if (expr instanceof AssignExpr) {
-        inferExprType(typeCtx, expr.target, errors);
-        inferExprType(typeCtx, expr.value, errors);
+        const targetResult = inferExprType(typeCtx, expr.target);
+        errors.push(...targetResult.errors);
+        const valueResult = inferExprType(typeCtx, expr.value);
+        errors.push(...valueResult.errors);
     } else {
         for (const arg of expr.args) {
-            inferExprType(typeCtx, arg, errors);
+            const argResult = inferExprType(typeCtx, arg);
+            errors.push(...argResult.errors);
         }
     }
-    return new TupleTypeNode(expr.span, []);
+    return withErrors(new TupleTypeNode(expr.span, []), errors);
 }
 
 function inferDivergingExpr(
     typeCtx: TypeContext,
     expr: ReturnExpr | BreakExpr | ContinueExpr,
-    errors: TypeError[],
-): undefined {
+): InferResult<undefined> {
+    const errors: TypeError[] = [];
     if (expr instanceof ReturnExpr && expr.value !== undefined) {
-        inferExprType(typeCtx, expr.value, errors);
+        const valResult = inferExprType(typeCtx, expr.value);
+        errors.push(...valResult.errors);
     } else if (expr instanceof BreakExpr && expr.value !== undefined) {
-        inferExprType(typeCtx, expr.value, errors);
+        const valResult = inferExprType(typeCtx, expr.value);
+        errors.push(...valResult.errors);
     }
-    return undefined;
+    return withErrors(undefined, errors);
 }
 
 function inferCall(
     typeCtx: TypeContext,
     expr: CallExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
+): InferResult {
     // Infer argument types for side effects (populates type context)
+    const errors: TypeError[] = [];
     const argTypes: (TypeNode | undefined)[] = [];
     for (const arg of expr.args) {
-        argTypes.push(inferExprType(typeCtx, arg, errors));
+        const argResult = inferExprType(typeCtx, arg);
+        errors.push(...argResult.errors);
+        argTypes.push(argResult.value);
     }
 
     if (expr.callee instanceof IdentifierExpr) {
-        return inferIdentifierCallType(
+        const callResult = inferIdentifierCallType(
             typeCtx,
             expr,
             expr.callee,
             argTypes,
-            errors,
         );
+        errors.push(...callResult.errors);
+        return withErrors(callResult.value, errors);
     }
 
     if (expr.callee instanceof FieldExpr) {
-        return inferMethodCallType(typeCtx, expr, errors);
+        const callResult = inferMethodCallType(typeCtx, expr);
+        errors.push(...callResult.errors);
+        return withErrors(callResult.value, errors);
     }
 
-    return undefined;
+    return withErrors(undefined, errors);
 }
 
 const BUILTIN_ENUM_CONSTRUCTOR_NAMES = new Set([
@@ -980,50 +1070,53 @@ function inferBuiltinEnumCallType(
     expr: CallExpr,
     calleeName: string,
     argTypes: (TypeNode | undefined)[],
-    errors: TypeError[],
-): TypeNode | undefined {
+): InferResult {
     if (calleeName === "Some" || calleeName === "Option::Some") {
         if (expr.args.length !== 1) {
-            errors.push({
-                message: "`Some` requires exactly one argument",
-                span: expr.span,
-            });
-            return undefined;
+            return withErrors(undefined, [
+                {
+                    message: "`Some` requires exactly one argument",
+                    span: expr.span,
+                },
+            ]);
         }
         const [innerTy] = argTypes;
-        return makeOptionType(expr.span, innerTy);
+        return ok(makeOptionType(expr.span, innerTy));
     }
     if (calleeName === "None" || calleeName === "Option::None") {
         if (expr.args.length > 0) {
-            errors.push({
-                message: "`None` does not take any arguments",
-                span: expr.span,
-            });
-            return undefined;
+            return withErrors(undefined, [
+                {
+                    message: "`None` does not take any arguments",
+                    span: expr.span,
+                },
+            ]);
         }
-        return makeOptionType(expr.span);
+        return ok(makeOptionType(expr.span));
     }
     if (calleeName === "Ok" || calleeName === "Result::Ok") {
         if (expr.args.length !== 1) {
-            errors.push({
-                message: "`Ok` requires exactly one argument",
-                span: expr.span,
-            });
-            return undefined;
+            return withErrors(undefined, [
+                {
+                    message: "`Ok` requires exactly one argument",
+                    span: expr.span,
+                },
+            ]);
         }
         const [okTy] = argTypes;
-        return makeResultType(expr.span, okTy);
+        return ok(makeResultType(expr.span, okTy));
     }
     // Err or Result::Err
     if (expr.args.length !== 1) {
-        errors.push({
-            message: "`Err` requires exactly one argument",
-            span: expr.span,
-        });
-        return undefined;
+        return withErrors(undefined, [
+            {
+                message: "`Err` requires exactly one argument",
+                span: expr.span,
+            },
+        ]);
     }
     const [errTy] = argTypes;
-    return makeResultType(expr.span, undefined, errTy);
+    return ok(makeResultType(expr.span, undefined, errTy));
 }
 
 function inferIdentifierCallType(
@@ -1031,131 +1124,137 @@ function inferIdentifierCallType(
     expr: CallExpr,
     callee: IdentifierExpr,
     argTypes: (TypeNode | undefined)[],
-    errors: TypeError[],
-): TypeNode | undefined {
+): InferResult {
     const { name: calleeName } = callee;
 
     if (BUILTIN_ENUM_CONSTRUCTOR_NAMES.has(calleeName)) {
-        return inferBuiltinEnumCallType(expr, calleeName, argTypes, errors);
+        return inferBuiltinEnumCallType(expr, calleeName, argTypes);
     }
 
     const genericResult = resolveGenericCall(typeCtx, expr, argTypes);
     if (genericResult) {
-        return genericResult;
+        return ok(genericResult);
     }
 
     const sig = typeCtx.lookupFnSignature(calleeName);
     if (sig) {
-        return sig.returnType;
+        return ok(sig.returnType);
     }
 
     // Qualified paths (e.g. `Vec::new`) are not yet tracked — skip
     if (!calleeName.includes("::")) {
-        errors.push({
-            message: `cannot find function \`${calleeName}\` in this scope`,
-            span: callee.span,
-        });
+        return withErrors(undefined, [
+            {
+                message: `cannot find function \`${calleeName}\` in this scope`,
+                span: callee.span,
+            },
+        ]);
     }
-    return undefined;
+    return ok(undefined);
 }
 
 function inferOptionMethodType(
     expr: CallExpr,
     receiverTy: OptionTypeNode,
-    errors: TypeError[],
-): TypeNode | undefined {
+): InferResult {
     const { callee } = expr;
     if (!(callee instanceof FieldExpr)) {
-        return undefined;
+        return ok(undefined);
     }
     const { inner } = receiverTy;
     const boolTy = new NamedTypeNode(callee.span, "bool");
     if (callee.field === "is_some" || callee.field === "is_none") {
         if (expr.args.length > 0) {
-            errors.push({
-                message: `\`${callee.field}\` does not take any arguments`,
-                span: expr.span,
-            });
-            return undefined;
+            return withErrors(undefined, [
+                {
+                    message: `\`${callee.field}\` does not take any arguments`,
+                    span: expr.span,
+                },
+            ]);
         }
-        return boolTy;
+        return ok(boolTy);
     }
     if (callee.field === "unwrap") {
         if (expr.args.length > 0) {
-            errors.push({
-                message: "`unwrap` does not take any arguments",
-                span: expr.span,
-            });
-            return undefined;
+            return withErrors(undefined, [
+                {
+                    message: "`unwrap` does not take any arguments",
+                    span: expr.span,
+                },
+            ]);
         }
-        return inner;
+        return ok(inner);
     }
     if (callee.field === "expect") {
         if (expr.args.length !== 1) {
-            errors.push({
-                message: "`expect` requires exactly one argument",
-                span: expr.span,
-            });
-            return undefined;
+            return withErrors(undefined, [
+                {
+                    message: "`expect` requires exactly one argument",
+                    span: expr.span,
+                },
+            ]);
         }
-        return inner;
+        return ok(inner);
     }
-    return undefined;
+    return ok(undefined);
 }
 
 function inferResultMethodType(
     expr: CallExpr,
     receiverTy: ResultTypeNode,
-    errors: TypeError[],
-): TypeNode | undefined {
+): InferResult {
     const { callee } = expr;
     if (!(callee instanceof FieldExpr)) {
-        return undefined;
+        return ok(undefined);
     }
     const okTy = receiverTy.okType;
     const errTy = receiverTy.errType;
     const boolTy = new NamedTypeNode(callee.span, "bool");
     if (callee.field === "is_ok" || callee.field === "is_err") {
         if (expr.args.length > 0) {
-            errors.push({
-                message: `\`${callee.field}\` does not take any arguments`,
-                span: expr.span,
-            });
-            return undefined;
+            return withErrors(undefined, [
+                {
+                    message: `\`${callee.field}\` does not take any arguments`,
+                    span: expr.span,
+                },
+            ]);
         }
-        return boolTy;
+        return ok(boolTy);
     }
     if (callee.field === "unwrap") {
         if (expr.args.length > 0) {
-            errors.push({
-                message: "`unwrap` does not take any arguments",
-                span: expr.span,
-            });
-            return undefined;
+            return withErrors(undefined, [
+                {
+                    message: "`unwrap` does not take any arguments",
+                    span: expr.span,
+                },
+            ]);
         }
-        return okTy;
+        return ok(okTy);
     }
     if (callee.field === "expect") {
         if (expr.args.length !== 1) {
-            errors.push({
-                message: "`expect` requires exactly one argument",
-                span: expr.span,
-            });
-            return undefined;
+            return withErrors(undefined, [
+                {
+                    message: "`expect` requires exactly one argument",
+                    span: expr.span,
+                },
+            ]);
         }
-        return okTy;
+        return ok(okTy);
     }
     if (callee.field === "unwrap_err") {
         if (expr.args.length > 0) {
-            errors.push({
-                message: "`unwrap_err` does not take any arguments",
-                span: expr.span,
-            });
-            return undefined;
+            return withErrors(undefined, [
+                {
+                    message: "`unwrap_err` does not take any arguments",
+                    span: expr.span,
+                },
+            ]);
         }
-        return errTy;
+        return ok(errTy);
     }
-    return undefined;
+    return ok(undefined);
 }
 
 const OPTION_RESULT_BUILTIN_METHODS = [
@@ -1208,13 +1307,15 @@ function checkRefOptionResultMethodCall(
 function inferMethodCallType(
     typeCtx: TypeContext,
     expr: CallExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
+): InferResult {
+    const errors: TypeError[] = [];
     const { callee } = expr;
     if (!(callee instanceof FieldExpr)) {
-        return undefined;
+        return ok(undefined);
     }
-    const receiverTy = inferExprType(typeCtx, callee.receiver, errors);
+    const receiverResult = inferExprType(typeCtx, callee.receiver);
+    errors.push(...receiverResult.errors);
+    const receiverTy = receiverResult.value;
 
     if (callee.field === "clone") {
         if (expr.args.length > 0) {
@@ -1222,50 +1323,53 @@ function inferMethodCallType(
                 message: "`clone` does not take any arguments",
                 span: expr.span,
             });
-            return undefined;
+            return withErrors(undefined, errors);
         }
         if (receiverTy) {
-            return receiverTy;
+            return withErrors(receiverTy, errors);
         }
     }
 
     // Reject calling Option/Result builtin methods through a reference — it is a
     // common mistake and the compiler should reject it explicitly.
     if (checkRefOptionResultMethodCall(receiverTy, callee, expr, errors)) {
-        return undefined;
+        return withErrors(undefined, errors);
     }
 
     // Builtin Option methods
     if (receiverTy instanceof OptionTypeNode) {
-        const inferred = inferOptionMethodType(expr, receiverTy, errors);
-        if (inferred !== undefined) {
-            return inferred;
+        const inferredResult = inferOptionMethodType(expr, receiverTy);
+        errors.push(...inferredResult.errors);
+        if (inferredResult.value !== undefined) {
+            return withErrors(inferredResult.value, errors);
         }
     }
 
     // Builtin Result methods
     if (receiverTy instanceof ResultTypeNode) {
-        const inferred = inferResultMethodType(expr, receiverTy, errors);
-        if (inferred !== undefined) {
-            return inferred;
+        const inferredResult = inferResultMethodType(expr, receiverTy);
+        errors.push(...inferredResult.errors);
+        if (inferredResult.value !== undefined) {
+            return withErrors(inferredResult.value, errors);
         }
     }
 
-    return inferUserDefinedMethodType(typeCtx, receiverTy, callee, errors);
+    const userResult = inferUserDefinedMethodType(typeCtx, receiverTy, callee);
+    errors.push(...userResult.errors);
+    return withErrors(userResult.value, errors);
 }
 
 function inferUserDefinedMethodType(
     typeCtx: TypeContext,
     receiverTy: TypeNode | undefined,
     callee: FieldExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
+): InferResult {
     if (receiverTy instanceof NamedTypeNode) {
         const methodSig = typeCtx.lookupFnSignature(
             `${receiverTy.name}::${callee.field}`,
         );
         if (methodSig) {
-            return methodSig.returnType;
+            return ok(methodSig.returnType);
         }
     }
     // Try through references
@@ -1277,18 +1381,20 @@ function inferUserDefinedMethodType(
             `${receiverTy.inner.name}::${callee.field}`,
         );
         if (methodSig) {
-            return methodSig.returnType;
+            return ok(methodSig.returnType);
         }
     }
 
     // Receiver type is known but no matching method signature was found
     if (receiverTy) {
-        errors.push({
-            message: `no method \`${callee.field}\` found for type \`${typeToString(receiverTy)}\``,
-            span: callee.span,
-        });
+        return withErrors(undefined, [
+            {
+                message: `no method \`${callee.field}\` found for type \`${typeToString(receiverTy)}\``,
+                span: callee.span,
+            },
+        ]);
     }
-    return undefined;
+    return ok(undefined);
 }
 
 function resolveGenericCall(
@@ -1388,21 +1494,26 @@ function substituteTypeNode(
 function inferFieldAccess(
     typeCtx: TypeContext,
     expr: FieldExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
-    const receiverTy = inferExprType(typeCtx, expr.receiver, errors);
-    if (!receiverTy) return undefined;
+): InferResult {
+    const receiverResult = inferExprType(typeCtx, expr.receiver);
+    const errors: TypeError[] = [...receiverResult.errors];
+    const receiverTy = receiverResult.value;
+    if (!receiverTy) {
+        return withErrors(undefined, errors);
+    }
 
     // Direct struct type
     if (receiverTy instanceof NamedTypeNode) {
         const fieldTy = typeCtx.lookupStructField(receiverTy.name, expr.field);
-        if (fieldTy) return fieldTy;
+        if (fieldTy) {
+            return withErrors(fieldTy, errors);
+        }
 
         errors.push({
             message: `No field \`${expr.field}\` on type \`${receiverTy.name}\``,
             span: expr.span,
         });
-        return undefined;
+        return withErrors(undefined, errors);
     }
 
     // Auto-deref through references
@@ -1414,34 +1525,39 @@ function inferFieldAccess(
             receiverTy.inner.name,
             expr.field,
         );
-        if (fieldTy) return fieldTy;
+        if (fieldTy) {
+            return withErrors(fieldTy, errors);
+        }
 
         errors.push({
             message: `No field \`${expr.field}\` on type \`${typeToString(receiverTy)}\``,
             span: expr.span,
         });
-        return undefined;
+        return withErrors(undefined, errors);
     }
 
-    return undefined;
+    return withErrors(undefined, errors);
 }
 
 function inferStructLiteral(
     typeCtx: TypeContext,
     expr: StructExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
-    if (!(expr.path instanceof IdentifierExpr)) return undefined;
+): InferResult {
+    if (!(expr.path instanceof IdentifierExpr)) {
+        return ok(undefined);
+    }
 
+    const errors: TypeError[] = [];
     const structName = expr.path.name;
     const structFields = typeCtx.lookupStructFields(structName);
 
     if (!structFields) {
-        errors.push({
-            message: `Unknown struct \`${structName}\``,
-            span: expr.span,
-        });
-        return undefined;
+        return withErrors(undefined, [
+            {
+                message: `Unknown struct \`${structName}\``,
+                span: expr.span,
+            },
+        ]);
     }
 
     // Type-check each field initializer
@@ -1458,7 +1574,9 @@ function inferStructLiteral(
             continue;
         }
 
-        const actualTy = inferExprType(typeCtx, fieldExpr, errors);
+        const actualResult = inferExprType(typeCtx, fieldExpr);
+        errors.push(...actualResult.errors);
+        const actualTy = actualResult.value;
         if (
             actualTy &&
             !isInferredPlaceholder(expectedFieldTy) &&
@@ -1473,33 +1591,40 @@ function inferStructLiteral(
         }
     }
 
-    return new NamedTypeNode(expr.span, structName);
+    return withErrors(new NamedTypeNode(expr.span, structName), errors);
 }
 
 function inferBlock(
     typeCtx: TypeContext,
     block: BlockExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
+): InferResult {
+    const errors: TypeError[] = [];
     typeCtx.pushScope();
-    inferStatements(typeCtx, block.stmts, errors);
+    errors.push(...inferStatements(typeCtx, block.stmts));
     let resultTy: TypeNode | undefined;
     if (block.expr !== undefined) {
-        resultTy = inferExprType(typeCtx, block.expr, errors);
+        const exprResult = inferExprType(typeCtx, block.expr);
+        errors.push(...exprResult.errors);
+        resultTy = exprResult.value;
     }
     typeCtx.popScope();
-    return resultTy ?? new TupleTypeNode(block.span, []);
+    return withErrors(resultTy ?? new TupleTypeNode(block.span, []), errors);
 }
 
 function inferIf(
     typeCtx: TypeContext,
     expr: IfExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
-    inferExprType(typeCtx, expr.condition, errors);
-    const thenTy = inferExprType(typeCtx, expr.thenBranch, errors);
+): InferResult {
+    const errors: TypeError[] = [];
+    const condResult = inferExprType(typeCtx, expr.condition);
+    errors.push(...condResult.errors);
+    const thenResult = inferExprType(typeCtx, expr.thenBranch);
+    errors.push(...thenResult.errors);
+    const thenTy = thenResult.value;
     if (expr.elseBranch !== undefined) {
-        const elseTy = inferExprType(typeCtx, expr.elseBranch, errors);
+        const elseResult = inferExprType(typeCtx, expr.elseBranch);
+        errors.push(...elseResult.errors);
+        const elseTy = elseResult.value;
         // If both branches have types, check they match
         if (thenTy && elseTy && !typesEqual(thenTy, elseTy)) {
             errors.push({
@@ -1507,35 +1632,42 @@ function inferIf(
                 span: expr.span,
             });
         }
-        return thenTy;
+        return withErrors(thenTy, errors);
     }
-    return new TupleTypeNode(expr.span, []);
+    return withErrors(new TupleTypeNode(expr.span, []), errors);
 }
 
 function inferRef(
     typeCtx: TypeContext,
     expr: RefExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
-    const innerTy = inferExprType(typeCtx, expr.target, errors);
+): InferResult {
+    const innerResult = inferExprType(typeCtx, expr.target);
+    const innerTy = innerResult.value;
     if (innerTy) {
-        return new RefTypeNode(expr.span, expr.mutability, innerTy);
+        return withErrors(
+            new RefTypeNode(expr.span, expr.mutability, innerTy),
+            innerResult.errors,
+        );
     }
-    return undefined;
+    return withErrors(undefined, innerResult.errors);
 }
 
 function inferMatch(
     typeCtx: TypeContext,
     expr: MatchExpr,
-    errors: TypeError[],
-): TypeNode | undefined {
-    const scrutineeTy = inferExprType(typeCtx, expr.matchOn, errors);
+): InferResult {
+    const errors: TypeError[] = [];
+    const scrutineeResult = inferExprType(typeCtx, expr.matchOn);
+    errors.push(...scrutineeResult.errors);
+    const scrutineeTy = scrutineeResult.value;
     let armTy: TypeNode | undefined;
     for (const arm of expr.arms) {
         typeCtx.pushScope();
         bindMatchArmPatternTypes(typeCtx, arm.pattern, scrutineeTy);
-        const bodyTy = inferExprType(typeCtx, arm.body, errors);
+        const bodyResult = inferExprType(typeCtx, arm.body);
+        errors.push(...bodyResult.errors);
         typeCtx.popScope();
+        const bodyTy = bodyResult.value;
         if (!armTy) {
             armTy = bodyTy;
         } else if (bodyTy && !typesEqual(armTy, bodyTy)) {
@@ -1545,7 +1677,7 @@ function inferMatch(
             });
         }
     }
-    return armTy;
+    return withErrors(armTy, errors);
 }
 
 function bindMatchArmPatternTypes(
@@ -1661,50 +1793,53 @@ function resolveMatchPatternFieldType(
 function inferStatements(
     typeCtx: TypeContext,
     stmts: Statement[],
-    errors: TypeError[],
-): void {
+): TypeError[] {
+    const errors: TypeError[] = [];
     for (const stmt of stmts) {
-        inferStatement(typeCtx, stmt, errors);
+        errors.push(...inferStatement(typeCtx, stmt));
     }
+    return errors;
 }
 
 function inferStatement(
     typeCtx: TypeContext,
     stmt: Statement,
-    errors: TypeError[],
-): void {
+): TypeError[] {
     if (stmt instanceof LetStmt) {
-        inferLetStmt(typeCtx, stmt, errors);
-        return;
+        return inferLetStmt(typeCtx, stmt);
     }
 
     if (stmt instanceof ExprStmt) {
-        inferExprType(typeCtx, stmt.expr, errors);
-        return;
+        const result = inferExprType(typeCtx, stmt.expr);
+        return result.errors;
     }
 
     if (stmt instanceof ItemStmt) {
         registerItemTypesWithPrefix(typeCtx, [stmt.item], "");
-        return;
+        return [];
     }
 
-    errors.push({
-        message: `Unhandled statement type in inference: ${stmt.constructor.name}`,
-        span: stmt.span,
-    });
+    return [
+        {
+            message: `Unhandled statement type in inference: ${stmt.constructor.name}`,
+            span: stmt.span,
+        },
+    ];
 }
 
 function inferLetStmt(
     typeCtx: TypeContext,
     stmt: LetStmt,
-    errors: TypeError[],
-): void {
-    const initTy = inferExprType(typeCtx, stmt.init, errors);
+): TypeError[] {
+    const errors: TypeError[] = [];
+    const initResult = inferExprType(typeCtx, stmt.init);
+    errors.push(...initResult.errors);
+    const initTy = initResult.value;
     const annotationTy = stmt.type;
     const hasAnnotation = !isInferredPlaceholder(annotationTy);
 
     if (hasAnnotation) {
-        validateTypeNode(typeCtx, annotationTy, new Set<string>(), errors);
+        errors.push(...validateTypeNode(typeCtx, annotationTy, new Set<string>()));
     }
 
     let resolvedTy: TypeNode;
@@ -1733,6 +1868,8 @@ function inferLetStmt(
     if (stmt.pattern instanceof IdentPattern) {
         typeCtx.setVariable(stmt.pattern.name, resolvedTy);
     }
+
+    return errors;
 }
 
 // --- Function Body Inference ---
@@ -1753,11 +1890,13 @@ function resolveSelf(ty: TypeNode, selfTypeName: string | undefined): TypeNode {
 function inferFnBody(
     typeCtx: TypeContext,
     fnItem: FnItem | GenericFnItem,
-    errors: TypeError[],
     selfTypeName?: string,
-): void {
-    if (!fnItem.body) return;
+): TypeError[] {
+    if (!fnItem.body) {
+        return [];
+    }
 
+    const errors: TypeError[] = [];
     typeCtx.pushScope();
 
     // Bind parameters into scope
@@ -1775,13 +1914,15 @@ function inferFnBody(
     }
 
     // Infer body statements
-    inferStatements(typeCtx, fnItem.body.stmts, errors);
+    errors.push(...inferStatements(typeCtx, fnItem.body.stmts));
 
     // If there's a tail expression, check it against the return type.
     // Resolve `Self` to the concrete impl target type so that e.g.
     // `-> Self` and a tail expression of type `Point` compare equal.
     if (fnItem.body.expr) {
-        const tailTy = inferExprType(typeCtx, fnItem.body.expr, errors);
+        const tailResult = inferExprType(typeCtx, fnItem.body.expr);
+        errors.push(...tailResult.errors);
+        const tailTy = tailResult.value;
         const declaredReturnType = resolveSelf(fnItem.returnType, selfTypeName);
         let resolvedTailTy: TypeNode | undefined;
         if (tailTy) {
@@ -1813,6 +1954,8 @@ function inferFnBody(
         }
     }
     typeCtx.popScope();
+
+    return errors;
 }
 
 // --- Duplicate Function Checking ---
@@ -1859,10 +2002,10 @@ function validateFnTypes(
     const genericNames = collectGenericParamNames(fnItem);
 
     for (const param of fnItem.params.filter((p) => !p.isReceiver)) {
-        validateTypeNode(typeCtx, param.ty, genericNames, errors);
+        errors.push(...validateTypeNode(typeCtx, param.ty, genericNames));
     }
 
-    validateTypeNode(typeCtx, fnItem.returnType, genericNames, errors);
+    errors.push(...validateTypeNode(typeCtx, fnItem.returnType, genericNames));
 
     return errors;
 }
@@ -1878,7 +2021,7 @@ function validateStructFieldTypes(
     }
 
     for (const field of item.fields) {
-        validateTypeNode(typeCtx, field.typeNode, genericNames, errors);
+        errors.push(...validateTypeNode(typeCtx, field.typeNode, genericNames));
     }
 
     return errors;
@@ -1891,11 +2034,12 @@ function validateEnumItemTypes(
     const errors: TypeError[] = [];
     for (const variant of item.variants) {
         for (const field of variant.fields) {
-            validateTypeNode(
-                typeCtx,
-                field.typeNode,
-                new Set<string>(),
-                errors,
+            errors.push(
+                ...validateTypeNode(
+                    typeCtx,
+                    field.typeNode,
+                    new Set<string>(),
+                ),
             );
         }
     }
@@ -1918,7 +2062,7 @@ function inferImplItem(typeCtx: TypeContext, item: ImplItem): TypeError[] {
     for (const method of item.methods) {
         errors.push(...validateFnTypes(typeCtx, method));
         if (method instanceof FnItem) {
-            inferFnBody(typeCtx, method, errors, selfTypeName);
+            errors.push(...inferFnBody(typeCtx, method, selfTypeName));
         }
         // Skip deep body inference for generic methods
     }
@@ -1943,7 +2087,7 @@ function inferTraitImplItem(
     }
     for (const method of item.fnImpls) {
         errors.push(...validateFnTypes(typeCtx, method));
-        inferFnBody(typeCtx, method, errors, selfTypeName);
+        errors.push(...inferFnBody(typeCtx, method, selfTypeName));
     }
     return errors;
 }
@@ -1975,7 +2119,7 @@ export function inferModule(
         }
         if (item instanceof FnItem) {
             errors.push(...validateFnTypes(typeCtx, item));
-            inferFnBody(typeCtx, item, errors);
+            errors.push(...inferFnBody(typeCtx, item));
         }
         if (item instanceof ModItem) {
             const nested = inferModule(

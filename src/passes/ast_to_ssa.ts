@@ -938,44 +938,24 @@ export class AstToSsaCtx {
             case BinaryOp.Rem: {
                 return this.handleRemOperation(left, right);
             }
-            case BinaryOp.Eq: {
-                throw new Error("Not implemented yet: BinaryOp.Eq case");
-            }
-            case BinaryOp.Ne: {
-                throw new Error("Not implemented yet: BinaryOp.Ne case");
-            }
-            case BinaryOp.Lt: {
-                throw new Error("Not implemented yet: BinaryOp.Lt case");
-            }
-            case BinaryOp.Le: {
-                throw new Error("Not implemented yet: BinaryOp.Le case");
-            }
-            case BinaryOp.Gt: {
-                throw new Error("Not implemented yet: BinaryOp.Gt case");
-            }
-            case BinaryOp.Ge: {
-                throw new Error("Not implemented yet: BinaryOp.Ge case");
-            }
-            case BinaryOp.And: {
-                throw new Error("Not implemented yet: BinaryOp.And case");
-            }
-            case BinaryOp.Or: {
-                throw new Error("Not implemented yet: BinaryOp.Or case");
-            }
-            case BinaryOp.BitXor: {
-                throw new Error("Not implemented yet: BinaryOp.BitXor case");
-            }
-            case BinaryOp.BitAnd: {
-                throw new Error("Not implemented yet: BinaryOp.BitAnd case");
-            }
-            case BinaryOp.BitOr: {
-                throw new Error("Not implemented yet: BinaryOp.BitOr case");
-            }
-            case BinaryOp.Shl: {
-                throw new Error("Not implemented yet: BinaryOp.Shl case");
-            }
+            case BinaryOp.Eq:
+            case BinaryOp.Ne:
+            case BinaryOp.Lt:
+            case BinaryOp.Le:
+            case BinaryOp.Gt:
+            case BinaryOp.Ge:
+            case BinaryOp.And:
+            case BinaryOp.Or:
+            case BinaryOp.BitXor:
+            case BinaryOp.BitAnd:
+            case BinaryOp.BitOr:
+            case BinaryOp.Shl:
             case BinaryOp.Shr: {
-                throw new Error("Not implemented yet: BinaryOp.Shr case");
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "Unreachable: wrong operation category for arithmetic handler",
+                    zeroSpan(),
+                );
             }
             default: {
                 return loweringError(
@@ -1012,41 +992,23 @@ export class AstToSsaCtx {
             case BinaryOp.Ge: {
                 return this.handleGeOperation(left, right, isFloat);
             }
-            case BinaryOp.Add: {
-                throw new Error("Not implemented yet: BinaryOp.Add case");
-            }
-            case BinaryOp.Sub: {
-                throw new Error("Not implemented yet: BinaryOp.Sub case");
-            }
-            case BinaryOp.Mul: {
-                throw new Error("Not implemented yet: BinaryOp.Mul case");
-            }
-            case BinaryOp.Div: {
-                throw new Error("Not implemented yet: BinaryOp.Div case");
-            }
-            case BinaryOp.Rem: {
-                throw new Error("Not implemented yet: BinaryOp.Rem case");
-            }
-            case BinaryOp.And: {
-                throw new Error("Not implemented yet: BinaryOp.And case");
-            }
-            case BinaryOp.Or: {
-                throw new Error("Not implemented yet: BinaryOp.Or case");
-            }
-            case BinaryOp.BitXor: {
-                throw new Error("Not implemented yet: BinaryOp.BitXor case");
-            }
-            case BinaryOp.BitAnd: {
-                throw new Error("Not implemented yet: BinaryOp.BitAnd case");
-            }
-            case BinaryOp.BitOr: {
-                throw new Error("Not implemented yet: BinaryOp.BitOr case");
-            }
-            case BinaryOp.Shl: {
-                throw new Error("Not implemented yet: BinaryOp.Shl case");
-            }
+            case BinaryOp.Add:
+            case BinaryOp.Sub:
+            case BinaryOp.Mul:
+            case BinaryOp.Div:
+            case BinaryOp.Rem:
+            case BinaryOp.And:
+            case BinaryOp.Or:
+            case BinaryOp.BitXor:
+            case BinaryOp.BitAnd:
+            case BinaryOp.BitOr:
+            case BinaryOp.Shl:
             case BinaryOp.Shr: {
-                throw new Error("Not implemented yet: BinaryOp.Shr case");
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "Unreachable: wrong operation category for comparison handler",
+                    zeroSpan(),
+                );
             }
             default: {
                 return loweringError(
@@ -1081,38 +1043,22 @@ export class AstToSsaCtx {
             case BinaryOp.Shr: {
                 return this.handleShrOperation(left, right);
             }
-            case BinaryOp.Add: {
-                throw new Error("Not implemented yet: BinaryOp.Add case");
-            }
-            case BinaryOp.Sub: {
-                throw new Error("Not implemented yet: BinaryOp.Sub case");
-            }
-            case BinaryOp.Mul: {
-                throw new Error("Not implemented yet: BinaryOp.Mul case");
-            }
-            case BinaryOp.Div: {
-                throw new Error("Not implemented yet: BinaryOp.Div case");
-            }
-            case BinaryOp.Rem: {
-                throw new Error("Not implemented yet: BinaryOp.Rem case");
-            }
-            case BinaryOp.Eq: {
-                throw new Error("Not implemented yet: BinaryOp.Eq case");
-            }
-            case BinaryOp.Ne: {
-                throw new Error("Not implemented yet: BinaryOp.Ne case");
-            }
-            case BinaryOp.Lt: {
-                throw new Error("Not implemented yet: BinaryOp.Lt case");
-            }
-            case BinaryOp.Le: {
-                throw new Error("Not implemented yet: BinaryOp.Le case");
-            }
-            case BinaryOp.Gt: {
-                throw new Error("Not implemented yet: BinaryOp.Gt case");
-            }
+            case BinaryOp.Add:
+            case BinaryOp.Sub:
+            case BinaryOp.Mul:
+            case BinaryOp.Div:
+            case BinaryOp.Rem:
+            case BinaryOp.Eq:
+            case BinaryOp.Ne:
+            case BinaryOp.Lt:
+            case BinaryOp.Le:
+            case BinaryOp.Gt:
             case BinaryOp.Ge: {
-                throw new Error("Not implemented yet: BinaryOp.Ge case");
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "Unreachable: wrong operation category for bitwise handler",
+                    zeroSpan(),
+                );
             }
             default: {
                 return loweringError(
@@ -2686,12 +2632,10 @@ export class AstToSsaCtx {
         this.expectedValueTypes = [...snap.expectedValueTypes];
     }
 
-    private lowerNonCapturingClosure(
-        expr: ClosureExpr,
-    ): Result<ValueId, LoweringError> {
-        const name = `__closure_${this.closureCounter++}`;
+    private withIsolatedBuilderScope<T>(
+        fn: () => Result<T, LoweringError>,
+    ): Result<T, LoweringError> {
         const snap = this.saveBuilderSnapshot();
-
         this.builder.currentFunction = undefined;
         this.builder.currentBlock = undefined;
         this.builder.sealedBlocks = new Set();
@@ -2701,14 +2645,23 @@ export class AstToSsaCtx {
         this.builder.nextBlockId = 0;
         this.locals.clear();
         this.loopStack = [];
+        try {
+            return fn();
+        } finally {
+            this.restoreBuilderSnapshot(snap);
+        }
+    }
 
-        const closureResult = this.lowerClosureFunction(name, expr);
-        this.restoreBuilderSnapshot(snap);
-
+    private lowerNonCapturingClosure(
+        expr: ClosureExpr,
+    ): Result<ValueId, LoweringError> {
+        const name = `__closure_${this.closureCounter++}`;
+        const closureResult = this.withIsolatedBuilderScope(() =>
+            this.lowerClosureFunction(name, expr),
+        );
         if (!closureResult.isOk()) {
             return closureResult;
         }
-
         addIRFunction(this.irModule, closureResult.value);
         const fnId = this.resolveFunctionId(name);
         const idInst = this.builder.iconst(fnId, IntWidth.I64);
@@ -3240,7 +3193,8 @@ export class AstToSsaCtx {
                 return makeIRUnitType();
             }
             default: {
-                throw new Error(`Unhandled builtin type: ${String(ty)}`);
+                // All BuiltinType values are handled above; this branch is unreachable.
+                return makeIRUnitType();
             }
         }
     }
@@ -3996,7 +3950,7 @@ function lowerOwnedFunction(
     enumVariantOwners: Map<string, string>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
-): void {
+): Result<void, LoweringError> {
     const ctx = new AstToSsaCtx({
         irModule,
         functionReturnTypes,
@@ -4008,11 +3962,10 @@ function lowerOwnedFunction(
     ctx.seedFunctionIds(fnIdMap);
     const lowered = ctx.lowerFunction(fnItem);
     if (!lowered.isOk()) {
-        throw new Error(
-            `Failed to lower function \`${fnItem.name}\`: ${lowered.error.message}`,
-        );
+        return lowered;
     }
     addIRFunction(irModule, lowered.value);
+    return Result.ok();
 }
 
 function ensureImplStructMetadata(
@@ -4114,7 +4067,7 @@ function lowerImplMethods(
     enumVariantOwners: Map<string, string>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
-): void {
+): Result<void, LoweringError> {
     const implTarget = item.target.name;
     for (const method of item.methods) {
         if (method instanceof GenericFnItem) {
@@ -4124,7 +4077,7 @@ function lowerImplMethods(
             continue;
         }
         ensureImplStructMetadata(irModule, structFieldNames, implTarget);
-        lowerOwnedFunction(
+        const result = lowerOwnedFunction(
             rewriteSelfInMethod(method, implTarget),
             irModule,
             functionReturnTypes,
@@ -4134,7 +4087,11 @@ function lowerImplMethods(
             fnIdMap,
             monoRegistry,
         );
+        if (result.isErr()) {
+            return result;
+        }
     }
+    return Result.ok(undefined);
 }
 
 function lowerModuleItem(
@@ -4146,12 +4103,12 @@ function lowerModuleItem(
     enumVariantOwners: Map<string, string>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
-): void {
+): Result<void, LoweringError> {
     if (item instanceof GenericFnItem || item instanceof GenericStructItem) {
-        return;
+        return Result.ok(undefined);
     }
     if (item instanceof FnItem && item.body) {
-        lowerOwnedFunction(
+        return lowerOwnedFunction(
             item,
             irModule,
             functionReturnTypes,
@@ -4161,10 +4118,9 @@ function lowerModuleItem(
             fnIdMap,
             monoRegistry,
         );
-        return;
     }
     if (item instanceof ImplItem) {
-        lowerImplMethods(
+        return lowerImplMethods(
             item,
             irModule,
             functionReturnTypes,
@@ -4174,7 +4130,6 @@ function lowerModuleItem(
             fnIdMap,
             monoRegistry,
         );
-        return;
     }
     if (item instanceof TraitImplItem) {
         let implTarget = "Self";
@@ -4184,7 +4139,7 @@ function lowerModuleItem(
         for (const method of item.fnImpls) {
             if (!method.body) continue;
             ensureImplStructMetadata(irModule, structFieldNames, implTarget);
-            lowerOwnedFunction(
+            const result = lowerOwnedFunction(
                 rewriteSelfInMethod(method, implTarget),
                 irModule,
                 functionReturnTypes,
@@ -4194,12 +4149,15 @@ function lowerModuleItem(
                 fnIdMap,
                 monoRegistry,
             );
+            if (result.isErr()) {
+                return result;
+            }
         }
-        return;
+        return Result.ok(undefined);
     }
     if (item instanceof ModItem) {
         for (const modItem of item.items) {
-            lowerModuleItem(
+            const result = lowerModuleItem(
                 modItem,
                 irModule,
                 functionReturnTypes,
@@ -4209,11 +4167,17 @@ function lowerModuleItem(
                 fnIdMap,
                 monoRegistry,
             );
+            if (result.isErr()) {
+                return result;
+            }
         }
     }
+    return Result.ok(undefined);
 }
 
-export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
+export function lowerAstModuleToSsa(
+    moduleNode: ModuleNode,
+): Result<IRModule, LoweringError> {
     const irModule = makeIRModule(moduleNode.name);
     const structFieldNames = new Map<string, string[]>();
     const enumVariantTags = new Map<string, number>();
@@ -4241,7 +4205,7 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
 
     // Lower regular items (pass registry so calls to generics get rewritten)
     for (const item of moduleNode.items) {
-        lowerModuleItem(
+        const result = lowerModuleItem(
             item,
             irModule,
             functionReturnTypes,
@@ -4251,11 +4215,14 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
             fnIdMap,
             registry,
         );
+        if (result.isErr()) {
+            return result;
+        }
     }
 
     // Lower monomorphized specializations
     for (const spec of specializations) {
-        lowerOwnedFunction(
+        const result = lowerOwnedFunction(
             spec,
             irModule,
             functionReturnTypes,
@@ -4265,9 +4232,12 @@ export function lowerAstModuleToSsa(moduleNode: ModuleNode): IRModule {
             fnIdMap,
             registry,
         );
+        if (result.isErr()) {
+            return result;
+        }
     }
 
-    return irModule;
+    return Result.ok(irModule);
 }
 
 function collectGenericItems(

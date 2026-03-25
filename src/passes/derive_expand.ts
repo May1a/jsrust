@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import {
     BlockExpr,
     FieldExpr,
@@ -17,12 +18,6 @@ import {
 export interface DeriveError {
     message: string;
     span?: Span;
-}
-
-export interface DeriveResult {
-    ok: boolean;
-    module?: ModuleNode;
-    errors: DeriveError[];
 }
 
 function syntheticSpan(ref: Span): Span {
@@ -81,17 +76,12 @@ function expandDerivesForItem(item: Item): Item[] {
     return [item];
 }
 
-export function expandDerives(moduleNode: ModuleNode): DeriveResult {
+export function expandDerives(moduleNode: ModuleNode): Result<ModuleNode, DeriveError[]> {
     const expandedItems = moduleNode.items.flatMap(expandDerivesForItem);
     const expanded = new ModuleNode(
         moduleNode.span,
         moduleNode.name,
         expandedItems,
     );
-
-    return {
-        ok: true,
-        module: expanded,
-        errors: [],
-    };
+    return Result.ok(expanded);
 }

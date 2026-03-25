@@ -129,10 +129,10 @@ function prepareAst(
     const resolveResult = resolveModuleTree(parseResult.value, {
         sourcePath: options.sourcePath,
     });
-    if (!resolveResult.ok || !resolveResult.module) {
+    if (resolveResult.isErr()) {
         return Result.err(
             diagnosticsError(
-                resolveResult.errors.map((error) => ({
+                resolveResult.error.map((error) => ({
                     message: error.message,
                     span: diagnosticSpan(error.span),
                     kind: "resolve" as const,
@@ -141,11 +141,11 @@ function prepareAst(
         );
     }
 
-    const deriveResult = expandDerives(resolveResult.module);
-    if (!deriveResult.ok || !deriveResult.module) {
+    const deriveResult = expandDerives(resolveResult.value);
+    if (deriveResult.isErr()) {
         return Result.err(
             diagnosticsError(
-                deriveResult.errors.map((error) => ({
+                deriveResult.error.map((error) => ({
                     message: error.message,
                     span: diagnosticSpan(error.span),
                     kind: "derive" as const,
@@ -154,7 +154,7 @@ function prepareAst(
         );
     }
 
-    return Result.ok(deriveResult.module);
+    return Result.ok(deriveResult.value);
 }
 
 function inferAndLowerModule(
@@ -176,10 +176,10 @@ function inferAndLowerModule(
     }
 
     const borrowResult = checkBorrowLite(expandedAst, typeCtx);
-    if (!borrowResult.ok) {
+    if (borrowResult.isErr()) {
         return Result.err(
             diagnosticsError(
-                (borrowResult.errors ?? []).map((error) => ({
+                borrowResult.error.map((error) => ({
                     message: error.message,
                     span: diagnosticSpan(error.span),
                     kind: "borrow" as const,
@@ -188,17 +188,15 @@ function inferAndLowerModule(
         );
     }
 
-    const loweringResult = Result.try({
-        try: () => lowerAstModuleToSsa(expandedAst),
-        catch: (cause) =>
+    const loweringResult = lowerAstModuleToSsa(expandedAst);
+    if (loweringResult.isErr()) {
+        return Result.err(
             new CompileInternalError({
                 phase: "lower",
-                message: `Lowering to SSA failed: ${causeMessage(cause)}`,
-                cause,
+                message: `Lowering to SSA failed: ${loweringResult.error.message}`,
+                cause: loweringResult.error,
             }),
-    });
-    if (loweringResult.isErr()) {
-        return loweringResult;
+        );
     }
 
     const irModule = loweringResult.value;
@@ -209,11 +207,11 @@ function inferAndLowerModule(
     const validationErrors: CompileDiagnostic[] = [];
     for (const fn of irModule.functions) {
         const validationResult = validateIRFunction(fn);
-        if (validationResult.ok) {
+        if (validationResult.isOk()) {
             continue;
         }
 
-        for (const error of validationResult.errors ?? []) {
+        for (const error of validationResult.error) {
             validationErrors.push({
                 message: `in function \`${fn.name}\`: ${error.message}`,
                 span: new Span(0, 0, 0, 0),

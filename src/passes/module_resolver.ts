@@ -1,3 +1,4 @@
+import { Result } from "better-result";
 import { ModItem, ModuleNode, type Span } from "../parse/ast";
 
 export type { ModuleNode } from "../parse/ast";
@@ -9,12 +10,6 @@ export interface ResolveError {
 
 export interface ResolveOptions {
     sourcePath?: string;
-}
-
-export interface ResolveResult {
-    ok: boolean;
-    module?: ModuleNode;
-    errors: ResolveError[];
 }
 
 function flattenInlineModules(moduleNode: ModuleNode): ModuleNode {
@@ -37,11 +32,6 @@ function flattenInlineModules(moduleNode: ModuleNode): ModuleNode {
 export function resolveModuleTree(
     moduleNode: ModuleNode,
     _options: ResolveOptions = {},
-): ResolveResult {
-    const resolved = flattenInlineModules(moduleNode);
-    return {
-        ok: true,
-        module: resolved,
-        errors: [],
-    };
+): Result<ModuleNode, ResolveError[]> {
+    return Result.ok(flattenInlineModules(moduleNode));
 }
