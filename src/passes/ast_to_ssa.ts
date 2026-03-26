@@ -3325,8 +3325,8 @@ export class AstToSsaCtx {
                 return makeIRUnitType();
             }
             default: {
-                // All BuiltinType values are handled above; this branch is unreachable.
-                return makeIRUnitType();
+                const unreachable: never = ty;
+                return unreachable;
             }
         }
     }

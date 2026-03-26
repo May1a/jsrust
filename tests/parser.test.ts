@@ -11,9 +11,11 @@ import {
     IfExpr,
     ClosureExpr,
     ConstItem,
+    ExprStmt,
     LetStmt,
     IdentPattern,
     IfLetExpr,
+    ItemStmt,
     Mutability,
     NamedTypeNode,
     InferredTypeNode,
@@ -221,6 +223,14 @@ describe("statements", () => {
         expectInstanceOf(s.pattern, IdentPattern);
         expect(s.pattern.mutability).toBe(Mutability.Mutable);
     });
+
+    test("unsafe blocks stay expression statements", () => {
+        const result = stmt("unsafe { 1; }");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        expectInstanceOf(result.value, ExprStmt);
+        expectInstanceOf(result.value.expr, UnsafeBlockExpr);
+    });
 });
 
 describe("items", () => {
@@ -321,6 +331,43 @@ describe("items", () => {
         expect(result.isOk()).toBe(true);
         if (result.isErr()) return;
         expectInstanceOf(result.value.items[0], UnsafeItem);
+    });
+
+    test("declaration items remain reachable inside blocks", () => {
+        const statementCount = 3;
+        const result = mod(
+            "fn main() { type Id = i32; static VALUE: i32 = 1; const ANSWER: i32 = 2; }",
+        );
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+
+        const [firstItem] = result.value.items;
+        expectInstanceOf(firstItem, FnItem);
+        expect(firstItem.body).toBeDefined();
+        if (firstItem.body === undefined) return;
+
+        expect(firstItem.body.stmts).toHaveLength(statementCount);
+        expectInstanceOf(firstItem.body.stmts[0], ItemStmt);
+        expectInstanceOf(firstItem.body.stmts[0].item, TypeAliasItem);
+        expectInstanceOf(firstItem.body.stmts[1], ItemStmt);
+        expectInstanceOf(firstItem.body.stmts[1].item, StaticItem);
+        expectInstanceOf(firstItem.body.stmts[2], ItemStmt);
+        expectInstanceOf(firstItem.body.stmts[2].item, ConstItem);
+    });
+
+    test("type aliases require trailing semicolons", () => {
+        const result = mod("type Id = i32 fn main() {}");
+        expect(result.isErr()).toBe(true);
+    });
+
+    test("statics require trailing semicolons", () => {
+        const result = mod("static VALUE: i32 = 1 fn main() {}");
+        expect(result.isErr()).toBe(true);
+    });
+
+    test("consts require trailing semicolons", () => {
+        const result = mod("const ANSWER: i32 = 2 fn main() {}");
+        expect(result.isErr()).toBe(true);
     });
 });
 

@@ -256,4 +256,43 @@ describe("compile", () => {
             "type aliases are parsed but not implemented yet",
         );
     });
+
+    test("accepts equivalent array lengths from separate annotations", () => {
+        const result = compile("fn id(value: [i32; 3]) -> [i32; 3] { value }");
+        expect(result.isOk()).toBe(true);
+    });
+
+    test("rejects heterogeneous vec! elements", () => {
+        const result = compile("fn test() { let _ = vec![1, true]; }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "Type mismatch in vec! macro: expected `i32`, found `bool`",
+        );
+    });
+
+    test("renders raw pointer mismatches with readable type strings", () => {
+        const result = compile(
+            "fn test(value: *const i32) -> *mut i32 { value }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "expected `*mut i32`, found `*const i32`",
+        );
+    });
+
+    test("renders function type mismatches with readable signatures", () => {
+        const result = compile(
+            "fn test(callback: fn(i32) -> i32) -> fn(bool) -> i32 { callback }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "expected `fn(bool) -> i32`, found `fn(i32) -> i32`",
+        );
+    });
 });
