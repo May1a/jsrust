@@ -1,24 +1,89 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Result, TaggedError } from "better-result";
+import { Result } from "better-result";
 import { match } from "ts-pattern";
-import { Span, TestFnItem, type ModuleNode } from "./parse/ast";
-import { lowerAstModuleToSsa } from "./passes/ast_to_ssa";
-import { checkBorrowLite } from "./passes/borrow";
-import { expandDerives } from "./passes/derive_expand";
+import {
+    CastExpr,
+    ConstItem,
+    IfLetExpr,
+    RecoveryExpr,
+    RecoveryItem,
+    Span,
+    StaticItem,
+    TestFnItem,
+    TryExpr,
+    TypeAliasItem,
+    UnsafeBlockExpr,
+    UnsafeItem,
+    type ModuleNode,
+    type Node,
+    walkAst,
+} from "./parse/ast";
 import { type IRModule, resetIRIds } from "./ir/ir";
 import { printModule as printIRModule } from "./ir/ir_printer";
 import { serializeModule } from "./ir/ir_serialize";
 import { validateFunction as validateIRFunction } from "./ir/ir_validate";
+import { parseModule } from "./parse/parser";
+import { lowerAstModuleToSsa } from "./passes/ast_to_ssa";
+import { checkBorrowLite } from "./passes/borrow";
+import { expandDerives } from "./passes/derive_expand";
 import { inferModule } from "./passes/inference";
 import { resolveModuleTree } from "./passes/module_resolver";
-import { parseModule } from "./parse/parser";
+import { InternalBugError } from "./utils/internal_bug";
 import { TypeContext } from "./utils/type_context";
+
+export type CompilePhase =
+    | "parse"
+    | "resolve"
+    | "derive"
+    | "type"
+    | "borrow"
+    | "lower"
+    | "validate"
+    | "serialize"
+    | "io"
+    | "backend";
 
 export type CompileDiagnostic = {
     message: string;
     span: Span;
-    kind?: string;
+    phase: CompilePhase;
+};
+
+export type SourceInput =
+    | { kind: "file"; path: string }
+    | { kind: "text"; text: string; sourcePath?: string };
+
+export type SourceFile = {
+    source: string;
+    sourcePath?: string;
+};
+
+export type PreparedModule = {
+    sourceFile: SourceFile;
+    module: ModuleNode;
+};
+
+export type TypedModule = {
+    prepared: PreparedModule;
+    typeContext: TypeContext;
+};
+
+export type LoweredModule = {
+    typed: TypedModule;
+    module: IRModule;
+};
+
+export type PrintedIrArtifact = {
+    lowered: LoweredModule;
+    module: IRModule;
+    ir: string;
+};
+
+export type BinaryArtifact = {
+    lowered: LoweredModule;
+    module: IRModule;
+    bytes: Uint8Array;
 };
 
 export type CompileOptions = {
@@ -29,44 +94,69 @@ export type CompileOptions = {
     sourcePath?: string;
 };
 
-const CompileDiagnosticsErrorBase = TaggedError("CompileDiagnosticsError")<{
+export type UserDiagnosticFailure = {
+    tag: "diagnostic";
+    phase: CompilePhase;
     diagnostics: CompileDiagnostic[];
     message: string;
-}>();
-
-export class CompileDiagnosticsError extends CompileDiagnosticsErrorBase {}
-
-const CompileInternalErrorBase = TaggedError("CompileInternalError")<{
-    phase: "lower" | "serialize";
-    message: string;
-    cause: unknown;
-}>();
-
-export class CompileInternalError extends CompileInternalErrorBase {}
-
-const CompileFileReadErrorBase = TaggedError("CompileFileReadError")<{
-    filePath: string;
-    message: string;
-    cause: unknown;
-}>();
-
-export class CompileFileReadError extends CompileFileReadErrorBase {}
-
-export type CompileError =
-    | CompileDiagnosticsError
-    | CompileInternalError
-    | CompileFileReadError;
-
-export type CompileArtifact = {
-    module: IRModule;
-    ast?: object;
-    ir?: string;
 };
 
-export type BinaryCompileArtifact = CompileArtifact & { bytes: Uint8Array };
+export type UnsupportedFeatureDiagnostic = {
+    feature: string;
+    span: Span;
+    message: string;
+};
 
-export type CompileResult = Result<CompileArtifact, CompileError>;
-export type BinaryCompileResult = Result<BinaryCompileArtifact, CompileError>;
+export type UnsupportedFeatureFailure = {
+    tag: "unsupported";
+    phase: "parse" | "type" | "lower" | "backend";
+    diagnostics: UnsupportedFeatureDiagnostic[];
+    message: string;
+};
+
+export type InternalCompilerFailure = {
+    tag: "internal";
+    phase: CompilePhase;
+    message: string;
+    cause?: unknown;
+};
+
+export type IoFailure = {
+    tag: "io";
+    phase: "io";
+    path?: string;
+    message: string;
+    cause: unknown;
+};
+
+export type BackendFailure = {
+    tag: "backend";
+    phase: "backend";
+    kind:
+        | "load"
+        | "build"
+        | "runtime-trap"
+        | "backend-exit"
+        | "capability-mismatch";
+    message: string;
+    cause?: unknown;
+};
+
+export type PhaseFailure =
+    | UserDiagnosticFailure
+    | UnsupportedFeatureFailure
+    | InternalCompilerFailure
+    | IoFailure
+    | BackendFailure;
+
+export type CompileFailure = PhaseFailure;
+export type CompileError = CompileFailure;
+
+export type PreparedModuleResult = Result<PreparedModule, CompileFailure>;
+export type TypedModuleResult = Result<TypedModule, CompileFailure>;
+export type LoweredModuleResult = Result<LoweredModule, CompileFailure>;
+export type PrintedIrResult = Result<PrintedIrArtifact, CompileFailure>;
+export type BinaryCompileResult = Result<BinaryArtifact, CompileFailure>;
 
 export type TestFn = {
     name: string;
@@ -75,15 +165,6 @@ export type TestFn = {
 
 function diagnosticSpan(span?: Span): Span {
     return span ?? new Span(0, 0, 0, 0);
-}
-
-function diagnosticsError(
-    diagnostics: CompileDiagnostic[],
-): CompileDiagnosticsError {
-    return new CompileDiagnosticsError({
-        diagnostics,
-        message: diagnostics.map((diagnostic) => diagnostic.message).join("; "),
-    });
 }
 
 function causeMessage(cause: unknown): string {
@@ -95,47 +176,204 @@ function causeMessage(cause: unknown): string {
         .otherwise((value) => String(value));
 }
 
-function readSourceFile(
-    filePath: string,
-): Result<string, CompileFileReadError> {
-    return Result.try({
-        try: () => fs.readFileSync(filePath, "utf8"),
-        catch: (cause) =>
-            new CompileFileReadError({
-                filePath,
-                message: `Failed to read file: ${filePath}: ${causeMessage(cause)}`,
-                cause,
-            }),
-    });
+function diagnosticFailure(
+    phase: CompilePhase,
+    diagnostics: CompileDiagnostic[],
+): UserDiagnosticFailure {
+    return {
+        tag: "diagnostic",
+        phase,
+        diagnostics,
+        message: diagnostics.map((diagnostic) => diagnostic.message).join("; "),
+    };
 }
 
-function prepareAst(
-    source: string,
-    options: { sourcePath?: string } = {},
-): Result<ModuleNode, CompileDiagnosticsError> {
-    const parseResult = parseModule(source);
+function unsupportedFailure(
+    phase: UnsupportedFeatureFailure["phase"],
+    diagnostics: UnsupportedFeatureDiagnostic[],
+): UnsupportedFeatureFailure {
+    return {
+        tag: "unsupported",
+        phase,
+        diagnostics,
+        message: diagnostics.map((diagnostic) => diagnostic.message).join("; "),
+    };
+}
+
+function internalFailure(
+    phase: CompilePhase,
+    message: string,
+    cause?: unknown,
+): InternalCompilerFailure {
+    return {
+        tag: "internal",
+        phase,
+        message,
+        cause,
+    };
+}
+
+function ioFailure(pathValue: string, cause: unknown): IoFailure {
+    return {
+        tag: "io",
+        phase: "io",
+        path: pathValue,
+        message: `Failed to read file: ${pathValue}: ${causeMessage(cause)}`,
+        cause,
+    };
+}
+
+function normalizeInternalFailure(
+    phase: CompilePhase,
+    message: string,
+    cause: unknown,
+): InternalCompilerFailure {
+    if (InternalBugError.is(cause)) {
+        return internalFailure(
+            phase,
+            `${message}: ${cause.message}`,
+            cause.cause ?? cause,
+        );
+    }
+    return internalFailure(phase, `${message}: ${causeMessage(cause)}`, cause);
+}
+
+export function readSource(
+    input: SourceInput,
+): Result<SourceFile, IoFailure> {
+    return match(input)
+        .with({ kind: "file" }, ({ path: filePath }) =>
+            Result.try({
+                try: () => ({
+                    source: fs.readFileSync(filePath, "utf8"),
+                    sourcePath: path.resolve(filePath),
+                }),
+                catch: (cause) => ioFailure(path.resolve(filePath), cause),
+            }),
+        )
+        .with({ kind: "text" }, ({ text, sourcePath }) =>
+            Result.ok({
+                source: text,
+                sourcePath,
+            }),
+        )
+        .exhaustive();
+}
+
+function unsupportedFeatureOfNode(
+    node: Node,
+): UnsupportedFeatureDiagnostic | undefined {
+    if (node instanceof TryExpr) {
+        return {
+            feature: "try-expression",
+            span: node.span,
+            message: "`?` expressions are parsed but not implemented yet",
+        };
+    }
+    if (node instanceof CastExpr) {
+        return {
+            feature: "cast-expression",
+            span: node.span,
+            message: "`as` casts are parsed but not implemented yet",
+        };
+    }
+    if (node instanceof IfLetExpr) {
+        return {
+            feature: "if-let-expression",
+            span: node.span,
+            message: "`if let` is parsed but not implemented yet",
+        };
+    }
+    if (node instanceof UnsafeBlockExpr) {
+        return {
+            feature: "unsafe-block",
+            span: node.span,
+            message: "`unsafe` blocks are parsed but not implemented yet",
+        };
+    }
+    if (node instanceof UnsafeItem) {
+        return {
+            feature: "unsafe-item",
+            span: node.span,
+            message: "`unsafe` items are parsed but not implemented yet",
+        };
+    }
+    if (node instanceof TypeAliasItem) {
+        return {
+            feature: "type-alias-item",
+            span: node.span,
+            message: "type aliases are parsed but not implemented yet",
+        };
+    }
+    if (node instanceof StaticItem) {
+        return {
+            feature: "static-item",
+            span: node.span,
+            message: "`static` items are parsed but not implemented yet",
+        };
+    }
+    if (node instanceof ConstItem) {
+        return {
+            feature: "const-item",
+            span: node.span,
+            message: "`const` items are parsed but not implemented yet",
+        };
+    }
+    if (node instanceof RecoveryExpr) {
+        return {
+            feature: "recovery-expression",
+            span: node.span,
+            message: node.message,
+        };
+    }
+    if (node instanceof RecoveryItem) {
+        return {
+            feature: "recovery-item",
+            span: node.span,
+            message: node.message,
+        };
+    }
+    return undefined;
+}
+
+function collectUnsupportedFeatures(moduleNode: ModuleNode): UnsupportedFeatureDiagnostic[] {
+    const diagnostics: UnsupportedFeatureDiagnostic[] = [];
+    walkAst(moduleNode, (node) => {
+        const unsupported = unsupportedFeatureOfNode(node);
+        if (unsupported === undefined) {
+            return;
+        }
+        diagnostics.push(unsupported);
+    });
+    return diagnostics;
+}
+
+export function prepareModule(sourceFile: SourceFile): PreparedModuleResult {
+    const parseResult = parseModule(sourceFile.source);
     if (parseResult.isErr()) {
         return Result.err(
-            diagnosticsError(
+            diagnosticFailure(
+                "parse",
                 parseResult.error.map((error) => ({
                     message: error.message,
                     span: new Span(error.line, error.column, 0, 0),
-                    kind: "parse" as const,
+                    phase: "parse",
                 })),
             ),
         );
     }
 
     const resolveResult = resolveModuleTree(parseResult.value, {
-        sourcePath: options.sourcePath,
+        sourcePath: sourceFile.sourcePath,
     });
     if (resolveResult.isErr()) {
         return Result.err(
-            diagnosticsError(
+            diagnosticFailure(
+                "resolve",
                 resolveResult.error.map((error) => ({
                     message: error.message,
                     span: diagnosticSpan(error.span),
-                    kind: "resolve" as const,
+                    phase: "resolve",
                 })),
             ),
         );
@@ -144,263 +382,274 @@ function prepareAst(
     const deriveResult = expandDerives(resolveResult.value);
     if (deriveResult.isErr()) {
         return Result.err(
-            diagnosticsError(
+            diagnosticFailure(
+                "derive",
                 deriveResult.error.map((error) => ({
                     message: error.message,
                     span: diagnosticSpan(error.span),
-                    kind: "derive" as const,
+                    phase: "derive",
                 })),
             ),
         );
     }
 
-    return Result.ok(deriveResult.value);
+    return Result.ok({
+        sourceFile,
+        module: deriveResult.value,
+    });
 }
 
-function inferAndLowerModule(
-    expandedAst: ModuleNode,
-    validate: boolean,
-): Result<IRModule, CompileDiagnosticsError | CompileInternalError> {
-    const typeCtx = new TypeContext();
-    const inferResult = inferModule(typeCtx, expandedAst);
-    if (!inferResult.isOk()) {
+export function typecheckModule(prepared: PreparedModule): TypedModuleResult {
+    const unsupportedDiagnostics = collectUnsupportedFeatures(prepared.module);
+    if (unsupportedDiagnostics.length > 0) {
+        return Result.err(unsupportedFailure("type", unsupportedDiagnostics));
+    }
+
+    const typeContext = new TypeContext();
+    const inferResult = inferModule(typeContext, prepared.module);
+    if (inferResult.isErr()) {
         return Result.err(
-            diagnosticsError(
+            diagnosticFailure(
+                "type",
                 inferResult.error.map((error) => ({
                     message: error.message,
                     span: diagnosticSpan(error.span),
-                    kind: "type" as const,
+                    phase: "type",
                 })),
             ),
         );
     }
 
-    const borrowResult = checkBorrowLite(expandedAst, typeCtx);
+    const borrowResult = checkBorrowLite(prepared.module, typeContext);
     if (borrowResult.isErr()) {
         return Result.err(
-            diagnosticsError(
+            diagnosticFailure(
+                "borrow",
                 borrowResult.error.map((error) => ({
                     message: error.message,
                     span: diagnosticSpan(error.span),
-                    kind: "borrow" as const,
+                    phase: "borrow",
                 })),
             ),
         );
     }
 
-    const loweringResult = lowerAstModuleToSsa(expandedAst);
+    return Result.ok({
+        prepared,
+        typeContext,
+    });
+}
+
+export function lowerModule(
+    typed: TypedModule,
+    options: { validate?: boolean } = {},
+): LoweredModuleResult {
+    const { validate = true } = options;
+    resetIRIds();
+
+    const loweringResult = Result.try({
+        try: () => lowerAstModuleToSsa(typed.prepared.module),
+        catch: (cause) =>
+            normalizeInternalFailure(
+                "lower",
+                "Lowering to SSA failed",
+                cause,
+            ),
+    });
     if (loweringResult.isErr()) {
+        return Result.err(loweringResult.error);
+    }
+    if (loweringResult.value.isErr()) {
         return Result.err(
-            new CompileInternalError({
-                phase: "lower",
-                message: `Lowering to SSA failed: ${loweringResult.error.message}`,
-                cause: loweringResult.error,
-            }),
+            internalFailure(
+                "lower",
+                `Lowering to SSA failed: ${loweringResult.value.error.message}`,
+                loweringResult.value.error,
+            ),
         );
     }
 
-    const irModule = loweringResult.value;
+    const lowered: LoweredModule = {
+        typed,
+        module: loweringResult.value.value,
+    };
     if (!validate) {
-        return Result.ok(irModule);
+        return Result.ok(lowered);
     }
 
-    const validationErrors: CompileDiagnostic[] = [];
-    for (const fn of irModule.functions) {
+    const validationDiagnostics: CompileDiagnostic[] = [];
+    for (const fn of lowered.module.functions) {
         const validationResult = validateIRFunction(fn);
         if (validationResult.isOk()) {
             continue;
         }
-
         for (const error of validationResult.error) {
-            validationErrors.push({
+            validationDiagnostics.push({
                 message: `in function \`${fn.name}\`: ${error.message}`,
                 span: new Span(0, 0, 0, 0),
-                kind: "validation",
+                phase: "validate",
             });
         }
     }
 
-    if (validationErrors.length > 0) {
-        return Result.err(diagnosticsError(validationErrors));
+    if (validationDiagnostics.length > 0) {
+        return Result.err(diagnosticFailure("validate", validationDiagnostics));
     }
 
-    return Result.ok(irModule);
+    return Result.ok(lowered);
+}
+
+export function printLoweredModule(
+    lowered: LoweredModule,
+): PrintedIrArtifact {
+    return {
+        lowered,
+        module: lowered.module,
+        ir: printIRModule(lowered.module),
+    };
+}
+
+export function serializeLoweredModule(
+    lowered: LoweredModule,
+): BinaryCompileResult {
+    const serializationResult = Result.try({
+        try: () => serializeModule(lowered.module),
+        catch: (cause) =>
+            normalizeInternalFailure(
+                "serialize",
+                "Failed to serialize IR module",
+                cause,
+            ),
+    });
+    if (serializationResult.isErr()) {
+        return Result.err(serializationResult.error);
+    }
+
+    return Result.ok({
+        lowered,
+        module: lowered.module,
+        bytes: serializationResult.value,
+    });
+}
+
+function sourceInputFromText(
+    source: string,
+    options: CompileOptions,
+): SourceInput {
+    return {
+        kind: "text",
+        text: source,
+        sourcePath: options.sourcePath,
+    };
+}
+
+function compileInputToLoweredModule(
+    input: SourceInput,
+    options: CompileOptions = {},
+): LoweredModuleResult {
+    return readSource(input)
+        .andThen((sourceFile) => prepareModule(sourceFile))
+        .andThen((prepared) => typecheckModule(prepared))
+        .andThen((typed) => lowerModule(typed, { validate: options.validate }));
 }
 
 export function compileToIRModule(
     source: string,
-    options: {
-        emitAst?: boolean;
-        validate?: boolean;
-        sourcePath?: string;
-    } = {},
-): CompileResult {
-    const { emitAst = false, sourcePath, validate = true } = options;
-
-    resetIRIds();
-
-    const prepResult = prepareAst(source, { sourcePath });
-    if (prepResult.isErr()) {
-        return prepResult;
-    }
-
-    const expandedAst = prepResult.value;
-    const irModuleResult = inferAndLowerModule(expandedAst, validate);
-    if (irModuleResult.isErr()) {
-        return irModuleResult;
-    }
-
-    const irModule = irModuleResult.value;
-    const artifact: CompileArtifact = { module: irModule };
-    if (emitAst) {
-        artifact.ast = expandedAst;
-    }
-
-    return Result.ok(artifact);
+    options: CompileOptions = {},
+): LoweredModuleResult {
+    return compileInputToLoweredModule(sourceInputFromText(source, options), options);
 }
 
 export function compile(
     source: string,
     options: CompileOptions = {},
-): CompileResult {
-    const emitIR = options.emitIR ?? true;
-    const result = compileToIRModule(source, options);
-    if (result.isErr()) {
-        return result;
-    }
-
-    const artifact = result.value;
-    if (!emitIR) {
-        return Result.ok(artifact);
-    }
-
-    return Result.ok({
-        module: artifact.module,
-        ast: artifact.ast,
-        ir: printIRModule(artifact.module),
-    });
+): PrintedIrResult {
+    return compileToIRModule(source, options).map((lowered) =>
+        printLoweredModule(lowered),
+    );
 }
 
 export function compileToBinary(
     source: string,
-    options: {
-        emitAst?: boolean;
-        validate?: boolean;
-        sourcePath?: string;
-    } = {},
+    options: CompileOptions = {},
 ): BinaryCompileResult {
-    const result = compileToIRModule(source, options);
-    if (result.isErr()) {
-        return result;
-    }
-
-    const serializationResult = Result.try({
-        try: () => serializeModule(result.value.module),
-        catch: (cause) =>
-            new CompileInternalError({
-                phase: "serialize",
-                message: `Failed to serialize IR module: ${causeMessage(cause)}`,
-                cause,
-            }),
-    });
-    if (serializationResult.isErr()) {
-        return serializationResult;
-    }
-
-    return Result.ok({
-        ...result.value,
-        bytes: serializationResult.value,
-    });
+    return compileToIRModule(source, options).andThen((lowered) =>
+        serializeLoweredModule(lowered),
+    );
 }
 
 export function compileFileToIRModule(
     filePath: string,
-    options: { emitAst?: boolean; validate?: boolean } = {},
-): CompileResult {
-    return readSourceFile(filePath).andThen((source) =>
-        compileToIRModule(source, {
-            ...options,
-            sourcePath: path.resolve(filePath),
-        }),
-    );
-}
-
-export function compileFileToBinary(
-    filePath: string,
-    options: { emitAst?: boolean; validate?: boolean } = {},
-): BinaryCompileResult {
-    return readSourceFile(filePath).andThen((source) =>
-        compileToBinary(source, {
-            ...options,
-            sourcePath: path.resolve(filePath),
-        }),
+    options: Omit<CompileOptions, "sourcePath"> = {},
+): LoweredModuleResult {
+    return compileInputToLoweredModule(
+        { kind: "file", path: filePath },
+        options,
     );
 }
 
 export function compileFile(
     filePath: string,
-    options: CompileOptions = {},
-): CompileResult {
-    const emitIR = options.emitIR ?? true;
-    const result = compileFileToIRModule(filePath, options);
-    if (result.isErr()) {
-        return result;
-    }
+    options: Omit<CompileOptions, "sourcePath"> = {},
+): PrintedIrResult {
+    return compileFileToIRModule(filePath, options).map((lowered) =>
+        printLoweredModule(lowered),
+    );
+}
 
-    const artifact = result.value;
-    if (!emitIR) {
-        return Result.ok(artifact);
-    }
-
-    return Result.ok({
-        module: artifact.module,
-        ast: artifact.ast,
-        ir: printIRModule(artifact.module),
-    });
+export function compileFileToBinary(
+    filePath: string,
+    options: Omit<CompileOptions, "sourcePath"> = {},
+): BinaryCompileResult {
+    return compileFileToIRModule(filePath, options).andThen((lowered) =>
+        serializeLoweredModule(lowered),
+    );
 }
 
 export function discoverTestFunctions(
     filePath: string,
-): Result<TestFn[], CompileError> {
-    return readSourceFile(filePath).andThen((source) => {
-        const prepResult = prepareAst(source, { sourcePath: filePath });
-        if (prepResult.isErr()) {
-            return Result.err(prepResult.error);
-        }
-
-        const tests: TestFn[] = [];
-        for (const item of prepResult.value.items) {
-            if (item instanceof TestFnItem) {
-                tests.push({
-                    name: item.name,
-                    expectedOutput: item.expectedOutput,
-                });
+): Result<TestFn[], CompileFailure> {
+    return readSource({ kind: "file", path: filePath }).andThen((sourceFile) =>
+        prepareModule(sourceFile).map((prepared) => {
+            const tests: TestFn[] = [];
+            for (const item of prepared.module.items) {
+                if (item instanceof TestFnItem) {
+                    tests.push({
+                        name: item.name,
+                        expectedOutput: item.expectedOutput,
+                    });
+                }
             }
-        }
-
-        return Result.ok(tests);
-    });
+            return tests;
+        }),
+    );
 }
 
 export function compileErrorDiagnostics(
-    error: CompileError,
+    error: CompileFailure,
 ): CompileDiagnostic[] | undefined {
-    if (CompileDiagnosticsError.is(error)) {
-        return error.diagnostics;
+    let diagnostics: CompileDiagnostic[] | undefined;
+    if (error.tag === "diagnostic") {
+        const { diagnostics: errorDiagnostics } = error;
+        diagnostics = errorDiagnostics;
     }
-
-    return undefined;
+    if (error.tag === "unsupported") {
+        const { diagnostics: unsupportedDiagnostics } = error;
+        diagnostics = unsupportedDiagnostics.map((diagnostic) => ({
+            message: diagnostic.message,
+            span: diagnostic.span,
+            phase: error.phase,
+        }));
+    }
+    return diagnostics;
 }
 
-export function formatCompileError(error: CompileError): string {
+export function formatCompileError(error: CompileFailure): string {
     return match(error)
-        .when(
-            (compileError): compileError is CompileDiagnosticsError =>
-                CompileDiagnosticsError.is(compileError),
-            (compileError) =>
-                compileError.diagnostics
-                    .map((diagnostic) => diagnostic.message)
-                    .join("; "),
-        )
-        .otherwise((compileError) => compileError.message);
+        .with({ tag: "diagnostic" }, (failure) => failure.message)
+        .with({ tag: "unsupported" }, (failure) => failure.message)
+        .with({ tag: "internal" }, (failure) => failure.message)
+        .with({ tag: "io" }, (failure) => failure.message)
+        .with({ tag: "backend" }, (failure) => failure.message)
+        .exhaustive();
 }

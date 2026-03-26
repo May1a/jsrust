@@ -6,6 +6,8 @@ import {
     type BreakExpr,
     BuiltinType,
     CallExpr,
+    type CastExpr,
+    type ConstItem,
     type ClosureExpr,
     type ContinueExpr,
     type DerefExpr,
@@ -22,6 +24,7 @@ import {
     ImplItem,
     IdentPattern,
     IdentifierExpr,
+    type IfLetExpr,
     LiteralPattern,
     InferredTypeNode,
     type IndexExpr,
@@ -37,6 +40,8 @@ import {
     type ModuleNode,
     NamedTypeNode,
     OptionTypeNode,
+    type RecoveryExpr,
+    type RecoveryItem,
     ResultTypeNode,
     type ParamNode,
     type PathExpr,
@@ -46,14 +51,19 @@ import {
     RefTypeNode,
     type ReturnExpr,
     Span,
+    type StaticItem,
     type Statement,
     StructItem,
     type StructExpr,
     StructPattern,
     TraitImplItem,
+    type TryExpr,
     type TypeNode,
+    type TypeAliasItem,
     TupleTypeNode,
     ArrayTypeNode,
+    type UnsafeBlockExpr,
+    type UnsafeItem,
     UseItem,
     UnaryExpr,
     UnaryOp,
@@ -301,7 +311,14 @@ export class AstToSsaCtx {
         );
         this.registerEnumTypeMetadata(this.currentReturnType);
 
-        this.startFunction(fnDecl.name, paramTypes);
+        const startResult = this.startFunction(
+            fnDecl.name,
+            paramTypes,
+            fnDecl.span,
+        );
+        if (startResult.isErr()) {
+            return startResult;
+        }
         this.bindFunctionParams(paramEntries.value);
 
         if (!fnDecl.body) {
@@ -343,16 +360,24 @@ export class AstToSsaCtx {
         return Result.ok(params);
     }
 
-    private startFunction(name: string, paramTypes: IRType[]): void {
-        const fnId = this.resolveFunctionId(name);
+    private startFunction(
+        name: string,
+        paramTypes: IRType[],
+        span: Span,
+    ): Result<void, LoweringError> {
+        const fnIdResult = this.requireFunctionId(name, span);
+        if (fnIdResult.isErr()) {
+            return fnIdResult;
+        }
         this.builder.createFunction(
             name,
             paramTypes,
             this.currentReturnType,
-            fnId,
+            fnIdResult.value,
         );
         const entryId = this.builder.createBlock("entry");
         this.builder.switchToBlock(entryId);
+        return Result.ok();
     }
 
     private bindFunctionParams(
@@ -622,6 +647,36 @@ export class AstToSsaCtx {
             visitMatchExpr: expressionVisitors.visitMatchExpr,
             visitOptionTypeNode: expressionVisitors.visitOptionTypeNode,
             visitResultTypeNode: expressionVisitors.visitResultTypeNode,
+            visitTryExpr: (expr: TryExpr) =>
+                loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "`?` expressions are not implemented",
+                    expr.span,
+                ),
+            visitCastExpr: (expr: CastExpr) =>
+                loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "`as` casts are not implemented",
+                    expr.span,
+                ),
+            visitIfLetExpr: (expr: IfLetExpr) =>
+                loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "`if let` is not implemented",
+                    expr.span,
+                ),
+            visitUnsafeBlockExpr: (expr: UnsafeBlockExpr) =>
+                loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "`unsafe` blocks are not implemented",
+                    expr.span,
+                ),
+            visitRecoveryExpr: (expr: RecoveryExpr) =>
+                loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    expr.message,
+                    expr.span,
+                ),
             visitLetStmt: () => unsupported("LetStmt"),
             visitExprStmt: () => unsupported("ExprStmt"),
             visitItemStmt: () => unsupported("ItemStmt"),
@@ -633,6 +688,36 @@ export class AstToSsaCtx {
             visitImplItem: () => unsupported("ImplItem"),
             visitTraitImplItem: () => unsupported("TraitImplItem"),
             visitTraitItem: () => unsupported("TraitItem"),
+            visitUnsafeItem: (item: UnsafeItem) =>
+                loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "`unsafe` items are not implemented",
+                    item.span,
+                ),
+            visitTypeAliasItem: (item: TypeAliasItem) =>
+                loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "type aliases are not implemented",
+                    item.span,
+                ),
+            visitStaticItem: (item: StaticItem) =>
+                loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "`static` items are not implemented",
+                    item.span,
+                ),
+            visitConstItem: (item: ConstItem) =>
+                loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "`const` items are not implemented",
+                    item.span,
+                ),
+            visitRecoveryItem: (item: RecoveryItem) =>
+                loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    item.message,
+                    item.span,
+                ),
             visitIdentPat: () => unsupported("IdentPattern"),
             visitWildcardPat: () => unsupported("WildcardPattern"),
             visitLiteralPat: () => unsupported("LiteralPattern"),
@@ -730,8 +815,11 @@ export class AstToSsaCtx {
             return AstToSsaCtx.handleInstructionId(inst.id);
         }
 
-        const fnId = this.resolveFunctionId(expr.name);
-        const constInst = this.builder.iconst(fnId, IntWidth.I64);
+        const fnId = this.requireFunctionId(expr.name, expr.span);
+        if (fnId.isErr()) {
+            return fnId;
+        }
+        const constInst = this.builder.iconst(fnId.value, IntWidth.I64);
         return AstToSsaCtx.handleInstructionId(constInst.id);
     }
 
@@ -1344,7 +1432,12 @@ export class AstToSsaCtx {
             // Check if this is a call to a generic function
             const resolvedName = this.resolveGenericCallName(expr);
             if (resolvedName) {
-                return this.lowerResolvedCall(resolvedName, args, retTy);
+                return this.lowerResolvedCall(
+                    resolvedName,
+                    args,
+                    retTy,
+                    expr.span,
+                );
             }
             return this.lowerIdentifierCall(expr.callee, args, retTy);
         }
@@ -1580,13 +1673,18 @@ export class AstToSsaCtx {
         name: string,
         args: ValueId[],
         defaultReturnType: IRType,
+        span: Span,
     ): Result<ValueId, LoweringError> {
         const returnType = this.resolveNamedCallReturnType(
             name,
             defaultReturnType,
         );
+        const fnId = this.requireFunctionId(name, span);
+        if (fnId.isErr()) {
+            return fnId;
+        }
         const callInst = this.builder.call(
-            this.resolveFunctionId(name),
+            fnId.value,
             args,
             returnType,
         );
@@ -1624,8 +1722,12 @@ export class AstToSsaCtx {
             qualifiedName,
             defaultReturnType,
         );
+        const fnId = this.requireFunctionId(qualifiedName, callee.span);
+        if (fnId.isErr()) {
+            return fnId;
+        }
         const callInst = this.builder.call(
-            this.resolveFunctionId(qualifiedName),
+            fnId.value,
             [receiverArg, ...args],
             returnType,
         );
@@ -1876,8 +1978,12 @@ export class AstToSsaCtx {
             callee.name,
             defaultReturnType,
         );
+        const fnId = this.requireFunctionId(callee.name, callee.span);
+        if (fnId.isErr()) {
+            return fnId;
+        }
         const callInst = this.builder.call(
-            this.resolveFunctionId(callee.name),
+            fnId.value,
             args,
             returnType,
         );
@@ -2202,8 +2308,12 @@ export class AstToSsaCtx {
         if (appendNewline) {
             builtinName = BUILTIN_SYMBOLS.PRINTLN_FMT;
         }
+        const fnId = this.requireFunctionId(builtinName, expr.span);
+        if (fnId.isErr()) {
+            return fnId;
+        }
         const callInst = this.builder.call(
-            this.resolveFunctionId(builtinName),
+            fnId.value,
             preparedArgs.value,
             makeIRUnitType(),
         );
@@ -2369,10 +2479,16 @@ export class AstToSsaCtx {
             if (!lowered.isOk()) {
                 return lowered;
             }
+            const fieldType = this.resolveValueType(lowered.value);
+            if (fieldType === undefined) {
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    `Cannot resolve field type for \`${fieldName}\` in struct literal \`${structName}\``,
+                    fieldExpr.span,
+                );
+            }
             fieldValues.push(lowered.value);
-            fieldTypes.push(
-                this.resolveValueType(lowered.value) ?? makeIRUnitType(),
-            );
+            fieldTypes.push(fieldType);
         }
 
         const existingType = this.irModule.structs.get(structName);
@@ -2437,7 +2553,14 @@ export class AstToSsaCtx {
                 expr.span,
             );
         }
-        const fieldType = structType.fields[index] ?? makeIRUnitType();
+        if (index >= structType.fields.length) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                `Missing field type metadata for \`${expr.field}\` on struct \`${structType.name}\``,
+                expr.span,
+            );
+        }
+        const fieldType = structType.fields[index];
         const fieldGet = this.builder.structGet(baseValue, index, fieldType);
         return AstToSsaCtx.handleInstructionId(fieldGet.id);
     }
@@ -2564,7 +2687,10 @@ export class AstToSsaCtx {
             expr,
             paramTypes,
         );
-        this.startFunction(name, paramTypes);
+        const startResult = this.startFunction(name, paramTypes, expr.span);
+        if (startResult.isErr()) {
+            return startResult;
+        }
 
         const { currentFunction } = this.builder;
         if (currentFunction) {
@@ -2656,6 +2782,7 @@ export class AstToSsaCtx {
         expr: ClosureExpr,
     ): Result<ValueId, LoweringError> {
         const name = `__closure_${this.closureCounter++}`;
+        this.registerSyntheticFunctionId(name);
         const closureResult = this.withIsolatedBuilderScope(() =>
             this.lowerClosureFunction(name, expr),
         );
@@ -2663,8 +2790,11 @@ export class AstToSsaCtx {
             return closureResult;
         }
         addIRFunction(this.irModule, closureResult.value);
-        const fnId = this.resolveFunctionId(name);
-        const idInst = this.builder.iconst(fnId, IntWidth.I64);
+        const fnId = this.requireFunctionId(name, expr.span);
+        if (fnId.isErr()) {
+            return fnId;
+        }
+        const idInst = this.builder.iconst(fnId.value, IntWidth.I64);
         return AstToSsaCtx.handleInstructionId(idInst.id);
     }
 
@@ -2674,9 +2804,11 @@ export class AstToSsaCtx {
         if (!hasCaptures) {
             return this.lowerNonCapturingClosure(expr);
         }
-        // Capturing closures are not yet supported; fall back to placeholder
-        const placeholder = this.builder.iconst(0, IntWidth.I64);
-        return AstToSsaCtx.handleInstructionId(placeholder.id);
+        return loweringError(
+            LoweringErrorKind.UnsupportedNode,
+            "capturing closures are not implemented",
+            expr.span,
+        );
     }
 
     private lowerMatchExpr(expr: MatchExpr): Result<ValueId, LoweringError> {
@@ -3341,22 +3473,25 @@ export class AstToSsaCtx {
         return constInst.id;
     }
 
-    private resolveFunctionId(name: string): number {
-        const existing = this.functionIds.get(name);
-        if (existing) {
-            return existing;
-        }
-        if (name.includes("_")) {
-            const [shortName] = name.split("_");
-            const aliasTarget = this.functionIds.get(shortName);
-            if (aliasTarget) {
-                this.functionIds.set(name, aliasTarget);
-                return aliasTarget;
-            }
-        }
+    private registerSyntheticFunctionId(name: string): number {
         const value = hashName(name);
         this.functionIds.set(name, value);
         return value;
+    }
+
+    private requireFunctionId(
+        name: string,
+        span: Span,
+    ): Result<number, LoweringError> {
+        const existing = this.functionIds.get(name);
+        if (existing !== undefined) {
+            return Result.ok(existing);
+        }
+        return loweringError(
+            LoweringErrorKind.UnsupportedNode,
+            `Unknown function \`${name}\``,
+            span,
+        );
     }
 
     private isCurrentBlockTerminated(): boolean {
@@ -3729,6 +3864,9 @@ function collectFunctionIds(moduleNode: ModuleNode): Map<string, number> {
     for (const item of moduleNode.items) {
         collectItemFunctionIds(item, fnIdMap);
     }
+    for (const builtinName of Object.values(BUILTIN_SYMBOLS)) {
+        fnIdMap.set(builtinName, hashName(builtinName));
+    }
     return fnIdMap;
 }
 
@@ -3791,8 +3929,19 @@ function collectItemFunctionIds(
         return;
     }
     if (item instanceof UseItem) {
-        const targetName = item.path[item.path.length - 1];
-        fnIdMap.set(targetName, hashName(targetName));
+        seedUseItemFunctionId(item, fnIdMap);
+    }
+}
+
+function seedUseItemFunctionId(
+    item: UseItem,
+    fnIdMap: Map<string, number>,
+): void {
+    const targetName = item.path[item.path.length - 1];
+    const targetId = fnIdMap.get(targetName) ?? hashName(targetName);
+    fnIdMap.set(targetName, targetId);
+    if (item.alias) {
+        fnIdMap.set(item.alias, targetId);
     }
 }
 
@@ -3837,6 +3986,23 @@ function collectItemReturnTypes(
         for (const modItem of item.items) {
             collectItemReturnTypes(modItem, returnTypes, qualify(item.name));
         }
+        return;
+    }
+    if (item instanceof UseItem) {
+        seedUseItemReturnType(item, returnTypes);
+    }
+}
+
+function seedUseItemReturnType(
+    item: UseItem,
+    returnTypes: Map<string, IRType>,
+): void {
+    const targetName = item.path[item.path.length - 1];
+    const qualifiedName = item.path.join("::");
+    const targetReturnType =
+        returnTypes.get(qualifiedName) ?? returnTypes.get(targetName);
+    if (targetReturnType && item.alias) {
+        returnTypes.set(item.alias, targetReturnType);
     }
 }
 
