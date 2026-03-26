@@ -41,11 +41,11 @@ module main {
       call f862609(v23, v25, v24)
       v27: i32      = iconst 1
       v28: i32      = iconst 2
-      v29: i64      = call sub(v27, v28)
-      v30: ptr<i64> = alloca i64
+      v29: i32      = call sub(v27, v28)
+      v30: ptr<i32> = alloca i32
       store v29 -> v30
       v32: ptr      = sconst s0
-      v33: i64      = load v30
+      v33: i32      = load v30
       v34: i64      = iconst 1
       call f862609(v32, v34, v33)
       ret

@@ -7,10 +7,5 @@ export function compileToIR(source: string): Result<string, CompileError> {
         return result;
     }
 
-    const { ir } = result.value;
-    if (ir === undefined) {
-        return Result.ok("");
-    }
-
-    return Result.ok(`${ir}\n`);
+    return Result.ok(`${result.value.ir}\n`);
 }

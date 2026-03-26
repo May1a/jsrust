@@ -10,8 +10,10 @@ import {
     BlockExpr,
     IfExpr,
     ClosureExpr,
+    ConstItem,
     LetStmt,
     IdentPattern,
+    IfLetExpr,
     Mutability,
     NamedTypeNode,
     InferredTypeNode,
@@ -19,6 +21,12 @@ import {
     StructItem,
     EnumItem,
     ImplItem,
+    StaticItem,
+    TryExpr,
+    CastExpr,
+    TypeAliasItem,
+    UnsafeBlockExpr,
+    UnsafeItem,
 } from "../src/parse/ast";
 
 function expectInstanceOf<T>(
@@ -152,6 +160,35 @@ describe("expressions", () => {
         const closure = result.value;
         expect(closure.params.length).toBe(1);
     });
+
+    test("try postfix preserves syntax as TryExpr", () => {
+        const result = expr("value?");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        expectInstanceOf(result.value, TryExpr);
+    });
+
+    test("cast postfix preserves syntax as CastExpr", () => {
+        const result = expr("value as i32");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        expectInstanceOf(result.value, CastExpr);
+        expectInstanceOf(result.value.targetType, NamedTypeNode);
+    });
+
+    test("if let preserves syntax as IfLetExpr", () => {
+        const result = expr("if let Some(x) = value { x } else { 0 }");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        expectInstanceOf(result.value, IfLetExpr);
+    });
+
+    test("unsafe block preserves syntax as UnsafeBlockExpr", () => {
+        const result = expr("unsafe { 1 }");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        expectInstanceOf(result.value, UnsafeBlockExpr);
+    });
 });
 
 describe("statements", () => {
@@ -256,6 +293,34 @@ describe("items", () => {
         expect(implItem).toBeDefined();
         if (implItem === undefined) return;
         expect(implItem.methods.length).toBe(1);
+    });
+
+    test("type alias is preserved as TypeAliasItem", () => {
+        const result = mod("type Id = i32;");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        expectInstanceOf(result.value.items[0], TypeAliasItem);
+    });
+
+    test("static item is preserved as StaticItem", () => {
+        const result = mod("static VALUE: i32 = 1;");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        expectInstanceOf(result.value.items[0], StaticItem);
+    });
+
+    test("const item is preserved as ConstItem", () => {
+        const result = mod("const VALUE: i32 = 1;");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        expectInstanceOf(result.value.items[0], ConstItem);
+    });
+
+    test("unsafe fn is preserved as UnsafeItem", () => {
+        const result = mod("unsafe fn read() -> i32 { 0 }");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        expectInstanceOf(result.value.items[0], UnsafeItem);
     });
 });
 
