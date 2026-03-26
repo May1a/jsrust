@@ -15,11 +15,16 @@ import {
     discoverTestFunctions,
     type CompileError,
     type CompileDiagnostic,
+    type CompilePhase,
     type CompileOptions,
     type PrintedIrArtifact,
     type TestFn,
 } from "./src/compile";
-import { runBackendCodegenWasm, runBackendWasm } from "./src/backend";
+import {
+    BackendExitKind,
+    runBackendCodegenWasm,
+    runBackendWasm,
+} from "./src/backend";
 import {
     Level,
     makeDiagnostic,
@@ -73,22 +78,21 @@ class FileWriteError extends FileWriteErrorBase {}
 // Diagnostic display
 // ---------------------------------------------------------------------------
 
-const ERROR_KIND_CODES: Record<string, string> = {
+const ERROR_KIND_CODES: Record<CompilePhase, string> = {
     parse: "E0001",
     resolve: "E0433",
     derive: "E0000",
     type: "E0308",
     borrow: "E0502",
     lower: "E0000",
-    validation: "E0000",
     validate: "E0000",
     serialize: "E0000",
     io: "E0000",
     backend: "E0000",
 };
 
-function errorKindCode(phase: string): string {
-    return ERROR_KIND_CODES[phase] ?? "E0000";
+function errorKindCode(phase: CompilePhase): string {
+    return ERROR_KIND_CODES[phase];
 }
 
 function compileDiagnosticToDisplay(
@@ -679,10 +683,9 @@ function executeAndReport(bytes: Uint8Array, options: RunOptions): number {
     if (runResult.value.stdoutBytes.length > 0) {
         process.stdout.write(Buffer.from(runResult.value.stdoutBytes));
     }
-    let exitLine = "ok\n";
-    if (runResult.value.hasExitValue) {
-        exitLine = `ok exit=${runResult.value.exitValue}\n`;
-    }
+    const exitLine = match(runResult.value.exit)
+        .with({ kind: BackendExitKind.Value }, (exit) => `ok exit=${exit.value}\n`)
+        .otherwise(() => "ok\n");
     process.stdout.write(exitLine);
 
     if (options.traceOutPath) {
