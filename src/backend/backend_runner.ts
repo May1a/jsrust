@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import { Result, TaggedError } from "better-result";
 import { match } from "ts-pattern";
 
-const REPO_ROOT = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
+const REPO_ROOT = path.dirname(
+    path.dirname(path.dirname(fileURLToPath(import.meta.url))),
+);
 const BACKEND_DIR = path.join(REPO_ROOT, "backend");
 const DEFAULT_BACKEND_WASM = path.join(
     BACKEND_DIR,
@@ -40,6 +42,30 @@ const BACKEND_ERROR_LABELS = new Map<number, string>([
     [BACKEND_CODE.EXECUTE_ERROR, "execute-error"],
     [BACKEND_CODE.INTERNAL_ERROR, "internal-error"],
 ]);
+
+export enum BackendExitKind {
+    NoValue = "no-value",
+    Value = "value",
+}
+
+export enum BackendWasmSource {
+    Cli = "cli",
+    Env = "env",
+    Default = "default",
+}
+
+export enum BackendRuntimeKind {
+    Run = "run",
+    Codegen = "codegen",
+}
+
+export enum BackendFailureKind {
+    Load = "load",
+    Build = "build",
+    RuntimeTrap = "runtime-trap",
+    BackendExit = "backend-exit",
+    CapabilityMismatch = "capability-mismatch",
+}
 
 const BYTE_MASK = 0xff;
 const MAX_UNICODE_CODE_POINT = 0x10_ff_ff;
@@ -129,14 +155,6 @@ interface BackendWasmExports {
     jsrust_wasm_codegen_wasm_ptr?: () => number;
     jsrust_wasm_codegen_wasm_len?: () => number;
 }
-
-let wasmRuntime:
-    | {
-          path: string;
-          exports: BackendWasmExports;
-          memory: WebAssembly.Memory;
-      }
-    | undefined;
 
 function errorMessage(error: unknown): string {
     if (error instanceof Error) {
@@ -234,7 +252,7 @@ interface ResolveBackendWasmOptions {
 }
 
 type ResolveBackendWasmResult = Result<
-    { path: string; source: "cli" | "env" | "default" },
+    { path: string; source: BackendWasmSource },
     BackendWasmLoadError
 >;
 
@@ -245,19 +263,19 @@ function resolveBackendWasm(
     if (options.backendWasm) {
         return Result.ok({
             path: path.resolve(cwd, options.backendWasm),
-            source: "cli",
+            source: BackendWasmSource.Cli,
         });
     }
 
     if (process.env.JSRUST_BACKEND_WASM) {
         return Result.ok({
             path: path.resolve(cwd, process.env.JSRUST_BACKEND_WASM),
-            source: "env",
+            source: BackendWasmSource.Env,
         });
     }
     return Result.ok({
         path: DEFAULT_BACKEND_WASM,
-        source: "default",
+        source: BackendWasmSource.Default,
     });
 }
 
@@ -269,7 +287,7 @@ interface EnsureBackendWasmOptions {
 type EnsureBackendWasmResult = Result<
     {
         path: string;
-        source: "cli" | "env" | "default";
+        source: BackendWasmSource;
         built: boolean;
     },
     BackendBuildError | BackendWasmLoadError
@@ -289,7 +307,7 @@ function ensureBackendWasm(
             built: false,
         });
     }
-    if (resolved.value.source !== "default") {
+    if (resolved.value.source !== BackendWasmSource.Default) {
         return Result.err(
             new BackendBuildError({
                 code: "backend_wasm_missing",
@@ -708,13 +726,6 @@ function loadBackendWasm(options: { path: string }): Result<
     },
     BackendWasmLoadError
 > {
-    if (wasmRuntime && wasmRuntime.path === options.path) {
-        return Result.ok({
-            path: wasmRuntime.path,
-            exports: wasmRuntime.exports,
-            memory: wasmRuntime.memory,
-        });
-    }
     const bytes = readBackendWasmFile(options.path);
     if (bytes.isErr()) {
         return bytes;
@@ -738,11 +749,6 @@ function loadBackendWasm(options: { path: string }): Result<
         return wasmExports;
     }
 
-    wasmRuntime = {
-        path: options.path,
-        exports: wasmExports.value,
-        memory: validation.value.memory,
-    };
     return Result.ok({
         path: options.path,
         exports: wasmExports.value,
@@ -846,7 +852,6 @@ function rebuildBackendWasm(): Result<void, BackendBuildError> {
             }),
         );
     }
-    wasmRuntime = undefined;
     return Result.ok();
 }
 
@@ -1009,27 +1014,82 @@ interface RunBackendWasmOptions {
     buildIfMissing?: boolean;
 }
 
-interface RunBackendWasmSuccess {
-    code: "ok";
+export interface BackendRunRequest {
+    entry: string;
+    trace: boolean;
+}
+
+export type BackendExit =
+    | { kind: BackendExitKind.NoValue }
+    | { kind: BackendExitKind.Value; value: number };
+
+export interface BackendRunResult {
     stdout: string;
     stdoutBytes: Uint8Array;
     traceBytes: Uint8Array;
-    message: string;
-    label: string;
-    backendCode: number;
-    hasExitValue: boolean;
-    exitValue: number;
-    exitCode: 0;
+    exit: BackendExit;
     wasmPath: string;
     built: boolean;
 }
 
-type RunBackendWasmResult = Result<RunBackendWasmSuccess, BackendWasmRunError>;
+export interface BackendWasmLocation {
+    path: string;
+    source: BackendWasmSource;
+    built: boolean;
+}
+
+export interface RunRuntime {
+    kind: BackendRuntimeKind.Run;
+    wasmPath: string;
+    built: boolean;
+    source: BackendWasmSource;
+    exports: BackendWasmExports;
+    memory: WebAssembly.Memory;
+}
+
+export interface CodegenRuntime {
+    kind: BackendRuntimeKind.Codegen;
+    wasmPath: string;
+    built: boolean;
+    source: BackendWasmSource;
+    exports: BackendWasmExports & {
+        jsrust_wasm_codegen: (
+            inputPtr: number,
+            inputLen: number,
+            entryPtr: number,
+            entryLen: number,
+        ) => number;
+        jsrust_wasm_codegen_wasm_ptr: () => number;
+        jsrust_wasm_codegen_wasm_len: () => number;
+    };
+    memory: WebAssembly.Memory;
+}
+
+export type BackendRuntime = RunRuntime | CodegenRuntime;
+
+const BackendFailureBase = taggedError("BackendFailure")<{
+    phase: "backend";
+    kind: BackendFailureKind;
+    message: string;
+    code: string;
+    cause?: Error;
+    backendCode?: number;
+    exitCode?: number;
+    stdout?: string;
+    stdoutBytes?: Uint8Array;
+    traceBytes?: Uint8Array;
+    wasmPath?: string;
+    built?: boolean;
+}>();
+
+export class BackendFailure extends BackendFailureBase {}
+
+type RunBackendWasmResult = Result<BackendRunResult, BackendWasmRunError>;
 
 interface PreparedBackendContext {
     wasmPath: string;
     built: boolean;
-    source: "cli" | "env" | "default";
+    source: BackendWasmSource;
     exports: BackendWasmExports;
     memory: WebAssembly.Memory;
 }
@@ -1076,6 +1136,101 @@ function createBackendRunError(
         wasmPath,
         built,
     });
+}
+
+function backendFailureKindFromRunError(
+    error: BackendWasmRunError,
+): BackendFailureKind {
+    if (error.code === "backend_build_failed") {
+        return BackendFailureKind.Build;
+    }
+    if (
+        error.code === "backend_wasm_load_failed" ||
+        error.code === "backend_wasm_resolve_failed" ||
+        error.code === "backend_wasm_missing" ||
+        error.code === "backend_wasm_alloc_failed" ||
+        error.code === "generated_wasm_load_failed"
+    ) {
+        return BackendFailureKind.Load;
+    }
+    if (error.backendCode !== undefined && error.backendCode !== 0) {
+        return BackendFailureKind.BackendExit;
+    }
+    return BackendFailureKind.RuntimeTrap;
+}
+
+function toBackendCause(cause: unknown): Error | undefined {
+    if (cause instanceof Error) {
+        return cause;
+    }
+    return undefined;
+}
+
+function loadFailureKind(error: BackendWasmLoadError): BackendFailureKind {
+    if (error.message.includes("codegen export")) {
+        return BackendFailureKind.CapabilityMismatch;
+    }
+    return BackendFailureKind.Load;
+}
+
+function toBackendFailure(
+    error: BackendBuildError | BackendWasmLoadError | BackendWasmRunError,
+): BackendFailure {
+    if (error instanceof BackendBuildError) {
+        return new BackendFailure({
+            phase: "backend",
+            kind: BackendFailureKind.Build,
+            code: error.code,
+            message: error.message,
+            stdout: error.stdout,
+            cause: error,
+        });
+    }
+    if (error instanceof BackendWasmLoadError) {
+        return new BackendFailure({
+            phase: "backend",
+            kind: loadFailureKind(error),
+            code: error.code,
+            message: error.message,
+            cause: toBackendCause(error.cause) ?? error,
+        });
+    }
+    if (error instanceof BackendWasmRunError) {
+        return new BackendFailure({
+            phase: "backend",
+            kind: backendFailureKindFromRunError(error),
+            code: error.code,
+            message: error.message,
+            cause: error,
+            backendCode: error.backendCode,
+            exitCode: error.exitCode,
+            stdout: error.stdout,
+            stdoutBytes: error.stdoutBytes,
+            traceBytes: error.traceBytes,
+            wasmPath: error.wasmPath,
+            built: error.built,
+        });
+    }
+    return new BackendFailure({
+        phase: "backend",
+        kind: BackendFailureKind.RuntimeTrap,
+        code: "backend_unknown_failure",
+        message: errorMessage(error),
+    });
+}
+
+function createBackendExit(
+    hasExitValue: boolean,
+    exitValue: number,
+): BackendExit {
+    return match(hasExitValue)
+        .with(true, () => ({
+            kind: BackendExitKind.Value,
+            value: exitValue,
+        }))
+        .otherwise(() => ({
+            kind: BackendExitKind.NoValue,
+        }));
 }
 
 function prepareBackendContext(
@@ -1203,17 +1358,13 @@ function readBackendRunResult(
         );
     }
     return Result.ok({
-        code: "ok",
         stdout: stdoutOutput.text,
         stdoutBytes: stdoutOutput.bytes,
         traceBytes,
-        message,
-        label,
-        backendCode,
-        hasExitValue:
+        exit: createBackendExit(
             Number(wasmExports.jsrust_wasm_result_has_exit_value()) !== 0,
-        exitValue: Number(wasmExports.jsrust_wasm_result_exit_value()),
-        exitCode: 0,
+            Number(wasmExports.jsrust_wasm_result_exit_value()),
+        ),
         wasmPath: context.wasmPath ?? "",
         built: context.built ?? false,
     });
@@ -1228,7 +1379,10 @@ function loadCodegenBackendContext(
     }
     let context = prepared.value;
     let codegenExportCheck = ensureCodegenWasmExports(context.exports);
-    if (codegenExportCheck.isErr() && context.source === "default") {
+    if (
+        codegenExportCheck.isErr() &&
+        context.source === BackendWasmSource.Default
+    ) {
         const rebuild = rebuildBackendWasm();
         if (rebuild.isOk()) {
             const reloaded = loadBackendWasm({ path: context.wasmPath });
@@ -1465,16 +1619,13 @@ function runBackendCodegenWasm(
         stdout = textDecoder.decode(stdoutBytes);
     }
     return Result.ok({
-        code: "ok",
         stdout,
         stdoutBytes,
         traceBytes: new Uint8Array(),
-        message: "ok",
-        label: "ok",
-        backendCode: 0,
-        hasExitValue: generatedRun.value.hasExitValue,
-        exitValue: generatedRun.value.exitValue,
-        exitCode: 0,
+        exit: createBackendExit(
+            generatedRun.value.hasExitValue,
+            generatedRun.value.exitValue,
+        ),
         wasmPath: prepared.value.wasmPath,
         built: prepared.value.built,
     });
@@ -1493,7 +1644,7 @@ function canRunBackendIntegrationTests(): Result<void, BackendBuildError> {
     if (fileExists(resolved.value.path)) {
         return Result.ok();
     }
-    if (resolved.value.source !== "default") {
+    if (resolved.value.source !== BackendWasmSource.Default) {
         return Result.err(
             new BackendBuildError({
                 code: "backend_wasm_missing",
@@ -1510,6 +1661,90 @@ function canRunBackendIntegrationTests(): Result<void, BackendBuildError> {
         return clangCheck;
     }
     return Result.ok();
+}
+
+function defaultRunRequest(
+    request: Partial<BackendRunRequest> = {},
+): BackendRunRequest {
+    return {
+        entry: request.entry ?? "main",
+        trace: request.trace ?? false,
+    };
+}
+
+export function ensureBackendBuilt(
+    options: EnsureBackendWasmOptions = {},
+): Result<BackendWasmLocation, BackendFailure> {
+    return ensureBackendWasm(options).mapError((error) => toBackendFailure(error));
+}
+
+export function loadBackendRuntime(
+    location: BackendWasmLocation,
+): Result<RunRuntime, BackendFailure> {
+    return loadBackendWasm({ path: location.path })
+        .mapError((error) => toBackendFailure(error))
+        .map((loaded) => ({
+        kind: BackendRuntimeKind.Run,
+        wasmPath: location.path,
+        built: location.built,
+        source: location.source,
+        exports: loaded.exports,
+        memory: loaded.memory,
+    }));
+}
+
+export function loadCodegenRuntime(
+    location: BackendWasmLocation,
+): Result<CodegenRuntime, BackendFailure> {
+    const runtime = loadBackendRuntime(location);
+    if (runtime.isErr()) {
+        return runtime;
+    }
+    if (!hasCodegenWasmExport(runtime.value.exports)) {
+        return Result.err(
+            new BackendFailure({
+            phase: "backend",
+            kind: BackendFailureKind.CapabilityMismatch,
+            code: "backend_codegen_exports_missing",
+            message: "backend wasm missing one or more codegen exports",
+            wasmPath: runtime.value.wasmPath,
+            built: runtime.value.built,
+        }),
+        );
+    }
+    return Result.ok({
+        ...runtime.value,
+        kind: BackendRuntimeKind.Codegen,
+        exports: runtime.value.exports,
+    });
+}
+
+export function executeBackendRuntime(
+    runtime: RunRuntime,
+    moduleBytes: Uint8Array,
+    request: Partial<BackendRunRequest> = {},
+): Result<BackendRunResult, BackendFailure> {
+    const normalizedRequest = defaultRunRequest(request);
+    return runBackendWasm(moduleBytes, {
+        entry: normalizedRequest.entry,
+        trace: normalizedRequest.trace,
+        backendWasm: runtime.wasmPath,
+        buildIfMissing: false,
+    }).mapError((error) => toBackendFailure(error));
+}
+
+export function executeCodegenRuntime(
+    runtime: CodegenRuntime,
+    moduleBytes: Uint8Array,
+    request: Partial<BackendRunRequest> = {},
+): Result<BackendRunResult, BackendFailure> {
+    const normalizedRequest = defaultRunRequest(request);
+    return runBackendCodegenWasm(moduleBytes, {
+        entry: normalizedRequest.entry,
+        trace: normalizedRequest.trace,
+        backendWasm: runtime.wasmPath,
+        buildIfMissing: false,
+    }).mapError((error) => toBackendFailure(error));
 }
 
 export {

@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { compile, compileToBinary, formatCompileError } from "../src/compile";
+import {
+    compile,
+    compileErrorDiagnostics,
+    compileToBinary,
+    formatCompileError,
+} from "../src/compile";
 import { deserializeModule } from "../src/ir/ir_deserialize";
 import { EnumGetDataInst, IRTypeKind } from "../src/ir/ir";
 import { compileToIR } from "./helpers";
@@ -216,6 +221,78 @@ describe("compile", () => {
 
         expect(formatCompileError(result.error)).toContain(
             "cannot use `&Result<i32, bool>`; use `Result<&i32, bool>` instead",
+        );
+    });
+
+    test("rejects parsed try expressions as unsupported instead of erasing them", () => {
+        const result = compile("fn test() { let value: Result<i32, i32> = Ok(1); let _ = value?; }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "`?` expressions are parsed but not implemented yet",
+        );
+        const diagnostics = compileErrorDiagnostics(result.error);
+        expect(diagnostics).toBeDefined();
+        expect(diagnostics?.[0]?.phase).toBe("type");
+    });
+
+    test("rejects parsed if-let expressions as unsupported instead of rewriting them", () => {
+        const result = compile("fn test() -> i32 { if let Some(x) = Some(1) { x } else { 0 } }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "`if let` is parsed but not implemented yet",
+        );
+    });
+
+    test("rejects parsed type aliases as unsupported instead of dropping them", () => {
+        const result = compile("type Id = i32; fn test(value: Id) -> Id { value }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "type aliases are parsed but not implemented yet",
+        );
+    });
+
+    test("accepts equivalent array lengths from separate annotations", () => {
+        const result = compile("fn id(value: [i32; 3]) -> [i32; 3] { value }");
+        expect(result.isOk()).toBe(true);
+    });
+
+    test("rejects heterogeneous vec! elements", () => {
+        const result = compile("fn test() { let _ = vec![1, true]; }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "Type mismatch in vec! macro: expected `i32`, found `bool`",
+        );
+    });
+
+    test("renders raw pointer mismatches with readable type strings", () => {
+        const result = compile(
+            "fn test(value: *const i32) -> *mut i32 { value }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "expected `*mut i32`, found `*const i32`",
+        );
+    });
+
+    test("renders function type mismatches with readable signatures", () => {
+        const result = compile(
+            "fn test(callback: fn(i32) -> i32) -> fn(bool) -> i32 { callback }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "expected `fn(bool) -> i32`, found `fn(i32) -> i32`",
         );
     });
 });

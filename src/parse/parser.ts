@@ -9,6 +9,8 @@ import {
     BlockExpr,
     BreakExpr,
     CallExpr,
+    CastExpr,
+    ConstItem,
     ClosureExpr,
     ContinueExpr,
     DerefExpr,
@@ -20,6 +22,8 @@ import {
     GenericFnItem,
     type GenericParamNode,
     GenericStructItem,
+    IfLetExpr,
+    UnsafeBlockExpr,
     TestFnItem,
     FnTypeNode,
     ForExpr,
@@ -44,6 +48,8 @@ import {
     Mutability,
     NamedTypeNode,
     OptionTypeNode,
+    RecoveryExpr,
+    RecoveryItem,
     ResultTypeNode,
     OrPattern,
     type ParamNode,
@@ -60,13 +66,17 @@ import {
     type StructFieldNode,
     StructItem,
     StructPattern,
+    StaticItem,
     type StructPatternField,
     TraitItem,
     TraitImplItem,
+    TryExpr,
+    TypeAliasItem,
     TuplePattern,
     TupleTypeNode,
     UnaryExpr,
     UnaryOp,
+    UnsafeItem,
     UseItem,
     WhileExpr,
     WildcardPattern,
@@ -283,6 +293,7 @@ const EXPRESSION_START_TOKENS = new Set<TokenType>([
     TokenType.Return,
     TokenType.Break,
     TokenType.Continue,
+    TokenType.Unsafe,
     TokenType.Pipe,
     TokenType.PipePipe,
 ]);
@@ -295,6 +306,9 @@ const ITEM_START_TOKENS = new Set<TokenType>([
     TokenType.Trait,
     TokenType.Mod,
     TokenType.Use,
+    TokenType.Type,
+    TokenType.Static,
+    TokenType.Const,
     TokenType.Hash,
     TokenType.Unsafe,
 ]);
@@ -303,10 +317,12 @@ function isBlockLikeExpr(e: Expression): boolean {
     return (
         e instanceof BlockExpr ||
         e instanceof IfExpr ||
+        e instanceof IfLetExpr ||
         e instanceof MatchExpr ||
         e instanceof LoopExpr ||
         e instanceof WhileExpr ||
-        e instanceof ForExpr
+        e instanceof ForExpr ||
+        e instanceof UnsafeBlockExpr
     );
 }
 
@@ -672,37 +688,90 @@ class Parser {
         derives: string[],
         isTest: boolean,
     ): Item[] | undefined {
-        if (!this.eat(TokenType.Unsafe)) return undefined;
+        if (
+            !this.check(TokenType.Unsafe) ||
+            !this.isUnsafeItemStart()
+        ) {
+            return undefined;
+        }
+        this.advance();
         if (this.eat(TokenType.Fn)) {
-            return [this.parseFnBody(start, derives, isTest)];
+            return [
+                new UnsafeItem(
+                    this.spanFrom(start),
+                    this.parseFnBody(start, derives, isTest),
+                ),
+            ];
         }
-        if (this.eat(TokenType.Impl)) return [this.parseImplBody(start)];
-        if (this.eat(TokenType.Trait)) return [this.parseTraitBody(start)];
-        if (this.check(TokenType.OpenCurly)) {
-            this.skipBlock();
+        if (this.eat(TokenType.Impl)) {
+            return [
+                new UnsafeItem(this.spanFrom(start), this.parseImplBody(start)),
+            ];
         }
-        return [];
+        if (this.eat(TokenType.Trait)) {
+            return [
+                new UnsafeItem(
+                    this.spanFrom(start),
+                    this.parseTraitBody(start),
+                ),
+            ];
+        }
+        this.errors.push({
+            message: "unsupported `unsafe` item",
+            line: start.line,
+            column: start.column,
+        });
+        return [
+            new RecoveryItem(
+                this.spanFrom(start),
+                "unsupported `unsafe` item",
+            ),
+        ];
     }
 
     private parseTypeAliasItem(): Item[] | undefined {
         if (!this.eat(TokenType.Type)) return undefined;
-        this.eat(TokenType.Identifier);
-        this.parseGenericParams();
-        if (this.eat(TokenType.Eq)) {
-            this.skipUntil(TokenType.Semicolon);
-        }
-        this.eat(TokenType.Semicolon);
-        return [];
+        const start = this.tokens[this.pos - 1];
+        const name = String(this.expect(TokenType.Identifier).value);
+        const genericParams = this.parseGenericParams();
+        this.expect(TokenType.Eq);
+        const aliasedType = this.parseTypeNode();
+        this.expect(TokenType.Semicolon);
+        return [
+            new TypeAliasItem(
+                this.spanFrom(start),
+                name,
+                genericParams,
+                aliasedType,
+            ),
+        ];
     }
 
     private parseStaticOrConstItem(): Item[] | undefined {
         if (!this.check(TokenType.Static) && !this.check(TokenType.Const)) {
             return undefined;
         }
-        this.advance();
-        this.skipUntil(TokenType.Semicolon, TokenType.CloseCurly);
-        this.eat(TokenType.Semicolon);
-        return [];
+        const keyword = this.advance();
+        const isStatic = keyword.type === TokenType.Static;
+        const isMut = isStatic && this.eat(TokenType.Mut) !== undefined;
+        const name = String(this.expect(TokenType.Identifier).value);
+        this.expect(TokenType.Colon);
+        const typeNode = this.parseTypeNode();
+        this.expect(TokenType.Eq);
+        const value = this.parseExpr(0);
+        this.expect(TokenType.Semicolon);
+        if (isStatic) {
+            return [
+                new StaticItem(
+                    this.spanFrom(keyword),
+                    name,
+                    mutabilityFromFlag(isMut),
+                    typeNode,
+                    value,
+                ),
+            ];
+        }
+        return [new ConstItem(this.spanFrom(keyword), name, typeNode, value)];
     }
 
     private parseUnexpectedItem(): Item[] {
@@ -714,6 +783,12 @@ class Parser {
                 column: tok.column,
             });
             this.advance();
+            return [
+                new RecoveryItem(
+                    this.spanFrom(tok),
+                    `unexpected token '${String(tok.value)}' in item position`,
+                ),
+            ];
         }
         return [];
     }
@@ -1040,13 +1115,41 @@ class Parser {
     private parseTraitImplBody(
         startTok: Token,
         traitType: NamedTypeNode,
-    ): TraitImplItem {
+    ): TraitImplItem | RecoveryItem {
         const target = this.parseNamedType(this.peek());
         if (!target) {
-            throw new Error("TODO: Replace this with a proper diagnostic");
+            this.errors.push({
+                message: "expected impl target type",
+                line: this.peek().line,
+                column: this.peek().column,
+            });
+            this.skipUntil(TokenType.OpenCurly, TokenType.Semicolon);
+            if (this.check(TokenType.OpenCurly)) {
+                this.skipBlock();
+            } else {
+                this.eat(TokenType.Semicolon);
+            }
+            return new RecoveryItem(
+                this.spanFrom(startTok),
+                "expected impl target type",
+            );
         }
         if (!(target instanceof NamedTypeNode)) {
-            throw new Error("impl target must be a named type");
+            this.errors.push({
+                message: "impl target must be a named type",
+                line: target.span.line,
+                column: target.span.column,
+            });
+            this.skipUntil(TokenType.OpenCurly, TokenType.Semicolon);
+            if (this.check(TokenType.OpenCurly)) {
+                this.skipBlock();
+            } else {
+                this.eat(TokenType.Semicolon);
+            }
+            return new RecoveryItem(
+                this.spanFrom(startTok),
+                "impl target must be a named type",
+            );
         }
         this.skipWhereClause();
         this.expect(TokenType.OpenCurly);
@@ -1081,14 +1184,44 @@ class Parser {
         );
     }
 
-    private parseImplBody(startTok: Token): ImplItem | TraitImplItem {
+    private parseImplBody(
+        startTok: Token,
+    ): ImplItem | TraitImplItem | RecoveryItem {
         this.parseGenericParams();
         const firstType = this.parseNamedType(this.peek());
         if (!firstType) {
-            throw new Error("TODO: Replace this with a proper diagnostic");
+            this.errors.push({
+                message: "expected impl target type",
+                line: this.peek().line,
+                column: this.peek().column,
+            });
+            this.skipUntil(TokenType.OpenCurly, TokenType.Semicolon);
+            if (this.check(TokenType.OpenCurly)) {
+                this.skipBlock();
+            } else {
+                this.eat(TokenType.Semicolon);
+            }
+            return new RecoveryItem(
+                this.spanFrom(startTok),
+                "expected impl target type",
+            );
         }
         if (!(firstType instanceof NamedTypeNode)) {
-            throw new Error("impl target must be a named type");
+            this.errors.push({
+                message: "impl target must be a named type",
+                line: firstType.span.line,
+                column: firstType.span.column,
+            });
+            this.skipUntil(TokenType.OpenCurly, TokenType.Semicolon);
+            if (this.check(TokenType.OpenCurly)) {
+                this.skipBlock();
+            } else {
+                this.eat(TokenType.Semicolon);
+            }
+            return new RecoveryItem(
+                this.spanFrom(startTok),
+                "impl target must be a named type",
+            );
         }
 
         // impl Trait for Type { ... }
@@ -1390,11 +1523,32 @@ class Parser {
     }
 
     private isStatementItemStart(): boolean {
+        if (this.check(TokenType.Unsafe)) {
+            return this.isUnsafeItemStart();
+        }
         if (ITEM_START_TOKENS.has(this.peek().type)) return true;
-        return (
-            this.check(TokenType.Pub) &&
-            ITEM_START_TOKENS.has(this.peekAt(1).type)
-        );
+        if (!this.check(TokenType.Pub)) {
+            return false;
+        }
+        if (this.peekAt(1).type === TokenType.Unsafe) {
+            return match(this.peekAt(2).type)
+                .with(TokenType.Fn, () => true)
+                .with(TokenType.Impl, () => true)
+                .with(TokenType.Trait, () => true)
+                .otherwise(() => false);
+        }
+        return ITEM_START_TOKENS.has(this.peekAt(1).type);
+    }
+
+    private isUnsafeItemStart(): boolean {
+        if (!this.check(TokenType.Unsafe)) {
+            return false;
+        }
+        return match(this.peekAt(1).type)
+            .with(TokenType.Fn, () => true)
+            .with(TokenType.Impl, () => true)
+            .with(TokenType.Trait, () => true)
+            .otherwise(() => false);
     }
 
     private reportUnexpectedStatement(): void {
@@ -1520,7 +1674,9 @@ class Parser {
         return new FnTypeNode(this.spanFrom(start), params, returnType);
     }
 
-    private parseNamedType(start: Token): TypeNode | undefined {
+    private parseNamedType(
+        start: Token,
+    ): NamedTypeNode | OptionTypeNode | ResultTypeNode | undefined {
         if (!this.check(TokenType.Identifier) && !this.check(TokenType.Self)) {
             return undefined;
         }
@@ -2011,8 +2167,8 @@ class Parser {
 
     private parseTryPostfix(left: Expression): Expression | undefined {
         if (!this.check(TokenType.Question)) return undefined;
-        this.advance();
-        return left;
+        const question = this.advance();
+        return new TryExpr(this.spanFrom(question), left);
     }
 
     private parseTurbofishPostfix(left: Expression): Expression | undefined {
@@ -2031,9 +2187,8 @@ class Parser {
         if (!this.check(TokenType.Identifier) || this.peek().value !== "as") {
             return undefined;
         }
-        this.advance();
-        this.parseTypeNode();
-        return left;
+        const castTok = this.advance();
+        return new CastExpr(this.spanFrom(castTok), left, this.parseTypeNode());
     }
 
     private getInfixPrec(): number {
@@ -2296,6 +2451,20 @@ class Parser {
         noStructLiteral: boolean,
     ): Expression | undefined {
         if (this.check(TokenType.OpenCurly)) return this.parseBlock();
+        if (this.eat(TokenType.Unsafe)) {
+            if (this.check(TokenType.OpenCurly)) {
+                return new UnsafeBlockExpr(this.spanFrom(start), this.parseBlock());
+            }
+            this.errors.push({
+                message: "expected block after `unsafe`",
+                line: start.line,
+                column: start.column,
+            });
+            return new RecoveryExpr(
+                this.spanFrom(start),
+                "expected block after `unsafe`",
+            );
+        }
         if (this.eat(TokenType.If)) return this.parseIfExpr(start);
         if (this.eat(TokenType.Match)) return this.parseMatchExpr(start);
         if (this.eat(TokenType.Return)) {
@@ -2630,23 +2799,18 @@ class Parser {
         );
     }
 
-    private parseIfExpr(startTok: Token): IfExpr {
+    private parseIfExpr(startTok: Token): IfExpr | IfLetExpr {
         // Handle `if let pat = expr`
         if (this.eat(TokenType.Let)) {
-            const _pat = this.parsePattern(); // FIXME: unused variable
+            const pattern = this.parsePattern();
             this.expect(TokenType.Eq);
-            const _val = this.parseExpr(0, true); // FIXME: unused variable
-            // Represent as a synthetic true condition (if-let not lowered)
-            const cond = new LiteralExpr(
-                this.spanFrom(startTok),
-                LiteralKind.Bool,
-                true,
-            );
+            const value = this.parseExpr(0, true);
             const thenBranch = this.parseBlock();
             const elseBranch = this.parseElseBranch();
-            return new IfExpr(
+            return new IfLetExpr(
                 this.spanFrom(startTok),
-                cond,
+                pattern,
+                value,
                 thenBranch,
                 elseBranch,
             );
@@ -2663,7 +2827,7 @@ class Parser {
         );
     }
 
-    private parseElseBranch(): IfExpr | BlockExpr | undefined {
+    private parseElseBranch(): Expression | undefined {
         if (!this.eat(TokenType.Else)) return undefined;
         if (this.eat(TokenType.If)) {
             return this.parseIfExpr(this.tokens[this.pos - 1]);

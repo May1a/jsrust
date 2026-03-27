@@ -1,3 +1,4 @@
+import { internalBug } from "../utils/internal_bug";
 import type { TokenType } from "./tokenizer";
 
 export class Token {
@@ -118,6 +119,11 @@ export interface AstVisitor<R, C> {
     visitDerefExpr(node: DerefExpr, ctx: C): R;
     visitMacroExpr(node: MacroExpr, ctx: C): R;
     visitClosureExpr(node: ClosureExpr, ctx: C): R;
+    visitTryExpr(node: TryExpr, ctx: C): R;
+    visitCastExpr(node: CastExpr, ctx: C): R;
+    visitIfLetExpr(node: IfLetExpr, ctx: C): R;
+    visitUnsafeBlockExpr(node: UnsafeBlockExpr, ctx: C): R;
+    visitRecoveryExpr(node: RecoveryExpr, ctx: C): R;
     visitLetStmt(node: LetStmt, ctx: C): R;
     visitExprStmt(node: ExprStmt, ctx: C): R;
     visitItemStmt(node: ItemStmt, ctx: C): R;
@@ -129,6 +135,11 @@ export interface AstVisitor<R, C> {
     visitImplItem(node: ImplItem, ctx: C): R;
     visitTraitImplItem(node: TraitImplItem, ctx: C): R;
     visitTraitItem(node: TraitItem, ctx: C): R;
+    visitUnsafeItem(node: UnsafeItem, ctx: C): R;
+    visitTypeAliasItem(node: TypeAliasItem, ctx: C): R;
+    visitStaticItem(node: StaticItem, ctx: C): R;
+    visitConstItem(node: ConstItem, ctx: C): R;
+    visitRecoveryItem(node: RecoveryItem, ctx: C): R;
     visitIdentPat(node: IdentPattern, ctx: C): R;
     visitWildcardPat(node: WildcardPattern, ctx: C): R;
     visitLiteralPat(node: LiteralPattern, ctx: C): R;
@@ -549,6 +560,85 @@ export class ClosureExpr extends Expression {
     }
 }
 
+export class TryExpr extends Expression {
+    readonly value: Expression;
+
+    constructor(span: Span, value: Expression) {
+        super(span);
+        this.value = value;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitTryExpr(this, ctx);
+    }
+}
+
+export class CastExpr extends Expression {
+    readonly value: Expression;
+    readonly targetType: TypeNode;
+
+    constructor(span: Span, value: Expression, targetType: TypeNode) {
+        super(span);
+        this.value = value;
+        this.targetType = targetType;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitCastExpr(this, ctx);
+    }
+}
+
+export class IfLetExpr extends Expression {
+    readonly pattern: Pattern;
+    readonly value: Expression;
+    readonly thenBranch: BlockExpr;
+    readonly elseBranch?: Expression;
+
+    constructor(
+        span: Span,
+        pattern: Pattern,
+        value: Expression,
+        thenBranch: BlockExpr,
+        elseBranch?: Expression,
+    ) {
+        super(span);
+        this.pattern = pattern;
+        this.value = value;
+        this.thenBranch = thenBranch;
+        this.elseBranch = elseBranch;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitIfLetExpr(this, ctx);
+    }
+}
+
+export class UnsafeBlockExpr extends Expression {
+    readonly body: BlockExpr;
+
+    constructor(span: Span, body: BlockExpr) {
+        super(span);
+        this.body = body;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitUnsafeBlockExpr(this, ctx);
+    }
+}
+
+export class RecoveryExpr extends Expression {
+    readonly message: string;
+
+    constructor(span: Span, message: string) {
+        super(span);
+        this.message = message;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitRecoveryExpr(this, ctx);
+    }
+}
+
 export class LetStmt extends Statement {
     readonly pattern: Pattern;
     readonly type: TypeNode;
@@ -763,7 +853,7 @@ export class ModItem extends Item {
 
 function pathToString(path: string[]): string {
     if (path.length === 0) {
-        throw new Error("Assert: cannot resolve empty path");
+        internalBug("cannot resolve empty path");
     }
     return path.join("::");
 }
@@ -868,6 +958,96 @@ export class ImplItem extends Item {
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
         return visitor.visitImplItem(this, ctx);
+    }
+}
+
+export class UnsafeItem extends Item {
+    readonly inner: Item | BlockExpr;
+
+    constructor(span: Span, inner: Item | BlockExpr) {
+        super(span);
+        this.inner = inner;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitUnsafeItem(this, ctx);
+    }
+}
+
+export class TypeAliasItem extends Item {
+    readonly name: string;
+    readonly genericParams: GenericParamNode[];
+    readonly aliasedType: TypeNode;
+
+    constructor(
+        span: Span,
+        name: string,
+        genericParams: GenericParamNode[],
+        aliasedType: TypeNode,
+    ) {
+        super(span);
+        this.name = name;
+        this.genericParams = genericParams;
+        this.aliasedType = aliasedType;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitTypeAliasItem(this, ctx);
+    }
+}
+
+export class StaticItem extends Item {
+    readonly name: string;
+    readonly mutability: Mutability;
+    readonly typeNode: TypeNode;
+    readonly value: Expression;
+
+    constructor(
+        span: Span,
+        name: string,
+        mutability: Mutability,
+        typeNode: TypeNode,
+        value: Expression,
+    ) {
+        super(span);
+        this.name = name;
+        this.mutability = mutability;
+        this.typeNode = typeNode;
+        this.value = value;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitStaticItem(this, ctx);
+    }
+}
+
+export class ConstItem extends Item {
+    readonly name: string;
+    readonly typeNode: TypeNode;
+    readonly value: Expression;
+
+    constructor(span: Span, name: string, typeNode: TypeNode, value: Expression) {
+        super(span);
+        this.name = name;
+        this.typeNode = typeNode;
+        this.value = value;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitConstItem(this, ctx);
+    }
+}
+
+export class RecoveryItem extends Item {
+    readonly message: string;
+
+    constructor(span: Span, message: string) {
+        super(span);
+        this.message = message;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitRecoveryItem(this, ctx);
     }
 }
 
@@ -1224,7 +1404,7 @@ export class UseTreeNode extends Node {
     }
 
     accept<R, C>(_visitor: AstVisitor<R, C>, _ctx: C): R {
-        throw new Error("UseTreeNode does not participate in visitor dispatch");
+        internalBug("UseTreeNode does not participate in visitor dispatch");
     }
 }
 

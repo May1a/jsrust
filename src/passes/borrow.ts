@@ -38,7 +38,8 @@ import {
     BindingPattern,
     IdentPattern,
 } from "../parse/ast";
-import { match } from "ts-pattern";
+import { Result } from "better-result";
+import { match, P } from "ts-pattern";
 import type { TypeContext } from "../utils/type_context";
 
 const PARAM_DEPTH = -1;
@@ -111,33 +112,36 @@ function collectPatternBindings(
     if (!pattern) {
         return;
     }
-    if (pattern instanceof IdentPattern) {
-        out.push(pattern.name);
-        return;
-    }
-    if (pattern instanceof TuplePattern || pattern instanceof SlicePattern) {
-        for (const element of pattern.elements) {
-            collectPatternBindings(element, out);
-        }
-        if (pattern instanceof SlicePattern) {
-            collectPatternBindings(pattern.rest, out);
-        }
-        return;
-    }
-    if (pattern instanceof StructPattern) {
-        for (const field of pattern.fields) {
-            collectPatternBindings(field.pattern, out);
-        }
-        return;
-    }
-    if (pattern instanceof OrPattern) {
-        collectPatternBindings(pattern.alternatives[0], out);
-        return;
-    }
-    if (pattern instanceof BindingPattern) {
-        out.push(pattern.name);
-        collectPatternBindings(pattern.pattern, out);
-    }
+    match(pattern)
+        .with(P.instanceOf(IdentPattern), (p) => {
+            out.push(p.name);
+        })
+        .with(P.instanceOf(TuplePattern), (p) => {
+            for (const element of p.elements) {
+                collectPatternBindings(element, out);
+            }
+        })
+        .with(P.instanceOf(SlicePattern), (p) => {
+            for (const element of p.elements) {
+                collectPatternBindings(element, out);
+            }
+            collectPatternBindings(p.rest, out);
+        })
+        .with(P.instanceOf(StructPattern), (p) => {
+            for (const field of p.fields) {
+                collectPatternBindings(field.pattern, out);
+            }
+        })
+        .with(P.instanceOf(OrPattern), (p) => {
+            collectPatternBindings(p.alternatives[0], out);
+        })
+        .with(P.instanceOf(BindingPattern), (p) => {
+            out.push(p.name);
+            collectPatternBindings(p.pattern, out);
+        })
+        .otherwise(() => {
+            // Other pattern types carry no bindings
+        });
 }
 
 function getSingleSegmentPathName(
@@ -662,15 +666,14 @@ function checkItem(item: Item | undefined, errors: BorrowError[]): void {
 export function checkBorrowLite(
     moduleAst: unknown,
     _typeCtx: TypeContext,
-): { ok: boolean; errors?: BorrowError[] } {
+): Result<void, BorrowError[]> {
     if (!(moduleAst instanceof ModuleNode)) {
-        return { ok: true };
+        return Result.ok();
     }
     const errors: BorrowError[] = [];
     for (const item of moduleAst.items) {
         checkItem(item, errors);
     }
-    return match(errors.length > 0)
-        .with(true, () => ({ ok: false as const, errors }))
-        .otherwise(() => ({ ok: true as const }));
+    if (errors.length > 0) return Result.err(errors);
+    return Result.ok();
 }
