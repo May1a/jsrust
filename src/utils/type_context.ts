@@ -35,6 +35,7 @@ export class TypeContext {
     private readonly genericFnItems: Map<string, GenericFnItem>;
     private readonly callSubstitutions: WeakMap<CallExpr, SubstitutionMap>;
     private readonly variantOwners: Map<string, string>;
+    private readonly constTypes: Map<string, TypeNode>;
 
     constructor() {
         this.expressionTypes = new WeakMap();
@@ -45,6 +46,7 @@ export class TypeContext {
         this.genericFnItems = new Map();
         this.callSubstitutions = new WeakMap();
         this.variantOwners = new Map();
+        this.constTypes = new Map();
     }
 
     setExpressionType(expr: Expression, ty: TypeNode): void {
@@ -143,6 +145,16 @@ export class TypeContext {
 
     lookupVariantOwner(variantName: string): string | undefined {
         return this.variantOwners.get(variantName);
+    }
+
+    // --- Const item registry (module-level `const` names → annotated types) ---
+
+    registerConst(name: string, ty: TypeNode): void {
+        this.constTypes.set(name, ty);
+    }
+
+    lookupConst(name: string): TypeNode | undefined {
+        return this.constTypes.get(name);
     }
 
     // --- Call-site generic substitution tracking ---

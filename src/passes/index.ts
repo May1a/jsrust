@@ -1,3 +1,4 @@
+export * from "./const_eval";
 export * from "./inference";
 export * from "./borrow";
 export * from "./ast_to_ssa";

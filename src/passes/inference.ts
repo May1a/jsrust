@@ -6,6 +6,7 @@ import {
     BreakExpr,
     CallExpr,
     ClosureExpr,
+    ConstItem,
     ContinueExpr,
     DerefExpr,
     ExprStmt,
@@ -800,6 +801,98 @@ function registerItemTypesWithPrefix(
     }
 }
 
+function inferSingleConstItem(
+    typeCtx: TypeContext,
+    item: ConstItem,
+    qualName: string,
+): TypeError[] {
+    const errors: TypeError[] = [];
+
+    if (typeCtx.lookupConst(qualName)) {
+        errors.push({
+            message: `Duplicate const definition: \`${qualName}\``,
+            span: item.span,
+        });
+        return errors;
+    }
+
+    if (typeCtx.lookupFnSignature(qualName)) {
+        errors.push({
+            message: `\`${qualName}\` is defined as both a function and a const`,
+            span: item.span,
+        });
+        return errors;
+    }
+
+    errors.push(...validateTypeNode(typeCtx, item.typeNode, new Set<string>()));
+
+    const initResult = inferExprType(typeCtx, item.value);
+    let initTy: TypeNode | undefined;
+    if (initResult.isErr()) {
+        errors.push(...initResult.error.errors);
+        initTy = initResult.error.fallback;
+    } else {
+        initTy = initResult.value;
+    }
+
+    const annotationTy = item.typeNode;
+    const hasAnnotation = !isInferredPlaceholder(annotationTy);
+
+    if (
+        hasAnnotation &&
+        initTy !== undefined &&
+        !isInferredPlaceholder(initTy) &&
+        !typesEqual(annotationTy, initTy)
+    ) {
+        errors.push({
+            message: `Type mismatch: expected \`${typeToString(annotationTy)}\`, found \`${typeToString(initTy)}\``,
+            span: item.span,
+        });
+    }
+
+    if (errors.length > 0) {
+        return errors;
+    }
+
+    typeCtx.registerConst(qualName, annotationTy);
+    return [];
+}
+
+function qualifyConstName(modulePrefix: string, name: string): string {
+    if (modulePrefix === "") {
+        return name;
+    }
+    return `${modulePrefix}::${name}`;
+}
+
+function inferAllModuleConsts(
+    typeCtx: TypeContext,
+    items: Item[],
+    modulePrefix: string,
+): TypeError[] {
+    const errors: TypeError[] = [];
+    for (const node of items) {
+        if (node instanceof ConstItem) {
+            errors.push(
+                ...inferSingleConstItem(
+                    typeCtx,
+                    node,
+                    qualifyConstName(modulePrefix, node.name),
+                ),
+            );
+        } else if (node instanceof ModItem) {
+            errors.push(
+                ...inferAllModuleConsts(
+                    typeCtx,
+                    node.items,
+                    qualifyConstName(modulePrefix, node.name),
+                ),
+            );
+        }
+    }
+    return errors;
+}
+
 function registerUseItemAlias(typeCtx: TypeContext, node: UseItem): void {
     if (node.path.length === 0) return;
     const fullPath = node.path.join("::");
@@ -1086,6 +1179,11 @@ function inferIdentifier(
     const varTy = typeCtx.lookupVariable(expr.name);
     if (varTy) {
         return Result.ok(varTy);
+    }
+
+    const constTy = typeCtx.lookupConst(expr.name);
+    if (constTy) {
+        return Result.ok(constTy);
     }
 
     const fnSig = typeCtx.lookupFnSignature(expr.name);
@@ -2600,17 +2698,11 @@ function inferTraitImplItem(
 
 // --- Module-Level Inference ---
 
-export function inferModule(
+function inferModulePhase2(
     typeCtx: TypeContext,
     moduleNode: ModuleNode,
-): Result<void, TypeError[]> {
-    // Phase 1: Register all item types (structs, enums, functions, impls)
-    registerItemTypesWithPrefix(typeCtx, moduleNode.items, "");
-
+): TypeError[] {
     const errors: TypeError[] = [];
-    errors.push(...checkDuplicateFns(moduleNode));
-
-    // Phase 2: Validate function signatures and infer function bodies
     for (const item of moduleNode.items) {
         if (item instanceof StructItem || item instanceof GenericStructItem) {
             errors.push(...validateStructFieldTypes(typeCtx, item));
@@ -2620,7 +2712,6 @@ export function inferModule(
         }
         if (item instanceof GenericFnItem) {
             errors.push(...validateFnTypes(typeCtx, item));
-            // Skip deep body inference for generic functions — type params aren't concrete
             continue;
         }
         if (item instanceof FnItem) {
@@ -2628,13 +2719,12 @@ export function inferModule(
             errors.push(...inferFnBody(typeCtx, item));
         }
         if (item instanceof ModItem) {
-            const nested = inferModule(
-                typeCtx,
-                new ModuleNode(item.span, item.name, item.items),
+            errors.push(
+                ...inferModulePhase2(
+                    typeCtx,
+                    new ModuleNode(item.span, item.name, item.items),
+                ),
             );
-            if (!nested.isOk()) {
-                errors.push(...nested.error);
-            }
         }
         if (item instanceof TraitItem) {
             for (const method of item.methods) {
@@ -2653,6 +2743,20 @@ export function inferModule(
             errors.push(...inferTraitImplItem(typeCtx, item));
         }
     }
+    return errors;
+}
+
+export function inferModule(
+    typeCtx: TypeContext,
+    moduleNode: ModuleNode,
+): Result<void, TypeError[]> {
+    // Phase 1: Register all item types (structs, enums, functions, impls)
+    registerItemTypesWithPrefix(typeCtx, moduleNode.items, "");
+
+    const errors: TypeError[] = [];
+    errors.push(...checkDuplicateFns(moduleNode));
+    errors.push(...inferAllModuleConsts(typeCtx, moduleNode.items, ""));
+    errors.push(...inferModulePhase2(typeCtx, moduleNode));
 
     if (errors.length > 0) {
         return Result.err(errors);

@@ -73,6 +73,7 @@ import {
     walkAst,
     ReceiverKind,
 } from "../parse/ast";
+import type { ConstValue } from "./const_eval";
 import {
     MonomorphizationRegistry,
     inferTypeArgs,
@@ -256,6 +257,7 @@ export class AstToSsaCtx {
     private readonly structFieldNames: Map<string, string[]>;
     private readonly enumVariantTags: Map<string, number>;
     private readonly enumVariantOwners: Map<string, string>;
+    private readonly moduleConstValues: ReadonlyMap<string, ConstValue>;
     private readonly monoRegistry?: MonomorphizationRegistry;
     private loopStack: LoopFrame[];
     private currentReturnType: IRType;
@@ -268,6 +270,7 @@ export class AstToSsaCtx {
             structFieldNames?: Map<string, string[]>;
             enumVariantTags?: Map<string, number>;
             enumVariantOwners?: Map<string, string>;
+            moduleConstValues?: ReadonlyMap<string, ConstValue>;
             monoRegistry?: MonomorphizationRegistry;
         } = {},
     ) {
@@ -283,6 +286,7 @@ export class AstToSsaCtx {
             options.enumVariantTags ?? new Map<string, number>();
         this.enumVariantOwners =
             options.enumVariantOwners ?? new Map<string, string>();
+        this.moduleConstValues = options.moduleConstValues ?? new Map();
         this.monoRegistry = options.monoRegistry;
         this.loopStack = [];
         this.currentReturnType = makeIRUnitType();
@@ -709,7 +713,7 @@ export class AstToSsaCtx {
             visitConstItem: (item: ConstItem) =>
                 loweringError(
                     LoweringErrorKind.UnsupportedNode,
-                    "`const` items are not implemented",
+                    "`const` items are not lowered through this visitor (use module const map)",
                     item.span,
                 ),
             visitRecoveryItem: (item: RecoveryItem) =>
@@ -794,6 +798,43 @@ export class AstToSsaCtx {
         }
     }
 
+    private emitModuleConstValue(
+        cv: ConstValue,
+        span: Span,
+    ): Result<ValueId, LoweringError> {
+        switch (cv.kind) {
+            case "int": {
+                const inst = this.builder.iconst(cv.value, cv.width);
+                return AstToSsaCtx.handleInstructionId(inst.id);
+            }
+            case "float": {
+                const inst = this.builder.fconst(cv.value, cv.width);
+                return AstToSsaCtx.handleInstructionId(inst.id);
+            }
+            case "bool": {
+                const inst = this.builder.bconst(cv.value);
+                return AstToSsaCtx.handleInstructionId(inst.id);
+            }
+            case "string": {
+                const literalId = internIRStringLiteral(this.irModule, cv.value);
+                const inst = this.builder.sconst(literalId);
+                return AstToSsaCtx.handleInstructionId(inst.id);
+            }
+            case "char": {
+                const inst = this.builder.iconst(cv.value, IntWidth.U32);
+                return AstToSsaCtx.handleInstructionId(inst.id);
+            }
+            default: {
+                const exhaustive: never = cv;
+                return loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    `Unsupported const value shape: ${String(exhaustive)}`,
+                    span,
+                );
+            }
+        }
+    }
+
     private lowerIdentifier(
         expr: IdentifierExpr,
     ): Result<ValueId, LoweringError> {
@@ -801,6 +842,11 @@ export class AstToSsaCtx {
         if (binding) {
             const loadInst = this.builder.load(binding.ptr, binding.ty);
             return AstToSsaCtx.handleInstructionId(loadInst.id);
+        }
+
+        const constVal = this.moduleConstValues.get(expr.name);
+        if (constVal !== undefined) {
+            return this.emitModuleConstValue(constVal, expr.span);
         }
 
         const variantTag = this.enumVariantTags.get(expr.name);
@@ -3734,7 +3780,10 @@ export class AstToSsaCtx {
 
 export function lowerAstToSsa(
     fnDecl: FnItem,
-    options: { irModule?: IRModule } = {},
+    options: {
+        irModule?: IRModule;
+        moduleConstValues?: ReadonlyMap<string, ConstValue>;
+    } = {},
 ): Result<IRFunction, LoweringError> {
     const ctx = new AstToSsaCtx(options);
     return ctx.lowerFunction(fnDecl);
@@ -4115,6 +4164,7 @@ function lowerOwnedFunction(
     enumVariantTags: Map<string, number>,
     enumVariantOwners: Map<string, string>,
     fnIdMap: Map<string, number>,
+    moduleConstValues: ReadonlyMap<string, ConstValue>,
     monoRegistry?: MonomorphizationRegistry,
 ): Result<void, LoweringError> {
     const ctx = new AstToSsaCtx({
@@ -4123,6 +4173,7 @@ function lowerOwnedFunction(
         structFieldNames,
         enumVariantTags,
         enumVariantOwners,
+        moduleConstValues,
         monoRegistry,
     });
     ctx.seedFunctionIds(fnIdMap);
@@ -4232,6 +4283,7 @@ function lowerImplMethods(
     enumVariantTags: Map<string, number>,
     enumVariantOwners: Map<string, string>,
     fnIdMap: Map<string, number>,
+    moduleConstValues: ReadonlyMap<string, ConstValue>,
     monoRegistry?: MonomorphizationRegistry,
 ): Result<void, LoweringError> {
     const implTarget = item.target.name;
@@ -4251,6 +4303,7 @@ function lowerImplMethods(
             enumVariantTags,
             enumVariantOwners,
             fnIdMap,
+            moduleConstValues,
             monoRegistry,
         );
         if (result.isErr()) {
@@ -4268,6 +4321,7 @@ function lowerModuleItem(
     enumVariantTags: Map<string, number>,
     enumVariantOwners: Map<string, string>,
     fnIdMap: Map<string, number>,
+    moduleConstValues: ReadonlyMap<string, ConstValue>,
     monoRegistry?: MonomorphizationRegistry,
 ): Result<void, LoweringError> {
     if (item instanceof GenericFnItem || item instanceof GenericStructItem) {
@@ -4282,6 +4336,7 @@ function lowerModuleItem(
             enumVariantTags,
             enumVariantOwners,
             fnIdMap,
+            moduleConstValues,
             monoRegistry,
         );
     }
@@ -4294,6 +4349,7 @@ function lowerModuleItem(
             enumVariantTags,
             enumVariantOwners,
             fnIdMap,
+            moduleConstValues,
             monoRegistry,
         );
     }
@@ -4313,6 +4369,7 @@ function lowerModuleItem(
                 enumVariantTags,
                 enumVariantOwners,
                 fnIdMap,
+                moduleConstValues,
                 monoRegistry,
             );
             if (result.isErr()) {
@@ -4331,6 +4388,7 @@ function lowerModuleItem(
                 enumVariantTags,
                 enumVariantOwners,
                 fnIdMap,
+                moduleConstValues,
                 monoRegistry,
             );
             if (result.isErr()) {
@@ -4343,7 +4401,9 @@ function lowerModuleItem(
 
 export function lowerAstModuleToSsa(
     moduleNode: ModuleNode,
+    options: { moduleConstValues?: ReadonlyMap<string, ConstValue> } = {},
 ): Result<IRModule, LoweringError> {
+    const moduleConstValues = options.moduleConstValues ?? new Map();
     const irModule = makeIRModule(moduleNode.name);
     const structFieldNames = new Map<string, string[]>();
     const enumVariantTags = new Map<string, number>();
@@ -4379,6 +4439,7 @@ export function lowerAstModuleToSsa(
             enumVariantTags,
             enumVariantOwners,
             fnIdMap,
+            moduleConstValues,
             registry,
         );
         if (result.isErr()) {
@@ -4396,6 +4457,7 @@ export function lowerAstModuleToSsa(
             enumVariantTags,
             enumVariantOwners,
             fnIdMap,
+            moduleConstValues,
             registry,
         );
         if (result.isErr()) {

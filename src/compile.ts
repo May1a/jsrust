@@ -4,7 +4,6 @@ import { Result } from "better-result";
 import { match } from "ts-pattern";
 import {
     CastExpr,
-    ConstItem,
     IfLetExpr,
     RecoveryExpr,
     RecoveryItem,
@@ -24,6 +23,7 @@ import { printModule as printIRModule } from "./ir/ir_printer";
 import { serializeModule } from "./ir/ir_serialize";
 import { validateFunction as validateIRFunction } from "./ir/ir_validate";
 import { parseModule } from "./parse/parser";
+import { evaluateModuleConsts } from "./passes/const_eval";
 import { lowerAstModuleToSsa } from "./passes/ast_to_ssa";
 import { checkBorrowLite } from "./passes/borrow";
 import { expandDerives } from "./passes/derive_expand";
@@ -312,13 +312,6 @@ function unsupportedFeatureOfNode(
             message: "`static` items are parsed but not implemented yet",
         };
     }
-    if (node instanceof ConstItem) {
-        return {
-            feature: "const-item",
-            span: node.span,
-            message: "`const` items are parsed but not implemented yet",
-        };
-    }
     if (node instanceof RecoveryExpr) {
         return {
             feature: "recovery-expression",
@@ -447,8 +440,25 @@ export function lowerModule(
     const { validate = true } = options;
     resetIRIds();
 
+    const constResult = evaluateModuleConsts(typed.prepared.module);
+    if (constResult.isErr()) {
+        return Result.err(
+            diagnosticFailure(
+                "type",
+                constResult.error.map((error) => ({
+                    message: error.message,
+                    span: diagnosticSpan(error.span),
+                    phase: "type",
+                })),
+            ),
+        );
+    }
+
     const loweringResult = Result.try({
-        try: () => lowerAstModuleToSsa(typed.prepared.module),
+        try: () =>
+            lowerAstModuleToSsa(typed.prepared.module, {
+                moduleConstValues: constResult.value,
+            }),
         catch: (cause) =>
             normalizeInternalFailure(
                 "lower",

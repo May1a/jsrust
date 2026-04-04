@@ -295,4 +295,65 @@ describe("compile", () => {
             "expected `fn(bool) -> i32`, found `fn(i32) -> i32`",
         );
     });
+
+    test("lowers module-level const values as immediates", () => {
+        const result = compileToIR(
+            "const N: i32 = 7; fn main() -> i32 { N }",
+        );
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+
+        expect(result.value).toContain("iconst");
+        expect(result.value).toContain("7");
+    });
+
+    test("allows const initializers to reference prior consts", () => {
+        const result = compileToIR(
+            "const A: i32 = 1; const B: i32 = A + 2; fn main() -> i32 { B }",
+        );
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+
+        expect(result.value).toContain("3");
+    });
+
+    test("rejects const type mismatches at typecheck", () => {
+        const result = compile("const X: i32 = true;");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain("Type mismatch");
+    });
+
+    test("rejects const names that collide with a function", () => {
+        const result = compile("fn dup() {} const dup: i32 = 1;");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain("function and a const");
+    });
+
+    test("rejects forward references between const items", () => {
+        const result = compile("const A: i32 = B; const B: i32 = 1;");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain("Cannot find value `B`");
+    });
+
+    test("rejects const division by zero at evaluation", () => {
+        const result = compile("const X: i32 = 1 / 0;");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain("division by zero");
+    });
+
+    test("rejects duplicate const definitions", () => {
+        const result = compile("const N: i32 = 1; const N: i32 = 2;");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain("Duplicate const");
+    });
 });
