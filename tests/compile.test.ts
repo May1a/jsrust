@@ -262,6 +262,113 @@ describe("compile", () => {
         expect(result.isOk()).toBe(true);
     });
 
+    describe("const items", () => {
+        test("inlines top-level const values", () => {
+            const result = compileToIR(
+                "const VALUE: i32 = 7; fn test() -> i32 { VALUE }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+
+            expect(result.value).toContain("iconst 7");
+        });
+
+        test("resolves qualified consts from nested modules", () => {
+            const result = compileToIR(
+                "mod inner { pub const VALUE: i32 = 5; } fn test() -> i32 { inner::VALUE }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+
+            expect(result.value).toContain("iconst 5");
+        });
+
+        test("inlines block-local const items", () => {
+            const result = compileToIR(
+                "fn test() -> i32 { const VALUE: i32 = 2; VALUE + 1 }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+
+            expect(result.value).toContain("iconst 2");
+            expect(result.value).toContain("iadd");
+        });
+
+        test("resolves inherent associated consts", () => {
+            const result = compileToIR(
+                "struct Foo {} impl Foo { const VALUE: i32 = 9; } fn test() -> i32 { Foo::VALUE }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+
+            expect(result.value).toContain("iconst 9");
+        });
+
+        test("resolves Self associated consts inside inherent impl methods", () => {
+            const result = compileToIR(
+                "struct Foo {} impl Foo { const VALUE: i32 = 9; fn get() -> i32 { Self::VALUE } } fn test() -> i32 { Foo::get() }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+
+            expect(result.value).toContain("iconst 9");
+            expect(result.value).toContain("call get()");
+        });
+
+        test("resolves trait associated consts through impl defaults", () => {
+            const result = compileToIR(
+                "trait Has { const VALUE: i32 = 4; } impl Has for i32 {} fn test() -> i32 { i32::VALUE }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+
+            expect(result.value).toContain("iconst 4");
+        });
+
+        test("resolves Self associated consts inside trait impl methods", () => {
+            const result = compileToIR(
+                "trait Has { const VALUE: i32 = 4; fn get(&self) -> i32 { Self::VALUE } } impl Has for i32 { fn get(&self) -> i32 { Self::VALUE } } fn test() -> i32 { let value = 1; value.get() }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+
+            expect(result.value).toContain("iconst 4");
+            expect(result.value).toContain("call get");
+        });
+
+        test("resolves const aliases from use items", () => {
+            const result = compileToIR(
+                "mod inner { pub const VALUE: i32 = 5; } use inner::VALUE as ALIAS; fn test() -> i32 { ALIAS }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+
+            expect(result.value).toContain("iconst 5");
+        });
+
+        test("resolves chained const references", () => {
+            const result = compileToIR(
+                "const A: i32 = B; const B: i32 = 3; fn test() -> i32 { A }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+
+            expect(result.value).toContain("iconst 3");
+        });
+
+        test("rejects recursive const references with a targeted error", () => {
+            const result = compile(
+                "const A: i32 = B; const B: i32 = A; fn test() -> i32 { A }",
+            );
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+
+            expect(formatCompileError(result.error)).toContain(
+                "recursive const definition detected",
+            );
+        });
+    });
+
     test("rejects heterogeneous vec! elements", () => {
         const result = compile("fn test() { let _ = vec![1, true]; }");
         expect(result.isErr()).toBe(true);

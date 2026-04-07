@@ -139,6 +139,7 @@ export interface AstVisitor<R, C> {
     visitTypeAliasItem(node: TypeAliasItem, ctx: C): R;
     visitStaticItem(node: StaticItem, ctx: C): R;
     visitConstItem(node: ConstItem, ctx: C): R;
+    visitTraitConstItem(node: TraitConstItem, ctx: C): R;
     visitRecoveryItem(node: RecoveryItem, ctx: C): R;
     visitIdentPat(node: IdentPattern, ctx: C): R;
     visitWildcardPat(node: WildcardPattern, ctx: C): R;
@@ -902,14 +903,43 @@ export class TraitMethod extends Item {
     }
 }
 
+export class TraitConstItem extends Item {
+    readonly name: string;
+    readonly typeNode: TypeNode;
+    readonly value?: Expression;
+
+    constructor(
+        span: Span,
+        name: string,
+        typeNode: TypeNode,
+        value?: Expression,
+    ) {
+        super(span);
+        this.name = name;
+        this.typeNode = typeNode;
+        this.value = value;
+    }
+
+    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
+        return visitor.visitTraitConstItem(this, ctx);
+    }
+}
+
 export class TraitItem extends Item {
     readonly name: string;
-    readonly methods: (TraitMethod | FnItem | GenericFnItem)[];
+    readonly methods: (FnItem | GenericFnItem)[];
+    readonly constItems: TraitConstItem[];
 
-    constructor(span: Span, name: string, methods: (FnItem | GenericFnItem)[]) {
+    constructor(
+        span: Span,
+        name: string,
+        methods: (FnItem | GenericFnItem)[],
+        constItems: TraitConstItem[] = [],
+    ) {
         super(span);
         this.name = name;
         this.methods = methods;
+        this.constItems = constItems;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
@@ -922,6 +952,7 @@ export class TraitImplItem extends Item {
     readonly target: NamedTypeNode;
     readonly trait: TraitItem;
     readonly fnImpls: FnItem[];
+    readonly constItems: ConstItem[];
 
     constructor(
         span: Span,
@@ -929,12 +960,14 @@ export class TraitImplItem extends Item {
         trait: TraitItem,
         target: NamedTypeNode,
         fnImpls: FnItem[],
+        constItems: ConstItem[] = [],
     ) {
         super(span);
         this.name = name;
         this.trait = trait;
         this.target = target;
         this.fnImpls = fnImpls;
+        this.constItems = constItems;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
@@ -945,15 +978,18 @@ export class TraitImplItem extends Item {
 export class ImplItem extends Item {
     readonly target: NamedTypeNode;
     readonly methods: (FnItem | GenericFnItem)[];
+    readonly constItems: ConstItem[];
 
     constructor(
         span: Span,
         target: NamedTypeNode,
         methods: (FnItem | GenericFnItem)[],
+        constItems: ConstItem[] = [],
     ) {
         super(span);
         this.target = target;
         this.methods = methods;
+        this.constItems = constItems;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {

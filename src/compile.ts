@@ -4,7 +4,6 @@ import { Result } from "better-result";
 import { match } from "ts-pattern";
 import {
     CastExpr,
-    ConstItem,
     IfLetExpr,
     RecoveryExpr,
     RecoveryItem,
@@ -310,13 +309,6 @@ function unsupportedFeatureOfNode(
             feature: "static-item",
             span: node.span,
             message: "`static` items are parsed but not implemented yet",
-        };
-    }
-    if (node instanceof ConstItem) {
-        return {
-            feature: "const-item",
-            span: node.span,
-            message: "`const` items are parsed but not implemented yet",
         };
     }
     if (node instanceof RecoveryExpr) {

@@ -11,11 +11,18 @@ interface FnSignature {
     returnType: TypeNode;
 }
 
+export interface ConstBindingInfo {
+    typeNode: TypeNode;
+    value?: Expression;
+    selfTypeName?: string;
+}
+
 /**
  * A single lexical scope mapping variable names to their resolved types.
  */
 class Scope {
     private readonly variables = new Map<string, TypeNode>();
+    private readonly consts = new Map<string, ConstBindingInfo>();
 
     setVariable(name: string, ty: TypeNode): void {
         this.variables.set(name, ty);
@@ -23,6 +30,14 @@ class Scope {
 
     getVariable(name: string): TypeNode | undefined {
         return this.variables.get(name);
+    }
+
+    setConst(name: string, binding: ConstBindingInfo): void {
+        this.consts.set(name, binding);
+    }
+
+    getConst(name: string): ConstBindingInfo | undefined {
+        return this.consts.get(name);
     }
 }
 
@@ -35,6 +50,7 @@ export class TypeContext {
     private readonly genericFnItems: Map<string, GenericFnItem>;
     private readonly callSubstitutions: WeakMap<CallExpr, SubstitutionMap>;
     private readonly variantOwners: Map<string, string>;
+    private readonly namedConsts: Map<string, ConstBindingInfo>;
 
     constructor() {
         this.expressionTypes = new WeakMap();
@@ -45,6 +61,7 @@ export class TypeContext {
         this.genericFnItems = new Map();
         this.callSubstitutions = new WeakMap();
         this.variantOwners = new Map();
+        this.namedConsts = new Map();
     }
 
     setExpressionType(expr: Expression, ty: TypeNode): void {
@@ -88,6 +105,35 @@ export class TypeContext {
             }
         }
         return undefined;
+    }
+
+    registerNamedConst(name: string, binding: ConstBindingInfo): void {
+        this.namedConsts.set(name, binding);
+    }
+
+    lookupNamedConst(name: string): ConstBindingInfo | undefined {
+        return this.namedConsts.get(name);
+    }
+
+    namedConstEntries(): IterableIterator<[string, ConstBindingInfo]> {
+        return this.namedConsts.entries();
+    }
+
+    setConst(name: string, binding: ConstBindingInfo): void {
+        const scope = this.scopes[this.scopes.length - 1] as Scope | undefined;
+        if (scope) {
+            scope.setConst(name, binding);
+        }
+    }
+
+    lookupConst(name: string): ConstBindingInfo | undefined {
+        for (let i = this.scopes.length - 1; i >= 0; i--) {
+            const binding = this.scopes[i].getConst(name);
+            if (binding) {
+                return binding;
+            }
+        }
+        return this.lookupNamedConst(name);
     }
 
     // --- Struct field registry ---

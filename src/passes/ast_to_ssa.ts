@@ -7,7 +7,7 @@ import {
     BuiltinType,
     CallExpr,
     type CastExpr,
-    type ConstItem,
+    ConstItem,
     type ClosureExpr,
     type ContinueExpr,
     type DerefExpr,
@@ -29,6 +29,7 @@ import {
     InferredTypeNode,
     type IndexExpr,
     type IfExpr,
+    ItemStmt,
     LetStmt,
     LiteralExpr,
     LiteralKind,
@@ -56,6 +57,7 @@ import {
     StructItem,
     type StructExpr,
     StructPattern,
+    type TraitConstItem,
     TraitImplItem,
     type TryExpr,
     type TypeNode,
@@ -175,6 +177,14 @@ interface LoopFrame {
     continueBlock: BlockId;
 }
 
+interface LoweringConstBinding {
+    key: string;
+    typeNode: TypeNode;
+    value: Expression;
+    span: Span;
+    selfTypeName?: string;
+}
+
 interface BuilderSnapshot {
     fn: IRFunction | undefined;
     block: IRBlock | undefined;
@@ -184,6 +194,8 @@ interface BuilderSnapshot {
     varTypes: Map<string, IRType>;
     nextBlockId: number;
     locals: Map<string, LocalBinding>;
+    constScopes: Map<string, LoweringConstBinding>[];
+    constResolutionStack: LoweringConstBinding[];
     loopStack: LoopFrame[];
     returnType: IRType;
     expectedValueTypes: IRType[];
@@ -256,7 +268,11 @@ export class AstToSsaCtx {
     private readonly structFieldNames: Map<string, string[]>;
     private readonly enumVariantTags: Map<string, number>;
     private readonly enumVariantOwners: Map<string, string>;
+    private readonly namedConsts: Map<string, LoweringConstBinding>;
+    private readonly initialConsts: Map<string, LoweringConstBinding>;
     private readonly monoRegistry?: MonomorphizationRegistry;
+    private constScopes: Map<string, LoweringConstBinding>[];
+    private constResolutionStack: LoweringConstBinding[];
     private loopStack: LoopFrame[];
     private currentReturnType: IRType;
     private expectedValueTypes: IRType[];
@@ -268,6 +284,8 @@ export class AstToSsaCtx {
             structFieldNames?: Map<string, string[]>;
             enumVariantTags?: Map<string, number>;
             enumVariantOwners?: Map<string, string>;
+            namedConsts?: Map<string, LoweringConstBinding>;
+            initialConsts?: Map<string, LoweringConstBinding>;
             monoRegistry?: MonomorphizationRegistry;
         } = {},
     ) {
@@ -283,7 +301,13 @@ export class AstToSsaCtx {
             options.enumVariantTags ?? new Map<string, number>();
         this.enumVariantOwners =
             options.enumVariantOwners ?? new Map<string, string>();
+        this.namedConsts =
+            options.namedConsts ?? new Map<string, LoweringConstBinding>();
+        this.initialConsts =
+            options.initialConsts ?? new Map<string, LoweringConstBinding>();
         this.monoRegistry = options.monoRegistry;
+        this.constScopes = [];
+        this.constResolutionStack = [];
         this.loopStack = [];
         this.currentReturnType = makeIRUnitType();
         this.expectedValueTypes = [];
@@ -297,6 +321,8 @@ export class AstToSsaCtx {
 
     lowerFunction(fnDecl: FnItem): Result<IRFunction, LoweringError> {
         this.locals.clear();
+        this.constScopes = [new Map(this.initialConsts)];
+        this.constResolutionStack = [];
         this.loopStack = [];
 
         const paramEntries = this.getLowerableParams(fnDecl);
@@ -401,24 +427,30 @@ export class AstToSsaCtx {
     private lowerBlock(
         block: BlockExpr,
     ): Result<ValueId | undefined, LoweringError> {
+        this.constScopes.push(new Map<string, LoweringConstBinding>());
         for (const stmt of block.stmts) {
             const stmtResult = this.lowerStatement(stmt);
             if (!stmtResult.isOk()) {
+                this.constScopes.pop();
                 return stmtResult;
             }
             if (this.isCurrentBlockTerminated()) {
+                this.constScopes.pop();
                 return Result.ok(undefined);
             }
         }
 
         if (!block.expr) {
+            this.constScopes.pop();
             return Result.ok(undefined);
         }
 
         const exprResult = this.lowerExpression(block.expr);
         if (!exprResult.isOk()) {
+            this.constScopes.pop();
             return exprResult;
         }
+        this.constScopes.pop();
         return Result.ok(exprResult.value);
     }
 
@@ -437,11 +469,48 @@ export class AstToSsaCtx {
         return new Map(this.locals);
     }
 
+    private cloneConstScopes(): Map<string, LoweringConstBinding>[] {
+        return this.constScopes.map((scope) => new Map(scope));
+    }
+
     private restoreLocals(snapshot: Map<string, LocalBinding>): void {
         this.locals.clear();
         for (const [name, binding] of snapshot) {
             this.locals.set(name, binding);
         }
+    }
+
+    private currentConstScope():
+        | Map<string, LoweringConstBinding>
+        | undefined {
+        return this.constScopes[this.constScopes.length - 1];
+    }
+
+    private bindConst(name: string, binding: LoweringConstBinding): void {
+        const scope = this.currentConstScope();
+        if (!scope) {
+            return;
+        }
+        scope.set(name, binding);
+    }
+
+    private lookupConst(name: string): LoweringConstBinding | undefined {
+        for (let i = this.constScopes.length - 1; i >= 0; i--) {
+            const binding = this.constScopes[i].get(name);
+            if (binding) {
+                return binding;
+            }
+        }
+        const currentBinding = this.constResolutionStack.at(LAST_FRAME_INDEX);
+        if (name.startsWith("Self::") && currentBinding?.selfTypeName) {
+            const rebound = this.namedConsts.get(
+                `${currentBinding.selfTypeName}${name.slice("Self".length)}`,
+            );
+            if (rebound) {
+                return rebound;
+            }
+        }
+        return this.namedConsts.get(name);
     }
 
     private bindLocalValue(
@@ -502,12 +571,26 @@ export class AstToSsaCtx {
             }
             return Result.ok();
         }
+        if (stmt instanceof ItemStmt && stmt.item instanceof ConstItem) {
+            return this.lowerConstItem(stmt.item);
+        }
 
         return loweringError(
             LoweringErrorKind.UnsupportedNode,
             `Unsupported statement: ${stmt.constructor.name}`,
             stmt.span,
         );
+    }
+
+    private lowerConstItem(item: ConstItem): Result<void, LoweringError> {
+        const binding: LoweringConstBinding = {
+            key: item.name,
+            typeNode: item.typeNode,
+            value: item.value,
+            span: item.span,
+        };
+        this.bindConst(item.name, binding);
+        return Result.ok();
     }
 
     private lowerLetStatement(stmt: LetStmt): Result<void, LoweringError> {
@@ -712,6 +795,12 @@ export class AstToSsaCtx {
                     "`const` items are not implemented",
                     item.span,
                 ),
+            visitTraitConstItem: (item: TraitConstItem) =>
+                loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "trait const items are not implemented",
+                    item.span,
+                ),
             visitRecoveryItem: (item: RecoveryItem) =>
                 loweringError(
                     LoweringErrorKind.UnsupportedNode,
@@ -803,6 +892,11 @@ export class AstToSsaCtx {
             return AstToSsaCtx.handleInstructionId(loadInst.id);
         }
 
+        const constBinding = this.lookupConst(expr.name);
+        if (constBinding) {
+            return this.lowerConstBinding(constBinding);
+        }
+
         const variantTag = this.enumVariantTags.get(expr.name);
         if (variantTag !== undefined) {
             const enumType = this.resolveEnumTypeForVariant(expr.name);
@@ -821,6 +915,23 @@ export class AstToSsaCtx {
         }
         const constInst = this.builder.iconst(fnId.value, IntWidth.I64);
         return AstToSsaCtx.handleInstructionId(constInst.id);
+    }
+
+    private lowerConstBinding(
+        binding: LoweringConstBinding,
+    ): Result<ValueId, LoweringError> {
+        if (this.constResolutionStack.some((entry) => entry.key === binding.key)) {
+            const cycle = [...this.constResolutionStack.map((entry) => entry.key), binding.key];
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                `recursive const definition detected: ${cycle.join(" -> ")}`,
+                binding.span,
+            );
+        }
+        this.constResolutionStack.push(binding);
+        const lowered = this.lowerExpression(binding.value);
+        this.constResolutionStack.pop();
+        return lowered;
     }
 
     visitPathExpr(expr: PathExpr): Result<ValueId, LoweringError> {
@@ -2735,6 +2846,8 @@ export class AstToSsaCtx {
             varTypes: this.builder.varTypes,
             nextBlockId: this.builder.nextBlockId,
             locals: new Map(this.locals),
+            constScopes: this.cloneConstScopes(),
+            constResolutionStack: [...this.constResolutionStack],
             loopStack: this.loopStack,
             returnType: this.currentReturnType,
             expectedValueTypes: [...this.expectedValueTypes],
@@ -2753,6 +2866,8 @@ export class AstToSsaCtx {
         for (const [k, v] of snap.locals) {
             this.locals.set(k, v);
         }
+        this.constScopes = snap.constScopes.map((scope) => new Map(scope));
+        this.constResolutionStack = [...snap.constResolutionStack];
         this.loopStack = snap.loopStack;
         this.currentReturnType = snap.returnType;
         this.expectedValueTypes = [...snap.expectedValueTypes];
@@ -4107,6 +4222,170 @@ function collectImplReturnTypes(
     }
 }
 
+function makeLoweringConstBinding(
+    key: string,
+    typeNode: TypeNode,
+    value: Expression,
+    span: Span,
+    selfTypeName?: string,
+): LoweringConstBinding {
+    return { key, typeNode, value, span, selfTypeName };
+}
+
+function registerNamedConstBinding(
+    constBindings: Map<string, LoweringConstBinding>,
+    name: string,
+    binding: LoweringConstBinding,
+): void {
+    constBindings.set(name, binding);
+}
+
+function collectDirectConstBinding(
+    item: ConstItem,
+    constBindings: Map<string, LoweringConstBinding>,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+): void {
+    const key = qualify(item.name);
+    const binding = makeLoweringConstBinding(
+        key,
+        item.typeNode,
+        item.value,
+        item.span,
+    );
+    registerNamedConstBinding(constBindings, key, binding);
+    if (modulePrefix) {
+        registerNamedConstBinding(constBindings, item.name, binding);
+    }
+}
+
+function collectImplConstBindings(
+    item: ImplItem,
+    constBindings: Map<string, LoweringConstBinding>,
+    qualify: (name: string) => string,
+): void {
+    const targetName = item.target.name;
+    const qualifiedTarget = qualify(targetName);
+    for (const constItem of item.constItems) {
+        const key = `${qualifiedTarget}::${constItem.name}`;
+        const binding = makeLoweringConstBinding(
+            key,
+            constItem.typeNode,
+            constItem.value,
+            constItem.span,
+            targetName,
+        );
+        registerNamedConstBinding(constBindings, key, binding);
+        if (qualifiedTarget !== targetName) {
+            registerNamedConstBinding(
+                constBindings,
+                `${targetName}::${constItem.name}`,
+                binding,
+            );
+        }
+    }
+}
+
+function collectTraitImplConstBindings(
+    item: TraitImplItem,
+    constBindings: Map<string, LoweringConstBinding>,
+    qualify: (name: string) => string,
+): void {
+    const targetName = item.target.name;
+    const qualifiedTarget = qualify(targetName);
+    const overrides = new Map(
+        item.constItems.map((constItem) => [constItem.name, constItem]),
+    );
+
+    for (const constItem of item.constItems) {
+        const key = `${qualifiedTarget}::${constItem.name}`;
+        const binding = makeLoweringConstBinding(
+            key,
+            constItem.typeNode,
+            constItem.value,
+            constItem.span,
+            targetName,
+        );
+        registerNamedConstBinding(constBindings, key, binding);
+        if (qualifiedTarget !== targetName) {
+            registerNamedConstBinding(
+                constBindings,
+                `${targetName}::${constItem.name}`,
+                binding,
+            );
+        }
+    }
+
+    for (const traitConst of item.trait.constItems) {
+        if (overrides.has(traitConst.name) || !traitConst.value) {
+            continue;
+        }
+        const key = `${qualifiedTarget}::${traitConst.name}`;
+        const binding = makeLoweringConstBinding(
+            key,
+            traitConst.typeNode,
+            traitConst.value,
+            traitConst.span,
+            targetName,
+        );
+        registerNamedConstBinding(constBindings, key, binding);
+        if (qualifiedTarget !== targetName) {
+            registerNamedConstBinding(
+                constBindings,
+                `${targetName}::${traitConst.name}`,
+                binding,
+            );
+        }
+    }
+}
+
+function collectUseConstBinding(
+    item: UseItem,
+    constBindings: Map<string, LoweringConstBinding>,
+): void {
+    const fullPath = item.path.join("::");
+    const localName = item.alias ?? item.path[item.path.length - 1];
+    const binding = constBindings.get(fullPath);
+    if (binding) {
+        registerNamedConstBinding(constBindings, localName, binding);
+    }
+}
+
+function collectNamedConstBindings(
+    item: ModuleNode["items"][number],
+    constBindings: Map<string, LoweringConstBinding>,
+    modulePrefix = "",
+): void {
+    const qualify = (name: string): string =>
+        qualifyModuleName(modulePrefix, name);
+
+    if (item instanceof ConstItem) {
+        collectDirectConstBinding(item, constBindings, qualify, modulePrefix);
+        return;
+    }
+    if (item instanceof ImplItem) {
+        collectImplConstBindings(item, constBindings, qualify);
+        return;
+    }
+    if (item instanceof TraitImplItem) {
+        collectTraitImplConstBindings(item, constBindings, qualify);
+        return;
+    }
+    if (item instanceof ModItem) {
+        for (const modItem of item.items) {
+            collectNamedConstBindings(
+                modItem,
+                constBindings,
+                qualify(item.name),
+            );
+        }
+        return;
+    }
+    if (item instanceof UseItem) {
+        collectUseConstBinding(item, constBindings);
+    }
+}
+
 function lowerOwnedFunction(
     fnItem: FnItem,
     irModule: IRModule,
@@ -4114,7 +4393,9 @@ function lowerOwnedFunction(
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
     enumVariantOwners: Map<string, string>,
+    namedConsts: Map<string, LoweringConstBinding>,
     fnIdMap: Map<string, number>,
+    initialConsts?: Map<string, LoweringConstBinding>,
     monoRegistry?: MonomorphizationRegistry,
 ): Result<void, LoweringError> {
     const ctx = new AstToSsaCtx({
@@ -4123,6 +4404,8 @@ function lowerOwnedFunction(
         structFieldNames,
         enumVariantTags,
         enumVariantOwners,
+        namedConsts,
+        initialConsts,
         monoRegistry,
     });
     ctx.seedFunctionIds(fnIdMap);
@@ -4224,6 +4507,35 @@ function rewriteSelfInMethod(method: FnItem, implTarget: string): FnItem {
     );
 }
 
+function collectSelfConstBindings(
+    selfTypeName: string,
+    constItems: ConstItem[],
+    namedConsts: Map<string, LoweringConstBinding>,
+    traitConstItems: TraitConstItem[] = [],
+): Map<string, LoweringConstBinding> {
+    const bindings = new Map<string, LoweringConstBinding>();
+    const overridden = new Set(constItems.map((constItem) => constItem.name));
+
+    for (const constItem of constItems) {
+        const binding = namedConsts.get(`${selfTypeName}::${constItem.name}`);
+        if (binding) {
+            bindings.set(`Self::${constItem.name}`, binding);
+        }
+    }
+
+    for (const traitConst of traitConstItems) {
+        if (overridden.has(traitConst.name)) {
+            continue;
+        }
+        const binding = namedConsts.get(`${selfTypeName}::${traitConst.name}`);
+        if (binding) {
+            bindings.set(`Self::${traitConst.name}`, binding);
+        }
+    }
+
+    return bindings;
+}
+
 function lowerImplMethods(
     item: ImplItem,
     irModule: IRModule,
@@ -4231,10 +4543,17 @@ function lowerImplMethods(
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
     enumVariantOwners: Map<string, string>,
+    namedConsts: Map<string, LoweringConstBinding>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
 ): Result<void, LoweringError> {
     const implTarget = item.target.name;
+    const initialConsts = collectSelfConstBindings(
+        implTarget,
+        item.constItems,
+        namedConsts,
+        [],
+    );
     for (const method of item.methods) {
         if (method instanceof GenericFnItem) {
             continue;
@@ -4250,7 +4569,9 @@ function lowerImplMethods(
             structFieldNames,
             enumVariantTags,
             enumVariantOwners,
+            namedConsts,
             fnIdMap,
+            initialConsts,
             monoRegistry,
         );
         if (result.isErr()) {
@@ -4267,6 +4588,7 @@ function lowerModuleItem(
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
     enumVariantOwners: Map<string, string>,
+    namedConsts: Map<string, LoweringConstBinding>,
     fnIdMap: Map<string, number>,
     monoRegistry?: MonomorphizationRegistry,
 ): Result<void, LoweringError> {
@@ -4281,7 +4603,9 @@ function lowerModuleItem(
             structFieldNames,
             enumVariantTags,
             enumVariantOwners,
+            namedConsts,
             fnIdMap,
+            undefined,
             monoRegistry,
         );
     }
@@ -4293,6 +4617,7 @@ function lowerModuleItem(
             structFieldNames,
             enumVariantTags,
             enumVariantOwners,
+            namedConsts,
             fnIdMap,
             monoRegistry,
         );
@@ -4302,6 +4627,12 @@ function lowerModuleItem(
         if (item.target instanceof NamedTypeNode) {
             implTarget = item.target.name;
         }
+        const initialConsts = collectSelfConstBindings(
+            implTarget,
+            item.constItems,
+            namedConsts,
+            item.trait.constItems,
+        );
         for (const method of item.fnImpls) {
             if (!method.body) continue;
             ensureImplStructMetadata(irModule, structFieldNames, implTarget);
@@ -4312,7 +4643,9 @@ function lowerModuleItem(
                 structFieldNames,
                 enumVariantTags,
                 enumVariantOwners,
+                namedConsts,
                 fnIdMap,
+                initialConsts,
                 monoRegistry,
             );
             if (result.isErr()) {
@@ -4330,6 +4663,7 @@ function lowerModuleItem(
                 structFieldNames,
                 enumVariantTags,
                 enumVariantOwners,
+                namedConsts,
                 fnIdMap,
                 monoRegistry,
             );
@@ -4361,6 +4695,10 @@ export function lowerAstModuleToSsa(
     // Register specialization function IDs
     const fnIdMap = collectFunctionIds(moduleNode);
     const functionReturnTypes = collectFunctionReturnTypes(moduleNode);
+    const namedConsts = new Map<string, LoweringConstBinding>();
+    for (const item of moduleNode.items) {
+        collectNamedConstBindings(item, namedConsts);
+    }
     for (const spec of specializations) {
         fnIdMap.set(spec.name, hashName(spec.name));
         functionReturnTypes.set(
@@ -4378,6 +4716,7 @@ export function lowerAstModuleToSsa(
             structFieldNames,
             enumVariantTags,
             enumVariantOwners,
+            namedConsts,
             fnIdMap,
             registry,
         );
@@ -4395,7 +4734,9 @@ export function lowerAstModuleToSsa(
             structFieldNames,
             enumVariantTags,
             enumVariantOwners,
+            namedConsts,
             fnIdMap,
+            undefined,
             registry,
         );
         if (result.isErr()) {

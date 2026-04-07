@@ -68,6 +68,7 @@ import {
     StructPattern,
     StaticItem,
     type StructPatternField,
+    TraitConstItem,
     TraitItem,
     TraitImplItem,
     TryExpr,
@@ -752,26 +753,52 @@ class Parser {
             return undefined;
         }
         const keyword = this.advance();
-        const isStatic = keyword.type === TokenType.Static;
-        const isMut = isStatic && this.eat(TokenType.Mut) !== undefined;
+        if (keyword.type === TokenType.Const) {
+            return [this.parseConstItemFromKeyword(keyword)];
+        }
+        const isMut = this.eat(TokenType.Mut) !== undefined;
         const name = String(this.expect(TokenType.Identifier).value);
         this.expect(TokenType.Colon);
         const typeNode = this.parseTypeNode();
         this.expect(TokenType.Eq);
         const value = this.parseExpr(0);
         this.expect(TokenType.Semicolon);
-        if (isStatic) {
-            return [
-                new StaticItem(
-                    this.spanFrom(keyword),
-                    name,
-                    mutabilityFromFlag(isMut),
-                    typeNode,
-                    value,
-                ),
-            ];
+        return [
+            new StaticItem(
+                this.spanFrom(keyword),
+                name,
+                mutabilityFromFlag(isMut),
+                typeNode,
+                value,
+            ),
+        ];
+    }
+
+    private parseConstItemFromKeyword(keyword: Token): ConstItem {
+        const name = String(this.expect(TokenType.Identifier).value);
+        this.expect(TokenType.Colon);
+        const typeNode = this.parseTypeNode();
+        this.expect(TokenType.Eq);
+        const value = this.parseExpr(0);
+        this.expect(TokenType.Semicolon);
+        return new ConstItem(this.spanFrom(keyword), name, typeNode, value);
+    }
+
+    private parseTraitConstItem(keyword: Token): TraitConstItem {
+        const name = String(this.expect(TokenType.Identifier).value);
+        this.expect(TokenType.Colon);
+        const typeNode = this.parseTypeNode();
+        let value: Expression | undefined;
+        if (this.eat(TokenType.Eq)) {
+            value = this.parseExpr(0);
         }
-        return [new ConstItem(this.spanFrom(keyword), name, typeNode, value)];
+        this.expect(TokenType.Semicolon);
+        return new TraitConstItem(
+            this.spanFrom(keyword),
+            name,
+            typeNode,
+            value,
+        );
     }
 
     private parseUnexpectedItem(): Item[] {
@@ -1154,11 +1181,12 @@ class Parser {
         this.skipWhereClause();
         this.expect(TokenType.OpenCurly);
         const allMethods: (FnItem | GenericFnItem)[] = [];
+        const constItems: ConstItem[] = [];
         while (
             !this.check(TokenType.CloseCurly) &&
             !this.check(TokenType.Eof)
         ) {
-            this.parseImplMember(allMethods);
+            this.parseImplMember(allMethods, constItems);
         }
         this.expect(TokenType.CloseCurly);
         const fnImpls = allMethods.filter(
@@ -1181,6 +1209,7 @@ class Parser {
             traitItem,
             target,
             fnImpls,
+            constItems,
         );
     }
 
@@ -1233,17 +1262,26 @@ class Parser {
         this.skipWhereClause();
         this.expect(TokenType.OpenCurly);
         const methods: (FnItem | GenericFnItem)[] = [];
+        const constItems: ConstItem[] = [];
         while (
             !this.check(TokenType.CloseCurly) &&
             !this.check(TokenType.Eof)
         ) {
-            this.parseImplMember(methods);
+            this.parseImplMember(methods, constItems);
         }
         this.expect(TokenType.CloseCurly);
-        return new ImplItem(this.spanFrom(startTok), firstType, methods);
+        return new ImplItem(
+            this.spanFrom(startTok),
+            firstType,
+            methods,
+            constItems,
+        );
     }
 
-    private parseImplMember(methods: (FnItem | GenericFnItem)[]): void {
+    private parseImplMember(
+        methods: (FnItem | GenericFnItem)[],
+        constItems: ConstItem[],
+    ): void {
         const { derives } = this.parseAttributes();
         this.eatPub();
         this.eat(TokenType.Unsafe);
@@ -1251,11 +1289,12 @@ class Parser {
             methods.push(this.parseFnBody(this.peek(), derives, false));
             return;
         }
-        if (
-            this.check(TokenType.Type) ||
-            this.check(TokenType.Const) ||
-            this.check(TokenType.Static)
-        ) {
+        const constToken = this.eat(TokenType.Const);
+        if (constToken) {
+            constItems.push(this.parseConstItemFromKeyword(constToken));
+            return;
+        }
+        if (this.check(TokenType.Type) || this.check(TokenType.Static)) {
             this.advance();
             this.skipUntil(TokenType.Semicolon, TokenType.CloseCurly);
             this.eat(TokenType.Semicolon);
@@ -1299,6 +1338,7 @@ class Parser {
         this.expect(TokenType.OpenCurly);
 
         const methods: (FnItem | GenericFnItem)[] = [];
+        const constItems: TraitConstItem[] = [];
         while (
             !this.check(TokenType.CloseCurly) &&
             !this.check(TokenType.Eof)
@@ -1311,6 +1351,8 @@ class Parser {
             if (this.eat(TokenType.Fn)) {
                 const fnStart = this.peek();
                 methods.push(this.parseFnBody(fnStart, derives, false));
+            } else if (this.check(TokenType.Const)) {
+                constItems.push(this.parseTraitConstItem(this.advance()));
             } else if (this.check(TokenType.Type)) {
                 while (
                     !this.check(TokenType.Semicolon) &&
@@ -1332,7 +1374,12 @@ class Parser {
         }
 
         this.expect(TokenType.CloseCurly);
-        const item = new TraitItem(this.spanFrom(startTok), name, methods);
+        const item = new TraitItem(
+            this.spanFrom(startTok),
+            name,
+            methods,
+            constItems,
+        );
         this.parsedTraits.set(name, item);
         return item;
     }

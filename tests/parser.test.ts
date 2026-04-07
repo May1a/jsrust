@@ -24,6 +24,8 @@ import {
     EnumItem,
     ImplItem,
     StaticItem,
+    TraitItem,
+    TraitImplItem,
     TryExpr,
     CastExpr,
     TypeAliasItem,
@@ -305,6 +307,54 @@ describe("items", () => {
         expect(implItem.methods.length).toBe(1);
     });
 
+    test("impl block preserves associated consts", () => {
+        const result = mod(
+            "struct Foo {}\nimpl Foo { const VALUE: i32 = 1; fn bar(&self) -> i32 { Self::VALUE } }",
+        );
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        const implItem = result.value.items.find((i) => i instanceof ImplItem);
+        expect(implItem).toBeDefined();
+        if (!(implItem instanceof ImplItem)) return;
+        expect(implItem.constItems).toHaveLength(1);
+        expectInstanceOf(implItem.constItems[0], ConstItem);
+    });
+
+    test("trait preserves associated const declarations", () => {
+        const result = mod("trait Foo { const VALUE: i32; }");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        const traitItem = result.value.items.find((i) => i instanceof TraitItem);
+        expect(traitItem).toBeDefined();
+        if (!(traitItem instanceof TraitItem)) return;
+        expect(traitItem.constItems).toHaveLength(1);
+        expect(traitItem.constItems[0]?.value).toBeUndefined();
+    });
+
+    test("trait preserves associated const defaults", () => {
+        const result = mod("trait Foo { const VALUE: i32 = 1; }");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        const traitItem = result.value.items.find((i) => i instanceof TraitItem);
+        expect(traitItem).toBeDefined();
+        if (!(traitItem instanceof TraitItem)) return;
+        expect(traitItem.constItems).toHaveLength(1);
+        expect(traitItem.constItems[0]?.value).toBeDefined();
+    });
+
+    test("trait impl preserves associated consts", () => {
+        const result = mod(
+            "trait Foo { const VALUE: i32; fn get(&self) -> i32; }\nimpl Foo for i32 { const VALUE: i32 = 1; fn get(&self) -> i32 { Self::VALUE } }",
+        );
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        const implItem = result.value.items.find((i) => i instanceof TraitImplItem);
+        expect(implItem).toBeDefined();
+        if (!(implItem instanceof TraitImplItem)) return;
+        expect(implItem.constItems).toHaveLength(1);
+        expectInstanceOf(implItem.constItems[0], ConstItem);
+    });
+
     test("type alias is preserved as TypeAliasItem", () => {
         const result = mod("type Id = i32;");
         expect(result.isOk()).toBe(true);
@@ -353,6 +403,18 @@ describe("items", () => {
         expectInstanceOf(firstItem.body.stmts[1].item, StaticItem);
         expectInstanceOf(firstItem.body.stmts[2], ItemStmt);
         expectInstanceOf(firstItem.body.stmts[2].item, ConstItem);
+    });
+
+    test("block-local const items remain item statements", () => {
+        const result = mod("fn main() { const VALUE: i32 = 2; VALUE; }");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+        const [firstItem] = result.value.items;
+        expectInstanceOf(firstItem, FnItem);
+        expect(firstItem.body).toBeDefined();
+        if (firstItem.body === undefined) return;
+        expectInstanceOf(firstItem.body.stmts[0], ItemStmt);
+        expectInstanceOf(firstItem.body.stmts[0].item, ConstItem);
     });
 
     test("type aliases require trailing semicolons", () => {

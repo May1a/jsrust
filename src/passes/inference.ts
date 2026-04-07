@@ -7,6 +7,7 @@ import {
     CallExpr,
     ClosureExpr,
     ContinueExpr,
+    ConstItem,
     DerefExpr,
     ExprStmt,
     type Expression,
@@ -45,6 +46,7 @@ import {
     StructPattern,
     StructItem,
     EnumItem,
+    type TraitConstItem,
     TraitImplItem,
     TraitItem,
     ArrayTypeNode,
@@ -63,7 +65,7 @@ import {
 import { Result } from "better-result";
 import { match, P } from "ts-pattern";
 import { inferTypeArgs, mangledName } from "./monomorphize";
-import type { TypeContext } from "../utils/type_context";
+import type { ConstBindingInfo, TypeContext } from "../utils/type_context";
 
 interface FieldWithType {
     name: string;
@@ -661,6 +663,51 @@ function registerStructTypeWithPrefix(
     }
 }
 
+function makeConstBinding(
+    typeNode: TypeNode,
+    value?: Expression,
+    selfTypeName?: string,
+): ConstBindingInfo {
+    return { typeNode, value, selfTypeName };
+}
+
+function registerConstWithPrefix(
+    typeCtx: TypeContext,
+    node: ConstItem,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+    selfTypeName?: string,
+): void {
+    const binding = makeConstBinding(node.typeNode, node.value, selfTypeName);
+    const qualifiedName = qualify(node.name);
+    typeCtx.registerNamedConst(qualifiedName, binding);
+    if (modulePrefix) {
+        typeCtx.registerNamedConst(node.name, binding);
+    }
+}
+
+function registerImplConstsWithPrefix(
+    typeCtx: TypeContext,
+    node: ImplItem,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+): void {
+    const targetName = node.target.name;
+    const qualifiedTargetName = qualify(targetName);
+    for (const constItem of node.constItems) {
+        typeCtx.registerNamedConst(
+            `${qualifiedTargetName}::${constItem.name}`,
+            makeConstBinding(constItem.typeNode, constItem.value, targetName),
+        );
+        if (modulePrefix) {
+            typeCtx.registerNamedConst(
+                `${targetName}::${constItem.name}`,
+                makeConstBinding(constItem.typeNode, constItem.value, targetName),
+            );
+        }
+    }
+}
+
 function registerImplMethodsWithPrefix(
     typeCtx: TypeContext,
     node: ImplItem,
@@ -685,6 +732,72 @@ function registerImplMethodsWithPrefix(
                 params: buildParamList(method.params),
                 returnType,
             });
+        }
+    }
+}
+
+function traitConstDefaults(
+    traitItem: TraitItem,
+    implConsts: ConstItem[],
+    selfTypeName: string,
+): Map<string, ConstBindingInfo> {
+    const overrides = new Map(implConsts.map((item) => [item.name, item]));
+    const bindings = new Map<string, ConstBindingInfo>();
+    for (const traitConst of traitItem.constItems) {
+        const override = overrides.get(traitConst.name);
+        if (override) {
+            bindings.set(
+                traitConst.name,
+                makeConstBinding(
+                    override.typeNode,
+                    override.value,
+                    selfTypeName,
+                ),
+            );
+            continue;
+        }
+        if (traitConst.value) {
+            bindings.set(
+                traitConst.name,
+                makeConstBinding(
+                    traitConst.typeNode,
+                    traitConst.value,
+                    selfTypeName,
+                ),
+            );
+        }
+    }
+    return bindings;
+}
+
+function registerTraitImplConstsWithPrefix(
+    typeCtx: TypeContext,
+    node: TraitImplItem,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+): void {
+    const targetName = node.target.name;
+    const qualifiedTargetName = qualify(targetName);
+    const bindings = new Map<string, ConstBindingInfo>();
+
+    for (const constItem of node.constItems) {
+        bindings.set(
+            constItem.name,
+            makeConstBinding(constItem.typeNode, constItem.value, targetName),
+        );
+    }
+
+    const defaults = traitConstDefaults(node.trait, node.constItems, targetName);
+    for (const [name, binding] of defaults) {
+        if (!bindings.has(name)) {
+            bindings.set(name, binding);
+        }
+    }
+
+    for (const [name, binding] of bindings) {
+        typeCtx.registerNamedConst(`${qualifiedTargetName}::${name}`, binding);
+        if (modulePrefix) {
+            typeCtx.registerNamedConst(`${targetName}::${name}`, binding);
         }
     }
 }
@@ -749,54 +862,60 @@ function registerItemTypesWithPrefix(
     };
 
     for (const node of items) {
-        if (node instanceof StructItem || node instanceof GenericStructItem) {
-            registerStructTypeWithPrefix(typeCtx, node, qualify, modulePrefix);
-            continue;
-        }
-        if (node instanceof EnumItem) {
-            registerEnumItemType(typeCtx, node, qualify, modulePrefix);
-            continue;
-        }
-        if (node instanceof GenericFnItem) {
-            const qualName = qualify(node.name);
-            typeCtx.registerFnSignature(qualName, {
-                params: buildParamList(node.params),
-                returnType: node.returnType,
-            });
-            typeCtx.registerGenericFn(qualName, node);
-            continue;
-        }
-        if (node instanceof FnItem) {
-            typeCtx.registerFnSignature(qualify(node.name), {
-                params: buildParamList(node.params),
-                returnType: node.returnType,
-            });
-            continue;
-        }
-        if (node instanceof ImplItem) {
-            registerImplMethodsWithPrefix(typeCtx, node, qualify, modulePrefix);
-            continue;
-        }
-        if (node instanceof TraitImplItem) {
-            registerTraitImplMethodsWithPrefix(
-                typeCtx,
-                node,
-                qualify,
-                modulePrefix,
-            );
-            continue;
-        }
-        if (node instanceof ModItem) {
-            registerItemTypesWithPrefix(
-                typeCtx,
-                node.items,
-                qualify(node.name),
-            );
-            continue;
-        }
-        if (node instanceof UseItem) {
-            registerUseItemAlias(typeCtx, node);
-        }
+        registerItemTypeWithPrefix(typeCtx, node, qualify, modulePrefix);
+    }
+}
+
+function registerItemTypeWithPrefix(
+    typeCtx: TypeContext,
+    node: Item,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+): void {
+    if (node instanceof StructItem || node instanceof GenericStructItem) {
+        registerStructTypeWithPrefix(typeCtx, node, qualify, modulePrefix);
+        return;
+    }
+    if (node instanceof EnumItem) {
+        registerEnumItemType(typeCtx, node, qualify, modulePrefix);
+        return;
+    }
+    if (node instanceof ConstItem) {
+        registerConstWithPrefix(typeCtx, node, qualify, modulePrefix);
+        return;
+    }
+    if (node instanceof GenericFnItem) {
+        const qualifiedName = qualify(node.name);
+        typeCtx.registerFnSignature(qualifiedName, {
+            params: buildParamList(node.params),
+            returnType: node.returnType,
+        });
+        typeCtx.registerGenericFn(qualifiedName, node);
+        return;
+    }
+    if (node instanceof FnItem) {
+        typeCtx.registerFnSignature(qualify(node.name), {
+            params: buildParamList(node.params),
+            returnType: node.returnType,
+        });
+        return;
+    }
+    if (node instanceof ImplItem) {
+        registerImplConstsWithPrefix(typeCtx, node, qualify, modulePrefix);
+        registerImplMethodsWithPrefix(typeCtx, node, qualify, modulePrefix);
+        return;
+    }
+    if (node instanceof TraitImplItem) {
+        registerTraitImplConstsWithPrefix(typeCtx, node, qualify, modulePrefix);
+        registerTraitImplMethodsWithPrefix(typeCtx, node, qualify, modulePrefix);
+        return;
+    }
+    if (node instanceof ModItem) {
+        registerItemTypesWithPrefix(typeCtx, node.items, qualify(node.name));
+        return;
+    }
+    if (node instanceof UseItem) {
+        registerUseItemAlias(typeCtx, node);
     }
 }
 
@@ -811,6 +930,11 @@ function registerUseItemAlias(typeCtx: TypeContext, node: UseItem): void {
     const sig = typeCtx.lookupFnSignature(fullPath);
     if (sig) {
         typeCtx.registerFnSignature(localName, sig);
+    }
+
+    const binding = typeCtx.lookupNamedConst(fullPath);
+    if (binding) {
+        typeCtx.registerNamedConst(localName, binding);
     }
 }
 
@@ -1088,6 +1212,11 @@ function inferIdentifier(
         return Result.ok(varTy);
     }
 
+    const constBinding = typeCtx.lookupConst(expr.name);
+    if (constBinding) {
+        return Result.ok(constBinding.typeNode);
+    }
+
     const fnSig = typeCtx.lookupFnSignature(expr.name);
     if (fnSig) {
         return Result.err({
@@ -1139,8 +1268,8 @@ function inferIdentifier(
     }
 
     // Qualified paths (e.g. `Color::Green`, `Vec::new`) are enum variants or
-    // associated items — not yet tracked in the type context. Return undefined
-    // without an error; type propagation will handle the absence.
+    // associated items not represented in the current registries. Return
+    // undefined without an error; type propagation will handle the absence.
     if (expr.name.includes("::")) {
         return Result.ok(undefined);
     }
@@ -2291,6 +2420,11 @@ function inferStatement(
     }
 
     if (stmt instanceof ItemStmt) {
+        if (stmt.item instanceof ConstItem) {
+            const binding = makeConstBinding(stmt.item.typeNode, stmt.item.value);
+            typeCtx.setConst(stmt.item.name, binding);
+            return inferConstBinding(typeCtx, binding, stmt.item.span);
+        }
         registerItemTypesWithPrefix(typeCtx, [stmt.item], "");
         return [];
     }
@@ -2351,6 +2485,67 @@ function inferLetStmt(
     }
 
     return errors;
+}
+
+function inferConstBinding(
+    typeCtx: TypeContext,
+    binding: ConstBindingInfo,
+    span: Span,
+    selfTypeName?: string,
+): TypeError[] {
+    const errors: TypeError[] = [];
+    const declaredType = resolveSelf(binding.typeNode, selfTypeName);
+    errors.push(...validateTypeNode(typeCtx, declaredType, new Set<string>()));
+
+    if (!binding.value) {
+        return errors;
+    }
+
+    const initResult = inferExprType(typeCtx, binding.value);
+    const initTy = mergeInferResult(errors, initResult);
+    if (!initTy) {
+        return errors;
+    }
+
+    const resolvedInitType = resolveSelf(initTy, selfTypeName);
+    if (!typesEqual(declaredType, resolvedInitType)) {
+        errors.push({
+            message: `Type mismatch: expected \`${typeToString(declaredType)}\`, found \`${typeToString(resolvedInitType)}\``,
+            span,
+        });
+    }
+
+    return errors;
+}
+
+function inferConstItem(
+    typeCtx: TypeContext,
+    item: ConstItem,
+    selfTypeName?: string,
+): TypeError[] {
+    return inferConstBinding(
+        typeCtx,
+        makeConstBinding(item.typeNode, item.value, selfTypeName),
+        item.span,
+        selfTypeName,
+    );
+}
+
+function inferTraitConstItem(typeCtx: TypeContext, item: TraitConstItem): TypeError[] {
+    return inferConstBinding(
+        typeCtx,
+        makeConstBinding(item.typeNode, item.value),
+        item.span,
+    );
+}
+
+function registerScopedSelfConstAliases(
+    typeCtx: TypeContext,
+    bindings: Map<string, ConstBindingInfo>,
+): void {
+    for (const [name, binding] of bindings) {
+        typeCtx.setConst(`Self::${name}`, binding);
+    }
 }
 
 // --- Function Body Inference ---
@@ -2565,6 +2760,19 @@ function inferImplItem(typeCtx: TypeContext, item: ImplItem): TypeError[] {
         typeCtx.registerStructFields("Self", targetFields);
     }
 
+    typeCtx.pushScope();
+    const scopedBindings = new Map<string, ConstBindingInfo>();
+    for (const constItem of item.constItems) {
+        const binding = makeConstBinding(
+            constItem.typeNode,
+            constItem.value,
+            selfTypeName,
+        );
+        scopedBindings.set(constItem.name, binding);
+        errors.push(...inferConstBinding(typeCtx, binding, constItem.span, selfTypeName));
+    }
+    registerScopedSelfConstAliases(typeCtx, scopedBindings);
+
     for (const method of item.methods) {
         errors.push(...validateFnTypes(typeCtx, method));
         if (method instanceof FnItem) {
@@ -2572,6 +2780,8 @@ function inferImplItem(typeCtx: TypeContext, item: ImplItem): TypeError[] {
         }
         // Skip deep body inference for generic methods
     }
+
+    typeCtx.popScope();
 
     return errors;
 }
@@ -2591,10 +2801,44 @@ function inferTraitImplItem(
             typeCtx.registerStructFields("Self", targetFields);
         }
     }
+
+    typeCtx.pushScope();
+    const scopedBindings = new Map<string, ConstBindingInfo>();
+    for (const constItem of item.constItems) {
+        const binding = makeConstBinding(
+            constItem.typeNode,
+            constItem.value,
+            selfTypeName,
+        );
+        scopedBindings.set(constItem.name, binding);
+    }
+    const defaults = traitConstDefaults(
+        item.trait,
+        item.constItems,
+        selfTypeName ?? "Self",
+    );
+    for (const [name, binding] of defaults) {
+        if (!scopedBindings.has(name)) {
+            scopedBindings.set(name, binding);
+        }
+    }
+    registerScopedSelfConstAliases(typeCtx, scopedBindings);
+    for (const [name, binding] of scopedBindings) {
+        const span = match(item.constItems.find((constItem) => constItem.name === name))
+            .with(P.nullish, () =>
+                item.trait.constItems.find((constItem) => constItem.name === name)?.span ??
+                item.span)
+            .otherwise((constItem) => constItem.span);
+        errors.push(...inferConstBinding(typeCtx, binding, span, binding.selfTypeName));
+    }
+
     for (const method of item.fnImpls) {
         errors.push(...validateFnTypes(typeCtx, method));
         errors.push(...inferFnBody(typeCtx, method, selfTypeName));
     }
+
+    typeCtx.popScope();
+
     return errors;
 }
 
@@ -2612,50 +2856,63 @@ export function inferModule(
 
     // Phase 2: Validate function signatures and infer function bodies
     for (const item of moduleNode.items) {
-        if (item instanceof StructItem || item instanceof GenericStructItem) {
-            errors.push(...validateStructFieldTypes(typeCtx, item));
-        }
-        if (item instanceof EnumItem) {
-            errors.push(...validateEnumItemTypes(typeCtx, item));
-        }
-        if (item instanceof GenericFnItem) {
-            errors.push(...validateFnTypes(typeCtx, item));
-            // Skip deep body inference for generic functions — type params aren't concrete
-            continue;
-        }
-        if (item instanceof FnItem) {
-            errors.push(...validateFnTypes(typeCtx, item));
-            errors.push(...inferFnBody(typeCtx, item));
-        }
-        if (item instanceof ModItem) {
-            const nested = inferModule(
-                typeCtx,
-                new ModuleNode(item.span, item.name, item.items),
-            );
-            if (!nested.isOk()) {
-                errors.push(...nested.error);
-            }
-        }
-        if (item instanceof TraitItem) {
-            for (const method of item.methods) {
-                if (
-                    method instanceof FnItem ||
-                    method instanceof GenericFnItem
-                ) {
-                    errors.push(...validateFnTypes(typeCtx, method));
-                }
-            }
-        }
-        if (item instanceof ImplItem) {
-            errors.push(...inferImplItem(typeCtx, item));
-        }
-        if (item instanceof TraitImplItem) {
-            errors.push(...inferTraitImplItem(typeCtx, item));
-        }
+        errors.push(...inferModuleItem(typeCtx, item));
     }
 
     if (errors.length > 0) {
         return Result.err(errors);
     }
     return Result.ok();
+}
+
+function inferModuleItem(typeCtx: TypeContext, item: Item): TypeError[] {
+    if (item instanceof StructItem || item instanceof GenericStructItem) {
+        return validateStructFieldTypes(typeCtx, item);
+    }
+    if (item instanceof EnumItem) {
+        return validateEnumItemTypes(typeCtx, item);
+    }
+    if (item instanceof GenericFnItem) {
+        return validateFnTypes(typeCtx, item);
+    }
+    if (item instanceof ConstItem) {
+        return inferConstItem(typeCtx, item);
+    }
+    if (item instanceof FnItem) {
+        return [
+            ...validateFnTypes(typeCtx, item),
+            ...inferFnBody(typeCtx, item),
+        ];
+    }
+    if (item instanceof ModItem) {
+        const nested = inferModule(
+            typeCtx,
+            new ModuleNode(item.span, item.name, item.items),
+        );
+        if (nested.isOk()) {
+            return [];
+        }
+        return nested.error;
+    }
+    if (item instanceof TraitItem) {
+        return inferTraitItem(typeCtx, item);
+    }
+    if (item instanceof ImplItem) {
+        return inferImplItem(typeCtx, item);
+    }
+    if (item instanceof TraitImplItem) {
+        return inferTraitImplItem(typeCtx, item);
+    }
+    return [];
+}
+
+function inferTraitItem(typeCtx: TypeContext, item: TraitItem): TypeError[] {
+    const errors: TypeError[] = [];
+    for (const method of item.methods) {
+        errors.push(...validateFnTypes(typeCtx, method));
+    }
+    for (const constItem of item.constItems) {
+        errors.push(...inferTraitConstItem(typeCtx, constItem));
+    }
+    return errors;
 }
