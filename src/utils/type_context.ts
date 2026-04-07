@@ -115,10 +115,6 @@ export class TypeContext {
         return this.namedConsts.get(name);
     }
 
-    namedConstEntries(): IterableIterator<[string, ConstBindingInfo]> {
-        return this.namedConsts.entries();
-    }
-
     setConst(name: string, binding: ConstBindingInfo): void {
         const scope = this.scopes[this.scopes.length - 1] as Scope | undefined;
         if (scope) {

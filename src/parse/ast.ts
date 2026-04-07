@@ -139,7 +139,6 @@ export interface AstVisitor<R, C> {
     visitTypeAliasItem(node: TypeAliasItem, ctx: C): R;
     visitStaticItem(node: StaticItem, ctx: C): R;
     visitConstItem(node: ConstItem, ctx: C): R;
-    visitTraitConstItem(node: TraitConstItem, ctx: C): R;
     visitRecoveryItem(node: RecoveryItem, ctx: C): R;
     visitIdentPat(node: IdentPattern, ctx: C): R;
     visitWildcardPat(node: WildcardPattern, ctx: C): R;
@@ -903,38 +902,16 @@ export class TraitMethod extends Item {
     }
 }
 
-export class TraitConstItem extends Item {
-    readonly name: string;
-    readonly typeNode: TypeNode;
-    readonly value?: Expression;
-
-    constructor(
-        span: Span,
-        name: string,
-        typeNode: TypeNode,
-        value?: Expression,
-    ) {
-        super(span);
-        this.name = name;
-        this.typeNode = typeNode;
-        this.value = value;
-    }
-
-    accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {
-        return visitor.visitTraitConstItem(this, ctx);
-    }
-}
-
 export class TraitItem extends Item {
     readonly name: string;
     readonly methods: (FnItem | GenericFnItem)[];
-    readonly constItems: TraitConstItem[];
+    readonly constItems: ConstItem[];
 
     constructor(
         span: Span,
         name: string,
         methods: (FnItem | GenericFnItem)[],
-        constItems: TraitConstItem[] = [],
+        constItems: ConstItem[] = [],
     ) {
         super(span);
         this.name = name;
@@ -1060,9 +1037,9 @@ export class StaticItem extends Item {
 export class ConstItem extends Item {
     readonly name: string;
     readonly typeNode: TypeNode;
-    readonly value: Expression;
+    readonly value?: Expression;
 
-    constructor(span: Span, name: string, typeNode: TypeNode, value: Expression) {
+    constructor(span: Span, name: string, typeNode: TypeNode, value?: Expression) {
         super(span);
         this.name = name;
         this.typeNode = typeNode;

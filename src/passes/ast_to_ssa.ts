@@ -57,7 +57,6 @@ import {
     StructItem,
     type StructExpr,
     StructPattern,
-    type TraitConstItem,
     TraitImplItem,
     type TryExpr,
     type TypeNode,
@@ -428,30 +427,29 @@ export class AstToSsaCtx {
         block: BlockExpr,
     ): Result<ValueId | undefined, LoweringError> {
         this.constScopes.push(new Map<string, LoweringConstBinding>());
-        for (const stmt of block.stmts) {
-            const stmtResult = this.lowerStatement(stmt);
-            if (!stmtResult.isOk()) {
-                this.constScopes.pop();
-                return stmtResult;
+        try {
+            for (const stmt of block.stmts) {
+                const stmtResult = this.lowerStatement(stmt);
+                if (!stmtResult.isOk()) {
+                    return stmtResult;
+                }
+                if (this.isCurrentBlockTerminated()) {
+                    return Result.ok(undefined);
+                }
             }
-            if (this.isCurrentBlockTerminated()) {
-                this.constScopes.pop();
+
+            if (!block.expr) {
                 return Result.ok(undefined);
             }
-        }
 
-        if (!block.expr) {
+            const exprResult = this.lowerExpression(block.expr);
+            if (!exprResult.isOk()) {
+                return exprResult;
+            }
+            return Result.ok(exprResult.value);
+        } finally {
             this.constScopes.pop();
-            return Result.ok(undefined);
         }
-
-        const exprResult = this.lowerExpression(block.expr);
-        if (!exprResult.isOk()) {
-            this.constScopes.pop();
-            return exprResult;
-        }
-        this.constScopes.pop();
-        return Result.ok(exprResult.value);
     }
 
     private currentBlockValue(value: ValueId | undefined): ValueId | undefined {
@@ -501,10 +499,19 @@ export class AstToSsaCtx {
                 return binding;
             }
         }
-        const currentBinding = this.constResolutionStack.at(LAST_FRAME_INDEX);
-        if (name.startsWith("Self::") && currentBinding?.selfTypeName) {
+        let selfTypeName: string | undefined;
+        for (let i = this.constResolutionStack.length - 1; i >= 0; i--) {
+            const binding = this.constResolutionStack[i];
+            const { selfTypeName: bindingSelfTypeName } = binding;
+            if (!bindingSelfTypeName) {
+                continue;
+            }
+            selfTypeName = bindingSelfTypeName;
+            break;
+        }
+        if (name.startsWith("Self::") && selfTypeName) {
             const rebound = this.namedConsts.get(
-                `${currentBinding.selfTypeName}${name.slice("Self".length)}`,
+                `${selfTypeName}${name.slice("Self".length)}`,
             );
             if (rebound) {
                 return rebound;
@@ -583,6 +590,15 @@ export class AstToSsaCtx {
     }
 
     private lowerConstItem(item: ConstItem): Result<void, LoweringError> {
+        if (!item.value) {
+            return loweringError(
+                LoweringErrorKind.UnsupportedNode,
+                "const item is missing an initializer",
+                item.span,
+            );
+        }
+        const ty = AstToSsaCtx.translateTypeNode(item.typeNode);
+        this.registerEnumTypeMetadata(ty);
         const binding: LoweringConstBinding = {
             key: item.name,
             typeNode: item.typeNode,
@@ -789,18 +805,7 @@ export class AstToSsaCtx {
                     "`static` items are not implemented",
                     item.span,
                 ),
-            visitConstItem: (item: ConstItem) =>
-                loweringError(
-                    LoweringErrorKind.UnsupportedNode,
-                    "`const` items are not implemented",
-                    item.span,
-                ),
-            visitTraitConstItem: (item: TraitConstItem) =>
-                loweringError(
-                    LoweringErrorKind.UnsupportedNode,
-                    "trait const items are not implemented",
-                    item.span,
-                ),
+            visitConstItem: () => unsupported("ConstItem"),
             visitRecoveryItem: (item: RecoveryItem) =>
                 loweringError(
                     LoweringErrorKind.UnsupportedNode,
@@ -929,9 +934,11 @@ export class AstToSsaCtx {
             );
         }
         this.constResolutionStack.push(binding);
-        const lowered = this.lowerExpression(binding.value);
-        this.constResolutionStack.pop();
-        return lowered;
+        try {
+            return this.lowerExpression(binding.value);
+        } finally {
+            this.constResolutionStack.pop();
+        }
     }
 
     visitPathExpr(expr: PathExpr): Result<ValueId, LoweringError> {
@@ -4222,40 +4229,50 @@ function collectImplReturnTypes(
     }
 }
 
-function makeLoweringConstBinding(
-    key: string,
-    typeNode: TypeNode,
-    value: Expression,
-    span: Span,
-    selfTypeName?: string,
-): LoweringConstBinding {
-    return { key, typeNode, value, span, selfTypeName };
-}
-
-function registerNamedConstBinding(
-    constBindings: Map<string, LoweringConstBinding>,
-    name: string,
-    binding: LoweringConstBinding,
-): void {
-    constBindings.set(name, binding);
-}
-
 function collectDirectConstBinding(
     item: ConstItem,
     constBindings: Map<string, LoweringConstBinding>,
     qualify: (name: string) => string,
     modulePrefix: string,
 ): void {
+    if (!item.value) {
+        return;
+    }
     const key = qualify(item.name);
-    const binding = makeLoweringConstBinding(
+    const binding: LoweringConstBinding = {
         key,
-        item.typeNode,
-        item.value,
-        item.span,
-    );
-    registerNamedConstBinding(constBindings, key, binding);
+        typeNode: item.typeNode,
+        value: item.value,
+        span: item.span,
+    };
+    constBindings.set(key, binding);
     if (modulePrefix) {
-        registerNamedConstBinding(constBindings, item.name, binding);
+        constBindings.set(item.name, binding);
+    }
+}
+
+function registerAssociatedConstBindings(
+    constItems: ConstItem[],
+    targetName: string,
+    qualifiedTarget: string,
+    constBindings: Map<string, LoweringConstBinding>,
+): void {
+    for (const constItem of constItems) {
+        if (!constItem.value) {
+            continue;
+        }
+        const key = `${qualifiedTarget}::${constItem.name}`;
+        const binding: LoweringConstBinding = {
+            key,
+            typeNode: constItem.typeNode,
+            value: constItem.value,
+            span: constItem.span,
+            selfTypeName: targetName,
+        };
+        constBindings.set(key, binding);
+        if (qualifiedTarget !== targetName) {
+            constBindings.set(`${targetName}::${constItem.name}`, binding);
+        }
     }
 }
 
@@ -4265,25 +4282,12 @@ function collectImplConstBindings(
     qualify: (name: string) => string,
 ): void {
     const targetName = item.target.name;
-    const qualifiedTarget = qualify(targetName);
-    for (const constItem of item.constItems) {
-        const key = `${qualifiedTarget}::${constItem.name}`;
-        const binding = makeLoweringConstBinding(
-            key,
-            constItem.typeNode,
-            constItem.value,
-            constItem.span,
-            targetName,
-        );
-        registerNamedConstBinding(constBindings, key, binding);
-        if (qualifiedTarget !== targetName) {
-            registerNamedConstBinding(
-                constBindings,
-                `${targetName}::${constItem.name}`,
-                binding,
-            );
-        }
-    }
+    registerAssociatedConstBindings(
+        item.constItems,
+        targetName,
+        qualify(targetName),
+        constBindings,
+    );
 }
 
 function collectTraitImplConstBindings(
@@ -4296,58 +4300,51 @@ function collectTraitImplConstBindings(
     const overrides = new Map(
         item.constItems.map((constItem) => [constItem.name, constItem]),
     );
+    registerAssociatedConstBindings(
+        item.constItems,
+        targetName,
+        qualifiedTarget,
+        constBindings,
+    );
 
-    for (const constItem of item.constItems) {
-        const key = `${qualifiedTarget}::${constItem.name}`;
-        const binding = makeLoweringConstBinding(
-            key,
-            constItem.typeNode,
-            constItem.value,
-            constItem.span,
-            targetName,
-        );
-        registerNamedConstBinding(constBindings, key, binding);
-        if (qualifiedTarget !== targetName) {
-            registerNamedConstBinding(
-                constBindings,
-                `${targetName}::${constItem.name}`,
-                binding,
-            );
-        }
-    }
-
+    const defaultConstItems: ConstItem[] = [];
     for (const traitConst of item.trait.constItems) {
         if (overrides.has(traitConst.name) || !traitConst.value) {
             continue;
         }
-        const key = `${qualifiedTarget}::${traitConst.name}`;
-        const binding = makeLoweringConstBinding(
-            key,
-            traitConst.typeNode,
-            traitConst.value,
-            traitConst.span,
-            targetName,
-        );
-        registerNamedConstBinding(constBindings, key, binding);
-        if (qualifiedTarget !== targetName) {
-            registerNamedConstBinding(
-                constBindings,
-                `${targetName}::${traitConst.name}`,
-                binding,
-            );
-        }
+        defaultConstItems.push(traitConst);
     }
+    registerAssociatedConstBindings(
+        defaultConstItems,
+        targetName,
+        qualifiedTarget,
+        constBindings,
+    );
+}
+
+function useLookupPaths(item: UseItem): string[] {
+    const fullPath = item.path.join("::");
+    const fallbackPaths = [fullPath];
+    if (item.path[0] === "self" && item.path.length > 1) {
+        fallbackPaths.push(item.path.slice(1).join("::"));
+    }
+    return fallbackPaths;
 }
 
 function collectUseConstBinding(
     item: UseItem,
     constBindings: Map<string, LoweringConstBinding>,
 ): void {
-    const fullPath = item.path.join("::");
     const localName = item.alias ?? item.path[item.path.length - 1];
-    const binding = constBindings.get(fullPath);
+    let binding: LoweringConstBinding | undefined;
+    for (const path of useLookupPaths(item)) {
+        binding = constBindings.get(path);
+        if (binding) {
+            break;
+        }
+    }
     if (binding) {
-        registerNamedConstBinding(constBindings, localName, binding);
+        constBindings.set(localName, binding);
     }
 }
 
@@ -4511,7 +4508,7 @@ function collectSelfConstBindings(
     selfTypeName: string,
     constItems: ConstItem[],
     namedConsts: Map<string, LoweringConstBinding>,
-    traitConstItems: TraitConstItem[] = [],
+    traitConstItems: ConstItem[] = [],
 ): Map<string, LoweringConstBinding> {
     const bindings = new Map<string, LoweringConstBinding>();
     const overridden = new Set(constItems.map((constItem) => constItem.name));

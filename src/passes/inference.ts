@@ -46,7 +46,6 @@ import {
     StructPattern,
     StructItem,
     EnumItem,
-    type TraitConstItem,
     TraitImplItem,
     TraitItem,
     ArrayTypeNode,
@@ -663,14 +662,6 @@ function registerStructTypeWithPrefix(
     }
 }
 
-function makeConstBinding(
-    typeNode: TypeNode,
-    value?: Expression,
-    selfTypeName?: string,
-): ConstBindingInfo {
-    return { typeNode, value, selfTypeName };
-}
-
 function registerConstWithPrefix(
     typeCtx: TypeContext,
     node: ConstItem,
@@ -678,7 +669,11 @@ function registerConstWithPrefix(
     modulePrefix: string,
     selfTypeName?: string,
 ): void {
-    const binding = makeConstBinding(node.typeNode, node.value, selfTypeName);
+    const binding: ConstBindingInfo = {
+        typeNode: node.typeNode,
+        value: node.value,
+        selfTypeName,
+    };
     const qualifiedName = qualify(node.name);
     typeCtx.registerNamedConst(qualifiedName, binding);
     if (modulePrefix) {
@@ -695,14 +690,19 @@ function registerImplConstsWithPrefix(
     const targetName = node.target.name;
     const qualifiedTargetName = qualify(targetName);
     for (const constItem of node.constItems) {
+        const binding: ConstBindingInfo = {
+            typeNode: constItem.typeNode,
+            value: constItem.value,
+            selfTypeName: targetName,
+        };
         typeCtx.registerNamedConst(
             `${qualifiedTargetName}::${constItem.name}`,
-            makeConstBinding(constItem.typeNode, constItem.value, targetName),
+            binding,
         );
         if (modulePrefix) {
             typeCtx.registerNamedConst(
                 `${targetName}::${constItem.name}`,
-                makeConstBinding(constItem.typeNode, constItem.value, targetName),
+                binding,
             );
         }
     }
@@ -748,22 +748,22 @@ function traitConstDefaults(
         if (override) {
             bindings.set(
                 traitConst.name,
-                makeConstBinding(
-                    override.typeNode,
-                    override.value,
+                {
+                    typeNode: override.typeNode,
+                    value: override.value,
                     selfTypeName,
-                ),
+                },
             );
             continue;
         }
         if (traitConst.value) {
             bindings.set(
                 traitConst.name,
-                makeConstBinding(
-                    traitConst.typeNode,
-                    traitConst.value,
+                {
+                    typeNode: traitConst.typeNode,
+                    value: traitConst.value,
                     selfTypeName,
-                ),
+                },
             );
         }
     }
@@ -783,7 +783,11 @@ function registerTraitImplConstsWithPrefix(
     for (const constItem of node.constItems) {
         bindings.set(
             constItem.name,
-            makeConstBinding(constItem.typeNode, constItem.value, targetName),
+            {
+                typeNode: constItem.typeNode,
+                value: constItem.value,
+                selfTypeName: targetName,
+            },
         );
     }
 
@@ -927,14 +931,26 @@ function registerUseItemAlias(typeCtx: TypeContext, node: UseItem): void {
     // Avoid re-registering if the local name matches the last segment (no alias)
     if (localName === fullPath) return;
 
-    const sig = typeCtx.lookupFnSignature(fullPath);
-    if (sig) {
-        typeCtx.registerFnSignature(localName, sig);
+    const lookupPaths = [fullPath];
+    if (node.path[0] === "self" && node.path.length > 1) {
+        lookupPaths.push(node.path.slice(1).join("::"));
     }
 
-    const binding = typeCtx.lookupNamedConst(fullPath);
-    if (binding) {
+    for (const path of lookupPaths) {
+        const sig = typeCtx.lookupFnSignature(path);
+        if (sig) {
+            typeCtx.registerFnSignature(localName, sig);
+            break;
+        }
+    }
+
+    for (const path of lookupPaths) {
+        const binding = typeCtx.lookupNamedConst(path);
+        if (!binding) {
+            continue;
+        }
         typeCtx.registerNamedConst(localName, binding);
+        break;
     }
 }
 
@@ -2421,7 +2437,10 @@ function inferStatement(
 
     if (stmt instanceof ItemStmt) {
         if (stmt.item instanceof ConstItem) {
-            const binding = makeConstBinding(stmt.item.typeNode, stmt.item.value);
+            const binding: ConstBindingInfo = {
+                typeNode: stmt.item.typeNode,
+                value: stmt.item.value,
+            };
             typeCtx.setConst(stmt.item.name, binding);
             return inferConstBinding(typeCtx, binding, stmt.item.span);
         }
@@ -2525,17 +2544,13 @@ function inferConstItem(
 ): TypeError[] {
     return inferConstBinding(
         typeCtx,
-        makeConstBinding(item.typeNode, item.value, selfTypeName),
+        {
+            typeNode: item.typeNode,
+            value: item.value,
+            selfTypeName,
+        },
         item.span,
         selfTypeName,
-    );
-}
-
-function inferTraitConstItem(typeCtx: TypeContext, item: TraitConstItem): TypeError[] {
-    return inferConstBinding(
-        typeCtx,
-        makeConstBinding(item.typeNode, item.value),
-        item.span,
     );
 }
 
@@ -2546,6 +2561,75 @@ function registerScopedSelfConstAliases(
     for (const [name, binding] of bindings) {
         typeCtx.setConst(`Self::${name}`, binding);
     }
+}
+
+function collectTraitImplScopedBindings(
+    item: TraitImplItem,
+    selfTypeName: string | undefined,
+    errors: TypeError[],
+): Map<string, ConstBindingInfo> {
+    const traitConsts = new Map(
+        item.trait.constItems.map((constItem) => [constItem.name, constItem]),
+    );
+    const scopedBindings = new Map<string, ConstBindingInfo>();
+
+    for (const constItem of item.constItems) {
+        const binding: ConstBindingInfo = {
+            typeNode: constItem.typeNode,
+            value: constItem.value,
+            selfTypeName,
+        };
+        scopedBindings.set(constItem.name, binding);
+        const traitConst = traitConsts.get(constItem.name);
+        if (!traitConst) {
+            errors.push({
+                message: `Associated const \`${constItem.name}\` is not declared in trait \`${item.trait.name}\``,
+                span: constItem.span,
+            });
+            continue;
+        }
+        const implType = resolveSelf(constItem.typeNode, selfTypeName);
+        const traitType = resolveSelf(traitConst.typeNode, selfTypeName);
+        if (typesEqual(implType, traitType)) {
+            continue;
+        }
+        errors.push({
+            message: `Associated const \`${constItem.name}\` for trait \`${item.trait.name}\` must have type \`${typeToString(traitType)}\`, found \`${typeToString(implType)}\``,
+            span: constItem.span,
+        });
+    }
+
+    const defaults = traitConstDefaults(
+        item.trait,
+        item.constItems,
+        selfTypeName ?? "Self",
+    );
+    for (const [name, binding] of defaults) {
+        if (scopedBindings.has(name)) {
+            continue;
+        }
+        scopedBindings.set(name, binding);
+    }
+
+    for (const traitConst of item.trait.constItems) {
+        if (scopedBindings.has(traitConst.name) || traitConst.value) {
+            continue;
+        }
+        errors.push({
+            message: `Missing associated const \`${traitConst.name}\` in impl of trait \`${item.trait.name}\``,
+            span: item.span,
+        });
+    }
+
+    return scopedBindings;
+}
+
+function traitImplConstSpan(item: TraitImplItem, name: string): Span {
+    const implConst = item.constItems.find((constItem) => constItem.name === name);
+    const traitConst = item.trait.constItems.find(
+        (constItem) => constItem.name === name,
+    );
+    return implConst?.span ?? traitConst?.span ?? item.span;
 }
 
 // --- Function Body Inference ---
@@ -2763,15 +2847,23 @@ function inferImplItem(typeCtx: TypeContext, item: ImplItem): TypeError[] {
     typeCtx.pushScope();
     const scopedBindings = new Map<string, ConstBindingInfo>();
     for (const constItem of item.constItems) {
-        const binding = makeConstBinding(
-            constItem.typeNode,
-            constItem.value,
+        const binding: ConstBindingInfo = {
+            typeNode: constItem.typeNode,
+            value: constItem.value,
             selfTypeName,
-        );
+        };
         scopedBindings.set(constItem.name, binding);
-        errors.push(...inferConstBinding(typeCtx, binding, constItem.span, selfTypeName));
     }
     registerScopedSelfConstAliases(typeCtx, scopedBindings);
+    for (const constItem of item.constItems) {
+        const binding = scopedBindings.get(constItem.name);
+        if (!binding) {
+            continue;
+        }
+        errors.push(
+            ...inferConstBinding(typeCtx, binding, constItem.span, selfTypeName),
+        );
+    }
 
     for (const method of item.methods) {
         errors.push(...validateFnTypes(typeCtx, method));
@@ -2803,33 +2895,17 @@ function inferTraitImplItem(
     }
 
     typeCtx.pushScope();
-    const scopedBindings = new Map<string, ConstBindingInfo>();
-    for (const constItem of item.constItems) {
-        const binding = makeConstBinding(
-            constItem.typeNode,
-            constItem.value,
-            selfTypeName,
-        );
-        scopedBindings.set(constItem.name, binding);
-    }
-    const defaults = traitConstDefaults(
-        item.trait,
-        item.constItems,
-        selfTypeName ?? "Self",
+    const scopedBindings = collectTraitImplScopedBindings(
+        item,
+        selfTypeName,
+        errors,
     );
-    for (const [name, binding] of defaults) {
-        if (!scopedBindings.has(name)) {
-            scopedBindings.set(name, binding);
-        }
-    }
     registerScopedSelfConstAliases(typeCtx, scopedBindings);
     for (const [name, binding] of scopedBindings) {
-        const span = match(item.constItems.find((constItem) => constItem.name === name))
-            .with(P.nullish, () =>
-                item.trait.constItems.find((constItem) => constItem.name === name)?.span ??
-                item.span)
-            .otherwise((constItem) => constItem.span);
-        errors.push(...inferConstBinding(typeCtx, binding, span, binding.selfTypeName));
+        const span = traitImplConstSpan(item, name);
+        errors.push(
+            ...inferConstBinding(typeCtx, binding, span, binding.selfTypeName),
+        );
     }
 
     for (const method of item.fnImpls) {
@@ -2911,8 +2987,18 @@ function inferTraitItem(typeCtx: TypeContext, item: TraitItem): TypeError[] {
     for (const method of item.methods) {
         errors.push(...validateFnTypes(typeCtx, method));
     }
+    typeCtx.pushScope();
+    const scopedBindings = new Map<string, ConstBindingInfo>();
     for (const constItem of item.constItems) {
-        errors.push(...inferTraitConstItem(typeCtx, constItem));
+        scopedBindings.set(constItem.name, {
+            typeNode: constItem.typeNode,
+            value: constItem.value,
+        });
     }
+    registerScopedSelfConstAliases(typeCtx, scopedBindings);
+    for (const constItem of item.constItems) {
+        errors.push(...inferConstItem(typeCtx, constItem));
+    }
+    typeCtx.popScope();
     return errors;
 }

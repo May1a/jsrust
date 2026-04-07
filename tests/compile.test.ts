@@ -315,6 +315,16 @@ describe("compile", () => {
             expect(result.value).toContain("call get()");
         });
 
+        test("resolves Self associated consts inside nested inherent const initializers", () => {
+            const result = compileToIR(
+                "struct Foo {} impl Foo { const A: i32 = 1; const B: i32 = { const LOCAL: i32 = Self::A; LOCAL }; } fn test() -> i32 { Foo::B }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+
+            expect(result.value).toContain("iconst 1");
+        });
+
         test("resolves trait associated consts through impl defaults", () => {
             const result = compileToIR(
                 "trait Has { const VALUE: i32 = 4; } impl Has for i32 {} fn test() -> i32 { i32::VALUE }",
@@ -336,9 +346,39 @@ describe("compile", () => {
             expect(result.value).toContain("call get");
         });
 
+        test("resolves Self references between inherent associated consts during inference", () => {
+            const result = compileToIR(
+                "struct Foo {} impl Foo { const A: i32 = 1; const B: i32 = Self::A; } fn test() -> i32 { Foo::B }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+
+            expect(result.value).toContain("iconst 1");
+        });
+
+        test("resolves Self references between trait const defaults", () => {
+            const result = compileToIR(
+                "trait Has { const A: i32 = 1; const B: i32 = Self::A; } impl Has for i32 {} fn test() -> i32 { i32::B }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+
+            expect(result.value).toContain("iconst 1");
+        });
+
         test("resolves const aliases from use items", () => {
             const result = compileToIR(
                 "mod inner { pub const VALUE: i32 = 5; } use inner::VALUE as ALIAS; fn test() -> i32 { ALIAS }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+
+            expect(result.value).toContain("iconst 5");
+        });
+
+        test("resolves self-prefixed const aliases from use items", () => {
+            const result = compileToIR(
+                "const VALUE: i32 = 5; use self::VALUE as ALIAS; fn test() -> i32 { ALIAS }",
             );
             expect(result.isOk()).toBe(true);
             if (result.isErr()) return;
@@ -365,6 +405,42 @@ describe("compile", () => {
 
             expect(formatCompileError(result.error)).toContain(
                 "recursive const definition detected",
+            );
+        });
+
+        test("rejects trait impls that omit required associated consts", () => {
+            const result = compile(
+                "trait Has { const VALUE: i32; } impl Has for i32 {} fn test() -> i32 { 0 }",
+            );
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+
+            expect(formatCompileError(result.error)).toContain(
+                "Missing associated const `VALUE` in impl of trait `Has`",
+            );
+        });
+
+        test("rejects trait impls that add undeclared associated consts", () => {
+            const result = compile(
+                "trait Has {} impl Has for i32 { const VALUE: i32 = 1; } fn test() -> i32 { 0 }",
+            );
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+
+            expect(formatCompileError(result.error)).toContain(
+                "Associated const `VALUE` is not declared in trait `Has`",
+            );
+        });
+
+        test("rejects trait impls that change associated const types", () => {
+            const result = compile(
+                "trait Has { const VALUE: i32; } impl Has for i32 { const VALUE: bool = true; } fn test() -> i32 { 0 }",
+            );
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+
+            expect(formatCompileError(result.error)).toContain(
+                "Associated const `VALUE` for trait `Has` must have type `i32`, found `bool`",
             );
         });
     });

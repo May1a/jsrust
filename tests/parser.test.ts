@@ -328,6 +328,7 @@ describe("items", () => {
         expect(traitItem).toBeDefined();
         if (!(traitItem instanceof TraitItem)) return;
         expect(traitItem.constItems).toHaveLength(1);
+        expectInstanceOf(traitItem.constItems[0], ConstItem);
         expect(traitItem.constItems[0]?.value).toBeUndefined();
     });
 
@@ -339,6 +340,7 @@ describe("items", () => {
         expect(traitItem).toBeDefined();
         if (!(traitItem instanceof TraitItem)) return;
         expect(traitItem.constItems).toHaveLength(1);
+        expectInstanceOf(traitItem.constItems[0], ConstItem);
         expect(traitItem.constItems[0]?.value).toBeDefined();
     });
 

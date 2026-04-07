@@ -68,7 +68,6 @@ import {
     StructPattern,
     StaticItem,
     type StructPatternField,
-    TraitConstItem,
     TraitItem,
     TraitImplItem,
     TryExpr,
@@ -784,7 +783,7 @@ class Parser {
         return new ConstItem(this.spanFrom(keyword), name, typeNode, value);
     }
 
-    private parseTraitConstItem(keyword: Token): TraitConstItem {
+    private parseTraitConstItem(keyword: Token): ConstItem {
         const name = String(this.expect(TokenType.Identifier).value);
         this.expect(TokenType.Colon);
         const typeNode = this.parseTypeNode();
@@ -793,7 +792,7 @@ class Parser {
             value = this.parseExpr(0);
         }
         this.expect(TokenType.Semicolon);
-        return new TraitConstItem(
+        return new ConstItem(
             this.spanFrom(keyword),
             name,
             typeNode,
@@ -1338,7 +1337,7 @@ class Parser {
         this.expect(TokenType.OpenCurly);
 
         const methods: (FnItem | GenericFnItem)[] = [];
-        const constItems: TraitConstItem[] = [];
+        const constItems: ConstItem[] = [];
         while (
             !this.check(TokenType.CloseCurly) &&
             !this.check(TokenType.Eof)
