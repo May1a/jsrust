@@ -1284,6 +1284,12 @@ class Parser {
         const { derives } = this.parseAttributes();
         this.eatPub();
         this.eat(TokenType.Unsafe);
+        if (
+            this.check(TokenType.Const) &&
+            this.peekAt(1).type === TokenType.Fn
+        ) {
+            this.advance();
+        }
         if (this.eat(TokenType.Fn)) {
             methods.push(this.parseFnBody(this.peek(), derives, false));
             return;
@@ -1346,6 +1352,12 @@ class Parser {
             this.eatPub();
             if (this.eat(TokenType.Unsafe)) {
                 // Consume
+            }
+            if (
+                this.check(TokenType.Const) &&
+                this.peekAt(1).type === TokenType.Fn
+            ) {
+                this.advance();
             }
             if (this.eat(TokenType.Fn)) {
                 const fnStart = this.peek();

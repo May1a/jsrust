@@ -2997,7 +2997,7 @@ function inferTraitItem(typeCtx: TypeContext, item: TraitItem): TypeError[] {
     }
     registerScopedSelfConstAliases(typeCtx, scopedBindings);
     for (const constItem of item.constItems) {
-        errors.push(...inferConstItem(typeCtx, constItem));
+        errors.push(...inferConstItem(typeCtx, constItem, "Self"));
     }
     typeCtx.popScope();
     return errors;

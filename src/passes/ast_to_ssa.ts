@@ -58,6 +58,7 @@ import {
     type StructExpr,
     StructPattern,
     TraitImplItem,
+    TraitItem,
     type TryExpr,
     type TypeNode,
     type TypeAliasItem,
@@ -597,8 +598,6 @@ export class AstToSsaCtx {
                 item.span,
             );
         }
-        const ty = AstToSsaCtx.translateTypeNode(item.typeNode);
-        this.registerEnumTypeMetadata(ty);
         const binding: LoweringConstBinding = {
             key: item.name,
             typeNode: item.typeNode,
@@ -805,7 +804,12 @@ export class AstToSsaCtx {
                     "`static` items are not implemented",
                     item.span,
                 ),
-            visitConstItem: () => unsupported("ConstItem"),
+            visitConstItem: (item: ConstItem) =>
+                loweringError(
+                    LoweringErrorKind.UnsupportedNode,
+                    "const items are handled before the visitor; this path should not be reached",
+                    item.span,
+                ),
             visitRecoveryItem: (item: RecoveryItem) =>
                 loweringError(
                     LoweringErrorKind.UnsupportedNode,
@@ -925,7 +929,7 @@ export class AstToSsaCtx {
     private lowerConstBinding(
         binding: LoweringConstBinding,
     ): Result<ValueId, LoweringError> {
-        if (this.constResolutionStack.some((entry) => entry.key === binding.key)) {
+        if (this.constResolutionStack.includes(binding)) {
             const cycle = [...this.constResolutionStack.map((entry) => entry.key), binding.key];
             return loweringError(
                 LoweringErrorKind.UnsupportedNode,
@@ -4246,7 +4250,7 @@ function collectDirectConstBinding(
         span: item.span,
     };
     constBindings.set(key, binding);
-    if (modulePrefix) {
+    if (!modulePrefix) {
         constBindings.set(item.name, binding);
     }
 }
@@ -4366,6 +4370,9 @@ function collectNamedConstBindings(
     }
     if (item instanceof TraitImplItem) {
         collectTraitImplConstBindings(item, constBindings, qualify);
+        return;
+    }
+    if (item instanceof TraitItem) {
         return;
     }
     if (item instanceof ModItem) {
