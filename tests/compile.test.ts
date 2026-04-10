@@ -479,3 +479,234 @@ describe("compile", () => {
         );
     });
 });
+
+describe("type inference", () => {
+    test("infers integer literal suffixes correctly", () => {
+        const suffixCases: Array<[string, string]> = [
+            ["i8", "fn test() -> i8 { 1i8 }"],
+            ["i16", "fn test() -> i16 { 1i16 }"],
+            ["i32", "fn test() -> i32 { 1i32 }"],
+            ["i64", "fn test() -> i64 { 1i64 }"],
+            ["isize", "fn test() -> isize { 1isize }"],
+            ["u8", "fn test() -> u8 { 1u8 }"],
+            ["u16", "fn test() -> u16 { 1u16 }"],
+            ["u32", "fn test() -> u32 { 1u32 }"],
+            ["u64", "fn test() -> u64 { 1u64 }"],
+            ["usize", "fn test() -> usize { 1usize }"],
+        ];
+        for (const [label, code] of suffixCases) {
+            const result = compile(code);
+            expect(result.isOk(), `suffix ${label} should compile`).toBe(true);
+        }
+    });
+
+    test("infers float literal suffixes correctly", () => {
+        const result = compile("fn test() -> f32 { 3.14f32 }");
+        expect(result.isOk()).toBe(true);
+
+        const result2 = compile("fn test() -> f64 { 3.14f64 }");
+        expect(result2.isOk()).toBe(true);
+    });
+
+    test("rejects mismatched integer suffix types", () => {
+        const result = compile("fn test() -> i32 { 1u8 }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "expected `i32`, found `u8`",
+        );
+    });
+
+    test("rejects mismatched float suffix types", () => {
+        const result = compile("fn test() -> f64 { 1.0f32 }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "expected `f64`, found `f32`",
+        );
+    });
+
+    test("defaults unsuffixed integer literals to i32", () => {
+        const result = compile("fn test() -> i32 { 42 }");
+        expect(result.isOk()).toBe(true);
+    });
+
+    test("defaults unsuffixed float literals to f64", () => {
+        const result = compile("fn test() -> f64 { 3.14 }");
+        expect(result.isOk()).toBe(true);
+    });
+
+    test("allows suffixed arithmetic with matching types", () => {
+        const result = compile("fn test() -> u8 { let x: u8 = 10u8 + 20u8; x }");
+        expect(result.isOk()).toBe(true);
+    });
+
+    test("placeholder _ in let-binding does not mask real type mismatches", () => {
+        const result = compile("fn test() -> i32 { let _: bool = 42; 0 }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "expected `bool`, found `i32`",
+        );
+    });
+
+    test("placeholder _ in let-binding accepts matching types", () => {
+        const result = compile("fn test() -> i32 { let _ = 42; 0 }");
+        expect(result.isOk()).toBe(true);
+    });
+
+    test("if-else with _ return types does not suppress mismatch", () => {
+        const result = compile(
+            "fn test() { let _ = if true { 1 } else { true }; }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain("incompatible types");
+    });
+
+    test("match arms with _ types does not suppress mismatch", () => {
+        const result = compile(
+            "fn test() { let _ = match 0 { 0 => 1, 1 => true }; }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "incompatible types",
+        );
+    });
+
+    test("Option<_> unifies with Option<i32> in let-binding", () => {
+        const result = compile(
+            "fn test() { let x: Option<i32> = None; let _ = x; }",
+        );
+        expect(result.isOk()).toBe(true);
+    });
+
+    test("Result<_> unifies with Result<i32, bool> in let-binding", () => {
+        const result = compile(
+            "fn test() { let x: Result<i32, bool> = Ok(1); let _ = x; }",
+        );
+        expect(result.isOk()).toBe(true);
+    });
+
+    test("resolves qualified enum variant paths", () => {
+        const result = compileToIR(
+            "enum Color { Red, Green, Blue } fn test() -> Color { Color::Red }",
+        );
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+
+        expect(result.value).toContain("enum Color");
+    });
+
+    test("rejects qualified paths to unknown types", () => {
+        const result = compile("fn test() { let _ = Nonexistent::foo; }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "cannot find value `Nonexistent::foo`",
+        );
+    });
+
+    test("rejects qualified function calls to unknown types", () => {
+        const result = compile("fn test() { Unknown::method(); }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "cannot find function `Unknown::method`",
+        );
+    });
+
+    test("infers closure return type from body expression", () => {
+        const result = compileToIR("fn test() { let f = || 42; }");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+
+        expect(result.value).toContain("__closure_0() -> i32");
+    });
+
+    test("infers closure return type from body with parameter usage", () => {
+        const result = compileToIR(
+            "fn test() { let add = |x: i32, y: i32| x + y; }",
+        );
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+
+        expect(result.value).toContain(
+            "__closure_0(v0 arg0: i32, v1 arg1: i32) -> i32",
+        );
+    });
+
+    test("uses explicit closure return type annotation when present", () => {
+        const result = compileToIR(
+            "fn test() { let f = || -> i32 { 42 }; }",
+        );
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+
+        expect(result.value).toContain("__closure_0() -> i32");
+    });
+
+    test("range expressions produce explicit error", () => {
+        const result = compile("fn test() { let _ = 1..10; }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "range expressions are not supported",
+        );
+    });
+
+    test("indexing non-array type produces error", () => {
+        const result = compile("fn test() { let x = 5; let _ = x[0]; }");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "cannot index into value of type `i32`",
+        );
+    });
+
+    test("unknown Option method produces error", () => {
+        const result = compile(
+            "fn test() { let value: Option<i32> = Some(1); let _ = value.missing(); }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "no method `missing` found for type `Option<i32>`",
+        );
+    });
+
+    test("unknown Result method produces error", () => {
+        const result = compile(
+            "fn test() { let value: Result<i32, bool> = Ok(1); let _ = value.missing(); }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "no method `missing` found for type `Result<i32, bool>`",
+        );
+    });
+
+    test("catches type errors inside generic method bodies", () => {
+        const result = compile(
+            "struct Pair { x: i32, y: i32 } impl Pair { fn bad<T>(self) -> bool { let x: bool = 42; true } }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "expected `bool`, found `i32`",
+        );
+    });
+});

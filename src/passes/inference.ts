@@ -34,6 +34,7 @@ import {
     Mutability,
     NamedTypeNode,
     OptionTypeNode,
+    PathExpr,
     ResultTypeNode,
     type ParamNode,
     RangeExpr,
@@ -470,9 +471,90 @@ function typesEqualCompound(a: TypeNode, b: TypeNode): boolean {
 
 function typesEqual(a: TypeNode, b: TypeNode): boolean {
     if (isInferredPlaceholder(a) || isInferredPlaceholder(b)) {
-        return true;
+        return false;
     }
     return typesEqualSimple(a, b) || typesEqualCompound(a, b);
+}
+
+function typesCompatibleSimple(a: TypeNode, b: TypeNode): boolean {
+    return match([a, b] as const)
+        .with(
+            [P.instanceOf(NamedTypeNode), P.instanceOf(NamedTypeNode)],
+            ([x, y]) =>
+                x.name === y.name &&
+                genericArgsCompatible(x.args, y.args),
+        )
+        .with(
+            [P.instanceOf(TupleTypeNode), P.instanceOf(TupleTypeNode)],
+            ([x, y]) => typesCompatibleList(x.elements, y.elements),
+        )
+        .with(
+            [P.instanceOf(ArrayTypeNode), P.instanceOf(ArrayTypeNode)],
+            ([x, y]) =>
+                arrayLengthsEqual(x.length, y.length) &&
+                typesCompatible(x.element, y.element),
+        )
+        .otherwise(() => false);
+}
+
+function typesCompatibleCompound(a: TypeNode, b: TypeNode): boolean {
+    return match([a, b] as const)
+        .with(
+            [P.instanceOf(RefTypeNode), P.instanceOf(RefTypeNode)],
+            ([x, y]) =>
+                x.mutability === y.mutability &&
+                typesCompatible(x.inner, y.inner),
+        )
+        .with(
+            [P.instanceOf(PtrTypeNode), P.instanceOf(PtrTypeNode)],
+            ([x, y]) =>
+                x.mutability === y.mutability &&
+                typesCompatible(x.inner, y.inner),
+        )
+        .with(
+            [P.instanceOf(FnTypeNode), P.instanceOf(FnTypeNode)],
+            ([x, y]) =>
+                typesCompatibleList(x.params, y.params) &&
+                typesCompatible(x.returnType, y.returnType),
+        )
+        .with(
+            [P.instanceOf(OptionTypeNode), P.instanceOf(OptionTypeNode)],
+            ([x, y]) => typesCompatible(x.inner, y.inner),
+        )
+        .with(
+            [P.instanceOf(ResultTypeNode), P.instanceOf(ResultTypeNode)],
+            ([x, y]) =>
+                typesCompatible(x.okType, y.okType) &&
+                typesCompatible(x.errType, y.errType),
+        )
+        .otherwise(() => false);
+}
+
+function typesCompatible(a: TypeNode, b: TypeNode): boolean {
+    if (isInferredPlaceholder(a) || isInferredPlaceholder(b)) {
+        return true;
+    }
+    return typesCompatibleSimple(a, b) || typesCompatibleCompound(a, b);
+}
+
+function typesCompatibleList(left: TypeNode[], right: TypeNode[]): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    return left.every((type, index) => typesCompatible(type, right[index]));
+}
+
+function genericArgsCompatible(
+    left: GenericArgsNode | undefined,
+    right: GenericArgsNode | undefined,
+): boolean {
+    if ((left === undefined) !== (right === undefined)) {
+        return false;
+    }
+    if (left === undefined || right === undefined) {
+        return true;
+    }
+    return typesCompatibleList(left.args, right.args);
 }
 
 function makeOptionType(span: Span, innerTy?: TypeNode): OptionTypeNode {
@@ -976,6 +1058,24 @@ function inferExprType(
     return result;
 }
 
+function inferClosureType(
+    typeCtx: TypeContext,
+    expr: ClosureExpr,
+): Result<TypeNode | undefined, InferFailure<TypeNode | undefined>> {
+    if (isInferredPlaceholder(expr.returnType)) {
+        typeCtx.pushScope();
+        for (const param of expr.params) {
+            typeCtx.setVariable(param.name, param.ty);
+        }
+        const bodyResult = inferExprType(typeCtx, expr.body);
+        typeCtx.popScope();
+        if (bodyResult.isOk() && bodyResult.value) {
+            return Result.ok(bodyResult.value);
+        }
+    }
+    return Result.ok(expr.returnType);
+}
+
 function inferExprTypeInner(
     typeCtx: TypeContext,
     expr: Expression,
@@ -1025,7 +1125,7 @@ function inferExprTypeInner(
     }
 
     if (expr instanceof ClosureExpr) {
-        return Result.ok(expr.returnType);
+        return inferClosureType(typeCtx, expr);
     }
 
     return inferExprTypeExtended(typeCtx, expr);
@@ -1056,7 +1156,14 @@ function inferVecMacro(
         } else {
             argType = argResult.value;
         }
-        if (index > 0 && elemType && argType && !typesEqual(elemType, argType)) {
+        if (
+            index > 0 &&
+            elemType &&
+            argType &&
+            !isInferredPlaceholder(elemType) &&
+            !isInferredPlaceholder(argType) &&
+            !typesEqual(elemType, argType)
+        ) {
             errors.push({
                 message: `Type mismatch in vec! macro: expected \`${typeToString(elemType)}\`, found \`${typeToString(argType)}\``,
                 span: arg.span,
@@ -1102,10 +1209,24 @@ function inferIndexExpr(
         }
         return Result.ok(receiverType.element);
     }
+    if (receiverType && !isInferredPlaceholder(receiverType)) {
+        errors.push({
+            message: `cannot index into value of type \`${typeToString(receiverType)}\``,
+            span: expr.span,
+        });
+    }
     if (errors.length > 0) {
         return Result.err({ errors, fallback: undefined });
     }
-    return Result.ok(undefined);
+    return Result.err({
+        errors: [
+            {
+                message: "cannot index into this expression",
+                span: expr.span,
+            },
+        ],
+        fallback: undefined,
+    });
 }
 
 function inferRangeExpr(
@@ -1128,7 +1249,15 @@ function inferRangeExpr(
     if (errors.length > 0) {
         return Result.err({ errors, fallback: undefined });
     }
-    return Result.ok(undefined);
+    return Result.err({
+        errors: [
+            {
+                message: "range expressions are not supported",
+                span: expr.span,
+            },
+        ],
+        fallback: undefined,
+    });
 }
 
 function inferExprTypeExtended(
@@ -1185,9 +1314,15 @@ function inferLiteral(
 ): Result<TypeNode | undefined, InferFailure<TypeNode | undefined>> {
     switch (expr.literalKind) {
         case LiteralKind.Int: {
+            if (expr.suffix !== undefined) {
+                return Result.ok(new NamedTypeNode(expr.span, expr.suffix));
+            }
             return Result.ok(new NamedTypeNode(expr.span, "i32"));
         }
         case LiteralKind.Float: {
+            if (expr.suffix !== undefined) {
+                return Result.ok(new NamedTypeNode(expr.span, expr.suffix));
+            }
             return Result.ok(new NamedTypeNode(expr.span, "f64"));
         }
         case LiteralKind.Bool: {
@@ -1283,17 +1418,41 @@ function inferIdentifier(
         return Result.ok(makeResultType(expr.span));
     }
 
-    // Qualified paths (e.g. `Color::Green`, `Vec::new`) are enum variants or
-    // associated items not represented in the current registries. Return
-    // undefined without an error; type propagation will handle the absence.
+    // Qualified paths (e.g. `Color::Green`, `Vec::new`)
     if (expr.name.includes("::")) {
-        return Result.ok(undefined);
+        return resolveQualifiedPath(typeCtx, expr);
     }
 
     return Result.err({
         errors: [
             {
                 message: `Cannot find value \`${expr.name}\` in this scope`,
+                span: expr.span,
+            },
+        ],
+        fallback: undefined,
+    });
+}
+
+function resolveQualifiedPath(
+    typeCtx: TypeContext,
+    expr: IdentifierExpr,
+): Result<TypeNode | undefined, InferFailure<TypeNode | undefined>> {
+    const segments = match(expr)
+        .with(P.instanceOf(PathExpr), (p) => p.segments)
+        .otherwise(() => expr.name.split("::"));
+    if (segments.length === 2) {
+        const [owner] = segments;
+
+        if (typeCtx.lookupNamedType(owner)) {
+            return Result.ok(new NamedTypeNode(expr.span, owner));
+        }
+    }
+
+    return Result.err({
+        errors: [
+            {
+                message: `cannot find value \`${expr.name}\` in this scope`,
                 span: expr.span,
             },
         ],
@@ -1627,8 +1786,17 @@ function inferIdentifierCallType(
         return Result.ok(sig.returnType);
     }
 
-    // Qualified paths (e.g. `Vec::new`) are not yet tracked — skip
-    if (!calleeName.includes("::")) {
+    // Qualified paths (e.g. `Vec::new`)
+    if (calleeName.includes("::")) {
+        const segments = match(callee)
+            .with(P.instanceOf(PathExpr), (p) => p.segments)
+            .otherwise(() => calleeName.split("::"));
+        if (segments.length === 2) {
+            const ownerType = typeCtx.lookupNamedType(segments[0]);
+            if (ownerType) {
+                return Result.ok(undefined);
+            }
+        }
         return Result.err({
             errors: [
                 {
@@ -1639,7 +1807,15 @@ function inferIdentifierCallType(
             fallback: undefined,
         });
     }
-    return Result.ok(undefined);
+    return Result.err({
+        errors: [
+            {
+                message: `cannot find function \`${calleeName}\` in this scope`,
+                span: callee.span,
+            },
+        ],
+        fallback: undefined,
+    });
 }
 
 function inferOptionMethodType(
@@ -1694,7 +1870,15 @@ function inferOptionMethodType(
         }
         return Result.ok(inner);
     }
-    return Result.ok(undefined);
+    return Result.err({
+        errors: [
+            {
+                message: `no method \`${callee.field}\` found for type \`Option<${typeToString(inner)}>\``,
+                span: callee.span,
+            },
+        ],
+        fallback: undefined,
+    });
 }
 
 function inferResultMethodType(
@@ -1764,7 +1948,15 @@ function inferResultMethodType(
         }
         return Result.ok(errTy);
     }
-    return Result.ok(undefined);
+    return Result.err({
+        errors: [
+            {
+                message: `no method \`${callee.field}\` found for type \`Result<${typeToString(okTy)}, ${typeToString(errTy)}>\``,
+                span: callee.span,
+            },
+        ],
+        fallback: undefined,
+    });
 }
 
 const OPTION_RESULT_BUILTIN_METHODS = [
@@ -2213,7 +2405,13 @@ function inferIf(
             elseTy = elseResult.value;
         }
         // If both branches have types, check they match
-        if (thenTy && elseTy && !typesEqual(thenTy, elseTy)) {
+        if (
+            thenTy &&
+            elseTy &&
+            !isInferredPlaceholder(thenTy) &&
+            !isInferredPlaceholder(elseTy) &&
+            !typesEqual(thenTy, elseTy)
+        ) {
             errors.push({
                 message: `\`if\` and \`else\` have incompatible types: \`${typeToString(thenTy)}\` vs \`${typeToString(elseTy)}\``,
                 span: expr.span,
@@ -2285,7 +2483,12 @@ function inferMatch(
         }
         if (!armTy) {
             armTy = bodyTy;
-        } else if (bodyTy && !typesEqual(armTy, bodyTy)) {
+        } else if (
+            bodyTy &&
+            !isInferredPlaceholder(armTy) &&
+            !isInferredPlaceholder(bodyTy) &&
+            !typesEqual(armTy, bodyTy)
+        ) {
             errors.push({
                 message: `Match arms have incompatible types: \`${typeToString(armTy)}\` vs \`${typeToString(bodyTy)}\``,
                 span: arm.span,
@@ -2482,7 +2685,7 @@ function inferLetStmt(
         // Both annotation and initializer present: check they agree
         if (
             !isInferredPlaceholder(initTy) &&
-            !typesEqual(annotationTy, initTy)
+            !typesCompatible(annotationTy, initTy)
         ) {
             errors.push({
                 message: `Type mismatch: expected \`${typeToString(annotationTy)}\`, found \`${typeToString(initTy)}\``,
@@ -2527,7 +2730,11 @@ function inferConstBinding(
     }
 
     const resolvedInitType = resolveSelf(initTy, selfTypeName);
-    if (!typesEqual(declaredType, resolvedInitType)) {
+    if (
+        !isInferredPlaceholder(declaredType) &&
+        !isInferredPlaceholder(resolvedInitType) &&
+        !typesCompatible(declaredType, resolvedInitType)
+    ) {
         errors.push({
             message: `Type mismatch: expected \`${typeToString(declaredType)}\`, found \`${typeToString(resolvedInitType)}\``,
             span,
@@ -2743,6 +2950,22 @@ function inferFnBody(
     return errors;
 }
 
+function inferGenericFnBody(
+    typeCtx: TypeContext,
+    fnItem: GenericFnItem,
+    selfTypeName?: string,
+): TypeError[] {
+    if (!fnItem.body) {
+        return [];
+    }
+
+    for (const gp of fnItem.genericParams) {
+        typeCtx.registerNamedType(gp.name, new NamedTypeNode(gp.span, gp.name));
+    }
+
+    return inferFnBody(typeCtx, fnItem, selfTypeName);
+}
+
 // --- Duplicate Function Checking ---
 
 function checkDuplicateFns(module: ModuleNode): TypeError[] {
@@ -2870,7 +3093,9 @@ function inferImplItem(typeCtx: TypeContext, item: ImplItem): TypeError[] {
         if (method instanceof FnItem) {
             errors.push(...inferFnBody(typeCtx, method, selfTypeName));
         }
-        // Skip deep body inference for generic methods
+        if (method instanceof GenericFnItem) {
+            errors.push(...inferGenericFnBody(typeCtx, method, selfTypeName));
+        }
     }
 
     typeCtx.popScope();

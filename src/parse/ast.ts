@@ -190,15 +190,18 @@ export enum LiteralKind {
 export class LiteralExpr extends Expression {
     readonly literalKind: LiteralKind;
     readonly value: string | number | boolean;
+    readonly suffix?: string;
 
     constructor(
         span: Span,
         literalKind: LiteralKind,
         value: string | number | boolean,
+        suffix?: string,
     ) {
         super(span);
         this.literalKind = literalKind;
         this.value = value;
+        this.suffix = suffix;
     }
 
     accept<R, C>(visitor: AstVisitor<R, C>, ctx: C): R {

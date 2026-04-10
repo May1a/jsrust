@@ -2426,30 +2426,34 @@ class Parser {
     private parseLiteralPrefix(start: Token): LiteralExpr | undefined {
         if (this.check(TokenType.Integer)) {
             const tok = this.advance();
+            let suffix: string | undefined;
             if (
                 this.check(TokenType.Identifier) &&
                 isTypeSuffix(this.peek().value)
             ) {
-                this.advance();
+                suffix = this.advance().value;
             }
             return new LiteralExpr(
                 this.spanFrom(start),
                 LiteralKind.Int,
                 parseIntValue(tok.value),
+                suffix,
             );
         }
         if (this.check(TokenType.Float)) {
             const tok = this.advance();
+            let suffix: string | undefined;
             if (
                 this.check(TokenType.Identifier) &&
                 isTypeSuffix(this.peek().value)
             ) {
-                this.advance();
+                suffix = this.advance().value;
             }
             return new LiteralExpr(
                 this.spanFrom(start),
                 LiteralKind.Float,
                 Number.parseFloat(tok.value),
+                suffix,
             );
         }
         if (this.check(TokenType.True) || this.check(TokenType.False)) {
