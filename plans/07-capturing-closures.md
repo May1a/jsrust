@@ -125,28 +125,28 @@ Closures returned from functions are **out of scope** for this plan. Returning c
 
 ## Work Packages
 
-### WP-16.A: Capture Analysis
+### WP-07.A: Capture Analysis
 
 - Extend `collectFreeVars` to return structured capture information (variable name, type, capture mode)
 - Distinguish between: defined-in-closure, captured-by-value, captured-by-reference
 - For this plan, implement by-value capture only
 - Add tests: closure capturing one variable, multiple variables, nested captures
 
-### WP-16.B: Capture Environment Struct
+### WP-07.B: Capture Environment Struct
 
 - Design capture struct layout (anonymous struct with fields matching captures)
 - Register capture struct types in the IR module
 - Generate deterministic names: `__capture_struct_N` where N is a counter
 - Add tests: capture struct type is correct for various capture sets
 
-### WP-16.C: Closure Body Lowering with Environment
+### WP-07.C: Closure Body Lowering with Environment
 
 - Lower closure body as a function with an extra `env: ptr` first parameter
 - Inside the body, replace captured variable references with `GEP + Load` from env
 - Replace captured variable assignments with `GEP + Store` to env (for mutable captures)
 - Add tests: closure body uses captured variable correctly
 
-### WP-16.D: Closure Creation Lowering
+### WP-07.D: Closure Creation Lowering
 
 - Allocate capture struct
 - Store captured values into struct
@@ -154,20 +154,20 @@ Closures returned from functions are **out of scope** for this plan. Returning c
 - Return `{ fn_ptr, env_ptr }` struct value
 - Add tests: closure assigned to variable, closure used immediately
 
-### WP-16.E: Closure Call Lowering
+### WP-07.E: Closure Call Lowering
 
 - Detect when a call target is a closure value (not a direct function name)
 - Extract fn_ptr and env_ptr from closure struct
 - Emit `CallDyn` with env as first argument
 - Add tests: calling closure variable, calling closure argument, chaining closures
 
-### WP-16.F: Non-Capturing Closure Compatibility
+### WP-07.F: Non-Capturing Closure Compatibility
 
 - Ensure non-capturing closures still work (no env parameter, no capture struct)
 - Non-capturing closures can use the simpler representation (just fn_ptr, null env)
 - Add regression tests for existing non-capturing closure examples
 
-### WP-16.G: Integration
+### WP-07.G: Integration
 
 - Add example file demonstrating closures with captures
 - Add example with closures passed as function arguments

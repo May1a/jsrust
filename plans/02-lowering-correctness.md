@@ -18,7 +18,7 @@ Fix all known correctness bugs in the AST-to-SSA lowering pass (`ast_to_ssa.ts`)
 
 ## Known Issues
 
-### 11.1 Deref Always Loads as I64
+### 02.1 Deref Always Loads as I64
 
 **File:** `src/passes/ast_to_ssa.ts` (~line 1506)
 
@@ -41,7 +41,7 @@ case UnaryOp.Deref: {
 3. Call `this.translateTypeNode(T)` to get the IR type
 4. Use that IR type in `this.builder.load(operand, irType)`
 
-### 11.2 Assignment Only Supports Identifier Targets
+### 02.2 Assignment Only Supports Identifier Targets
 
 **File:** `src/passes/ast_to_ssa.ts` (~line 1002)
 
@@ -70,7 +70,7 @@ Each case needs:
 3. Determine the store type from the inferred type
 4. Emit `store` instruction
 
-### 11.3 Tuple Types Silently Become Unit
+### 02.3 Tuple Types Silently Become Unit
 
 **File:** `src/passes/ast_to_ssa.ts` (~line 3314)
 
@@ -90,7 +90,7 @@ When `translateTypeNode` encounters a `TupleTypeNode`, it falls through to the d
 5. Tuple field access (`tuple.0`): `StructGet` with field index
 6. Deduplicate identical tuple struct types to avoid duplication
 
-### 11.4 Array Types with Non-Literal Lengths Silently Become Unit
+### 02.4 Array Types with Non-Literal Lengths Silently Become Unit
 
 **File:** `src/passes/ast_to_ssa.ts` (~line 3322)
 
@@ -105,13 +105,13 @@ When `ArrayTypeNode` has a non-literal length expression, the entire array type 
 **Option A (preferred):** Evaluate the length expression as a const and use the resulting integer.
 **Option B:** Reject non-literal array lengths with a clear error message.
 
-### 11.5 Struct Field Access Through References Not Handled Explicitly
+### 02.5 Struct Field Access Through References Not Handled Explicitly
 
-When accessing `x.field` where `x` is `&Struct` or `&mut Struct`, the lowering should auto-deref. Verify this is handled correctly — if the deref fix (11.1) changes behavior here, ensure field access on references still works.
+When accessing `x.field` where `x` is `&Struct` or `&mut Struct`, the lowering should auto-deref. Verify this is handled correctly — if the deref fix (02.1) changes behavior here, ensure field access on references still works.
 
-This is a verification task rather than a known bug — check after 11.1 is fixed.
+This is a verification task rather than a known bug — check after 02.1 is fixed.
 
-### 11.6 Non-Exhaustive Match Arms May Produce Silent Miscompilation
+### 02.6 Non-Exhaustive Match Arms May Produce Silent Miscompilation
 
 **File:** `src/passes/ast_to_ssa.ts` (match lowering)
 
@@ -124,7 +124,7 @@ When a match is non-exhaustive, the compiler creates a `match_trap` block with `
 
 ## Work Packages
 
-### WP-11.A: Deref Type Correctness (11.1)
+### WP-02.A: Deref Type Correctness (02.1)
 
 - Modify `lowerUnaryExpression` `Deref` case to resolve pointee type
 - Use inferred expression type from `TypeContext` to determine IR load type
@@ -132,7 +132,7 @@ When a match is non-exhaustive, the compiler creates a `match_trap` block with `
 - Verify existing reference examples still produce correct IR
 - Run `bun test tests/examples.test.ts` to verify no regressions
 
-### WP-11.B: Assignment Target Expansion (11.2)
+### WP-02.B: Assignment Target Expansion (02.2)
 
 - Add recursive target resolution for `FieldExpr`, `IndexExpr`, `DerefExpr`
 - Each target type computes the destination address, then emits a typed store
@@ -143,7 +143,7 @@ When a match is non-exhaustive, the compiler creates a `match_trap` block with `
   - `*ptr = 99` (deref write)
 - Test combined cases: `self.data[0].x = 7` (nested)
 
-### WP-11.C: Tuple Lowering (11.3)
+### WP-02.C: Tuple Lowering (02.3)
 
 - Add `TupleTypeNode` case to `translateTypeNode`
 - Create anonymous struct representation for tuples
@@ -152,13 +152,13 @@ When a match is non-exhaustive, the compiler creates a `match_trap` block with `
 - Deduplicate identical tuple types
 - Add tests: tuple construction, tuple field access, nested tuples, tuples as function args/returns
 
-### WP-11.D: Array Length Resolution (11.4)
+### WP-02.D: Array Length Resolution (02.4)
 
 - Add const-evaluation path for array length expressions, or
 - Emit clear error for non-const array lengths
 - Add tests: `[0u8; 10]` (literal), `[0u8; SOME_CONST]` (const)
 
-### WP-11.E: Verification Pass (11.5 + 11.6)
+### WP-02.E: Verification Pass (02.5 + 02.6)
 
 - After all fixes, run full example test suite
 - Verify struct field access through references works correctly

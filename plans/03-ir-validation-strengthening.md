@@ -36,7 +36,7 @@ It does **not** validate:
 
 ## New Validation Checks
 
-### 12.1 Terminator Presence
+### 03.1 Terminator Presence
 
 Every block must have a terminator. A block without a terminator is malformed.
 
@@ -47,7 +47,7 @@ for each block in function:
         error: "Block {name} has no terminator"
 ```
 
-### 12.2 Block Parameter Consistency
+### 03.2 Block Parameter Consistency
 
 Branch arguments must match the target block's parameter types and count.
 
@@ -62,7 +62,7 @@ for each terminator:
                 error: "Argument type mismatch at index {i}: got {arg.type}, expected {param.type}"
 ```
 
-### 12.3 Value Def-Use Consistency
+### 03.3 Value Def-Use Consistency
 
 Every `ValueId` used in an instruction must be defined earlier in the same function (instruction result, block parameter, or function parameter).
 
@@ -73,7 +73,7 @@ Every `ValueId` used in an instruction must be defined earlier in the same funct
 - After processing each instruction, add its result `ValueId` to the set
 - Block parameters are pre-defined at block start
 
-### 12.4 Instruction Operand Type Consistency
+### 03.4 Instruction Operand Type Consistency
 
 Binary arithmetic instructions must have matching operand types. For example, `iadd` requires both operands to be integers.
 
@@ -91,7 +91,7 @@ Binary arithmetic instructions must have matching operand types. For example, `i
 - Check each instruction against its constraint
 - Report mismatches with instruction kind, expected type, and actual type
 
-### 12.5 Return Type Matching
+### 03.5 Return Type Matching
 
 Every `Ret` terminator's value type must match the function's declared return type.
 
@@ -103,7 +103,7 @@ for each function:
             error: "Return type mismatch in block {name}: got {ret.value.type}, expected {function.returnType}"
 ```
 
-### 12.6 Call Argument Count
+### 03.6 Call Argument Count
 
 `Call` instructions must pass the correct number of arguments for the callee.
 
@@ -112,51 +112,51 @@ for each function:
 - For each `Call` instruction, look up the callee and verify arg count
 - For `CallDyn` (indirect calls), skip this check (or verify against known fn pointer types)
 
-### 12.7 Enum Operations Bounds Check
+### 03.7 Enum Operations Bounds Check
 
 - `EnumGetTag` on an enum value must have a valid enum type
 - `EnumGetData` must have a valid variant index for the enum type
 
-### 12.8 Struct Operations Check
+### 03.8 Struct Operations Check
 
 - `StructGet` field index must be within bounds for the struct type
 - `StructCreate` must have the correct number of fields
 
 ## Work Packages
 
-### WP-12.A: Validation Infrastructure
+### WP-03.A: Validation Infrastructure
 
 - Extend `IRValidationError` with richer context: function name, block name, instruction index
 - Add a `ValidationContext` that tracks defined values as the validator walks blocks
 - Implement reverse post-order block traversal for correct dominance-aware validation
 
-### WP-12.B: Structural Checks (12.1)
+### WP-03.B: Structural Checks (03.1)
 
 - Add terminator presence check for every block
 - Add positive test: valid IR with terminators
 - Add negative test: IR with missing terminator
 
-### WP-12.C: Type Consistency Checks (12.2, 12.4, 12.5)
+### WP-03.C: Type Consistency Checks (03.2, 03.4, 03.5)
 
 - Block parameter consistency for branches
 - Instruction operand type checking
 - Return type matching
 - Add tests for each check (positive and negative)
 
-### WP-12.D: Def-Use Consistency (12.3)
+### WP-03.D: Def-Use Consistency (03.3)
 
 - Value liveness tracking across blocks
 - Report use of undefined values
 - Add tests: valid SSA, use-before-def, use of nonexistent value
 
-### WP-12.E: Aggregate Bounds Checks (12.6, 12.7, 12.8)
+### WP-03.E: Aggregate Bounds Checks (03.6, 03.7, 03.8)
 
 - Call argument count
 - Enum tag/data bounds
 - Struct field bounds
 - Add tests for each
 
-### WP-12.F: Integration
+### WP-03.F: Integration
 
 - Run validator on all 29 example IR outputs
 - Verify no false positives (all existing valid IR should pass)

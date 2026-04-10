@@ -1069,7 +1069,13 @@ function inferClosureType(
         }
         const bodyResult = inferExprType(typeCtx, expr.body);
         typeCtx.popScope();
-        if (bodyResult.isOk() && bodyResult.value) {
+        if (bodyResult.isErr()) {
+            return Result.err({
+                errors: bodyResult.error.errors,
+                fallback: bodyResult.error.fallback ?? expr.returnType,
+            });
+        }
+        if (bodyResult.value) {
             return Result.ok(bodyResult.value);
         }
     }

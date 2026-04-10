@@ -19,7 +19,7 @@ Implement `static` items — module-level mutable or immutable global variables 
 
 ## Current State
 
-- **Parsed in:** `src/parse/ast.ts` — `StaticItem` AST node exists with `name`, `type`, `value`, `mutable` fields
+- **Parsed in:** `src/parse/ast.ts` — `StaticItem` AST node exists with `name`, `typeNode`, `value`, and `mutability` fields
 - **Rejected in:** `src/compile.ts` (~line 309) — `"static-item"` unsupported feature diagnostic
 - **Rejected in:** `src/passes/ast_to_ssa.ts` (~line 804) — `"`static` items are not implemented"`
 
@@ -42,11 +42,10 @@ Implement `static` items — module-level mutable or immutable global variables 
 The IR already has `IRGlobal`:
 
 ```ts
-class IRGlobal {
+interface IRGlobal {
     name: string;
-    type: IRType;
-    init?: IRValue;
-    mutable: boolean;
+    ty: IRType;
+    init: unknown;
 }
 ```
 
@@ -59,7 +58,7 @@ Add `IRModule.globals: IRGlobal[]` population for static items.
 1. Register `static` items in `TypeContext` during module traversal
 2. Infer the type of the initializer expression
 3. Validate initializer type matches declared type (or infer from initializer if no type annotation)
-4. Store in a new `statics: Map<string, { type: TypeNode, mutable: boolean }>` field in `TypeContext`
+4. Store in a new `statics: Map<string, { typeNode: TypeNode; mutability: Mutability }>` field in `TypeContext`
 5. When a variable name is resolved, check statics in addition to locals and consts
 
 **Key difference from const:** Statics are not evaluated at compile time. Their initializer is lowered as IR that runs at program startup.
@@ -108,7 +107,7 @@ For this plan, restrict initializers to:
 
 ### Work Packages
 
-#### WP-18.A: Static Item Infrastructure
+#### WP-09.A: Static Item Infrastructure
 
 - Add `statics` map to `TypeContext`
 - Register static items during inference module traversal
@@ -116,34 +115,34 @@ For this plan, restrict initializers to:
 - Remove `"static-item"` from unsupported features in `compile.ts`
 - Add tests: static declaration, static type checking
 
-#### WP-18.B: Static Lowering — Declaration
+#### WP-09.B: Static Lowering — Declaration
 
 - Implement `lowerStaticItem`
 - Create `IRGlobal` entries with initializer values
 - Handle simple initializers (literals, const refs)
 - Add tests: static integer, static bool, static string, static struct
 
-#### WP-18.C: Static Lowering — Access
+#### WP-09.C: Static Lowering — Access
 
 - When resolving a variable name, check if it's a static
 - Emit `Load` from the global address for reads
 - Emit `&STATIC` as the global address itself (no load)
 - Add tests: reading static value, taking reference to static, passing static to function
 
-#### WP-18.D: Static Lowering — Mutation
+#### WP-09.D: Static Lowering — Mutation
 
 - Implement assignment to `mut static` items
 - Emit `Store` to the global address
 - Add tests: mutating static value, reading after mutation
 
-#### WP-18.E: Initialization Constraints
+#### WP-09.E: Initialization Constraints
 
 - Validate initializers are compile-time evaluable (literals, const refs)
 - Reject function calls in static initializers with clear error
 - Reject references to other statics with clear error (circular initialization risk)
 - Add tests: valid initializers, invalid initializers with error messages
 
-#### WP-18.F: Integration
+#### WP-09.F: Integration
 
 - Add example file with static items
 - Verify backend handles global initialization correctly

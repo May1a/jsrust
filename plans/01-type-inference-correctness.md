@@ -18,7 +18,7 @@ None. This is the first plan in the sequence.
 
 ## Known Issues
 
-### 10.1 Integer Literal Inference Ignores Suffixes
+### 01.1 Integer Literal Inference Ignores Suffixes
 
 **File:** `src/passes/inference.ts` (~line 1188)
 
@@ -42,7 +42,7 @@ All integer literals are hardcoded to `i32`. Type suffixes like `42u8`, `0xFFi64
 **Suffix → type mapping:**
 `i8`, `i16`, `i32`, `i64`, `i128`, `isize`, `u8`, `u16`, `u32`, `u64`, `u128`, `usize`
 
-### 10.2 Float Literal Inference Ignores Suffixes
+### 01.2 Float Literal Inference Ignores Suffixes
 
 **File:** `src/passes/inference.ts` (~line 1191)
 
@@ -54,11 +54,11 @@ case LiteralKind.Float: {
 
 Same issue as integers. `3.14f32` should infer as `f32`.
 
-**Fix:** Same approach as 10.1.
+**Fix:** Same approach as 01.1.
 
 **Suffix → type mapping:** `f32`, `f64`
 
-### 10.3 Inferred Placeholder (`_`) Accepts All Types
+### 01.3 Inferred Placeholder (`_`) Accepts All Types
 
 **File:** `src/passes/inference.ts` (~line 472)
 
@@ -81,7 +81,7 @@ When either side is `_`, `typesEqual` returns `true` unconditionally. This means
 - Introduce a `unifyTypes` (or reuse the one in monomorphize.ts) for inference-time binding
 - `_` in unification binds to the concrete side; `_` vs `_` is ambiguous and should collect an error
 
-### 10.4 Qualified Path Expressions Return `undefined` Type
+### 01.4 Qualified Path Expressions Return `undefined` Type
 
 **File:** `src/passes/inference.ts` (~line 1289)
 
@@ -100,7 +100,7 @@ Qualified paths like `Vec::new`, `Option::None`, `Self::method` return `undefine
 
 For cases that cannot be resolved, return a `TypeError` rather than `undefined`.
 
-### 10.5 Qualified Function Calls Return `undefined` Type
+### 01.5 Qualified Function Calls Return `undefined` Type
 
 **File:** `src/passes/inference.ts` (~line 1631)
 
@@ -111,11 +111,11 @@ if (!calleeName.includes("::")) {
 return Result.ok(undefined);
 ```
 
-Same issue as 10.4 but for call expressions with qualified callees.
+Same issue as 01.4 but for call expressions with qualified callees.
 
 **Fix:** Same approach — resolve through `TypeContext` or return a proper error.
 
-### 10.6 Closure Return Type Not Inferred From Body
+### 01.6 Closure Return Type Not Inferred From Body
 
 **File:** `src/passes/inference.ts` (~line 1028)
 
@@ -129,7 +129,7 @@ When a closure has no explicit return type annotation, this returns the raw (pos
 
 **Fix:** If `expr.returnType` is an `InferredTypeNode`, infer the return type by examining the closure body's trailing expression (or return expressions). This requires a small recursive inference of the closure body.
 
-### 10.7 Range Expressions Have No Type
+### 01.7 Range Expressions Have No Type
 
 **File:** `src/passes/inference.ts` (~line 1128)
 
@@ -141,7 +141,7 @@ Range expressions return `undefined` type. While full range support is deferred 
 
 **Fix:** Return a `TypeError` with message "range expressions are not supported" (consistent with other unsupported features). This way the error is explicit rather than silently producing bad IR.
 
-### 10.8 Generic Method Bodies Skip Inference
+### 01.8 Generic Method Bodies Skip Inference
 
 **File:** `src/passes/inference.ts` (~line 2873)
 
@@ -155,7 +155,7 @@ Generic methods in impl blocks skip body inference entirely, meaning type errors
 
 ## Work Packages
 
-### WP-10.A: Literal Suffix Inference (10.1 + 10.2)
+### WP-01.A: Literal Suffix Inference (01.1 + 01.2)
 
 - Verify suffix propagation from tokenizer → parser → AST node
 - Implement suffix-aware integer literal inference
@@ -163,14 +163,14 @@ Generic methods in impl blocks skip body inference entirely, meaning type errors
 - Add tests for every integer suffix type and both float suffix types
 - Add tests for mixed-suffix arithmetic (e.g., `let x: u8 = 10u8 + 20u8`)
 
-### WP-10.B: Placeholder Type Semantics (10.3)
+### WP-01.B: Placeholder Type Semantics (01.3)
 
 - Refactor `typesEqual` to not treat `_` as universal acceptor
 - Introduce or expose a `unifyTypes` function for inference binding
 - Audit all call sites of `typesEqual` to determine correct usage
 - Add tests: `_` in valid inference contexts, `_` producing errors in invalid contexts
 
-### WP-10.C: Qualified Path Resolution (10.4 + 10.5)
+### WP-01.C: Qualified Path Resolution (01.4 + 01.5)
 
 - Resolve `Enum::Variant` paths to enum types
 - Resolve `Self::` paths through impl context
@@ -178,19 +178,19 @@ Generic methods in impl blocks skip body inference entirely, meaning type errors
 - Replace `Result.ok(undefined)` with proper resolution or typed error
 - Add tests for each qualified path category
 
-### WP-10.D: Closure Return Type Inference (10.6)
+### WP-01.D: Closure Return Type Inference (01.6)
 
 - Infer return type from closure body when annotation is `_`
 - Handle closures with and without return expressions
 - Add tests for inferred closure returns in variable bindings and function arguments
 
-### WP-10.E: Error Quality for Unsupported Features (10.7)
+### WP-01.E: Error Quality for Unsupported Features (01.7)
 
 - Replace `Result.ok(undefined)` for `RangeExpr` with explicit unsupported error
 - Audit entire inference pass for other `Result.ok(undefined)` returns that should be errors
 - Add compile test for each case
 
-### WP-10.F: Generic Method Body Inference (10.8)
+### WP-01.F: Generic Method Body Inference (01.8)
 
 - Design strategy for inferring generic method bodies (post-monomorphization or symbolic)
 - Implement chosen approach

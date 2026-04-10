@@ -18,7 +18,7 @@ Harden the monomorphization pass to correctly handle all generic patterns, add p
 
 ## Known Issues
 
-### 13.1 Type Argument Arity Not Checked
+### 04.1 Type Argument Arity Not Checked
 
 **File:** `src/passes/monomorphize.ts` (~line 488)
 
@@ -37,7 +37,7 @@ When explicit type args are provided (turbofish syntax), too few args silently l
 - If `explicitTypeArgs.length < generic.genericParams.length` → error: "expected N type arguments, got M"
 - If `explicitTypeArgs.length > generic.genericParams.length` → error: "expected N type arguments, got M"
 
-### 13.2 Unbound Generic Params Silently Skip
+### 04.2 Unbound Generic Params Silently Skip
 
 **File:** `src/passes/monomorphize.ts` (~line 508)
 
@@ -51,7 +51,7 @@ When a generic param cannot be inferred from arguments, `collectAndMonomorphize`
 
 **Fix:** If any generic param remains unbound after attempting inference, produce a clear type error: "cannot infer type for generic parameter `{name}` — consider providing explicit type arguments".
 
-### 13.3 Type Mangling Falls Back to "unknown"
+### 04.3 Type Mangling Falls Back to "unknown"
 
 **File:** `src/passes/monomorphize.ts` (~line 84)
 
@@ -69,7 +69,7 @@ return "unknown";
 - `InferredTypeNode` → error (should be resolved by inference before monomorphization)
 - Any unhandled type → explicit error rather than silent fallback
 
-### 13.4 SubstituteType Returns Unchanged for Unknown Subclasses
+### 04.4 SubstituteType Returns Unchanged for Unknown Subclasses
 
 **File:** `src/passes/monomorphize.ts` (~line 151)
 
@@ -81,7 +81,7 @@ return ty;
 
 **Fix:** Handle all `TypeNode` subclasses recursively. Add cases for `FnTypeNode`, `PtrTypeNode`, `OptionTypeNode`, `ResultTypeNode`. Add an exhaustiveness check (default case that errors on unrecognized subclasses).
 
-### 13.5 UnifyTypes Has Limited Coverage
+### 04.5 UnifyTypes Has Limited Coverage
 
 **File:** `src/passes/monomorphize.ts` (~line 517)
 
@@ -95,7 +95,7 @@ Missing:
 
 **Fix:** Add cases for all missing `TypeNode` subclasses. Each case should recursively unify the inner types. For `OptionTypeNode<T>` vs `OptionTypeNode<U>`, unify `T` vs `U`.
 
-### 13.6 Generic Structs Not Monomorphized in Expressions
+### 04.6 Generic Structs Not Monomorphized in Expressions
 
 `GenericStructItem` exists in the AST but the monomorphization pass only processes `GenericFnItem`. Struct instantiation expressions like `GenericStruct::<i32> { field: 1 }` are not monomorphized.
 
@@ -105,7 +105,7 @@ Missing:
 - Generate specialized `StructItem`s with mangled names
 - Update all references to use the specialized names
 
-### 13.7 No Support for Generic Impl Blocks
+### 04.7 No Support for Generic Impl Blocks
 
 `impl<T> SomeType<T> { ... }` is not supported. Only concrete inherent impls work.
 
@@ -113,14 +113,14 @@ Missing:
 
 ## Work Packages
 
-### WP-13.A: Arity and Binding Checks (13.1 + 13.2)
+### WP-04.A: Arity and Binding Checks (04.1 + 04.2)
 
 - Add type argument count validation
 - Add error for unbound generic params
 - Add tests: too few args, too many args, unbound param
 - Verify error messages are clear and actionable
 
-### WP-13.B: Complete Type Coverage (13.3 + 13.4 + 13.5)
+### WP-04.B: Complete Type Coverage (04.3 + 04.4 + 04.5)
 
 - Extend `typeToMangledString` for all `TypeNode` subclasses
 - Extend `substituteType` for all `TypeNode` subclasses
@@ -132,7 +132,7 @@ Missing:
   - `fn foo<T>(x: Option<T>)` — Option generic
   - `fn foo<T, E>(x: Result<T, E>)` — Result generic
 
-### WP-13.C: Generic Struct Monomorphization (13.6)
+### WP-04.C: Generic Struct Monomorphization (04.6)
 
 - Register `GenericStructItem` in the monomorphization registry
 - Find struct instantiation sites and infer type args from field values
@@ -140,13 +140,13 @@ Missing:
 - Update struct references in function bodies
 - Add tests: generic struct instantiation, generic struct as function argument, generic struct with multiple type params
 
-### WP-13.D: Generic Impl Error Handling (13.7)
+### WP-04.D: Generic Impl Error Handling (04.7)
 
 - Detect generic impl blocks during monomorphization
 - Emit clear error: "generic impl blocks are not supported"
 - Add test for the error case
 
-### WP-13.E: Integration Testing
+### WP-04.E: Integration Testing
 
 - Run full example suite
 - Add a stress test with complex generic patterns

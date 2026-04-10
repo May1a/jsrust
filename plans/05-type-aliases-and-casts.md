@@ -39,10 +39,12 @@ These are both about mapping one type to another, which is why they share a plan
 
 When a `TypeAliasItem` is encountered during module traversal:
 1. Register the alias in `TypeContext` as a named type mapping
-2. Add a `typeAliases: Map<string, TypeNode>` field to `TypeContext`
-3. When resolving a `NamedTypeNode`, check the alias map first — if the name matches an alias, substitute the aliased type
+2. Add a `typeAliases: Map<string, { params: GenericParamNode[]; target: TypeNode }>` field to `TypeContext`
+3. When resolving a `NamedTypeNode`, check the alias map first:
+   - If the alias has no parameters, substitute the aliased type directly
+   - If the alias is generic, require matching generic arguments and substitute the alias parameters into the aliased type before continuing inference
 
-**Important:** Type aliases are purely syntactic substitutions. `type Point = (i32, i32)` means `Point` is exactly `(i32, i32)` everywhere. No new types are created.
+**Important:** Type aliases are purely syntactic substitutions. `type Point = (i32, i32)` means `Point` is exactly `(i32, i32)` everywhere. No new types are created, even for generic aliases like `type Maybe<T> = Option<T>`.
 
 #### A2: Recursive Alias Detection
 
@@ -79,6 +81,7 @@ Type aliases should be fully resolved by inference time. During lowering, all `N
 - Simple alias: `type Int = i32; let x: Int = 5;`
 - Alias to struct: `type Point = MyStruct;`
 - Alias to generic: `type IntVec = Vec<i32>;`
+- Generic alias instantiation: `type Maybe<T> = Option<T>; let x: Maybe<i32> = Some(1);`
 - Alias to reference: `type IntRef = &i32;`
 - Alias to tuple: `type Pair = (i32, i32);`
 - Recursive alias error: `type X = X;`
@@ -117,8 +120,9 @@ The IR already has conversion instructions that map directly to Rust casts:
 | Rust Cast | IR Instruction | Notes |
 |---|---|---|
 | `i8 → i16` | `Sext` | sign-extend |
-| `i8 → u16` | `Zext` | zero-extend (if source is unsigned) |
+| `i8 → u16` | `Sext` | sign-extend to preserve the signed value before reinterpretation in the wider target |
 | `u8 → i16` | `Zext` | zero-extend |
+| `u8 → u16` | `Zext` | zero-extend |
 | `i32 → i8` | `Trunc` | truncate |
 | `i64 → i32` | `Trunc` | truncate |
 | `f64 → f32` | `Trunc` | float truncate |
@@ -147,13 +151,14 @@ Legal casts (following Rust rules):
 - Integer ↔ Float (all combinations)
 - Pointer ↔ Integer (usize-sized)
 - Pointer ↔ Pointer (any)
+- Reference → Raw pointer (same pointee type, via `as *const T` / `as *mut T`)
 - `bool` ↔ Integer
 - Same-type (identity)
 
 Illegal casts (should produce type errors):
 - `bool` ↔ Float
 - Integer/Float ↔ Struct/Enum
-- Reference ↔ Raw pointer (requires `&raw const` syntax, not just `as`)
+- Raw pointer → Reference
 
 #### B4: Unsized Casts (Deferred)
 
@@ -175,7 +180,7 @@ Casts like `&[T; N] as &[T]` (unsized) are out of scope for this plan. These req
 
 ## Work Packages
 
-### WP-14.A: Type Alias Infrastructure
+### WP-05.A: Type Alias Infrastructure
 
 - Add `typeAliases` map to `TypeContext`
 - Implement alias registration during inference module traversal
@@ -183,27 +188,27 @@ Casts like `&[T; N] as &[T]` (unsized) are out of scope for this plan. These req
 - Substitute aliases in all type positions during inference
 - Add tests for alias registration and resolution
 
-### WP-14.B: Type Alias Integration
+### WP-05.B: Type Alias Integration
 
 - Remove `"type-alias-item"` from unsupported features list
 - Remove the lowering rejection for `TypeAliasItem`
 - Ensure aliases work in function signatures, struct fields, generic args
 - Add integration tests with existing features
 
-### WP-14.C: Cast Expression Inference
+### WP-05.C: Cast Expression Inference
 
 - Add cast expression type inference in `inferExpression`
 - Implement cast legality validation
 - Remove `"cast-expression"` from unsupported features list
 - Add inference tests
 
-### WP-14.D: Cast Expression Lowering
+### WP-05.D: Cast Expression Lowering
 
 - Implement `lowerCastExpr` with full conversion instruction mapping
 - Handle all legal cast combinations using the IR conversion instructions
 - Add lowering tests with IR output verification
 
-### WP-14.E: Integration
+### WP-05.E: Integration
 
 - Add example file using type aliases and casts together
 - Run full example suite

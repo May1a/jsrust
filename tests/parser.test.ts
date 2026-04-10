@@ -120,6 +120,24 @@ describe("expressions", () => {
         expect(lit.value).toBe(intLiteral);
     });
 
+    test("rejects invalid integer literal suffixes", () => {
+        const result = expr("1u256");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+        expect(result.error[0]?.message).toContain(
+            "invalid integer literal suffix `u256`",
+        );
+    });
+
+    test("rejects invalid float literal suffixes", () => {
+        const result = expr("1.0f99");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+        expect(result.error[0]?.message).toContain(
+            "invalid float literal suffix `f99`",
+        );
+    });
+
     test("string literal", () => {
         const result = expr('"hello"');
         expect(result.isOk()).toBe(true);

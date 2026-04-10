@@ -150,7 +150,7 @@ If the `for` loop has a label (`'label: for x in ...`), `break 'label` and `cont
 
 ## Work Packages
 
-### WP-15.A: Range Type in Inference
+### WP-06.A: Range Type in Inference
 
 - Define range type representation (as struct-like types)
 - Add range expression type inference
@@ -158,14 +158,14 @@ If the `for` loop has a label (`'label: for x in ...`), `break 'label` and `cont
 - Require both bounds to have the same type (or infer from one bound)
 - Add tests: `0..10` → `Range<i32>`, `0usize..=100usize` → `RangeInclusive<usize>`
 
-### WP-15.B: Range Expression Lowering
+### WP-06.B: Range Expression Lowering
 
 - Implement `lowerRangeExpr`
 - Create struct value with start/end fields
 - Register range struct types in IR module
 - Add tests: range creation, range field access
 
-### WP-15.C: For Loop Desugaring
+### WP-06.C: For Loop Desugaring
 
 - Implement `lowerForExpr`
 - Desugar to loop + comparison + increment
@@ -174,21 +174,21 @@ If the `for` loop has a label (`'label: for x in ...`), `break 'label` and `cont
 - Support labeled for loops
 - Add tests: simple for loop, for with break, for with continue, for with nested loops, for with labeled break
 
-### WP-15.D: Loop Variable Pattern Binding
+### WP-06.D: Loop Variable Pattern Binding
 
 - Bind simple identifier patterns from loop counter
 - Bind wildcard patterns (no binding)
 - Bind tuple patterns (if tuple support from Plan 02 is complete)
 - Add tests for each pattern type
 
-### WP-15.E: Remove Unsupported Feature Flags
+### WP-06.E: Remove Unsupported Feature Flags
 
 - Remove `"range expression lowering is not implemented"` error
 - Remove `"for-loop lowering is not implemented"` error
 - Remove unsupported feature checks in `compile.ts` if any
 - Add range/for tests to compile test suite
 
-### WP-15.F: Integration
+### WP-06.F: Integration
 
 - Add example file: `for` loops with ranges, nested loops, break/continue
 - Run full example suite

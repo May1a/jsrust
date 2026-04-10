@@ -21,13 +21,13 @@ Plans 01–09 are sequential. Each plan depends on all preceding plans being com
 ```
 P01 (Inference)
   └─→ P02 (Lowering)
-       ├─→ P03 (IR Validation)
-       └─→ P04 (Monomorphization)
-            └─→ P05 (Type Aliases & Casts)
-                 └─→ P06 (Ranges & For Loops)
-                      └─→ P07 (Capturing Closures)
-                           └─→ P08 (? Operator & if let)
-                                └─→ P09 (Static Items)
+       └─→ P03 (IR Validation)
+            └─→ P04 (Monomorphization)
+                 └─→ P05 (Type Aliases & Casts)
+                      └─→ P06 (Ranges & For Loops)
+                           └─→ P07 (Capturing Closures)
+                                └─→ P08 (? Operator & if let)
+                                     └─→ P09 (Static Items)
 ```
 
 ## Plan Removal

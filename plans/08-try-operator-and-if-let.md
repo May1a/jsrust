@@ -119,14 +119,14 @@ none_block: {
 
 ### Work Packages — Part A
 
-#### WP-17.A1: `?` Operator Type Inference
+#### WP-08.A1: `?` Operator Type Inference
 
 - Add `TryExpr` case to `inferExpression`
 - Determine inner type from `Result<T, E>` or `Option<T>`
 - Validate compatibility with enclosing function return type
 - Add tests: `?` on Result, `?` on Option, type mismatch errors
 
-#### WP-17.A2: `?` Operator Lowering
+#### WP-08.A2: `?` Operator Lowering
 
 - Implement `lowerTryExpr` with switch-based desugaring
 - Handle both `Result` and `Option` variants
@@ -134,7 +134,7 @@ none_block: {
 - Add tests with IR output verification
 - Remove `"try-expression"` from unsupported features
 
-#### WP-17.A3: `?` Operator Integration
+#### WP-08.A3: `?` Operator Integration
 
 - Add tests: chaining `?` operators, `?` in nested expressions, `?` in `if` branches
 - Add example file with `?` operator usage
@@ -207,7 +207,7 @@ For this plan, support the same patterns that `match` already supports:
 
 ### Work Packages — Part B
 
-#### WP-17.B1: `if let` Type Inference
+#### WP-08.B1: `if let` Type Inference
 
 - Add `IfLetExpr` case to `inferExpression`
 - Determine pattern variable types from the scrutinee type
@@ -215,7 +215,7 @@ For this plan, support the same patterns that `match` already supports:
 - Validate branch type consistency
 - Add tests: `if let Some(x) = opt`, `if let Ok(v) = result`, `if let MyEnum::A(x) = val`
 
-#### WP-17.B2: `if let` Lowering
+#### WP-08.B2: `if let` Lowering
 
 - Implement `lowerIfLetExpr` reusing match lowering infrastructure
 - Extract pattern-testing logic into a shared helper (used by both `match` and `if let`)
@@ -224,7 +224,7 @@ For this plan, support the same patterns that `match` already supports:
 - Remove `"if-let-expression"` from unsupported features
 - Add tests with IR output verification
 
-#### WP-17.B3: `if let` Integration
+#### WP-08.B3: `if let` Integration
 
 - Add tests: `if let` with else, `if let` chains (`else if let`), `if let` in loops
 - Add example file

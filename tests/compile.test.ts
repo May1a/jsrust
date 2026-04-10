@@ -5,8 +5,26 @@ import {
     compileToBinary,
     formatCompileError,
 } from "../src/compile";
+import {
+    BlockExpr,
+    ClosureExpr,
+    FnItem,
+    IdentPattern,
+    IdentifierExpr,
+    InferredTypeNode,
+    LetStmt,
+    LiteralExpr,
+    LiteralKind,
+    ModuleNode,
+    Mutability,
+    NamedTypeNode,
+    Span,
+    TupleTypeNode,
+} from "../src/parse/ast";
 import { deserializeModule } from "../src/ir/ir_deserialize";
 import { EnumGetDataInst, IRTypeKind } from "../src/ir/ir";
+import { inferModule } from "../src/passes/inference";
+import { TypeContext } from "../src/utils/type_context";
 import { compileToIR } from "./helpers";
 
 describe("compile", () => {
@@ -482,7 +500,7 @@ describe("compile", () => {
 
 describe("type inference", () => {
     test("infers integer literal suffixes correctly", () => {
-        const suffixCases: Array<[string, string]> = [
+        const suffixCases: [string, string][] = [
             ["i8", "fn test() -> i8 { 1i8 }"],
             ["i16", "fn test() -> i16 { 1i16 }"],
             ["i32", "fn test() -> i32 { 1i32 }"],
@@ -652,6 +670,65 @@ describe("type inference", () => {
         if (result.isErr()) return;
 
         expect(result.value).toContain("__closure_0() -> i32");
+    });
+
+    test("propagates closure body inference errors", () => {
+        const span = new Span(1, 1, 0, 0);
+        const closureBody = new BlockExpr(
+            span,
+            [
+                new LetStmt(
+                    span,
+                    new IdentPattern(
+                        span,
+                        "value",
+                        Mutability.Immutable,
+                        new InferredTypeNode(span),
+                    ),
+                    new NamedTypeNode(span, "bool"),
+                    new LiteralExpr(span, LiteralKind.Int, 1),
+                ),
+            ],
+            new IdentifierExpr(span, "value"),
+        );
+        const closure = new ClosureExpr(
+            span,
+            [],
+            new InferredTypeNode(span),
+            closureBody,
+        );
+        const module = new ModuleNode(span, "main", [
+            new FnItem(
+                span,
+                "test",
+                [],
+                new TupleTypeNode(span, []),
+                new BlockExpr(
+                    span,
+                    [
+                        new LetStmt(
+                            span,
+                            new IdentPattern(
+                                span,
+                                "f",
+                                Mutability.Immutable,
+                                new InferredTypeNode(span),
+                            ),
+                            new InferredTypeNode(span),
+                            closure,
+                        ),
+                    ],
+                ),
+            ),
+        ]);
+
+        const result = inferModule(new TypeContext(), module);
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(result.error[0]?.message).toContain(
+            "expected `bool`, found `i32`",
+        );
     });
 
     test("range expressions produce explicit error", () => {

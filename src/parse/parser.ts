@@ -198,7 +198,22 @@ function processStringValue(raw: string): string {
         .replace(/\\0/g, "\0");
 }
 
-const TYPE_SUFFIX_RE = /^([uif]\d+|usize|isize)$/;
+const INTEGER_TYPE_SUFFIXES = new Set([
+    "i8",
+    "i16",
+    "i32",
+    "i64",
+    "i128",
+    "isize",
+    "u8",
+    "u16",
+    "u32",
+    "u64",
+    "u128",
+    "usize",
+]);
+const FLOAT_TYPE_SUFFIXES = new Set(["f32", "f64"]);
+const NUMERIC_SUFFIX_RE = /^(?:i\d+|u\d+|f\d+|isize|usize)$/;
 const RANGE_PRECEDENCE = 1;
 const ASSIGNMENT_PRECEDENCE = 2;
 const OR_PRECEDENCE = 3;
@@ -326,8 +341,26 @@ function isBlockLikeExpr(e: Expression): boolean {
     );
 }
 
-function isTypeSuffix(s: string): boolean {
-    return TYPE_SUFFIX_RE.test(s);
+function isNumericSuffixCandidate(s: string): boolean {
+    return NUMERIC_SUFFIX_RE.test(s);
+}
+
+function numericSuffixesFor(
+    tokenType: TokenType.Integer | TokenType.Float,
+): ReadonlySet<string> {
+    if (tokenType === TokenType.Integer) {
+        return INTEGER_TYPE_SUFFIXES;
+    }
+    return FLOAT_TYPE_SUFFIXES;
+}
+
+function numericLiteralKindFor(
+    tokenType: TokenType.Integer | TokenType.Float,
+): "integer" | "float" {
+    if (tokenType === TokenType.Integer) {
+        return "integer";
+    }
+    return "float";
 }
 
 class Parser {
@@ -561,6 +594,33 @@ class Parser {
             this.peek().type === TokenType.Dot &&
             (this.checkDotDot() || this.checkDotDotEq())
         );
+    }
+
+    private parseNumericSuffix(
+        tokenType: TokenType.Integer | TokenType.Float,
+    ): string | undefined {
+        if (!this.check(TokenType.Identifier)) {
+            return undefined;
+        }
+        const tok = this.peek();
+        if (typeof tok.value !== "string") {
+            return undefined;
+        }
+        const validSuffixes = numericSuffixesFor(tokenType);
+        if (validSuffixes.has(tok.value)) {
+            this.advance();
+            return tok.value;
+        }
+        if (isNumericSuffixCandidate(tok.value)) {
+            this.advance();
+            const literalKind = numericLiteralKindFor(tokenType);
+            this.errors.push({
+                message: `invalid ${literalKind} literal suffix \`${tok.value}\``,
+                line: tok.line,
+                column: tok.column,
+            });
+        }
+        return undefined;
     }
 
     // -----------------------------------------------------------------------
@@ -1887,12 +1947,11 @@ class Parser {
             return undefined;
         }
         const tok = this.advance();
-        if (
-            this.check(TokenType.Identifier) &&
-            isTypeSuffix(this.peek().value)
-        ) {
-            this.advance();
+        let tokenType = TokenType.Integer;
+        if (tok.type === TokenType.Float) {
+            tokenType = TokenType.Float;
         }
+        this.parseNumericSuffix(tokenType);
         const isFloat = tok.type === TokenType.Float;
         let rawValue = parseIntValue(tok.value);
         if (isFloat) {
@@ -2103,12 +2162,11 @@ class Parser {
         const hasMinus = this.eat(TokenType.Minus) !== undefined;
         if (this.check(TokenType.Integer) || this.check(TokenType.Float)) {
             const tok = this.advance();
-            if (
-                this.check(TokenType.Identifier) &&
-                isTypeSuffix(this.peek().value)
-            ) {
-                this.advance();
+            let tokenType = TokenType.Integer;
+            if (tok.type === TokenType.Float) {
+                tokenType = TokenType.Float;
             }
+            this.parseNumericSuffix(tokenType);
             const isFloat = tok.type === TokenType.Float;
             let rawVal = parseIntValue(tok.value);
             if (isFloat) {
@@ -2426,13 +2484,7 @@ class Parser {
     private parseLiteralPrefix(start: Token): LiteralExpr | undefined {
         if (this.check(TokenType.Integer)) {
             const tok = this.advance();
-            let suffix: string | undefined;
-            if (
-                this.check(TokenType.Identifier) &&
-                isTypeSuffix(this.peek().value)
-            ) {
-                suffix = this.advance().value;
-            }
+            const suffix = this.parseNumericSuffix(TokenType.Integer);
             return new LiteralExpr(
                 this.spanFrom(start),
                 LiteralKind.Int,
@@ -2442,13 +2494,7 @@ class Parser {
         }
         if (this.check(TokenType.Float)) {
             const tok = this.advance();
-            let suffix: string | undefined;
-            if (
-                this.check(TokenType.Identifier) &&
-                isTypeSuffix(this.peek().value)
-            ) {
-                suffix = this.advance().value;
-            }
+            const suffix = this.parseNumericSuffix(TokenType.Float);
             return new LiteralExpr(
                 this.spanFrom(start),
                 LiteralKind.Float,
