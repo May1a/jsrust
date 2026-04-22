@@ -2255,6 +2255,76 @@ function substituteTypeNode(
     return ty;
 }
 
+function resolveTupleField(
+    elements: TypeNode[],
+    field: string,
+): TypeNode | undefined {
+    const index = Number(field);
+    if (Number.isInteger(index) && index >= 0 && index < elements.length) {
+        return elements[index];
+    }
+    return undefined;
+}
+
+function fieldAccessResult(
+    errors: TypeError[],
+    fieldTy: TypeNode,
+): Result<TypeNode | undefined, InferFailure<TypeNode | undefined>> {
+    if (errors.length > 0) {
+        return Result.err({ errors, fallback: fieldTy });
+    }
+    return Result.ok(fieldTy);
+}
+
+function inferStructFieldAccess(
+    typeCtx: TypeContext,
+    expr: FieldExpr,
+    errors: TypeError[],
+    structName: string,
+    receiverDisplay: string,
+): Result<TypeNode | undefined, InferFailure<TypeNode | undefined>> | undefined {
+    const fieldTy = typeCtx.lookupStructField(structName, expr.field);
+    if (fieldTy) {
+        return fieldAccessResult(errors, fieldTy);
+    }
+
+    errors.push({
+        message: `No field \`${expr.field}\` on type \`${receiverDisplay}\``,
+        span: expr.span,
+    });
+    return Result.err<TypeNode | undefined, InferFailure<TypeNode | undefined>>({ errors, fallback: undefined });
+}
+
+function inferTupleFieldAccess(
+    expr: FieldExpr,
+    errors: TypeError[],
+    elements: TypeNode[],
+    receiverDisplay: string,
+): Result<TypeNode | undefined, InferFailure<TypeNode | undefined>> {
+    const fieldTy = resolveTupleField(elements, expr.field);
+    if (fieldTy) {
+        return fieldAccessResult(errors, fieldTy);
+    }
+
+    errors.push({
+        message: `No field \`${expr.field}\` on tuple type \`${receiverDisplay}\` with ${elements.length} elements`,
+        span: expr.span,
+    });
+    return Result.err<TypeNode | undefined, InferFailure<TypeNode | undefined>>({ errors, fallback: undefined });
+}
+
+function fieldNotFoundError(
+    expr: FieldExpr,
+    errors: TypeError[],
+    typeDisplay: string,
+): Result<TypeNode | undefined, InferFailure<TypeNode | undefined>> {
+    errors.push({
+        message: `No field \`${expr.field}\` on type \`${typeDisplay}\``,
+        span: expr.span,
+    });
+    return Result.err<TypeNode | undefined, InferFailure<TypeNode | undefined>>({ errors, fallback: undefined });
+}
+
 function inferFieldAccess(
     typeCtx: TypeContext,
     expr: FieldExpr,
@@ -2275,51 +2345,26 @@ function inferFieldAccess(
         return Result.ok(undefined);
     }
 
-    // Direct struct type
-    if (receiverTy instanceof NamedTypeNode) {
-        const fieldTy = typeCtx.lookupStructField(receiverTy.name, expr.field);
-        if (fieldTy) {
-            if (errors.length > 0) {
-                return Result.err({ errors, fallback: fieldTy });
-            }
-            return Result.ok(fieldTy);
-        }
-
-        errors.push({
-            message: `No field \`${expr.field}\` on type \`${receiverTy.name}\``,
-            span: expr.span,
-        });
-        return Result.err({ errors, fallback: undefined });
-    }
-
-    // Auto-deref through references
-    if (
-        receiverTy instanceof RefTypeNode &&
-        receiverTy.inner instanceof NamedTypeNode
-    ) {
-        const fieldTy = typeCtx.lookupStructField(
-            receiverTy.inner.name,
-            expr.field,
-        );
-        if (fieldTy) {
-            if (errors.length > 0) {
-                return Result.err({ errors, fallback: fieldTy });
-            }
-            return Result.ok(fieldTy);
-        }
-
-        errors.push({
-            message: `No field \`${expr.field}\` on type \`${typeToString(receiverTy)}\``,
-            span: expr.span,
-        });
-        return Result.err({ errors, fallback: undefined });
-    }
-
-    errors.push({
-        message: `No field \`${expr.field}\` on type \`${typeToString(receiverTy)}\``,
-        span: expr.span,
-    });
-    return Result.err({ errors, fallback: undefined });
+    return match(receiverTy)
+        .with(P.instanceOf(NamedTypeNode), (namedTy) => {
+            const result = inferStructFieldAccess(typeCtx, expr, errors, namedTy.name, namedTy.name);
+            return result ?? fieldNotFoundError(expr, errors, typeToString(receiverTy));
+        })
+        .with(P.instanceOf(TupleTypeNode), (tupleTy) =>
+            inferTupleFieldAccess(expr, errors, tupleTy.elements, typeToString(tupleTy)),
+        )
+        .with(P.instanceOf(RefTypeNode), (refTy) =>
+            match(refTy.inner)
+                .with(P.instanceOf(NamedTypeNode), (inner) => {
+                    const result = inferStructFieldAccess(typeCtx, expr, errors, inner.name, typeToString(refTy));
+                    return result ?? fieldNotFoundError(expr, errors, typeToString(receiverTy));
+                })
+                .with(P.instanceOf(TupleTypeNode), (inner) =>
+                    inferTupleFieldAccess(expr, errors, inner.elements, typeToString(refTy)),
+                )
+                .otherwise(() => fieldNotFoundError(expr, errors, typeToString(receiverTy))),
+        )
+        .otherwise(() => fieldNotFoundError(expr, errors, typeToString(receiverTy)));
 }
 
 function inferStructLiteral(
