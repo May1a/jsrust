@@ -2942,7 +2942,7 @@ function checkFnTailReturn(
         !resolvedTailTy ||
         isInferredPlaceholder(declaredReturnType) ||
         isInferredPlaceholder(resolvedTailTy) ||
-        typesEqual(declaredReturnType, resolvedTailTy)
+        typesCompatible(declaredReturnType, resolvedTailTy)
     ) {
         return;
     }
