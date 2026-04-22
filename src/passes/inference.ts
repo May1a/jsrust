@@ -3015,7 +3015,13 @@ function inferGenericFnBody(
         typeCtx.registerNamedType(gp.name, new NamedTypeNode(gp.span, gp.name));
     }
 
-    return inferFnBody(typeCtx, fnItem, selfTypeName);
+    const errors = inferFnBody(typeCtx, fnItem, selfTypeName);
+
+    for (const gp of fnItem.genericParams) {
+        typeCtx.unregisterNamedType(gp.name);
+    }
+
+    return errors;
 }
 
 // --- Duplicate Function Checking ---

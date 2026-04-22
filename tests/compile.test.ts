@@ -820,6 +820,18 @@ describe("type inference (extended)", () => {
         );
     });
 
+    test("top-level generic inference does not leak generic parameter names", () => {
+        const result = compile(
+            "fn identity<T>(x: T) -> T { x } fn test(value: T) -> T { value }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "Unknown type `T`",
+        );
+    });
+
     test("dereferencing expression with unknown type produces error", () => {
         const result = compile(
             "fn test() { let x = *unknown_thing; }",
