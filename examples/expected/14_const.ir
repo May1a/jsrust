@@ -1,0 +1,102 @@
+module main {
+
+  strings {
+    s0 = "{}"
+  }
+
+  struct Counter {  }
+
+  fn f815347 inherent_value() -> i32 {
+    b0 (entry):
+      v0: i32 = iconst 2
+      v1: i32 = iconst 3
+      v2: i32 = iadd v0, v1
+      ret v2
+  }
+
+  fn f608896 trait_value() -> i32 {
+    b0 (entry):
+      v3: i32 = iconst 7
+      ret v3
+  }
+
+  fn f949693 test_example() -> () {
+    b0 (entry):
+      v4: i32  = iconst 2
+      v5: i32  = iconst 2
+      v6: bool = icmp.eq v4, v5
+      br_if v6, then: b2, else: b1
+  
+    b1 (assert_fail):
+      unreachable
+  
+    b2 (assert_ok):
+      v7: i8    = iconst 0
+      v8: i32   = iconst 2
+      v9: i32   = iconst 3
+      v10: i32  = iadd v8, v9
+      v11: i32  = iconst 5
+      v12: bool = icmp.eq v10, v11
+      br_if v12, then: b4, else: b3
+  
+    b3 (assert_fail):
+      unreachable
+  
+    b4 (assert_ok):
+      v13: i8   = iconst 0
+      v14: i32  = iconst 7
+      v15: i32  = iconst 7
+      v16: bool = icmp.eq v14, v15
+      br_if v16, then: b6, else: b5
+  
+    b5 (assert_fail):
+      unreachable
+  
+    b6 (assert_ok):
+      v17: i8   = iconst 0
+      v18: i32  = call trait_value()
+      v19: i32  = iconst 7
+      v20: bool = icmp.eq v18, v19
+      br_if v20, then: b8, else: b7
+  
+    b7 (assert_fail):
+      unreachable
+  
+    b8 (assert_ok):
+      v21: i8   = iconst 0
+      v22: i32  = call inherent_value()
+      v23: i32  = iconst 5
+      v24: bool = icmp.eq v22, v23
+      br_if v24, then: b10, else: b9
+  
+    b9 (assert_fail):
+      unreachable
+  
+    b10 (assert_ok):
+      v25: i8   = iconst 0
+      v26: i32  = iconst 2
+      v27: i32  = iconst 3
+      v28: i32  = iadd v26, v27
+      v29: i32  = iconst 7
+      v30: i32  = iadd v28, v29
+      v31: i32  = iconst 12
+      v32: bool = icmp.eq v30, v31
+      br_if v32, then: b12, else: b11
+  
+    b11 (assert_fail):
+      unreachable
+  
+    b12 (assert_ok):
+      v33: i8  = iconst 0
+      v34: ptr = sconst s0
+      v35: i32 = iconst 2
+      v36: i32 = iconst 3
+      v37: i32 = iadd v35, v36
+      v38: i32 = iconst 7
+      v39: i32 = iadd v37, v38
+      v40: i64 = iconst 1
+      call f862609(v34, v40, v39)
+      ret
+  }
+
+}

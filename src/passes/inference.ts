@@ -7,6 +7,7 @@ import {
     CallExpr,
     ClosureExpr,
     ContinueExpr,
+    ConstItem,
     DerefExpr,
     ExprStmt,
     type Expression,
@@ -33,6 +34,7 @@ import {
     Mutability,
     NamedTypeNode,
     OptionTypeNode,
+    PathExpr,
     ResultTypeNode,
     type ParamNode,
     RangeExpr,
@@ -63,7 +65,7 @@ import {
 import { Result } from "better-result";
 import { match, P } from "ts-pattern";
 import { inferTypeArgs, mangledName } from "./monomorphize";
-import type { TypeContext } from "../utils/type_context";
+import type { ConstBindingInfo, TypeContext } from "../utils/type_context";
 
 interface FieldWithType {
     name: string;
@@ -469,9 +471,90 @@ function typesEqualCompound(a: TypeNode, b: TypeNode): boolean {
 
 function typesEqual(a: TypeNode, b: TypeNode): boolean {
     if (isInferredPlaceholder(a) || isInferredPlaceholder(b)) {
-        return true;
+        return false;
     }
     return typesEqualSimple(a, b) || typesEqualCompound(a, b);
+}
+
+function typesCompatibleSimple(a: TypeNode, b: TypeNode): boolean {
+    return match([a, b] as const)
+        .with(
+            [P.instanceOf(NamedTypeNode), P.instanceOf(NamedTypeNode)],
+            ([x, y]) =>
+                x.name === y.name &&
+                genericArgsCompatible(x.args, y.args),
+        )
+        .with(
+            [P.instanceOf(TupleTypeNode), P.instanceOf(TupleTypeNode)],
+            ([x, y]) => typesCompatibleList(x.elements, y.elements),
+        )
+        .with(
+            [P.instanceOf(ArrayTypeNode), P.instanceOf(ArrayTypeNode)],
+            ([x, y]) =>
+                arrayLengthsEqual(x.length, y.length) &&
+                typesCompatible(x.element, y.element),
+        )
+        .otherwise(() => false);
+}
+
+function typesCompatibleCompound(a: TypeNode, b: TypeNode): boolean {
+    return match([a, b] as const)
+        .with(
+            [P.instanceOf(RefTypeNode), P.instanceOf(RefTypeNode)],
+            ([x, y]) =>
+                x.mutability === y.mutability &&
+                typesCompatible(x.inner, y.inner),
+        )
+        .with(
+            [P.instanceOf(PtrTypeNode), P.instanceOf(PtrTypeNode)],
+            ([x, y]) =>
+                x.mutability === y.mutability &&
+                typesCompatible(x.inner, y.inner),
+        )
+        .with(
+            [P.instanceOf(FnTypeNode), P.instanceOf(FnTypeNode)],
+            ([x, y]) =>
+                typesCompatibleList(x.params, y.params) &&
+                typesCompatible(x.returnType, y.returnType),
+        )
+        .with(
+            [P.instanceOf(OptionTypeNode), P.instanceOf(OptionTypeNode)],
+            ([x, y]) => typesCompatible(x.inner, y.inner),
+        )
+        .with(
+            [P.instanceOf(ResultTypeNode), P.instanceOf(ResultTypeNode)],
+            ([x, y]) =>
+                typesCompatible(x.okType, y.okType) &&
+                typesCompatible(x.errType, y.errType),
+        )
+        .otherwise(() => false);
+}
+
+function typesCompatible(a: TypeNode, b: TypeNode): boolean {
+    if (isInferredPlaceholder(a) || isInferredPlaceholder(b)) {
+        return true;
+    }
+    return typesCompatibleSimple(a, b) || typesCompatibleCompound(a, b);
+}
+
+function typesCompatibleList(left: TypeNode[], right: TypeNode[]): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    return left.every((type, index) => typesCompatible(type, right[index]));
+}
+
+function genericArgsCompatible(
+    left: GenericArgsNode | undefined,
+    right: GenericArgsNode | undefined,
+): boolean {
+    if ((left === undefined) !== (right === undefined)) {
+        return false;
+    }
+    if (left === undefined || right === undefined) {
+        return true;
+    }
+    return typesCompatibleList(left.args, right.args);
 }
 
 function makeOptionType(span: Span, innerTy?: TypeNode): OptionTypeNode {
@@ -661,6 +744,52 @@ function registerStructTypeWithPrefix(
     }
 }
 
+function registerConstWithPrefix(
+    typeCtx: TypeContext,
+    node: ConstItem,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+    selfTypeName?: string,
+): void {
+    const binding: ConstBindingInfo = {
+        typeNode: node.typeNode,
+        value: node.value,
+        selfTypeName,
+    };
+    const qualifiedName = qualify(node.name);
+    typeCtx.registerNamedConst(qualifiedName, binding);
+    if (modulePrefix) {
+        typeCtx.registerNamedConst(node.name, binding);
+    }
+}
+
+function registerImplConstsWithPrefix(
+    typeCtx: TypeContext,
+    node: ImplItem,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+): void {
+    const targetName = node.target.name;
+    const qualifiedTargetName = qualify(targetName);
+    for (const constItem of node.constItems) {
+        const binding: ConstBindingInfo = {
+            typeNode: constItem.typeNode,
+            value: constItem.value,
+            selfTypeName: targetName,
+        };
+        typeCtx.registerNamedConst(
+            `${qualifiedTargetName}::${constItem.name}`,
+            binding,
+        );
+        if (modulePrefix) {
+            typeCtx.registerNamedConst(
+                `${targetName}::${constItem.name}`,
+                binding,
+            );
+        }
+    }
+}
+
 function registerImplMethodsWithPrefix(
     typeCtx: TypeContext,
     node: ImplItem,
@@ -685,6 +814,76 @@ function registerImplMethodsWithPrefix(
                 params: buildParamList(method.params),
                 returnType,
             });
+        }
+    }
+}
+
+function traitConstDefaults(
+    traitItem: TraitItem,
+    implConsts: ConstItem[],
+    selfTypeName: string,
+): Map<string, ConstBindingInfo> {
+    const overrides = new Map(implConsts.map((item) => [item.name, item]));
+    const bindings = new Map<string, ConstBindingInfo>();
+    for (const traitConst of traitItem.constItems) {
+        const override = overrides.get(traitConst.name);
+        if (override) {
+            bindings.set(
+                traitConst.name,
+                {
+                    typeNode: override.typeNode,
+                    value: override.value,
+                    selfTypeName,
+                },
+            );
+            continue;
+        }
+        if (traitConst.value) {
+            bindings.set(
+                traitConst.name,
+                {
+                    typeNode: traitConst.typeNode,
+                    value: traitConst.value,
+                    selfTypeName,
+                },
+            );
+        }
+    }
+    return bindings;
+}
+
+function registerTraitImplConstsWithPrefix(
+    typeCtx: TypeContext,
+    node: TraitImplItem,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+): void {
+    const targetName = node.target.name;
+    const qualifiedTargetName = qualify(targetName);
+    const bindings = new Map<string, ConstBindingInfo>();
+
+    for (const constItem of node.constItems) {
+        bindings.set(
+            constItem.name,
+            {
+                typeNode: constItem.typeNode,
+                value: constItem.value,
+                selfTypeName: targetName,
+            },
+        );
+    }
+
+    const defaults = traitConstDefaults(node.trait, node.constItems, targetName);
+    for (const [name, binding] of defaults) {
+        if (!bindings.has(name)) {
+            bindings.set(name, binding);
+        }
+    }
+
+    for (const [name, binding] of bindings) {
+        typeCtx.registerNamedConst(`${qualifiedTargetName}::${name}`, binding);
+        if (modulePrefix) {
+            typeCtx.registerNamedConst(`${targetName}::${name}`, binding);
         }
     }
 }
@@ -749,54 +948,60 @@ function registerItemTypesWithPrefix(
     };
 
     for (const node of items) {
-        if (node instanceof StructItem || node instanceof GenericStructItem) {
-            registerStructTypeWithPrefix(typeCtx, node, qualify, modulePrefix);
-            continue;
-        }
-        if (node instanceof EnumItem) {
-            registerEnumItemType(typeCtx, node, qualify, modulePrefix);
-            continue;
-        }
-        if (node instanceof GenericFnItem) {
-            const qualName = qualify(node.name);
-            typeCtx.registerFnSignature(qualName, {
-                params: buildParamList(node.params),
-                returnType: node.returnType,
-            });
-            typeCtx.registerGenericFn(qualName, node);
-            continue;
-        }
-        if (node instanceof FnItem) {
-            typeCtx.registerFnSignature(qualify(node.name), {
-                params: buildParamList(node.params),
-                returnType: node.returnType,
-            });
-            continue;
-        }
-        if (node instanceof ImplItem) {
-            registerImplMethodsWithPrefix(typeCtx, node, qualify, modulePrefix);
-            continue;
-        }
-        if (node instanceof TraitImplItem) {
-            registerTraitImplMethodsWithPrefix(
-                typeCtx,
-                node,
-                qualify,
-                modulePrefix,
-            );
-            continue;
-        }
-        if (node instanceof ModItem) {
-            registerItemTypesWithPrefix(
-                typeCtx,
-                node.items,
-                qualify(node.name),
-            );
-            continue;
-        }
-        if (node instanceof UseItem) {
-            registerUseItemAlias(typeCtx, node);
-        }
+        registerItemTypeWithPrefix(typeCtx, node, qualify, modulePrefix);
+    }
+}
+
+function registerItemTypeWithPrefix(
+    typeCtx: TypeContext,
+    node: Item,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+): void {
+    if (node instanceof StructItem || node instanceof GenericStructItem) {
+        registerStructTypeWithPrefix(typeCtx, node, qualify, modulePrefix);
+        return;
+    }
+    if (node instanceof EnumItem) {
+        registerEnumItemType(typeCtx, node, qualify, modulePrefix);
+        return;
+    }
+    if (node instanceof ConstItem) {
+        registerConstWithPrefix(typeCtx, node, qualify, modulePrefix);
+        return;
+    }
+    if (node instanceof GenericFnItem) {
+        const qualifiedName = qualify(node.name);
+        typeCtx.registerFnSignature(qualifiedName, {
+            params: buildParamList(node.params),
+            returnType: node.returnType,
+        });
+        typeCtx.registerGenericFn(qualifiedName, node);
+        return;
+    }
+    if (node instanceof FnItem) {
+        typeCtx.registerFnSignature(qualify(node.name), {
+            params: buildParamList(node.params),
+            returnType: node.returnType,
+        });
+        return;
+    }
+    if (node instanceof ImplItem) {
+        registerImplConstsWithPrefix(typeCtx, node, qualify, modulePrefix);
+        registerImplMethodsWithPrefix(typeCtx, node, qualify, modulePrefix);
+        return;
+    }
+    if (node instanceof TraitImplItem) {
+        registerTraitImplConstsWithPrefix(typeCtx, node, qualify, modulePrefix);
+        registerTraitImplMethodsWithPrefix(typeCtx, node, qualify, modulePrefix);
+        return;
+    }
+    if (node instanceof ModItem) {
+        registerItemTypesWithPrefix(typeCtx, node.items, qualify(node.name));
+        return;
+    }
+    if (node instanceof UseItem) {
+        registerUseItemAlias(typeCtx, node);
     }
 }
 
@@ -808,9 +1013,26 @@ function registerUseItemAlias(typeCtx: TypeContext, node: UseItem): void {
     // Avoid re-registering if the local name matches the last segment (no alias)
     if (localName === fullPath) return;
 
-    const sig = typeCtx.lookupFnSignature(fullPath);
-    if (sig) {
-        typeCtx.registerFnSignature(localName, sig);
+    const lookupPaths = [fullPath];
+    if (node.path[0] === "self" && node.path.length > 1) {
+        lookupPaths.push(node.path.slice(1).join("::"));
+    }
+
+    for (const path of lookupPaths) {
+        const sig = typeCtx.lookupFnSignature(path);
+        if (sig) {
+            typeCtx.registerFnSignature(localName, sig);
+            break;
+        }
+    }
+
+    for (const path of lookupPaths) {
+        const binding = typeCtx.lookupNamedConst(path);
+        if (!binding) {
+            continue;
+        }
+        typeCtx.registerNamedConst(localName, binding);
+        break;
     }
 }
 
@@ -834,6 +1056,30 @@ function inferExprType(
         typeCtx.setExpressionType(expr, result.error.fallback);
     }
     return result;
+}
+
+function inferClosureType(
+    typeCtx: TypeContext,
+    expr: ClosureExpr,
+): Result<TypeNode | undefined, InferFailure<TypeNode | undefined>> {
+    if (isInferredPlaceholder(expr.returnType)) {
+        typeCtx.pushScope();
+        for (const param of expr.params) {
+            typeCtx.setVariable(param.name, param.ty);
+        }
+        const bodyResult = inferExprType(typeCtx, expr.body);
+        typeCtx.popScope();
+        if (bodyResult.isErr()) {
+            return Result.err({
+                errors: bodyResult.error.errors,
+                fallback: bodyResult.error.fallback ?? expr.returnType,
+            });
+        }
+        if (bodyResult.value) {
+            return Result.ok(bodyResult.value);
+        }
+    }
+    return Result.ok(expr.returnType);
 }
 
 function inferExprTypeInner(
@@ -885,7 +1131,7 @@ function inferExprTypeInner(
     }
 
     if (expr instanceof ClosureExpr) {
-        return Result.ok(expr.returnType);
+        return inferClosureType(typeCtx, expr);
     }
 
     return inferExprTypeExtended(typeCtx, expr);
@@ -916,7 +1162,14 @@ function inferVecMacro(
         } else {
             argType = argResult.value;
         }
-        if (index > 0 && elemType && argType && !typesEqual(elemType, argType)) {
+        if (
+            index > 0 &&
+            elemType &&
+            argType &&
+            !isInferredPlaceholder(elemType) &&
+            !isInferredPlaceholder(argType) &&
+            !typesEqual(elemType, argType)
+        ) {
             errors.push({
                 message: `Type mismatch in vec! macro: expected \`${typeToString(elemType)}\`, found \`${typeToString(argType)}\``,
                 span: arg.span,
@@ -962,10 +1215,24 @@ function inferIndexExpr(
         }
         return Result.ok(receiverType.element);
     }
+    if (receiverType && !isInferredPlaceholder(receiverType)) {
+        errors.push({
+            message: `cannot index into value of type \`${typeToString(receiverType)}\``,
+            span: expr.span,
+        });
+    }
     if (errors.length > 0) {
         return Result.err({ errors, fallback: undefined });
     }
-    return Result.ok(undefined);
+    return Result.err({
+        errors: [
+            {
+                message: "cannot index into this expression",
+                span: expr.span,
+            },
+        ],
+        fallback: undefined,
+    });
 }
 
 function inferRangeExpr(
@@ -988,7 +1255,15 @@ function inferRangeExpr(
     if (errors.length > 0) {
         return Result.err({ errors, fallback: undefined });
     }
-    return Result.ok(undefined);
+    return Result.err({
+        errors: [
+            {
+                message: "range expressions are not supported",
+                span: expr.span,
+            },
+        ],
+        fallback: undefined,
+    });
 }
 
 function inferExprTypeExtended(
@@ -1045,9 +1320,15 @@ function inferLiteral(
 ): Result<TypeNode | undefined, InferFailure<TypeNode | undefined>> {
     switch (expr.literalKind) {
         case LiteralKind.Int: {
+            if (expr.suffix !== undefined) {
+                return Result.ok(new NamedTypeNode(expr.span, expr.suffix));
+            }
             return Result.ok(new NamedTypeNode(expr.span, "i32"));
         }
         case LiteralKind.Float: {
+            if (expr.suffix !== undefined) {
+                return Result.ok(new NamedTypeNode(expr.span, expr.suffix));
+            }
             return Result.ok(new NamedTypeNode(expr.span, "f64"));
         }
         case LiteralKind.Bool: {
@@ -1086,6 +1367,11 @@ function inferIdentifier(
     const varTy = typeCtx.lookupVariable(expr.name);
     if (varTy) {
         return Result.ok(varTy);
+    }
+
+    const constBinding = typeCtx.lookupConst(expr.name);
+    if (constBinding) {
+        return Result.ok(constBinding.typeNode);
     }
 
     const fnSig = typeCtx.lookupFnSignature(expr.name);
@@ -1138,17 +1424,41 @@ function inferIdentifier(
         return Result.ok(makeResultType(expr.span));
     }
 
-    // Qualified paths (e.g. `Color::Green`, `Vec::new`) are enum variants or
-    // associated items — not yet tracked in the type context. Return undefined
-    // without an error; type propagation will handle the absence.
+    // Qualified paths (e.g. `Color::Green`, `Vec::new`)
     if (expr.name.includes("::")) {
-        return Result.ok(undefined);
+        return resolveQualifiedPath(typeCtx, expr);
     }
 
     return Result.err({
         errors: [
             {
                 message: `Cannot find value \`${expr.name}\` in this scope`,
+                span: expr.span,
+            },
+        ],
+        fallback: undefined,
+    });
+}
+
+function resolveQualifiedPath(
+    typeCtx: TypeContext,
+    expr: IdentifierExpr,
+): Result<TypeNode | undefined, InferFailure<TypeNode | undefined>> {
+    const segments = match(expr)
+        .with(P.instanceOf(PathExpr), (p) => p.segments)
+        .otherwise(() => expr.name.split("::"));
+    if (segments.length === 2) {
+        const [owner] = segments;
+
+        if (typeCtx.lookupNamedType(owner)) {
+            return Result.ok(new NamedTypeNode(expr.span, owner));
+        }
+    }
+
+    return Result.err({
+        errors: [
+            {
+                message: `cannot find value \`${expr.name}\` in this scope`,
                 span: expr.span,
             },
         ],
@@ -1482,8 +1792,17 @@ function inferIdentifierCallType(
         return Result.ok(sig.returnType);
     }
 
-    // Qualified paths (e.g. `Vec::new`) are not yet tracked — skip
-    if (!calleeName.includes("::")) {
+    // Qualified paths (e.g. `Vec::new`)
+    if (calleeName.includes("::")) {
+        const segments = match(callee)
+            .with(P.instanceOf(PathExpr), (p) => p.segments)
+            .otherwise(() => calleeName.split("::"));
+        if (segments.length === 2) {
+            const ownerType = typeCtx.lookupNamedType(segments[0]);
+            if (ownerType) {
+                return Result.ok(undefined);
+            }
+        }
         return Result.err({
             errors: [
                 {
@@ -1494,7 +1813,15 @@ function inferIdentifierCallType(
             fallback: undefined,
         });
     }
-    return Result.ok(undefined);
+    return Result.err({
+        errors: [
+            {
+                message: `cannot find function \`${calleeName}\` in this scope`,
+                span: callee.span,
+            },
+        ],
+        fallback: undefined,
+    });
 }
 
 function inferOptionMethodType(
@@ -1549,7 +1876,15 @@ function inferOptionMethodType(
         }
         return Result.ok(inner);
     }
-    return Result.ok(undefined);
+    return Result.err({
+        errors: [
+            {
+                message: `no method \`${callee.field}\` found for type \`Option<${typeToString(inner)}>\``,
+                span: callee.span,
+            },
+        ],
+        fallback: undefined,
+    });
 }
 
 function inferResultMethodType(
@@ -1619,7 +1954,15 @@ function inferResultMethodType(
         }
         return Result.ok(errTy);
     }
-    return Result.ok(undefined);
+    return Result.err({
+        errors: [
+            {
+                message: `no method \`${callee.field}\` found for type \`Result<${typeToString(okTy)}, ${typeToString(errTy)}>\``,
+                span: callee.span,
+            },
+        ],
+        fallback: undefined,
+    });
 }
 
 const OPTION_RESULT_BUILTIN_METHODS = [
@@ -2068,7 +2411,13 @@ function inferIf(
             elseTy = elseResult.value;
         }
         // If both branches have types, check they match
-        if (thenTy && elseTy && !typesEqual(thenTy, elseTy)) {
+        if (
+            thenTy &&
+            elseTy &&
+            !isInferredPlaceholder(thenTy) &&
+            !isInferredPlaceholder(elseTy) &&
+            !typesEqual(thenTy, elseTy)
+        ) {
             errors.push({
                 message: `\`if\` and \`else\` have incompatible types: \`${typeToString(thenTy)}\` vs \`${typeToString(elseTy)}\``,
                 span: expr.span,
@@ -2140,7 +2489,12 @@ function inferMatch(
         }
         if (!armTy) {
             armTy = bodyTy;
-        } else if (bodyTy && !typesEqual(armTy, bodyTy)) {
+        } else if (
+            bodyTy &&
+            !isInferredPlaceholder(armTy) &&
+            !isInferredPlaceholder(bodyTy) &&
+            !typesEqual(armTy, bodyTy)
+        ) {
             errors.push({
                 message: `Match arms have incompatible types: \`${typeToString(armTy)}\` vs \`${typeToString(bodyTy)}\``,
                 span: arm.span,
@@ -2291,6 +2645,14 @@ function inferStatement(
     }
 
     if (stmt instanceof ItemStmt) {
+        if (stmt.item instanceof ConstItem) {
+            const binding: ConstBindingInfo = {
+                typeNode: stmt.item.typeNode,
+                value: stmt.item.value,
+            };
+            typeCtx.setConst(stmt.item.name, binding);
+            return inferConstBinding(typeCtx, binding, stmt.item.span);
+        }
         registerItemTypesWithPrefix(typeCtx, [stmt.item], "");
         return [];
     }
@@ -2329,7 +2691,7 @@ function inferLetStmt(
         // Both annotation and initializer present: check they agree
         if (
             !isInferredPlaceholder(initTy) &&
-            !typesEqual(annotationTy, initTy)
+            !typesCompatible(annotationTy, initTy)
         ) {
             errors.push({
                 message: `Type mismatch: expected \`${typeToString(annotationTy)}\`, found \`${typeToString(initTy)}\``,
@@ -2351,6 +2713,136 @@ function inferLetStmt(
     }
 
     return errors;
+}
+
+function inferConstBinding(
+    typeCtx: TypeContext,
+    binding: ConstBindingInfo,
+    span: Span,
+    selfTypeName?: string,
+): TypeError[] {
+    const errors: TypeError[] = [];
+    const declaredType = resolveSelf(binding.typeNode, selfTypeName);
+    errors.push(...validateTypeNode(typeCtx, declaredType, new Set<string>()));
+
+    if (!binding.value) {
+        return errors;
+    }
+
+    const initResult = inferExprType(typeCtx, binding.value);
+    const initTy = mergeInferResult(errors, initResult);
+    if (!initTy) {
+        return errors;
+    }
+
+    const resolvedInitType = resolveSelf(initTy, selfTypeName);
+    if (
+        !isInferredPlaceholder(declaredType) &&
+        !isInferredPlaceholder(resolvedInitType) &&
+        !typesCompatible(declaredType, resolvedInitType)
+    ) {
+        errors.push({
+            message: `Type mismatch: expected \`${typeToString(declaredType)}\`, found \`${typeToString(resolvedInitType)}\``,
+            span,
+        });
+    }
+
+    return errors;
+}
+
+function inferConstItem(
+    typeCtx: TypeContext,
+    item: ConstItem,
+    selfTypeName?: string,
+): TypeError[] {
+    return inferConstBinding(
+        typeCtx,
+        {
+            typeNode: item.typeNode,
+            value: item.value,
+            selfTypeName,
+        },
+        item.span,
+        selfTypeName,
+    );
+}
+
+function registerScopedSelfConstAliases(
+    typeCtx: TypeContext,
+    bindings: Map<string, ConstBindingInfo>,
+): void {
+    for (const [name, binding] of bindings) {
+        typeCtx.setConst(`Self::${name}`, binding);
+    }
+}
+
+function collectTraitImplScopedBindings(
+    item: TraitImplItem,
+    selfTypeName: string | undefined,
+    errors: TypeError[],
+): Map<string, ConstBindingInfo> {
+    const traitConsts = new Map(
+        item.trait.constItems.map((constItem) => [constItem.name, constItem]),
+    );
+    const scopedBindings = new Map<string, ConstBindingInfo>();
+
+    for (const constItem of item.constItems) {
+        const binding: ConstBindingInfo = {
+            typeNode: constItem.typeNode,
+            value: constItem.value,
+            selfTypeName,
+        };
+        scopedBindings.set(constItem.name, binding);
+        const traitConst = traitConsts.get(constItem.name);
+        if (!traitConst) {
+            errors.push({
+                message: `Associated const \`${constItem.name}\` is not declared in trait \`${item.trait.name}\``,
+                span: constItem.span,
+            });
+            continue;
+        }
+        const implType = resolveSelf(constItem.typeNode, selfTypeName);
+        const traitType = resolveSelf(traitConst.typeNode, selfTypeName);
+        if (typesEqual(implType, traitType)) {
+            continue;
+        }
+        errors.push({
+            message: `Associated const \`${constItem.name}\` for trait \`${item.trait.name}\` must have type \`${typeToString(traitType)}\`, found \`${typeToString(implType)}\``,
+            span: constItem.span,
+        });
+    }
+
+    const defaults = traitConstDefaults(
+        item.trait,
+        item.constItems,
+        selfTypeName ?? "Self",
+    );
+    for (const [name, binding] of defaults) {
+        if (scopedBindings.has(name)) {
+            continue;
+        }
+        scopedBindings.set(name, binding);
+    }
+
+    for (const traitConst of item.trait.constItems) {
+        if (scopedBindings.has(traitConst.name) || traitConst.value) {
+            continue;
+        }
+        errors.push({
+            message: `Missing associated const \`${traitConst.name}\` in impl of trait \`${item.trait.name}\``,
+            span: item.span,
+        });
+    }
+
+    return scopedBindings;
+}
+
+function traitImplConstSpan(item: TraitImplItem, name: string): Span {
+    const implConst = item.constItems.find((constItem) => constItem.name === name);
+    const traitConst = item.trait.constItems.find(
+        (constItem) => constItem.name === name,
+    );
+    return implConst?.span ?? traitConst?.span ?? item.span;
 }
 
 // --- Function Body Inference ---
@@ -2464,6 +2956,22 @@ function inferFnBody(
     return errors;
 }
 
+function inferGenericFnBody(
+    typeCtx: TypeContext,
+    fnItem: GenericFnItem,
+    selfTypeName?: string,
+): TypeError[] {
+    if (!fnItem.body) {
+        return [];
+    }
+
+    for (const gp of fnItem.genericParams) {
+        typeCtx.registerNamedType(gp.name, new NamedTypeNode(gp.span, gp.name));
+    }
+
+    return inferFnBody(typeCtx, fnItem, selfTypeName);
+}
+
 // --- Duplicate Function Checking ---
 
 function checkDuplicateFns(module: ModuleNode): TypeError[] {
@@ -2565,13 +3073,38 @@ function inferImplItem(typeCtx: TypeContext, item: ImplItem): TypeError[] {
         typeCtx.registerStructFields("Self", targetFields);
     }
 
+    typeCtx.pushScope();
+    const scopedBindings = new Map<string, ConstBindingInfo>();
+    for (const constItem of item.constItems) {
+        const binding: ConstBindingInfo = {
+            typeNode: constItem.typeNode,
+            value: constItem.value,
+            selfTypeName,
+        };
+        scopedBindings.set(constItem.name, binding);
+    }
+    registerScopedSelfConstAliases(typeCtx, scopedBindings);
+    for (const constItem of item.constItems) {
+        const binding = scopedBindings.get(constItem.name);
+        if (!binding) {
+            continue;
+        }
+        errors.push(
+            ...inferConstBinding(typeCtx, binding, constItem.span, selfTypeName),
+        );
+    }
+
     for (const method of item.methods) {
         errors.push(...validateFnTypes(typeCtx, method));
         if (method instanceof FnItem) {
             errors.push(...inferFnBody(typeCtx, method, selfTypeName));
         }
-        // Skip deep body inference for generic methods
+        if (method instanceof GenericFnItem) {
+            errors.push(...inferGenericFnBody(typeCtx, method, selfTypeName));
+        }
     }
+
+    typeCtx.popScope();
 
     return errors;
 }
@@ -2591,10 +3124,28 @@ function inferTraitImplItem(
             typeCtx.registerStructFields("Self", targetFields);
         }
     }
+
+    typeCtx.pushScope();
+    const scopedBindings = collectTraitImplScopedBindings(
+        item,
+        selfTypeName,
+        errors,
+    );
+    registerScopedSelfConstAliases(typeCtx, scopedBindings);
+    for (const [name, binding] of scopedBindings) {
+        const span = traitImplConstSpan(item, name);
+        errors.push(
+            ...inferConstBinding(typeCtx, binding, span, binding.selfTypeName),
+        );
+    }
+
     for (const method of item.fnImpls) {
         errors.push(...validateFnTypes(typeCtx, method));
         errors.push(...inferFnBody(typeCtx, method, selfTypeName));
     }
+
+    typeCtx.popScope();
+
     return errors;
 }
 
@@ -2612,50 +3163,73 @@ export function inferModule(
 
     // Phase 2: Validate function signatures and infer function bodies
     for (const item of moduleNode.items) {
-        if (item instanceof StructItem || item instanceof GenericStructItem) {
-            errors.push(...validateStructFieldTypes(typeCtx, item));
-        }
-        if (item instanceof EnumItem) {
-            errors.push(...validateEnumItemTypes(typeCtx, item));
-        }
-        if (item instanceof GenericFnItem) {
-            errors.push(...validateFnTypes(typeCtx, item));
-            // Skip deep body inference for generic functions — type params aren't concrete
-            continue;
-        }
-        if (item instanceof FnItem) {
-            errors.push(...validateFnTypes(typeCtx, item));
-            errors.push(...inferFnBody(typeCtx, item));
-        }
-        if (item instanceof ModItem) {
-            const nested = inferModule(
-                typeCtx,
-                new ModuleNode(item.span, item.name, item.items),
-            );
-            if (!nested.isOk()) {
-                errors.push(...nested.error);
-            }
-        }
-        if (item instanceof TraitItem) {
-            for (const method of item.methods) {
-                if (
-                    method instanceof FnItem ||
-                    method instanceof GenericFnItem
-                ) {
-                    errors.push(...validateFnTypes(typeCtx, method));
-                }
-            }
-        }
-        if (item instanceof ImplItem) {
-            errors.push(...inferImplItem(typeCtx, item));
-        }
-        if (item instanceof TraitImplItem) {
-            errors.push(...inferTraitImplItem(typeCtx, item));
-        }
+        errors.push(...inferModuleItem(typeCtx, item));
     }
 
     if (errors.length > 0) {
         return Result.err(errors);
     }
     return Result.ok();
+}
+
+function inferModuleItem(typeCtx: TypeContext, item: Item): TypeError[] {
+    if (item instanceof StructItem || item instanceof GenericStructItem) {
+        return validateStructFieldTypes(typeCtx, item);
+    }
+    if (item instanceof EnumItem) {
+        return validateEnumItemTypes(typeCtx, item);
+    }
+    if (item instanceof GenericFnItem) {
+        return validateFnTypes(typeCtx, item);
+    }
+    if (item instanceof ConstItem) {
+        return inferConstItem(typeCtx, item);
+    }
+    if (item instanceof FnItem) {
+        return [
+            ...validateFnTypes(typeCtx, item),
+            ...inferFnBody(typeCtx, item),
+        ];
+    }
+    if (item instanceof ModItem) {
+        const nested = inferModule(
+            typeCtx,
+            new ModuleNode(item.span, item.name, item.items),
+        );
+        if (nested.isOk()) {
+            return [];
+        }
+        return nested.error;
+    }
+    if (item instanceof TraitItem) {
+        return inferTraitItem(typeCtx, item);
+    }
+    if (item instanceof ImplItem) {
+        return inferImplItem(typeCtx, item);
+    }
+    if (item instanceof TraitImplItem) {
+        return inferTraitImplItem(typeCtx, item);
+    }
+    return [];
+}
+
+function inferTraitItem(typeCtx: TypeContext, item: TraitItem): TypeError[] {
+    const errors: TypeError[] = [];
+    for (const method of item.methods) {
+        errors.push(...validateFnTypes(typeCtx, method));
+    }
+    typeCtx.pushScope();
+    const scopedBindings = new Map<string, ConstBindingInfo>();
+    for (const constItem of item.constItems) {
+        scopedBindings.set(constItem.name, {
+            typeNode: constItem.typeNode,
+            value: constItem.value,
+        });
+    }
+    registerScopedSelfConstAliases(typeCtx, scopedBindings);
+    for (const constItem of item.constItems) {
+        errors.push(...inferConstItem(typeCtx, constItem, "Self"));
+    }
+    typeCtx.popScope();
+    return errors;
 }

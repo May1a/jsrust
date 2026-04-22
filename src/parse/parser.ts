@@ -198,7 +198,22 @@ function processStringValue(raw: string): string {
         .replace(/\\0/g, "\0");
 }
 
-const TYPE_SUFFIX_RE = /^([uif]\d+|usize|isize)$/;
+const INTEGER_TYPE_SUFFIXES = new Set([
+    "i8",
+    "i16",
+    "i32",
+    "i64",
+    "i128",
+    "isize",
+    "u8",
+    "u16",
+    "u32",
+    "u64",
+    "u128",
+    "usize",
+]);
+const FLOAT_TYPE_SUFFIXES = new Set(["f32", "f64"]);
+const NUMERIC_SUFFIX_RE = /^(?:i\d+|u\d+|f\d+|isize|usize)$/;
 const RANGE_PRECEDENCE = 1;
 const ASSIGNMENT_PRECEDENCE = 2;
 const OR_PRECEDENCE = 3;
@@ -326,8 +341,26 @@ function isBlockLikeExpr(e: Expression): boolean {
     );
 }
 
-function isTypeSuffix(s: string): boolean {
-    return TYPE_SUFFIX_RE.test(s);
+function isNumericSuffixCandidate(s: string): boolean {
+    return NUMERIC_SUFFIX_RE.test(s);
+}
+
+function numericSuffixesFor(
+    tokenType: TokenType.Integer | TokenType.Float,
+): ReadonlySet<string> {
+    if (tokenType === TokenType.Integer) {
+        return INTEGER_TYPE_SUFFIXES;
+    }
+    return FLOAT_TYPE_SUFFIXES;
+}
+
+function numericLiteralKindFor(
+    tokenType: TokenType.Integer | TokenType.Float,
+): "integer" | "float" {
+    if (tokenType === TokenType.Integer) {
+        return "integer";
+    }
+    return "float";
 }
 
 class Parser {
@@ -563,6 +596,33 @@ class Parser {
         );
     }
 
+    private parseNumericSuffix(
+        tokenType: TokenType.Integer | TokenType.Float,
+    ): string | undefined {
+        if (!this.check(TokenType.Identifier)) {
+            return undefined;
+        }
+        const tok = this.peek();
+        if (typeof tok.value !== "string") {
+            return undefined;
+        }
+        const validSuffixes = numericSuffixesFor(tokenType);
+        if (validSuffixes.has(tok.value)) {
+            this.advance();
+            return tok.value;
+        }
+        if (isNumericSuffixCandidate(tok.value)) {
+            this.advance();
+            const literalKind = numericLiteralKindFor(tokenType);
+            this.errors.push({
+                message: `invalid ${literalKind} literal suffix \`${tok.value}\``,
+                line: tok.line,
+                column: tok.column,
+            });
+        }
+        return undefined;
+    }
+
     // -----------------------------------------------------------------------
     // Attributes
     // -----------------------------------------------------------------------
@@ -752,26 +812,52 @@ class Parser {
             return undefined;
         }
         const keyword = this.advance();
-        const isStatic = keyword.type === TokenType.Static;
-        const isMut = isStatic && this.eat(TokenType.Mut) !== undefined;
+        if (keyword.type === TokenType.Const) {
+            return [this.parseConstItemFromKeyword(keyword)];
+        }
+        const isMut = this.eat(TokenType.Mut) !== undefined;
         const name = String(this.expect(TokenType.Identifier).value);
         this.expect(TokenType.Colon);
         const typeNode = this.parseTypeNode();
         this.expect(TokenType.Eq);
         const value = this.parseExpr(0);
         this.expect(TokenType.Semicolon);
-        if (isStatic) {
-            return [
-                new StaticItem(
-                    this.spanFrom(keyword),
-                    name,
-                    mutabilityFromFlag(isMut),
-                    typeNode,
-                    value,
-                ),
-            ];
+        return [
+            new StaticItem(
+                this.spanFrom(keyword),
+                name,
+                mutabilityFromFlag(isMut),
+                typeNode,
+                value,
+            ),
+        ];
+    }
+
+    private parseConstItemFromKeyword(keyword: Token): ConstItem {
+        const name = String(this.expect(TokenType.Identifier).value);
+        this.expect(TokenType.Colon);
+        const typeNode = this.parseTypeNode();
+        this.expect(TokenType.Eq);
+        const value = this.parseExpr(0);
+        this.expect(TokenType.Semicolon);
+        return new ConstItem(this.spanFrom(keyword), name, typeNode, value);
+    }
+
+    private parseTraitConstItem(keyword: Token): ConstItem {
+        const name = String(this.expect(TokenType.Identifier).value);
+        this.expect(TokenType.Colon);
+        const typeNode = this.parseTypeNode();
+        let value: Expression | undefined;
+        if (this.eat(TokenType.Eq)) {
+            value = this.parseExpr(0);
         }
-        return [new ConstItem(this.spanFrom(keyword), name, typeNode, value)];
+        this.expect(TokenType.Semicolon);
+        return new ConstItem(
+            this.spanFrom(keyword),
+            name,
+            typeNode,
+            value,
+        );
     }
 
     private parseUnexpectedItem(): Item[] {
@@ -1154,11 +1240,12 @@ class Parser {
         this.skipWhereClause();
         this.expect(TokenType.OpenCurly);
         const allMethods: (FnItem | GenericFnItem)[] = [];
+        const constItems: ConstItem[] = [];
         while (
             !this.check(TokenType.CloseCurly) &&
             !this.check(TokenType.Eof)
         ) {
-            this.parseImplMember(allMethods);
+            this.parseImplMember(allMethods, constItems);
         }
         this.expect(TokenType.CloseCurly);
         const fnImpls = allMethods.filter(
@@ -1181,6 +1268,7 @@ class Parser {
             traitItem,
             target,
             fnImpls,
+            constItems,
         );
     }
 
@@ -1233,29 +1321,45 @@ class Parser {
         this.skipWhereClause();
         this.expect(TokenType.OpenCurly);
         const methods: (FnItem | GenericFnItem)[] = [];
+        const constItems: ConstItem[] = [];
         while (
             !this.check(TokenType.CloseCurly) &&
             !this.check(TokenType.Eof)
         ) {
-            this.parseImplMember(methods);
+            this.parseImplMember(methods, constItems);
         }
         this.expect(TokenType.CloseCurly);
-        return new ImplItem(this.spanFrom(startTok), firstType, methods);
+        return new ImplItem(
+            this.spanFrom(startTok),
+            firstType,
+            methods,
+            constItems,
+        );
     }
 
-    private parseImplMember(methods: (FnItem | GenericFnItem)[]): void {
+    private parseImplMember(
+        methods: (FnItem | GenericFnItem)[],
+        constItems: ConstItem[],
+    ): void {
         const { derives } = this.parseAttributes();
         this.eatPub();
         this.eat(TokenType.Unsafe);
+        if (
+            this.check(TokenType.Const) &&
+            this.peekAt(1).type === TokenType.Fn
+        ) {
+            this.advance();
+        }
         if (this.eat(TokenType.Fn)) {
             methods.push(this.parseFnBody(this.peek(), derives, false));
             return;
         }
-        if (
-            this.check(TokenType.Type) ||
-            this.check(TokenType.Const) ||
-            this.check(TokenType.Static)
-        ) {
+        const constToken = this.eat(TokenType.Const);
+        if (constToken) {
+            constItems.push(this.parseConstItemFromKeyword(constToken));
+            return;
+        }
+        if (this.check(TokenType.Type) || this.check(TokenType.Static)) {
             this.advance();
             this.skipUntil(TokenType.Semicolon, TokenType.CloseCurly);
             this.eat(TokenType.Semicolon);
@@ -1299,6 +1403,7 @@ class Parser {
         this.expect(TokenType.OpenCurly);
 
         const methods: (FnItem | GenericFnItem)[] = [];
+        const constItems: ConstItem[] = [];
         while (
             !this.check(TokenType.CloseCurly) &&
             !this.check(TokenType.Eof)
@@ -1308,9 +1413,17 @@ class Parser {
             if (this.eat(TokenType.Unsafe)) {
                 // Consume
             }
+            if (
+                this.check(TokenType.Const) &&
+                this.peekAt(1).type === TokenType.Fn
+            ) {
+                this.advance();
+            }
             if (this.eat(TokenType.Fn)) {
                 const fnStart = this.peek();
                 methods.push(this.parseFnBody(fnStart, derives, false));
+            } else if (this.check(TokenType.Const)) {
+                constItems.push(this.parseTraitConstItem(this.advance()));
             } else if (this.check(TokenType.Type)) {
                 while (
                     !this.check(TokenType.Semicolon) &&
@@ -1332,7 +1445,12 @@ class Parser {
         }
 
         this.expect(TokenType.CloseCurly);
-        const item = new TraitItem(this.spanFrom(startTok), name, methods);
+        const item = new TraitItem(
+            this.spanFrom(startTok),
+            name,
+            methods,
+            constItems,
+        );
         this.parsedTraits.set(name, item);
         return item;
     }
@@ -1829,12 +1947,11 @@ class Parser {
             return undefined;
         }
         const tok = this.advance();
-        if (
-            this.check(TokenType.Identifier) &&
-            isTypeSuffix(this.peek().value)
-        ) {
-            this.advance();
+        let tokenType = TokenType.Integer;
+        if (tok.type === TokenType.Float) {
+            tokenType = TokenType.Float;
         }
+        this.parseNumericSuffix(tokenType);
         const isFloat = tok.type === TokenType.Float;
         let rawValue = parseIntValue(tok.value);
         if (isFloat) {
@@ -2045,12 +2162,11 @@ class Parser {
         const hasMinus = this.eat(TokenType.Minus) !== undefined;
         if (this.check(TokenType.Integer) || this.check(TokenType.Float)) {
             const tok = this.advance();
-            if (
-                this.check(TokenType.Identifier) &&
-                isTypeSuffix(this.peek().value)
-            ) {
-                this.advance();
+            let tokenType = TokenType.Integer;
+            if (tok.type === TokenType.Float) {
+                tokenType = TokenType.Float;
             }
+            this.parseNumericSuffix(tokenType);
             const isFloat = tok.type === TokenType.Float;
             let rawVal = parseIntValue(tok.value);
             if (isFloat) {
@@ -2368,30 +2484,22 @@ class Parser {
     private parseLiteralPrefix(start: Token): LiteralExpr | undefined {
         if (this.check(TokenType.Integer)) {
             const tok = this.advance();
-            if (
-                this.check(TokenType.Identifier) &&
-                isTypeSuffix(this.peek().value)
-            ) {
-                this.advance();
-            }
+            const suffix = this.parseNumericSuffix(TokenType.Integer);
             return new LiteralExpr(
                 this.spanFrom(start),
                 LiteralKind.Int,
                 parseIntValue(tok.value),
+                suffix,
             );
         }
         if (this.check(TokenType.Float)) {
             const tok = this.advance();
-            if (
-                this.check(TokenType.Identifier) &&
-                isTypeSuffix(this.peek().value)
-            ) {
-                this.advance();
-            }
+            const suffix = this.parseNumericSuffix(TokenType.Float);
             return new LiteralExpr(
                 this.spanFrom(start),
                 LiteralKind.Float,
                 Number.parseFloat(tok.value),
+                suffix,
             );
         }
         if (this.check(TokenType.True) || this.check(TokenType.False)) {
