@@ -787,3 +787,62 @@ describe("type inference", () => {
         );
     });
 });
+
+describe("type inference (extended)", () => {
+    test("qualified function call resolves return type through impl", () => {
+        const result = compileToIR(
+            "struct Foo { x: i32 } impl Foo { fn new() -> Foo { Foo { x: 0 } } } fn test() -> Foo { Foo::new() }",
+        );
+        expect(result.isOk()).toBe(true);
+    });
+
+    test("qualified function call rejects unknown method on known type", () => {
+        const result = compile(
+            "struct Foo { x: i32 } fn test() { Foo::missing(); }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "no method `missing` found for type `Foo`",
+        );
+    });
+
+    test("catches type errors inside top-level generic function bodies", () => {
+        const result = compile(
+            "fn identity<T>(x: T) -> T { let y: bool = 42; x }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "expected `bool`, found `i32`",
+        );
+    });
+
+    test("dereferencing expression with unknown type produces error", () => {
+        const result = compile(
+            "fn test() { let x = *unknown_thing; }",
+        );
+        expect(result.isErr()).toBe(true);
+    });
+
+    test("field access on non-struct type produces error", () => {
+        const result = compile(
+            "fn test() { let x = 42; let _ = x.field; }",
+        );
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) return;
+
+        expect(formatCompileError(result.error)).toContain(
+            "No field `field` on type `i32`",
+        );
+    });
+
+    test("reference to expression with unknown type produces error", () => {
+        const result = compile(
+            "fn test() { let x = unknown_value; let _ = &x; }",
+        );
+        expect(result.isErr()).toBe(true);
+    });
+});

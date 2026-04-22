@@ -76,6 +76,10 @@ export class TypeContext {
         this.namedTypes.set(name, ty);
     }
 
+    unregisterNamedType(name: string): void {
+        this.namedTypes.delete(name);
+    }
+
     lookupNamedType(name: string): TypeNode | undefined {
         return this.namedTypes.get(name);
     }

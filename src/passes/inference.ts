@@ -1587,7 +1587,15 @@ function inferDeref(
     if (errors.length > 0) {
         return Result.err({ errors, fallback: undefined });
     }
-    return Result.ok(undefined);
+    return Result.err({
+        errors: [
+            {
+                message: "cannot dereference expression with unknown type",
+                span: expr.span,
+            },
+        ],
+        fallback: undefined,
+    });
 }
 
 function inferUnitExpr(
@@ -1691,7 +1699,15 @@ function inferCall(
     if (errors.length > 0) {
         return Result.err({ errors, fallback: undefined });
     }
-    return Result.ok(undefined);
+    return Result.err({
+        errors: [
+            {
+                message: "unsupported call expression callee",
+                span: expr.callee.span,
+            },
+        ],
+        fallback: undefined,
+    });
 }
 
 const BUILTIN_ENUM_CONSTRUCTOR_NAMES = new Set([
@@ -1800,7 +1816,20 @@ function inferIdentifierCallType(
         if (segments.length === 2) {
             const ownerType = typeCtx.lookupNamedType(segments[0]);
             if (ownerType) {
-                return Result.ok(undefined);
+                const qualifiedName = `${segments[0]}::${segments[1]}`;
+                const methodSig = typeCtx.lookupFnSignature(qualifiedName);
+                if (methodSig) {
+                    return Result.ok(methodSig.returnType);
+                }
+                return Result.err({
+                    errors: [
+                        {
+                            message: `no method \`${segments[1]}\` found for type \`${segments[0]}\``,
+                            span: callee.span,
+                        },
+                    ],
+                    fallback: undefined,
+                });
             }
         }
         return Result.err({
@@ -2286,10 +2315,11 @@ function inferFieldAccess(
         return Result.err({ errors, fallback: undefined });
     }
 
-    if (errors.length > 0) {
-        return Result.err({ errors, fallback: undefined });
-    }
-    return Result.ok(undefined);
+    errors.push({
+        message: `No field \`${expr.field}\` on type \`${typeToString(receiverTy)}\``,
+        span: expr.span,
+    });
+    return Result.err({ errors, fallback: undefined });
 }
 
 function inferStructLiteral(
@@ -2297,7 +2327,15 @@ function inferStructLiteral(
     expr: StructExpr,
 ): Result<TypeNode | undefined, InferFailure<TypeNode | undefined>> {
     if (!(expr.path instanceof IdentifierExpr)) {
-        return Result.ok(undefined);
+        return Result.err({
+            errors: [
+                {
+                    message: "unsupported struct literal path",
+                    span: expr.path.span,
+                },
+            ],
+            fallback: undefined,
+        });
     }
 
     const errors: TypeError[] = [];
@@ -2458,7 +2496,15 @@ function inferRef(
     if (errors.length > 0) {
         return Result.err({ errors, fallback: undefined });
     }
-    return Result.ok(undefined);
+    return Result.err({
+        errors: [
+            {
+                message: "cannot take reference to expression with unknown type",
+                span: expr.span,
+            },
+        ],
+        fallback: undefined,
+    });
 }
 
 function inferMatch(
@@ -3180,7 +3226,10 @@ function inferModuleItem(typeCtx: TypeContext, item: Item): TypeError[] {
         return validateEnumItemTypes(typeCtx, item);
     }
     if (item instanceof GenericFnItem) {
-        return validateFnTypes(typeCtx, item);
+        return [
+            ...validateFnTypes(typeCtx, item),
+            ...inferGenericFnBody(typeCtx, item),
+        ];
     }
     if (item instanceof ConstItem) {
         return inferConstItem(typeCtx, item);
