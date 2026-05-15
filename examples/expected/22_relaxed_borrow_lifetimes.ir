@@ -21,12 +21,12 @@ module main {
       store v5 -> v11
       v13: ptr<i32>      = load v8
       v14: ptr<i32>      = call passthrough(v13)
-      v15: i64           = load v14
-      v16: ptr<i64>      = alloca i64
+      v15: i32           = load v14
+      v16: ptr<i32>      = alloca i32
       store v15 -> v16
       v18: ptr<i32>      = load v11
-      v19: i64           = load v18
-      v20: ptr<i64>      = alloca i64
+      v19: i32           = load v18
+      v20: ptr<i32>      = alloca i32
       store v19 -> v20
       ret
   }

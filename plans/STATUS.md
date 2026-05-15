@@ -7,7 +7,7 @@ Plans 01–09 are sequential. Each plan depends on all preceding plans being com
 | Plan | Title | Status |
 |------|-------|--------|
 | `01-type-inference-correctness.md` | Type Inference Correctness | complete |
-| `02-lowering-correctness.md` | Lowering Correctness | pending |
+| `02-lowering-correctness.md` | Lowering Correctness | complete |
 | `03-ir-validation-strengthening.md` | IR Validation Strengthening | pending |
 | `04-monomorphization-hardening.md` | Monomorphization Hardening | pending |
 | `05-type-aliases-and-casts.md` | Type Aliases & Cast Expressions | pending |

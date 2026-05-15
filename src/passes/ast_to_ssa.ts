@@ -10,7 +10,7 @@ import {
     ConstItem,
     type ClosureExpr,
     type ContinueExpr,
-    type DerefExpr,
+    DerefExpr,
     EnumItem,
     ExprStmt,
     type Expression,
@@ -27,7 +27,7 @@ import {
     type IfLetExpr,
     LiteralPattern,
     InferredTypeNode,
-    type IndexExpr,
+    IndexExpr,
     type IfExpr,
     ItemStmt,
     LetStmt,
@@ -150,6 +150,7 @@ import {
     type BoolType,
 } from "../ir/ir";
 import { IRBuilder } from "../ir/ir_builder";
+import { internalBug } from "../utils/internal_bug";
 
 export enum LoweringErrorKind {
     UnsupportedNode,
@@ -998,32 +999,147 @@ export class AstToSsaCtx {
         return matched;
     }
 
-    private lowerAssign(expr: AssignExpr): Result<ValueId, LoweringError> {
-        if (!(expr.target instanceof IdentifierExpr)) {
-            return loweringError(
-                LoweringErrorKind.InvalidAssignmentTarget,
-                "Only identifier assignment targets are supported",
-                expr.target.span,
-            );
-        }
-
-        const binding = this.locals.get(expr.target.name);
+    private lowerAssignTargetIdent(
+        target: IdentifierExpr,
+    ): Result<{ ptr: ValueId; ty: IRType }, LoweringError> {
+        const binding = this.locals.get(target.name);
         if (!binding) {
             return loweringError(
                 LoweringErrorKind.UnknownVariable,
-                `Unknown variable '${expr.target.name}'`,
-                expr.target.span,
+                `Unknown variable '${target.name}'`,
+                target.span,
+            );
+        }
+        return Result.ok({ ptr: binding.ptr, ty: binding.ty });
+    }
+
+    private lowerAssignTargetDeref(
+        target: DerefExpr,
+    ): Result<{ ptr: ValueId; ty: IRType }, LoweringError> {
+        const ptrResult = this.lowerExpression(target.target);
+        if (!ptrResult.isOk()) return ptrResult;
+        const ptrTy = this.resolveValueType(ptrResult.value);
+        if (!(ptrTy instanceof PtrType)) {
+            return loweringError(
+                LoweringErrorKind.InvalidAssignmentTarget,
+                "Deref assignment requires a pointer",
+                target.span,
+            );
+        }
+        return Result.ok({ ptr: ptrResult.value, ty: ptrTy.inner });
+    }
+
+    private lowerAssignTargetField(
+        target: FieldExpr,
+    ): Result<{ ptr: ValueId; ty: IRType }, LoweringError> {
+        const baseResult = this.lowerAssignTarget(target.receiver);
+        if (!baseResult.isOk()) return baseResult;
+        const { ptr: basePtr, ty: baseTy } = baseResult.value;
+
+        const structTy = match(baseTy)
+            .when(
+                (t): t is StructType => t instanceof StructType,
+                (t) => this.irModule.structs.get(t.name) ?? t,
+            )
+            .otherwise((t) => t);
+
+        if (!(structTy instanceof StructType)) {
+            return loweringError(
+                LoweringErrorKind.InvalidAssignmentTarget,
+                "Field assignment requires a struct target",
+                target.span,
             );
         }
 
-        const valueResult = this.lowerExpressionWithExpected(
-            expr.value,
-            binding.ty,
-        );
-        if (!valueResult.isOk()) {
-            return valueResult;
+        const fieldNames = this.structFieldNames.get(structTy.name);
+        if (!fieldNames) {
+            return loweringError(
+                LoweringErrorKind.InvalidAssignmentTarget,
+                `No field metadata for struct \`${structTy.name}\``,
+                target.span,
+            );
         }
-        this.builder.store(binding.ptr, valueResult.value, binding.ty);
+
+        const index = fieldNames.indexOf(target.field);
+        if (index === -1 || index >= structTy.fields.length) {
+            return loweringError(
+                LoweringErrorKind.InvalidAssignmentTarget,
+                `Unknown field \`${target.field}\` on \`${structTy.name}\``,
+                target.span,
+            );
+        }
+
+        const fieldTy = structTy.fields[index];
+        const idxConst = this.builder.iconst(index, IntWidth.I32);
+        const fieldPtr = this.builder.gep(basePtr, [idxConst.id], fieldTy);
+        return Result.ok({ ptr: fieldPtr.id, ty: fieldTy });
+    }
+
+    private lowerAssignTargetIndex(
+        target: IndexExpr,
+    ): Result<{ ptr: ValueId; ty: IRType }, LoweringError> {
+        const receiverResult = this.lowerExpression(target.receiver);
+        if (!receiverResult.isOk()) return receiverResult;
+
+        const receiverTy = this.resolveValueType(receiverResult.value);
+        const arrayTy = match(receiverTy)
+            .when(
+                (t): t is PtrType => t instanceof PtrType,
+                (t) => t.inner,
+            )
+            .otherwise((t) => t);
+
+        if (!(arrayTy instanceof ArrayType)) {
+            return loweringError(
+                LoweringErrorKind.InvalidAssignmentTarget,
+                "Index assignment requires an array receiver",
+                target.span,
+            );
+        }
+
+        const elemTy = arrayTy.element;
+        const indexResult = this.lowerExpression(target.index);
+        if (!indexResult.isOk()) return indexResult;
+
+        const elemPtr = this.builder.gep(
+            receiverResult.value,
+            [indexResult.value],
+            elemTy,
+        );
+        return Result.ok({ ptr: elemPtr.id, ty: elemTy });
+    }
+
+    private lowerAssignTarget(
+        target: Expression,
+    ): Result<{ ptr: ValueId; ty: IRType }, LoweringError> {
+        if (target instanceof IdentifierExpr) {
+            return this.lowerAssignTargetIdent(target);
+        }
+        if (target instanceof DerefExpr) {
+            return this.lowerAssignTargetDeref(target);
+        }
+        if (target instanceof FieldExpr) {
+            return this.lowerAssignTargetField(target);
+        }
+        if (target instanceof IndexExpr) {
+            return this.lowerAssignTargetIndex(target);
+        }
+        return loweringError(
+            LoweringErrorKind.InvalidAssignmentTarget,
+            `Unsupported assignment target: ${target.constructor.name}`,
+            target.span,
+        );
+    }
+
+    private lowerAssign(expr: AssignExpr): Result<ValueId, LoweringError> {
+        const targetResult = this.lowerAssignTarget(expr.target);
+        if (!targetResult.isOk()) return targetResult;
+        const { ptr, ty } = targetResult.value;
+
+        const valueResult = this.lowerExpressionWithExpected(expr.value, ty);
+        if (!valueResult.isOk()) return valueResult;
+
+        this.builder.store(ptr, valueResult.value, ty);
         return Result.ok(valueResult.value);
     }
 
@@ -1504,10 +1620,14 @@ export class AstToSsaCtx {
                 return Result.ok(ptrId);
             }
             case UnaryOp.Deref: {
-                const loadInst = this.builder.load(
-                    operand,
-                    makeIRIntType(IntWidth.I64),
-                );
+                const operandTy = this.resolveValueType(operand);
+                const loadTy = match(operandTy)
+                    .when(
+                        (t): t is PtrType => t instanceof PtrType,
+                        (t) => t.inner,
+                    )
+                    .otherwise(() => makeIRIntType(IntWidth.I64));
+                const loadInst = this.builder.load(operand, loadTy);
                 return Result.ok(loadInst.id);
             }
             default: {
@@ -2152,6 +2272,9 @@ export class AstToSsaCtx {
             case "vec": {
                 return this.lowerArrayLiteral(expr);
             }
+            case "tuple": {
+                return this.lowerTupleLiteral(expr);
+            }
             default: {
                 return loweringError(
                     LoweringErrorKind.UnsupportedNode,
@@ -2160,6 +2283,35 @@ export class AstToSsaCtx {
                 );
             }
         }
+    }
+
+    private lowerTupleLiteral(expr: MacroExpr): Result<ValueId, LoweringError> {
+        if (expr.args.length === 0) {
+            return Result.ok(this.unitValue());
+        }
+
+        const elementValues: ValueId[] = [];
+        for (const elem of expr.args) {
+            const result = this.lowerExpression(elem);
+            if (!result.isOk()) return result;
+            elementValues.push(result.value);
+        }
+
+        const elementTypes = elementValues.map(
+            (v) => this.resolveValueType(v) ?? makeIRUnitType(),
+        );
+
+        const tupleName = AstToSsaCtx.tupleStructName(elementTypes);
+        const tupleType = makeIRStructType(tupleName, elementTypes);
+
+        this.irModule.structs.set(tupleName, tupleType);
+        this.structFieldNames.set(
+            tupleName,
+            elementTypes.map((_, i) => String(i)),
+        );
+
+        const structCreate = this.builder.structCreate(elementValues, tupleType);
+        return AstToSsaCtx.handleInstructionId(structCreate.id);
     }
 
     private lowerArrayLiteral(expr: MacroExpr): Result<ValueId, LoweringError> {
@@ -3286,6 +3438,31 @@ export class AstToSsaCtx {
         return Result.ok(this.unitValue());
     }
 
+    private static translateArrayTypeNode(typeNode: ArrayTypeNode): IRType {
+        const elemTy = AstToSsaCtx.translateTypeNode(typeNode.element);
+        if (
+            !(typeNode.length instanceof LiteralExpr) ||
+            typeNode.length.literalKind !== LiteralKind.Int
+        ) {
+            internalBug(
+                "Array type requires a literal integer length; non-const lengths are not supported",
+            );
+        }
+        const len = Number(typeNode.length.value);
+        return makeIRArrayType(elemTy, len);
+    }
+
+    private static translateTupleTypeNode(typeNode: TupleTypeNode): IRType {
+        if (typeNode.elements.length === 0) {
+            return makeIRUnitType();
+        }
+        const elementTypes = typeNode.elements.map((e) =>
+            AstToSsaCtx.translateTypeNode(e),
+        );
+        const name = AstToSsaCtx.tupleStructName(elementTypes);
+        return makeIRStructType(name, elementTypes);
+    }
+
     static translateTypeNode(typeNode: TypeNode): IRType {
         if (typeNode instanceof OptionTypeNode) {
             const innerIrType = AstToSsaCtx.translateTypeNode(typeNode.inner);
@@ -3314,17 +3491,32 @@ export class AstToSsaCtx {
             return makeIRIntType(IntWidth.I64);
         }
         if (typeNode instanceof ArrayTypeNode) {
-            const elemTy = AstToSsaCtx.translateTypeNode(typeNode.element);
-            if (
-                !(typeNode.length instanceof LiteralExpr) ||
-                typeNode.length.literalKind !== LiteralKind.Int
-            ) {
-                return makeIRUnitType();
-            }
-            const len = Number(typeNode.length.value);
-            return makeIRArrayType(elemTy, len);
+            return AstToSsaCtx.translateArrayTypeNode(typeNode);
+        }
+        if (typeNode instanceof TupleTypeNode) {
+            return AstToSsaCtx.translateTupleTypeNode(typeNode);
         }
         return makeIRUnitType();
+    }
+
+    private static irTypeName(ty: IRType): string {
+        if (ty instanceof IntType) return `i${String(ty.width)}`;
+        if (ty instanceof FloatType) return `f${String(ty.width)}`;
+        if (ty.kind === IRTypeKind.Bool) return "bool";
+        if (ty instanceof PtrType) {
+            return `ptr_${AstToSsaCtx.irTypeName(ty.inner)}`;
+        }
+        if (ty instanceof StructType) return ty.name;
+        if (ty instanceof ArrayType) {
+            return `arr${String(ty.length)}_${AstToSsaCtx.irTypeName(ty.element)}`;
+        }
+        if (ty.kind === IRTypeKind.Unit) return "unit";
+        return `k${String(ty.kind)}`;
+    }
+
+    private static tupleStructName(elementTypes: IRType[]): string {
+        const parts = elementTypes.map((ty) => AstToSsaCtx.irTypeName(ty));
+        return `__tuple${elementTypes.length}_${parts.join("_")}`;
     }
 
     static namedBuiltin(name: string): BuiltinType | undefined {
