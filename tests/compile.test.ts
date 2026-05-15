@@ -787,3 +787,112 @@ describe("type inference", () => {
         );
     });
 });
+
+describe("lowering correctness (plan 02)", () => {
+    describe("deref type (02.1)", () => {
+        test("deref &i32 loads i32 not i64", () => {
+            const result = compileToIR(
+                "fn test() { let x: i32 = 42; let r = &x; let y = *r; let _ = y; }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+            expect(result.value).toContain("i32           = load");
+            expect(result.value).not.toContain("i64           = load");
+        });
+
+        test("deref &bool loads bool not i64", () => {
+            const result = compileToIR(
+                "fn test() { let x: bool = true; let r = &x; let y = *r; let _ = y; }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+            expect(result.value).toContain("bool          = load");
+        });
+
+        test("deref &&i32 loads the inner reference type", () => {
+            const result = compileToIR(
+                "fn test() { let x: i32 = 1; let r = &x; let rr = &r; let inner = *rr; let _ = inner; }",
+            );
+            expect(result.isOk()).toBe(true);
+        });
+    });
+
+    describe("assignment targets (02.2)", () => {
+        test("struct field assignment compiles", () => {
+            const result = compileToIR(
+                "struct Point { x: i32, y: i32 } fn test() { let mut p = Point { x: 1, y: 2 }; p.x = 10; let _ = p; }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+            expect(result.value).toContain("gep");
+            expect(result.value).toContain("store");
+        });
+
+        test("deref write assignment compiles", () => {
+            const result = compileToIR(
+                "fn test() { let mut x: i32 = 0; let r = &mut x; *r = 99; let _ = x; }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+            expect(result.value).toContain("store");
+        });
+
+        test("array index assignment compiles", () => {
+            const result = compileToIR(
+                "fn test() { let mut arr = vec![1i32, 2, 3]; arr[0] = 42; let _ = arr; }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+            expect(result.value).toContain("gep");
+            expect(result.value).toContain("store");
+        });
+
+        test("unsupported assignment targets produce a clear error", () => {
+            const result = compile(
+                "fn test() { let x = 1; 42 = x; }",
+            );
+            expect(result.isErr()).toBe(true);
+        });
+    });
+
+    describe("tuple lowering (02.3)", () => {
+        test("tuple construction compiles to a struct", () => {
+            const result = compileToIR(
+                "fn test() { let t = (1i32, true); let _ = t; }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+            expect(result.value).toContain("struct_create");
+        });
+
+        test("tuple field access compiles", () => {
+            const result = compileToIR(
+                "fn test() -> i32 { let t = (42i32, false); t.0 }",
+            );
+            expect(result.isOk()).toBe(true);
+            if (result.isErr()) return;
+            expect(result.value).toContain("struct_get");
+        });
+
+        test("empty tuple () lowers to unit", () => {
+            const result = compileToIR(
+                "fn test() -> () { let _t = (); }",
+            );
+            expect(result.isOk()).toBe(true);
+        });
+
+        test("tuple type annotation is recognised", () => {
+            const result = compile(
+                "fn test() -> (i32, bool) { (1, true) }",
+            );
+            expect(result.isOk()).toBe(true);
+        });
+
+        test("nested tuples compile", () => {
+            const result = compileToIR(
+                "fn test() { let t = ((1i32, 2i32), true); let _ = t; }",
+            );
+            expect(result.isOk()).toBe(true);
+        });
+    });
+});

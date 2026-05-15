@@ -9,10 +9,10 @@ module main {
       v4: ptr<ptr<i32>> = alloca ptr<i32>
       store v1 -> v4
       v6: ptr<i32>      = load v4
-      v7: i64           = load v6
-      v8: ptr<i64>      = alloca i64
+      v7: i32           = load v6
+      v8: ptr<i32>      = alloca i32
       store v7 -> v8
-      v10: i64          = load v8
+      v10: i32          = load v8
       v11: i32          = load v1
       v12: bool         = icmp.eq v10, v11
       br_if v12, then: b2, else: b1

@@ -1189,6 +1189,35 @@ function inferVecMacro(
     return Result.ok(inferredType);
 }
 
+function inferTupleMacro(
+    typeCtx: TypeContext,
+    expr: MacroExpr,
+): Result<TupleTypeNode, InferFailure<TupleTypeNode>> {
+    if (expr.args.length === 0) {
+        return Result.ok(new TupleTypeNode(expr.span, []));
+    }
+    const errors: TypeError[] = [];
+    const elementTypes: TypeNode[] = [];
+    for (const arg of expr.args) {
+        const argResult = inferExprType(typeCtx, arg);
+        if (argResult.isErr()) {
+            errors.push(...argResult.error.errors);
+            elementTypes.push(
+                argResult.error.fallback ?? new InferredTypeNode(arg.span),
+            );
+        } else {
+            elementTypes.push(
+                argResult.value ?? new InferredTypeNode(arg.span),
+            );
+        }
+    }
+    const tupleType = new TupleTypeNode(expr.span, elementTypes);
+    if (errors.length > 0) {
+        return Result.err({ errors, fallback: tupleType });
+    }
+    return Result.ok(tupleType);
+}
+
 function inferIndexExpr(
     typeCtx: TypeContext,
     expr: IndexExpr,
@@ -1276,6 +1305,10 @@ function inferExprTypeExtended(
 
     if (expr instanceof MacroExpr && expr.name === "vec") {
         return inferVecMacro(typeCtx, expr);
+    }
+
+    if (expr instanceof MacroExpr && expr.name === "tuple") {
+        return inferTupleMacro(typeCtx, expr);
     }
 
     if (
