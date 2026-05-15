@@ -3499,16 +3499,23 @@ export class AstToSsaCtx {
         return makeIRUnitType();
     }
 
+    private static irTypeName(ty: IRType): string {
+        if (ty instanceof IntType) return `i${String(ty.width)}`;
+        if (ty instanceof FloatType) return `f${String(ty.width)}`;
+        if (ty.kind === IRTypeKind.Bool) return "bool";
+        if (ty instanceof PtrType) {
+            return `ptr_${AstToSsaCtx.irTypeName(ty.inner)}`;
+        }
+        if (ty instanceof StructType) return ty.name;
+        if (ty instanceof ArrayType) {
+            return `arr${String(ty.length)}_${AstToSsaCtx.irTypeName(ty.element)}`;
+        }
+        if (ty.kind === IRTypeKind.Unit) return "unit";
+        return `k${String(ty.kind)}`;
+    }
+
     private static tupleStructName(elementTypes: IRType[]): string {
-        const parts = elementTypes.map((ty) => {
-            if (ty instanceof IntType) return `i${String(ty.width)}`;
-            if (ty instanceof FloatType) return `f${String(ty.width)}`;
-            if (ty.kind === IRTypeKind.Bool) return "bool";
-            if (ty instanceof PtrType) return "ptr";
-            if (ty instanceof StructType) return ty.name;
-            if (ty instanceof ArrayType) return `arr${String(ty.length)}`;
-            return "u";
-        });
+        const parts = elementTypes.map((ty) => AstToSsaCtx.irTypeName(ty));
         return `__tuple${elementTypes.length}_${parts.join("_")}`;
     }
 
