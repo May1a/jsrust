@@ -1,10 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import { tokenize, TokenType } from "../src/parse/tokenizer";
 
-// Helper: tokenize a source fragment, appending a newline to avoid the
-// tokenizer's undefined-peek edge case at end-of-input.
 function tok(source: string) {
-    return tokenize(`${source}\n`);
+    return tokenize(source);
 }
 
 describe("literals", () => {
@@ -118,6 +116,13 @@ describe("delimiters", () => {
 });
 
 describe("identifiers", () => {
+    test("identifier at end of input", () => {
+        const tokens = tok("foo");
+        expect(tokens[0].type).toBe(TokenType.Identifier);
+        expect(tokens[0].value).toBe("foo");
+        expect(tokens[1].type).toBe(TokenType.Eof);
+    });
+
     test("plain identifier", () => {
         const tokens = tok("foo");
         expect(tokens[0].type).toBe(TokenType.Identifier);

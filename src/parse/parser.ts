@@ -1554,6 +1554,15 @@ class Parser {
             !this.check(TokenType.CloseCurly) &&
             !this.check(TokenType.Eof)
         ) {
+            if (this.isStatementItemStart()) {
+                const itemStart = this.peek();
+                const items = this.parseItems();
+                for (const item of items) {
+                    statements.push(new ItemStmt(this.spanFrom(itemStart), item));
+                }
+                continue;
+            }
+
             const statement = this.parseStatement();
             if (!statement) break;
 

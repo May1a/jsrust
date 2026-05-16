@@ -134,11 +134,11 @@ function initState(source: string): LexerState {
     return { source, pos: 0, line: 1, column: 1 } as LexerState;
 }
 
-function peek(state: LexerState): string {
+function peek(state: LexerState): string | undefined {
     return state.source[state.pos];
 }
 
-function peekAt(state: LexerState, offset: number): string {
+function peekAt(state: LexerState, offset: number): string | undefined {
     return state.source[state.pos + offset];
 }
 
@@ -178,31 +178,52 @@ function skipBlockComment(state: LexerState): boolean {
     return false;
 }
 
-function isIdentifierStart(ch: string): boolean {
+function isIdentifierStart(ch: string | undefined): boolean {
+    if (ch === undefined) {
+        return false;
+    }
     return ch === "_" || /[a-zA-Z]/.test(ch);
 }
 
-function isIdentifierChar(ch: string): boolean {
+function isIdentifierChar(ch: string | undefined): boolean {
+    if (ch === undefined) {
+        return false;
+    }
     return ch === "_" || /[a-zA-Z0-9]/.test(ch);
 }
 
-function isWhitespace(ch: string): boolean {
+function isWhitespace(ch: string | undefined): boolean {
+    if (ch === undefined) {
+        return false;
+    }
     return /\s/.test(ch);
 }
 
-function isDigit(ch: string): boolean {
+function isDigit(ch: string | undefined): boolean {
+    if (ch === undefined) {
+        return false;
+    }
     return /[0-9]/.test(ch);
 }
 
-function isHexDigit(ch: string): boolean {
+function isHexDigit(ch: string | undefined): boolean {
+    if (ch === undefined) {
+        return false;
+    }
     return /[0-9a-fA-F]/.test(ch);
 }
 
-function isOctalDigit(ch: string): boolean {
+function isOctalDigit(ch: string | undefined): boolean {
+    if (ch === undefined) {
+        return false;
+    }
     return /[0-7]/.test(ch);
 }
 
-function isBinaryDigit(ch: string): boolean {
+function isBinaryDigit(ch: string | undefined): boolean {
+    if (ch === undefined) {
+        return false;
+    }
     return /[01]/.test(ch);
 }
 
@@ -229,7 +250,7 @@ function readIdentifier(state: LexerState): Token {
 function readPrefixedInteger(
     state: LexerState,
     prefix: string,
-    isDigitFn: (ch: string) => boolean,
+    isDigitFn: (ch: string | undefined) => boolean,
     startLine: number,
     startColumn: number,
 ): Token {
@@ -392,7 +413,7 @@ function readOperatorOrDelimiter(state: LexerState): Token | undefined {
 
     if (!ch) return undefined;
 
-    const singleCharTokens: Record<string, TokenTypeValue> = {
+    const singleCharTokens: Partial<Record<string, TokenTypeValue>> = {
         "(": TokenType.OpenParen,
         ")": TokenType.CloseParen,
         "{": TokenType.OpenCurly,
@@ -420,7 +441,7 @@ function readOperatorOrDelimiter(state: LexerState): Token | undefined {
         "@": TokenType.At,
     };
 
-    const twoCharTokens: Record<string, TokenTypeValue> = {
+    const twoCharTokens: Partial<Record<string, TokenTypeValue>> = {
         "+=": TokenType.PlusEq,
         "-=": TokenType.MinusEq,
         "*=": TokenType.StarEq,
@@ -439,16 +460,14 @@ function readOperatorOrDelimiter(state: LexerState): Token | undefined {
     };
 
     const next = peekAt(state, 1);
-    const twoChar = ch + next;
-    if (next && twoCharTokens[twoChar]) {
-        advance(state);
-        advance(state);
-        return makeToken(
-            twoCharTokens[twoChar],
-            twoChar,
-            startLine,
-            startColumn,
-        );
+    if (next !== undefined) {
+        const twoChar = ch + next;
+        const twoCharToken = twoCharTokens[twoChar];
+        if (twoCharToken !== undefined) {
+            advance(state);
+            advance(state);
+            return makeToken(twoCharToken, twoChar, startLine, startColumn);
+        }
     }
     if (singleCharTokens[ch]) {
         advance(state);

@@ -31,6 +31,7 @@ import {
     TypeAliasItem,
     UnsafeBlockExpr,
     UnsafeItem,
+    UseItem,
 } from "../src/parse/ast";
 
 function expectInstanceOf<T>(
@@ -40,16 +41,14 @@ function expectInstanceOf<T>(
     expect(value).toBeInstanceOf(ctor);
 }
 
-// Appending a newline avoids the tokenizer's undefined-peek edge case when
-// source ends with an identifier or keyword character.
 function expr(src: string) {
-    return parseExpression(`${src}\n`);
+    return parseExpression(src);
 }
 function stmt(src: string) {
-    return parseStatement(`${src}\n`);
+    return parseStatement(src);
 }
 function mod(src: string) {
-    return parseModule(`${src}\n`);
+    return parseModule(src);
 }
 
 describe("expressions", () => {
@@ -435,6 +434,25 @@ describe("items", () => {
         if (firstItem.body === undefined) return;
         expectInstanceOf(firstItem.body.stmts[0], ItemStmt);
         expectInstanceOf(firstItem.body.stmts[0].item, ConstItem);
+    });
+
+    test("block-local grouped use items each remain reachable", () => {
+        const result = mod("fn main() { use a::{b, c}; }");
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) return;
+
+        const [firstItem] = result.value.items;
+        expectInstanceOf(firstItem, FnItem);
+        expect(firstItem.body).toBeDefined();
+        if (firstItem.body === undefined) return;
+
+        expect(firstItem.body.stmts).toHaveLength(2);
+        expectInstanceOf(firstItem.body.stmts[0], ItemStmt);
+        expectInstanceOf(firstItem.body.stmts[0].item, UseItem);
+        expect(firstItem.body.stmts[0].item.path).toEqual(["a", "b"]);
+        expectInstanceOf(firstItem.body.stmts[1], ItemStmt);
+        expectInstanceOf(firstItem.body.stmts[1].item, UseItem);
+        expect(firstItem.body.stmts[1].item.path).toEqual(["a", "c"]);
     });
 
     test("type aliases require trailing semicolons", () => {
