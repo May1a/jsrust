@@ -22,10 +22,71 @@ import {
     TupleTypeNode,
 } from "../src/parse/ast";
 import { deserializeModule } from "../src/ir/ir_deserialize";
-import { EnumGetDataInst, IRTypeKind } from "../src/ir/ir";
 import { inferModule } from "../src/passes/inference";
 import { TypeContext } from "../src/utils/type_context";
 import { compileToIR } from "./helpers";
+import {
+    validateFunction,
+    checkCallArgs,
+    checkReturnTypes,
+    populateAndCheckDefUse,
+    ValidationContext,
+    type IRValidationError,
+} from "../src/ir/ir_validate";
+import {
+    AllocaInst,
+    BconstInst,
+    BrIfTerm,
+    BrTerm,
+    CallInst,
+    EnumCreateInst,
+    EnumGetDataInst,
+    FconstInst,
+    FloatWidth,
+    IaddInst,
+    IcmpInst,
+    IconstInst,
+    IntWidth,
+    LoadInst,
+    type IRFunction,
+    IRTypeKind,
+    RetTerm,
+    StoreInst,
+    StructCreateInst,
+    StructGetInst,
+    addIRBlock,
+    addIRBlockParam,
+    addIRInstruction,
+    freshBlockId,
+    freshFunctionId,
+    freshValueId,
+    makeIRBlock,
+    makeIRBoolType,
+    makeIREnumType,
+    makeIRFloatType,
+    makeIRFnType,
+    makeIRFunction,
+    makeIRIntType,
+    makeIRStructType,
+    makeIRUnitType,
+    setIRTerminator,
+} from "../src/ir/ir";
+
+function findValidationError(
+    errors: IRValidationError[],
+    substr: string,
+): IRValidationError | undefined {
+    return errors.find((e) => e.message.includes(substr));
+}
+
+function makeTestValidationFn(): IRFunction {
+    return makeIRFunction(
+        freshFunctionId(),
+        "test",
+        [],
+        makeIRUnitType(),
+    );
+}
 
 describe("compile", () => {
     test("rejects implicit unit for non-unit return type", () => {
@@ -893,6 +954,730 @@ describe("lowering correctness (plan 02)", () => {
                 "fn test() { let t = ((1i32, 2i32), true); let _ = t; }",
             );
             expect(result.isOk()).toBe(true);
+        });
+    });
+});
+
+describe("ir validation", () => {
+    const BAD_BLOCK_ID = 999;
+    const BAD_VALUE_ID = 9999;
+    const OUT_OF_BOUNDS_INDEX = 5;
+    const OUT_OF_BOUNDS_VARIANT = 9;
+    const TEST_INT_VALUE = 42;
+
+    describe("terminator presence", () => {
+        test("passes when every block has a terminator", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            setIRTerminator(block, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isOk()).toBe(true);
+        });
+
+        test("fails when a block has no terminator", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(result.error).toHaveLength(1);
+            expect(findValidationError(result.error, "no terminator")).toBeDefined();
+        });
+    });
+
+    describe("branch targets", () => {
+        test("fails when branch target does not exist", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            setIRTerminator(block, new BrTerm(BAD_BLOCK_ID, []));
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(findValidationError(result.error, "does not exist")).toBeDefined();
+        });
+
+        test("passes when branch targets exist", () => {
+            const fn = makeTestValidationFn();
+            const a = makeIRBlock(freshBlockId(), "a");
+            const b = makeIRBlock(freshBlockId(), "b");
+            addIRBlock(fn, a);
+            addIRBlock(fn, b);
+            setIRTerminator(a, new BrTerm(b.id, []));
+            setIRTerminator(b, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isOk()).toBe(true);
+        });
+    });
+
+    describe("block parameter consistency", () => {
+        test("fails when branch arg count does not match params", () => {
+            const fn = makeTestValidationFn();
+            const a = makeIRBlock(freshBlockId(), "a");
+            const b = makeIRBlock(freshBlockId(), "b");
+            addIRBlockParam(b, freshValueId(), makeIRIntType(IntWidth.I32));
+            addIRBlockParam(b, freshValueId(), makeIRBoolType());
+            addIRBlock(fn, a);
+            addIRBlock(fn, b);
+            setIRTerminator(a, new BrTerm(b.id, [freshValueId()]));
+            setIRTerminator(b, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(
+                findValidationError(result.error, "has 1 arguments, expected 2"),
+            ).toBeDefined();
+        });
+    });
+
+    describe("def-use consistency", () => {
+        test("passes when all values are defined before use", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const c1 = new IconstInst(
+                freshValueId(),
+                makeIRIntType(IntWidth.I32),
+                1,
+            );
+            const c2 = new IconstInst(
+                freshValueId(),
+                makeIRIntType(IntWidth.I32),
+                2,
+            );
+            addIRInstruction(block, c1);
+            addIRInstruction(block, c2);
+            addIRInstruction(
+                block,
+                new IaddInst(
+                    freshValueId(),
+                    makeIRIntType(IntWidth.I32),
+                    c1.id,
+                    c2.id,
+                ),
+            );
+            setIRTerminator(block, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isOk()).toBe(true);
+        });
+
+        test("fails when a value is used before definition", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const c1 = new IconstInst(
+                freshValueId(),
+                makeIRIntType(IntWidth.I32),
+                1,
+            );
+            addIRInstruction(block, c1);
+            addIRInstruction(
+                block,
+                new IaddInst(
+                    freshValueId(),
+                    makeIRIntType(IntWidth.I32),
+                    c1.id,
+                    BAD_VALUE_ID,
+                ),
+            );
+            setIRTerminator(block, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(
+                findValidationError(result.error, "used before definition"),
+            ).toBeDefined();
+        });
+    });
+
+    describe("instruction operand type consistency", () => {
+        test("passes when int arithmetic operands are IntType", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const c1 = new IconstInst(
+                freshValueId(),
+                makeIRIntType(IntWidth.I32),
+                1,
+            );
+            const c2 = new IconstInst(
+                freshValueId(),
+                makeIRIntType(IntWidth.I32),
+                2,
+            );
+            addIRInstruction(block, c1);
+            addIRInstruction(block, c2);
+            addIRInstruction(
+                block,
+                new IaddInst(
+                    freshValueId(),
+                    makeIRIntType(IntWidth.I32),
+                    c1.id,
+                    c2.id,
+                ),
+            );
+            setIRTerminator(block, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isOk()).toBe(true);
+        });
+
+        test("fails when int arithmetic gets a float operand", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const c1 = new IconstInst(
+                freshValueId(),
+                makeIRIntType(IntWidth.I32),
+                1,
+            );
+            const c2 = new FconstInst(
+                freshValueId(),
+                makeIRFloatType(FloatWidth.F64),
+                2,
+            );
+            addIRInstruction(block, c1);
+            addIRInstruction(block, c2);
+            addIRInstruction(
+                block,
+                new IaddInst(
+                    freshValueId(),
+                    makeIRIntType(IntWidth.I32),
+                    c1.id,
+                    c2.id,
+                ),
+            );
+            setIRTerminator(block, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(
+                findValidationError(result.error, "must be IntType"),
+            ).toBeDefined();
+        });
+
+        test("fails when Icmp operands have different types", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const c1 = new IconstInst(
+                freshValueId(),
+                makeIRIntType(IntWidth.I32),
+                1,
+            );
+            const c2 = new BconstInst(freshValueId(), true);
+            addIRInstruction(block, c1);
+            addIRInstruction(block, c2);
+            addIRInstruction(
+                block,
+                new IcmpInst(freshValueId(), 0, c1.id, c2.id),
+            );
+            setIRTerminator(block, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(
+                findValidationError(result.error, "must have same type"),
+            ).toBeDefined();
+        });
+
+        test("fails when Store pointer is not PtrType", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const val = new IconstInst(
+                freshValueId(),
+                makeIRIntType(IntWidth.I32),
+                TEST_INT_VALUE,
+            );
+            const ptr = new IconstInst(
+                freshValueId(),
+                makeIRIntType(IntWidth.I32),
+                0,
+            );
+            addIRInstruction(block, val);
+            addIRInstruction(block, ptr);
+            addIRInstruction(
+                block,
+                new StoreInst(freshValueId(), val.id, ptr.id),
+            );
+            setIRTerminator(block, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(
+                findValidationError(result.error, "must be PtrType"),
+            ).toBeDefined();
+        });
+    });
+
+    describe("enum operations bounds check", () => {
+        test("passes when enum tag is in bounds", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const enumTy = makeIREnumType("MyEnum", [
+                [],
+                [makeIRIntType(IntWidth.I32)],
+            ]);
+            addIRInstruction(
+                block,
+                new EnumCreateInst(freshValueId(), 0, undefined, enumTy),
+            );
+            setIRTerminator(block, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isOk()).toBe(true);
+        });
+
+        test("fails when EnumCreate tag is out of bounds", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            addIRInstruction(
+                block,
+                new EnumCreateInst(
+                    freshValueId(),
+                    OUT_OF_BOUNDS_INDEX,
+                    undefined,
+                    makeIREnumType("MyEnum", [[]]),
+                ),
+            );
+            setIRTerminator(block, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(
+                findValidationError(result.error, "out of bounds"),
+            ).toBeDefined();
+        });
+
+        test("fails when EnumGetData variant is out of bounds", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const enumTy = makeIREnumType("MyEnum", [[]]);
+            const ev = new EnumCreateInst(
+                freshValueId(),
+                0,
+                undefined,
+                enumTy,
+            );
+            addIRInstruction(block, ev);
+            addIRInstruction(
+                block,
+                new EnumGetDataInst(
+                    freshValueId(),
+                    ev.id,
+                    enumTy,
+                    makeIRIntType(IntWidth.I32),
+                    OUT_OF_BOUNDS_VARIANT,
+                    0,
+                ),
+            );
+            setIRTerminator(block, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(
+                findValidationError(result.error, "out of bounds"),
+            ).toBeDefined();
+        });
+    });
+
+    describe("struct operations check", () => {
+        test("fails when StructGet index is out of bounds", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const structTy = makeIRStructType("MyStruct", [
+                makeIRIntType(IntWidth.I32),
+            ]);
+            const sv = new StructCreateInst(
+                freshValueId(),
+                [freshValueId()],
+                structTy,
+            );
+            addIRInstruction(block, sv);
+            addIRInstruction(
+                block,
+                new StructGetInst(
+                    freshValueId(),
+                    sv.id,
+                    OUT_OF_BOUNDS_INDEX,
+                    structTy,
+                    makeIRIntType(IntWidth.I32),
+                ),
+            );
+            setIRTerminator(block, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(
+                findValidationError(result.error, "out of bounds"),
+            ).toBeDefined();
+        });
+
+        test("fails when StructCreate field count does not match", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const structTy = makeIRStructType("MyStruct", [
+                makeIRIntType(IntWidth.I32),
+                makeIRBoolType(),
+            ]);
+            addIRInstruction(
+                block,
+                new StructCreateInst(
+                    freshValueId(),
+                    [freshValueId()],
+                    structTy,
+                ),
+            );
+            setIRTerminator(block, new RetTerm());
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(
+                findValidationError(result.error, "has 1 fields, expected 2"),
+            ).toBeDefined();
+        });
+    });
+
+    describe("call argument count", () => {
+        test("passes when args match callee params", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const argVal = new IconstInst(
+                freshValueId(),
+                makeIRIntType(IntWidth.I32),
+                TEST_INT_VALUE,
+            );
+            addIRInstruction(block, argVal);
+            const calleeType = makeIRFnType(
+                [makeIRIntType(IntWidth.I32)],
+                makeIRUnitType(),
+            );
+            addIRInstruction(
+                block,
+                new CallInst(
+                    freshValueId(),
+                    0,
+                    [argVal.id],
+                    calleeType,
+                    makeIRUnitType(),
+                ),
+            );
+            setIRTerminator(block, new RetTerm());
+            const ctx = new ValidationContext(fn);
+            populateAndCheckDefUse(ctx);
+            checkCallArgs(ctx);
+            expect(ctx.errors).toHaveLength(0);
+        });
+
+        test("fails when call has wrong arg count", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const argVal = new IconstInst(
+                freshValueId(),
+                makeIRIntType(IntWidth.I32),
+                TEST_INT_VALUE,
+            );
+            addIRInstruction(block, argVal);
+            const calleeType = makeIRFnType(
+                [makeIRIntType(IntWidth.I32), makeIRBoolType()],
+                makeIRUnitType(),
+            );
+            addIRInstruction(
+                block,
+                new CallInst(
+                    freshValueId(),
+                    0,
+                    [argVal.id],
+                    calleeType,
+                    makeIRUnitType(),
+                ),
+            );
+            setIRTerminator(block, new RetTerm());
+            const ctx = new ValidationContext(fn);
+            populateAndCheckDefUse(ctx);
+            checkCallArgs(ctx);
+            expect(ctx.errors.length).toBeGreaterThan(0);
+            expect(
+                findValidationError(ctx.errors, "has 1 args, expected 2"),
+            ).toBeDefined();
+        });
+    });
+
+    describe("return type matching", () => {
+        test("passes when return value matches function return type", () => {
+            const fn = makeIRFunction(
+                freshFunctionId(),
+                "test",
+                [],
+                makeIRIntType(IntWidth.I32),
+            );
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const val = new IconstInst(
+                freshValueId(),
+                makeIRIntType(IntWidth.I32),
+                TEST_INT_VALUE,
+            );
+            addIRInstruction(block, val);
+            setIRTerminator(block, new RetTerm(val.id));
+            const ctx = new ValidationContext(fn);
+            populateAndCheckDefUse(ctx);
+            checkReturnTypes(ctx);
+            expect(ctx.errors).toHaveLength(0);
+        });
+
+        test("fails when return value type does not match", () => {
+            const fn = makeIRFunction(
+                freshFunctionId(),
+                "test",
+                [],
+                makeIRBoolType(),
+            );
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const val = new IconstInst(
+                freshValueId(),
+                makeIRIntType(IntWidth.I32),
+                TEST_INT_VALUE,
+            );
+            addIRInstruction(block, val);
+            setIRTerminator(block, new RetTerm(val.id));
+            const ctx = new ValidationContext(fn);
+            populateAndCheckDefUse(ctx);
+            checkReturnTypes(ctx);
+            expect(ctx.errors.length).toBeGreaterThan(0);
+            expect(
+                findValidationError(
+                    ctx.errors,
+                    "Return type mismatch",
+                ),
+            ).toBeDefined();
+        });
+    });
+
+    describe("validation error context", () => {
+        test("includes function name in error", () => {
+            const fn = makeIRFunction(
+                freshFunctionId(),
+                "my_func",
+                [],
+                makeIRUnitType(),
+            );
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(result.error[0].functionName).toBe("my_func");
+        });
+
+        test("includes block name when applicable", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "my_block");
+            addIRBlock(fn, block);
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(result.error[0].blockName).toBe("my_block");
+        });
+    });
+
+    describe("dominance-aware def-use", () => {
+        test("fails when sibling block value is used without block param", () => {
+            // entry → left | right; left defines v; right uses v without block param
+            const fn = makeTestValidationFn();
+            const entry = makeIRBlock(freshBlockId(), "entry");
+            const left = makeIRBlock(freshBlockId(), "left");
+            const right = makeIRBlock(freshBlockId(), "right");
+            addIRBlock(fn, entry);
+            addIRBlock(fn, left);
+            addIRBlock(fn, right);
+
+            const cond = new BconstInst(freshValueId(), true);
+            addIRInstruction(entry, cond);
+            setIRTerminator(entry, new BrIfTerm(cond.id, left.id, right.id, [], []));
+
+            const v = new IconstInst(freshValueId(), makeIRIntType(IntWidth.I32), TEST_INT_VALUE);
+            addIRInstruction(left, v);
+            setIRTerminator(left, new RetTerm());
+
+            // right uses v, which is defined only in sibling left — invalid SSA
+            addIRInstruction(right, new IaddInst(freshValueId(), makeIRIntType(IntWidth.I32), v.id, v.id));
+            setIRTerminator(right, new RetTerm());
+
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(findValidationError(result.error, "used before definition")).toBeDefined();
+        });
+
+        test("passes when dominator-defined value is used in dominated block", () => {
+            // entry defines v; successor uses v — valid SSA
+            const fn = makeTestValidationFn();
+            const entry = makeIRBlock(freshBlockId(), "entry");
+            const succ = makeIRBlock(freshBlockId(), "succ");
+            addIRBlock(fn, entry);
+            addIRBlock(fn, succ);
+
+            const v = new IconstInst(freshValueId(), makeIRIntType(IntWidth.I32), 1);
+            addIRInstruction(entry, v);
+            setIRTerminator(entry, new BrTerm(succ.id, []));
+
+            addIRInstruction(succ, new IaddInst(freshValueId(), makeIRIntType(IntWidth.I32), v.id, v.id));
+            setIRTerminator(succ, new RetTerm());
+
+            const result = validateFunction(fn);
+            expect(result.isOk()).toBe(true);
+        });
+    });
+
+    describe("terminator operand def-use", () => {
+        test("fails when RetTerm references undefined value", () => {
+            const fn = makeIRFunction(
+                freshFunctionId(),
+                "test",
+                [],
+                makeIRIntType(IntWidth.I32),
+            );
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            setIRTerminator(block, new RetTerm(BAD_VALUE_ID));
+
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(findValidationError(result.error, "used before definition")).toBeDefined();
+        });
+
+        test("fails when BrIfTerm condition references undefined value", () => {
+            const fn = makeTestValidationFn();
+            const entry = makeIRBlock(freshBlockId(), "entry");
+            const thenBlock = makeIRBlock(freshBlockId(), "then");
+            const elseBlock = makeIRBlock(freshBlockId(), "else");
+            addIRBlock(fn, entry);
+            addIRBlock(fn, thenBlock);
+            addIRBlock(fn, elseBlock);
+
+            setIRTerminator(entry, new BrIfTerm(BAD_VALUE_ID, thenBlock.id, elseBlock.id, [], []));
+            setIRTerminator(thenBlock, new RetTerm());
+            setIRTerminator(elseBlock, new RetTerm());
+
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(findValidationError(result.error, "used before definition")).toBeDefined();
+        });
+    });
+
+    describe("load result type vs pointee type", () => {
+        test("passes when load result type matches pointee type", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+
+            const alloca = new AllocaInst(freshValueId(), makeIRIntType(IntWidth.I32));
+            const load = new LoadInst(freshValueId(), alloca.id, makeIRIntType(IntWidth.I32));
+            addIRInstruction(block, alloca);
+            addIRInstruction(block, load);
+            setIRTerminator(block, new RetTerm());
+
+            const result = validateFunction(fn);
+            expect(result.isOk()).toBe(true);
+        });
+
+        test("fails when load result type does not match pointee type", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+
+            // alloca i32 → ptr<i32>, but load as bool
+            const alloca = new AllocaInst(freshValueId(), makeIRIntType(IntWidth.I32));
+            const load = new LoadInst(freshValueId(), alloca.id, makeIRBoolType());
+            addIRInstruction(block, alloca);
+            addIRInstruction(block, load);
+            setIRTerminator(block, new RetTerm());
+
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(
+                findValidationError(result.error, "does not match pointer inner type"),
+            ).toBeDefined();
+        });
+    });
+
+    describe("store exact type equality", () => {
+        test("fails when storing i64 through ptr<i32> (same kind, different width)", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+
+            const alloca = new AllocaInst(freshValueId(), makeIRIntType(IntWidth.I32));
+            const val = new IconstInst(freshValueId(), makeIRIntType(IntWidth.I64), 0);
+            addIRInstruction(block, alloca);
+            addIRInstruction(block, val);
+            addIRInstruction(block, new StoreInst(freshValueId(), val.id, alloca.id));
+            setIRTerminator(block, new RetTerm());
+
+            const result = validateFunction(fn);
+            expect(result.isErr()).toBe(true);
+            if (result.isOk()) return;
+            expect(
+                findValidationError(result.error, "does not match pointer inner type"),
+            ).toBeDefined();
+        });
+    });
+
+    describe("checkReturnTypes and checkCallArgs (deferred from validateFunction pending Plan 04)", () => {
+        test("checkReturnTypes catches return type mismatch", () => {
+            const fn = makeIRFunction(
+                freshFunctionId(),
+                "test",
+                [],
+                makeIRIntType(IntWidth.I32),
+            );
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const val = new BconstInst(freshValueId(), true);
+            addIRInstruction(block, val);
+            setIRTerminator(block, new RetTerm(val.id));
+
+            const ctx = new ValidationContext(fn);
+            populateAndCheckDefUse(ctx);
+            checkReturnTypes(ctx);
+            expect(ctx.errors.length).toBeGreaterThan(0);
+            expect(findValidationError(ctx.errors, "Return type mismatch")).toBeDefined();
+        });
+
+        test("checkCallArgs catches wrong call arg count", () => {
+            const fn = makeTestValidationFn();
+            const block = makeIRBlock(freshBlockId(), "entry");
+            addIRBlock(fn, block);
+            const calleeType = makeIRFnType(
+                [makeIRIntType(IntWidth.I32), makeIRIntType(IntWidth.I32)],
+                makeIRUnitType(),
+            );
+            const arg = new IconstInst(freshValueId(), makeIRIntType(IntWidth.I32), 1);
+            addIRInstruction(block, arg);
+            addIRInstruction(
+                block,
+                new CallInst(freshValueId(), 0, [arg.id], calleeType, makeIRUnitType()),
+            );
+            setIRTerminator(block, new RetTerm());
+
+            const ctx = new ValidationContext(fn);
+            populateAndCheckDefUse(ctx);
+            checkCallArgs(ctx);
+            expect(ctx.errors.length).toBeGreaterThan(0);
+            expect(findValidationError(ctx.errors, "has 1 args, expected 2")).toBeDefined();
         });
     });
 });

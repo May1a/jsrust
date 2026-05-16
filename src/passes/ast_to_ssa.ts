@@ -260,6 +260,57 @@ function zeroSpan(): Span {
     return new Span(0, 0, 0, 0);
 }
 
+function intSuffixToWidth(suffix: string | undefined): IntWidth {
+    switch (suffix) {
+        case "i8": {
+            return IntWidth.I8;
+        }
+        case "i16": {
+            return IntWidth.I16;
+        }
+        case "i32": {
+            return IntWidth.I32;
+        }
+        case "i64": {
+            return IntWidth.I64;
+        }
+        case "i128": {
+            return IntWidth.I128;
+        }
+        case "isize": {
+            return IntWidth.Isize;
+        }
+        case "u8": {
+            return IntWidth.U8;
+        }
+        case "u16": {
+            return IntWidth.U16;
+        }
+        case "u32": {
+            return IntWidth.U32;
+        }
+        case "u64": {
+            return IntWidth.U64;
+        }
+        case "u128": {
+            return IntWidth.U128;
+        }
+        case "usize": {
+            return IntWidth.Usize;
+        }
+        default: {
+            return IntWidth.I32;
+        }
+    }
+}
+
+function floatSuffixToWidth(suffix: string | undefined): FloatWidth {
+    if (suffix === "f32") {
+        return FloatWidth.F32;
+    }
+    return FloatWidth.F64;
+}
+
 export class AstToSsaCtx {
     readonly builder: IRBuilder;
     readonly irModule: IRModule;
@@ -848,7 +899,8 @@ export class AstToSsaCtx {
                 } else {
                     value = Number(expr.value);
                 }
-                const constInst = this.builder.iconst(value, IntWidth.I32);
+                const width = intSuffixToWidth(expr.suffix);
+                const constInst = this.builder.iconst(value, width);
                 return AstToSsaCtx.handleInstructionId(constInst.id);
             }
             case LiteralKind.Float: {
@@ -858,7 +910,8 @@ export class AstToSsaCtx {
                 } else {
                     value = Number(expr.value);
                 }
-                const constInst = this.builder.fconst(value, FloatWidth.F64);
+                const width = floatSuffixToWidth(expr.suffix);
+                const constInst = this.builder.fconst(value, width);
                 return AstToSsaCtx.handleInstructionId(constInst.id);
             }
             case LiteralKind.Bool: {
@@ -1242,27 +1295,43 @@ export class AstToSsaCtx {
         );
     }
 
+    private resolveIntWidth(value: ValueId): IntWidth {
+        const ty = this.resolveValueType(value);
+        return match(ty)
+            .with(P.instanceOf(IntType), (t) => t.width)
+            .otherwise(() => IntWidth.I32);
+    }
+
+    private resolveFloatWidth(value: ValueId): FloatWidth {
+        const ty = this.resolveValueType(value);
+        return match(ty)
+            .with(P.instanceOf(FloatType), (t) => t.width)
+            .otherwise(() => FloatWidth.F64);
+    }
+
     private handleArithmeticOperation(
         op: BinaryOp,
         left: ValueId,
         right: ValueId,
         isFloat: boolean,
     ): Result<ValueId, LoweringError> {
+        const intWidth = this.resolveIntWidth(left);
+        const floatWidth = this.resolveFloatWidth(left);
         switch (op) {
             case BinaryOp.Add: {
-                return this.handleAddOperation(left, right, isFloat);
+                return this.handleAddOperation(left, right, isFloat, intWidth, floatWidth);
             }
             case BinaryOp.Sub: {
-                return this.handleSubOperation(left, right, isFloat);
+                return this.handleSubOperation(left, right, isFloat, intWidth, floatWidth);
             }
             case BinaryOp.Mul: {
-                return this.handleMulOperation(left, right, isFloat);
+                return this.handleMulOperation(left, right, isFloat, intWidth, floatWidth);
             }
             case BinaryOp.Div: {
-                return this.handleDivOperation(left, right, isFloat);
+                return this.handleDivOperation(left, right, isFloat, intWidth, floatWidth);
             }
             case BinaryOp.Rem: {
-                return this.handleRemOperation(left, right);
+                return this.handleRemOperation(left, right, intWidth);
             }
             case BinaryOp.Eq:
             case BinaryOp.Ne:
@@ -1401,12 +1470,14 @@ export class AstToSsaCtx {
         left: ValueId,
         right: ValueId,
         isFloat: boolean,
+        intWidth: IntWidth,
+        floatWidth: FloatWidth,
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
-            const addInst = this.builder.fadd(left, right, FloatWidth.F64);
+            const addInst = this.builder.fadd(left, right, floatWidth);
             return Result.ok(addInst.id);
         }
-        const addInst = this.builder.iadd(left, right, IntWidth.I32);
+        const addInst = this.builder.iadd(left, right, intWidth);
         return Result.ok(addInst.id);
     }
 
@@ -1414,12 +1485,14 @@ export class AstToSsaCtx {
         left: ValueId,
         right: ValueId,
         isFloat: boolean,
+        intWidth: IntWidth,
+        floatWidth: FloatWidth,
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
-            const subInst = this.builder.fsub(left, right, FloatWidth.F64);
+            const subInst = this.builder.fsub(left, right, floatWidth);
             return Result.ok(subInst.id);
         }
-        const subInst = this.builder.isub(left, right, IntWidth.I32);
+        const subInst = this.builder.isub(left, right, intWidth);
         return Result.ok(subInst.id);
     }
 
@@ -1427,12 +1500,14 @@ export class AstToSsaCtx {
         left: ValueId,
         right: ValueId,
         isFloat: boolean,
+        intWidth: IntWidth,
+        floatWidth: FloatWidth,
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
-            const mulInst = this.builder.fmul(left, right, FloatWidth.F64);
+            const mulInst = this.builder.fmul(left, right, floatWidth);
             return Result.ok(mulInst.id);
         }
-        const mulInst = this.builder.imul(left, right, IntWidth.I32);
+        const mulInst = this.builder.imul(left, right, intWidth);
         return Result.ok(mulInst.id);
     }
 
@@ -1440,20 +1515,23 @@ export class AstToSsaCtx {
         left: ValueId,
         right: ValueId,
         isFloat: boolean,
+        intWidth: IntWidth,
+        floatWidth: FloatWidth,
     ): Result<ValueId, LoweringError> {
         if (isFloat) {
-            const divInst = this.builder.fdiv(left, right, FloatWidth.F64);
+            const divInst = this.builder.fdiv(left, right, floatWidth);
             return Result.ok(divInst.id);
         }
-        const divInst = this.builder.idiv(left, right, IntWidth.I32);
+        const divInst = this.builder.idiv(left, right, intWidth);
         return Result.ok(divInst.id);
     }
 
     private handleRemOperation(
         left: ValueId,
         right: ValueId,
+        intWidth: IntWidth,
     ): Result<ValueId, LoweringError> {
-        const remInst = this.builder.imod(left, right, IntWidth.I32);
+        const remInst = this.builder.imod(left, right, intWidth);
         return Result.ok(remInst.id);
     }
 
@@ -2788,17 +2866,14 @@ export class AstToSsaCtx {
         if (baseType instanceof PtrType) {
             const { inner } = baseType;
             if (inner instanceof StructType) {
-                // Resolve the full struct type from the module registry, since
-                // Types translated from TypeNodes may have empty field lists.
-                const resolvedInner =
-                    this.irModule.structs.get(inner.name) ?? inner;
-                const deref = this.builder.load(baseValue, resolvedInner);
+                const deref = this.builder.load(baseValue, inner);
                 baseValue = deref.id;
-                baseType = resolvedInner;
+                baseType =
+                    this.irModule.structs.get(inner.name) ?? inner;
             }
         }
         // Resolve the full struct type from the module registry when the type
-        // Has empty field lists (e.g. from translated TypeNodes).
+        // has empty field lists (e.g. from translated TypeNodes).
         if (baseType instanceof StructType) {
             baseType = this.irModule.structs.get(baseType.name) ?? baseType;
         }
@@ -2835,7 +2910,7 @@ export class AstToSsaCtx {
             );
         }
         const fieldType = structType.fields[index];
-        const fieldGet = this.builder.structGet(baseValue, index, fieldType);
+        const fieldGet = this.builder.structGet(baseValue, index, structType, fieldType);
         return AstToSsaCtx.handleInstructionId(fieldGet.id);
     }
 
@@ -2865,12 +2940,12 @@ export class AstToSsaCtx {
         lit: LiteralExpr,
     ): IntType | FloatType | BoolType {
         if (lit.literalKind === LiteralKind.Float) {
-            return makeIRFloatType(FloatWidth.F64);
+            return makeIRFloatType(floatSuffixToWidth(lit.suffix));
         }
         if (lit.literalKind === LiteralKind.Bool) {
             return makeIRBoolType();
         }
-        return makeIRIntType(IntWidth.I32);
+        return makeIRIntType(intSuffixToWidth(lit.suffix));
     }
 
     private inferParamTypeFromBody(

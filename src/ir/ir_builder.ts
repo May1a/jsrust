@@ -10,6 +10,7 @@ import {
     type FloatWidth,
     type IntWidth,
     type LocalId,
+    type StructType,
     type ValueId,
     type IRTerm,
     addIRBlock,
@@ -441,9 +442,14 @@ export class IRBuilder {
         return this.appendInstruction(makeStructCreate(fields, ty));
     }
 
-    structGet(struct: ValueId, fieldIndex: number, fieldTy: IRType): IRInst {
+    structGet(
+        struct: ValueId,
+        fieldIndex: number,
+        structType: StructType,
+        fieldTy: IRType,
+    ): IRInst {
         return this.appendInstruction(
-            makeStructGet(struct, fieldIndex, fieldTy),
+            makeStructGet(struct, fieldIndex, structType, fieldTy),
         );
     }
 
