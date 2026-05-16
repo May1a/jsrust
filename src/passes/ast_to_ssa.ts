@@ -2835,7 +2835,7 @@ export class AstToSsaCtx {
             );
         }
         const fieldType = structType.fields[index];
-        const fieldGet = this.builder.structGet(baseValue, index, fieldType);
+        const fieldGet = this.builder.structGet(baseValue, index, structType, fieldType);
         return AstToSsaCtx.handleInstructionId(fieldGet.id);
     }
 

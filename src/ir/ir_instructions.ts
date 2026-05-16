@@ -294,13 +294,14 @@ export function makeStructCreate(fields: number[], type: IRType): IRInst {
 export function makeStructGet(
     struct: number,
     fieldIndex: number,
+    structType: StructType,
     fieldType: IRType,
 ): IRInst {
     return new StructGetInst(
         freshValueId(),
         struct,
         fieldIndex,
-        makeIRStructType("__anon_struct", []),
+        structType,
         fieldType,
     );
 }
