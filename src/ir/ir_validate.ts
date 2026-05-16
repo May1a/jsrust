@@ -58,6 +58,7 @@ import {
     type IRFunction,
     type IRBlock,
     type IRInst,
+    type IRTerm,
     type ValueId,
     type BlockId,
 } from "./ir";
@@ -317,29 +318,179 @@ function checkBranchTargets(ctx: ValidationContext): void {
 // 03.3: Def-Use Consistency (also populates type info)
 // ============================================================================
 
+function getTermOperands(term: IRTerm | undefined): ValueId[] {
+    if (!term) return [];
+    if (term instanceof RetTerm) {
+        if (term.value === undefined) return [];
+        return [term.value];
+    }
+    if (term instanceof BrTerm) return [...term.args];
+    if (term instanceof BrIfTerm) {
+        return [term.condition, ...term.thenArgs, ...term.elseArgs];
+    }
+    if (term instanceof SwitchTerm) {
+        return [
+            term.value,
+            ...term.defaultArgs,
+            ...term.cases.flatMap((c) => c.args),
+        ];
+    }
+    return [];
+}
+
+function intersectDoms(
+    idom: Map<BlockId, BlockId>,
+    rpoIndex: Map<BlockId, number>,
+    b1: BlockId,
+    b2: BlockId,
+): BlockId {
+    let f1 = b1;
+    let f2 = b2;
+    while (f1 !== f2) {
+        while ((rpoIndex.get(f1) ?? 0) > (rpoIndex.get(f2) ?? 0)) {
+            const next = idom.get(f1);
+            if (next === undefined || next === f1) break;
+            f1 = next;
+        }
+        while ((rpoIndex.get(f2) ?? 0) > (rpoIndex.get(f1) ?? 0)) {
+            const next = idom.get(f2);
+            if (next === undefined || next === f2) break;
+            f2 = next;
+        }
+    }
+    return f1;
+}
+
+function buildPredMap(
+    ctx: ValidationContext,
+    rpo: BlockId[],
+): Map<BlockId, BlockId[]> {
+    const preds = new Map<BlockId, BlockId[]>();
+    for (const bid of rpo) {
+        preds.set(bid, []);
+    }
+    for (const bid of rpo) {
+        const block = ctx.getBlock(bid);
+        if (!block) continue;
+        for (const succ of ctx.successors(block)) {
+            const succPreds = preds.get(succ);
+            if (succPreds) succPreds.push(bid);
+        }
+    }
+    return preds;
+}
+
+function computeIdom(
+    ctx: ValidationContext,
+    rpo: BlockId[],
+    rpoIndex: Map<BlockId, number>,
+): Map<BlockId, BlockId> {
+    if (rpo.length === 0) return new Map();
+
+    const [entry] = rpo;
+    const idom = new Map<BlockId, BlockId>();
+    idom.set(entry, entry);
+
+    const preds = buildPredMap(ctx, rpo);
+
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (let i = 1; i < rpo.length; i++) {
+            const bid = rpo[i];
+            const blockPreds = preds.get(bid) ?? [];
+
+            let newIdom: BlockId | undefined;
+            for (const p of blockPreds) {
+                if (idom.has(p)) {
+                    newIdom = p;
+                    break;
+                }
+            }
+            if (newIdom === undefined) continue;
+
+            for (const p of blockPreds) {
+                if (p === newIdom || !idom.has(p)) continue;
+                newIdom = intersectDoms(idom, rpoIndex, p, newIdom);
+            }
+
+            if (idom.get(bid) !== newIdom) {
+                idom.set(bid, newIdom);
+                changed = true;
+            }
+        }
+    }
+
+    return idom;
+}
+
+function processBlockDefUse(
+    ctx: ValidationContext,
+    block: IRBlock,
+    parentDefs: Set<ValueId>,
+): Set<ValueId> {
+    const blockDefs = new Set<ValueId>(parentDefs);
+
+    for (const param of block.params) {
+        ctx.define(param.id, param.ty);
+        blockDefs.add(param.id);
+    }
+
+    for (let i = 0; i < block.instructions.length; i++) {
+        const inst = block.instructions[i];
+        for (const oid of getInstOperands(inst)) {
+            if (!blockDefs.has(oid)) {
+                ctx.addError(
+                    `Value ${String(oid)} used before definition`,
+                    block.name,
+                    i,
+                );
+            }
+        }
+        ctx.define(inst.id, inst.irType);
+        blockDefs.add(inst.id);
+    }
+
+    for (const oid of getTermOperands(block.terminator)) {
+        if (!blockDefs.has(oid)) {
+            ctx.addError(
+                `Value ${String(oid)} used before definition`,
+                block.name,
+            );
+        }
+    }
+
+    return blockDefs;
+}
+
 export function populateAndCheckDefUse(ctx: ValidationContext): void {
     const rpo = ctx.computeRPO();
+    const rpoIndex = new Map<BlockId, number>();
+    for (let i = 0; i < rpo.length; i++) {
+        rpoIndex.set(rpo[i], i);
+    }
+
+    const idom = computeIdom(ctx, rpo, rpoIndex);
+    const domExitDefs = new Map<BlockId, Set<ValueId>>();
+
+    const fnParamDefs = new Set<ValueId>();
+    for (const param of ctx.fn.params) {
+        fnParamDefs.add(param.id);
+    }
+
     for (const bid of rpo) {
         const block = ctx.getBlock(bid);
         if (!block) continue;
 
-        for (const param of block.params) {
-            ctx.define(param.id, param.ty);
+        const parentId = idom.get(bid);
+        let parentDefs: Set<ValueId>;
+        if (parentId !== undefined && parentId !== bid) {
+            parentDefs = domExitDefs.get(parentId) ?? new Set<ValueId>();
+        } else {
+            parentDefs = fnParamDefs;
         }
 
-        for (let i = 0; i < block.instructions.length; i++) {
-            const inst = block.instructions[i];
-            for (const oid of getInstOperands(inst)) {
-                if (!ctx.isDefined(oid)) {
-                    ctx.addError(
-                        `Value ${String(oid)} used before definition`,
-                        block.name,
-                        i,
-                    );
-                }
-            }
-            ctx.define(inst.id, inst.irType);
-        }
+        domExitDefs.set(bid, processBlockDefUse(ctx, block, parentDefs));
     }
 }
 
@@ -457,9 +608,17 @@ function checkInstType(
                 );
             }
         })
-        .with(P.instanceOf(LoadInst), (l) =>
-            checkOpPtr(ctx, l.ptr, blockName, instIdx),
-        )
+        .with(P.instanceOf(LoadInst), (l) => {
+            checkOpPtr(ctx, l.ptr, blockName, instIdx);
+            const ptrTy = ctx.getType(l.ptr);
+            if (ptrTy instanceof PtrType && !l.irType.typeEq(ptrTy.inner)) {
+                ctx.addError(
+                    `Load result type ${getIRTypeKey(l.irType)} does not match pointer inner type ${getIRTypeKey(ptrTy.inner)}`,
+                    blockName,
+                    instIdx,
+                );
+            }
+        })
         .with(P.instanceOf(StoreInst), (s) =>
             checkStoreInst(ctx, s, blockName, instIdx),
         )
@@ -556,7 +715,7 @@ function checkStoreInst(
     }
     if (ptrTy instanceof PtrType) {
         const valTy = ctx.getType(inst.value);
-        if (valTy && valTy.kind !== ptrTy.inner.kind) {
+        if (valTy && !valTy.typeEq(ptrTy.inner)) {
             ctx.addError(
                 `Store value type ${getIRTypeKey(valTy)} does not match pointer inner type ${getIRTypeKey(ptrTy.inner)}`,
                 blockName,
