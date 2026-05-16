@@ -69,11 +69,6 @@ for (const file of files) {
     }
 
     const { ir } = compileResult.value;
-    if (ir === undefined) {
-        console.error(`x ${file}: compiler produced no IR`);
-        failed += 1;
-        continue;
-    }
 
     const writeResult = writeExpectedFile(outPath, `${ir}\n`);
     if (writeResult.isErr()) {

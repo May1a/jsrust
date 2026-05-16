@@ -152,6 +152,47 @@ function isInferredPlaceholder(ty: TypeNode): boolean {
     return ty instanceof InferredTypeNode;
 }
 
+/**
+ * Check if a TypeNode contains any InferredTypeNode in its tree
+ * (e.g. Result<i32, _> contains an inferred placeholder in its errType).
+ */
+function containsInferredPlaceholder(ty: TypeNode): boolean {
+    if (ty instanceof InferredTypeNode) {
+        return true;
+    }
+    if (ty instanceof NamedTypeNode) {
+        return ty.args?.args.some((a) => containsInferredPlaceholder(a)) ?? false;
+    }
+    if (ty instanceof OptionTypeNode) {
+        return containsInferredPlaceholder(ty.inner);
+    }
+    if (ty instanceof ResultTypeNode) {
+        return (
+            containsInferredPlaceholder(ty.okType) ||
+            containsInferredPlaceholder(ty.errType)
+        );
+    }
+    if (ty instanceof RefTypeNode) {
+        return containsInferredPlaceholder(ty.inner);
+    }
+    if (ty instanceof PtrTypeNode) {
+        return containsInferredPlaceholder(ty.inner);
+    }
+    if (ty instanceof ArrayTypeNode) {
+        return containsInferredPlaceholder(ty.element);
+    }
+    if (ty instanceof TupleTypeNode) {
+        return ty.elements.some((e) => containsInferredPlaceholder(e));
+    }
+    if (ty instanceof FnTypeNode) {
+        return (
+            ty.params.some((p) => containsInferredPlaceholder(p)) ||
+            containsInferredPlaceholder(ty.returnType)
+        );
+    }
+    return false;
+}
+
 function binaryOpToString(op: BinaryOp): string {
     switch (op) {
         case BinaryOp.Add: {
@@ -2928,7 +2969,7 @@ function checkFnTailReturn(
     if (
         !resolvedTailTy ||
         isInferredPlaceholder(declaredReturnType) ||
-        isInferredPlaceholder(resolvedTailTy) ||
+        containsInferredPlaceholder(resolvedTailTy) ||
         typesEqual(declaredReturnType, resolvedTailTy)
     ) {
         return;
