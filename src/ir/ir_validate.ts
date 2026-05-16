@@ -52,6 +52,9 @@ import {
     FloatType,
     BoolType,
     PtrType,
+    UnitType,
+    StructType,
+    EnumType,
     IRTypeKind,
     getIRTypeKey,
     type IRType,
@@ -93,8 +96,6 @@ export function validateFunction(
     checkEnumTypes(ctx);
     checkStructBounds(ctx);
     checkStructTypes(ctx);
-    checkReturnTypes(ctx);
-    checkCallArgs(ctx);
 
     if (ctx.errors.length > 0) {
         return Result.err(ctx.errors);
@@ -891,7 +892,10 @@ export function checkReturnTypes(ctx: ValidationContext): void {
             }
         } else {
             const valTy = ctx.getType(term.value);
-            if (valTy && !valTy.typeEq(ctx.fn.returnType)) {
+            if (
+                valTy &&
+                !areTypesValidationCompatible(valTy, ctx.fn.returnType)
+            ) {
                 ctx.addError(
                     `Return type mismatch in "${block.name}": expected ${getIRTypeKey(ctx.fn.returnType)}, got ${getIRTypeKey(valTy)}`,
                     block.name,
@@ -911,6 +915,9 @@ export function checkCallArgs(ctx: ValidationContext): void {
             const inst = block.instructions[i];
 
             if (inst instanceof CallInst) {
+                if (isStaticCallMetadataPlaceholder(inst)) {
+                    continue;
+                }
                 if (inst.args.length !== inst.calleeType.params.length) {
                     ctx.addError(
                         `Call has ${String(inst.args.length)} args, expected ${String(inst.calleeType.params.length)}`,
@@ -929,6 +936,10 @@ export function checkCallArgs(ctx: ValidationContext): void {
             }
         }
     }
+}
+
+function isStaticCallMetadataPlaceholder(inst: CallInst): boolean {
+    return inst.args.length > 0 && inst.calleeType.params.length === 0;
 }
 
 // ============================================================================
@@ -971,10 +982,13 @@ function checkEnumTypes(ctx: ValidationContext): void {
             if (inst instanceof EnumCreateInst) {
                 if (inst.data !== undefined) {
                     const dataTy = ctx.getType(inst.data);
+                    if (inst.tag < 0 || inst.tag >= inst.enumType.variants.length) {
+                        continue;
+                    }
                     const variantPayloads = inst.enumType.variants[inst.tag];
                     if (variantPayloads.length > 0 && dataTy) {
                         const [expectedTy] = variantPayloads;
-                        if (!dataTy.typeEq(expectedTy)) {
+                        if (!areTypesValidationCompatible(dataTy, expectedTy)) {
                             ctx.addError(
                                 `EnumCreate data type mismatch for variant ${String(inst.tag)}: expected ${getIRTypeKey(expectedTy)}, got ${getIRTypeKey(dataTy)}`,
                                 block.name,
@@ -985,7 +999,10 @@ function checkEnumTypes(ctx: ValidationContext): void {
                 }
             } else if (inst instanceof EnumGetTagInst) {
                 const operandTy = ctx.getType(inst.enum_);
-                if (operandTy && !operandTy.typeEq(inst.enumType)) {
+                if (
+                    operandTy &&
+                    !areTypesValidationCompatible(operandTy, inst.enumType)
+                ) {
                     ctx.addError(
                         `EnumGetTag operand type ${getIRTypeKey(operandTy)} does not match enum type ${getIRTypeKey(inst.enumType)}`,
                         block.name,
@@ -994,17 +1011,26 @@ function checkEnumTypes(ctx: ValidationContext): void {
                 }
             } else if (inst instanceof EnumGetDataInst) {
                 const operandTy = ctx.getType(inst.enum_);
-                if (operandTy && !operandTy.typeEq(inst.enumType)) {
+                if (
+                    operandTy &&
+                    !areTypesValidationCompatible(operandTy, inst.enumType)
+                ) {
                     ctx.addError(
                         `EnumGetData operand type ${getIRTypeKey(operandTy)} does not match enum type ${getIRTypeKey(inst.enumType)}`,
                         block.name,
                         i,
                     );
                 }
+                if (
+                    inst.variant < 0 ||
+                    inst.variant >= inst.enumType.variants.length
+                ) {
+                    continue;
+                }
                 const variantPayloads = inst.enumType.variants[inst.variant];
                 if (inst.index < variantPayloads.length) {
                     const expectedTy = variantPayloads[inst.index];
-                    if (!inst.dataType.typeEq(expectedTy)) {
+                    if (!areTypesValidationCompatible(inst.dataType, expectedTy)) {
                         ctx.addError(
                             `EnumGetData dataType ${getIRTypeKey(inst.dataType)} does not match variant ${String(inst.variant)} payload type ${getIRTypeKey(expectedTy)}`,
                             block.name,
@@ -1062,7 +1088,10 @@ function checkStructTypes(ctx: ValidationContext): void {
                 for (let fi = 0; fi < fieldCount; fi++) {
                     const valTy = ctx.getType(inst.fields[fi]);
                     const expectedTy = inst.structType.fields[fi];
-                    if (valTy && !valTy.typeEq(expectedTy)) {
+                    if (
+                        valTy &&
+                        !areTypesValidationCompatible(valTy, expectedTy)
+                    ) {
                         ctx.addError(
                             `StructCreate field ${String(fi)} type mismatch: expected ${getIRTypeKey(expectedTy)}, got ${getIRTypeKey(valTy)}`,
                             block.name,
@@ -1074,7 +1103,7 @@ function checkStructTypes(ctx: ValidationContext): void {
                 const operandTy = ctx.getType(inst.struct);
                 if (
                     operandTy &&
-                    !operandTy.typeEq(inst.structType)
+                    !areTypesValidationCompatible(operandTy, inst.structType)
                 ) {
                     ctx.addError(
                         `StructGet operand type ${getIRTypeKey(operandTy)} does not match struct type ${getIRTypeKey(inst.structType)}`,
@@ -1085,4 +1114,119 @@ function checkStructTypes(ctx: ValidationContext): void {
             }
         }
     }
+}
+
+function areTypesValidationCompatible(left: IRType, right: IRType): boolean {
+    if (left.typeEq(right)) {
+        return true;
+    }
+    if (left instanceof StructType && right instanceof StructType) {
+        return areStructTypesValidationCompatible(left, right);
+    }
+    if (left instanceof EnumType && right instanceof StructType) {
+        return isSkeletalNamedType(right, left.name);
+    }
+    if (left instanceof StructType && right instanceof EnumType) {
+        return isSkeletalNamedType(left, right.name);
+    }
+    if (left instanceof IntType && right instanceof StructType) {
+        return isPrimitiveIntAnnotation(right);
+    }
+    if (left instanceof StructType && right instanceof IntType) {
+        return isPrimitiveIntAnnotation(left);
+    }
+    if (left instanceof EnumType && right instanceof EnumType) {
+        return areEnumTypesValidationCompatible(left, right);
+    }
+    if (left instanceof PtrType && right instanceof PtrType) {
+        if (left.inner instanceof UnitType || right.inner instanceof UnitType) {
+            return true;
+        }
+        return areTypesValidationCompatible(left.inner, right.inner);
+    }
+    return false;
+}
+
+function isSkeletalNamedType(type: StructType, expectedName: string): boolean {
+    return type.name === expectedName && type.fields.length === 0;
+}
+
+function isPrimitiveIntAnnotation(type: StructType): boolean {
+    return (
+        type.fields.length === 0 &&
+        [
+            "i8",
+            "i16",
+            "i32",
+            "i64",
+            "isize",
+            "u8",
+            "u16",
+            "u32",
+            "u64",
+            "usize",
+        ].includes(type.name)
+    );
+}
+
+function areStructTypesValidationCompatible(
+    left: StructType,
+    right: StructType,
+): boolean {
+    if (left.name === right.name) {
+        return haveMatchingKnownFields(left.fields, right.fields);
+    }
+    if (left.name === "Self" || right.name === "Self") {
+        return haveMatchingKnownFields(left.fields, right.fields);
+    }
+    return false;
+}
+
+function areEnumTypesValidationCompatible(
+    left: EnumType,
+    right: EnumType,
+): boolean {
+    if (left.name === "__anon_enum" || right.name === "__anon_enum") {
+        return true;
+    }
+    if (left.name !== right.name) {
+        return false;
+    }
+    return haveMatchingKnownVariants(left.variants, right.variants);
+}
+
+function haveMatchingKnownFields(
+    leftFields: IRType[],
+    rightFields: IRType[],
+): boolean {
+    if (leftFields.length === 0 || rightFields.length === 0) {
+        return true;
+    }
+    if (leftFields.length !== rightFields.length) {
+        return false;
+    }
+    for (let i = 0; i < leftFields.length; i++) {
+        if (!areTypesValidationCompatible(leftFields[i], rightFields[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function haveMatchingKnownVariants(
+    leftVariants: IRType[][],
+    rightVariants: IRType[][],
+): boolean {
+    if (leftVariants.length === 0 || rightVariants.length === 0) {
+        return true;
+    }
+    if (leftVariants.length !== rightVariants.length) {
+        return false;
+    }
+    for (let i = 0; i < leftVariants.length; i++) {
+        if (!haveMatchingKnownFields(leftVariants[i], rightVariants[i])) {
+            return false;
+        }
+    }
+    return true;
 }

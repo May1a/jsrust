@@ -2866,13 +2866,14 @@ export class AstToSsaCtx {
         if (baseType instanceof PtrType) {
             const { inner } = baseType;
             if (inner instanceof StructType) {
-                const resolvedInner =
-                    this.irModule.structs.get(inner.name) ?? inner;
-                const deref = this.builder.load(baseValue, resolvedInner);
+                const deref = this.builder.load(baseValue, inner);
                 baseValue = deref.id;
-                baseType = resolvedInner;
+                baseType =
+                    this.irModule.structs.get(inner.name) ?? inner;
             }
         }
+        // Resolve the full struct type from the module registry when the type
+        // has empty field lists (e.g. from translated TypeNodes).
         if (baseType instanceof StructType) {
             baseType = this.irModule.structs.get(baseType.name) ?? baseType;
         }
