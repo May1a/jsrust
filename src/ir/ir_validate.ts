@@ -90,7 +90,11 @@ export function validateFunction(
     checkInstructionOperandTypes(ctx);
     checkBlockParams(ctx);
     checkEnumBounds(ctx);
+    checkEnumTypes(ctx);
     checkStructBounds(ctx);
+    checkStructTypes(ctx);
+    checkReturnTypes(ctx);
+    checkCallArgs(ctx);
 
     if (ctx.errors.length > 0) {
         return Result.err(ctx.errors);
@@ -177,12 +181,16 @@ export class ValidationContext {
         const { entry } = this.fn;
         if (entry) dfs(entry.id);
 
+        post.reverse();
+        const rpo = [...post];
+
         for (const block of this.fn.blocks) {
-            if (!visited.has(block.id)) dfs(block.id);
+            if (!visited.has(block.id)) {
+                rpo.push(block.id);
+            }
         }
 
-        post.reverse();
-        return post;
+        return rpo;
     }
 
     private _define(id: ValueId, ty: IRType): void {
@@ -522,6 +530,7 @@ function checkInstType(
             (i) => {
                 checkOpInt(ctx, i.left, blockName, instIdx);
                 checkOpInt(ctx, i.right, blockName, instIdx);
+                checkBinopTypeEq(ctx, i, blockName, instIdx);
             },
         )
         .with(
@@ -533,6 +542,7 @@ function checkInstType(
             (i) => {
                 checkOpInt(ctx, i.left, blockName, instIdx);
                 checkOpInt(ctx, i.right, blockName, instIdx);
+                checkBinopTypeEq(ctx, i, blockName, instIdx);
             },
         )
         .with(
@@ -544,6 +554,7 @@ function checkInstType(
             (f) => {
                 checkOpFloat(ctx, f.left, blockName, instIdx);
                 checkOpFloat(ctx, f.right, blockName, instIdx);
+                checkBinopTypeEq(ctx, f, blockName, instIdx);
             },
         )
         .with(P.instanceOf(InegInst), (i) =>
@@ -692,6 +703,30 @@ function checkOpPtr(
     if (ty && !(ty instanceof PtrType)) {
         ctx.addError(
             `Pointer operand must be PtrType, got ${getIRTypeKey(ty)}`,
+            blockName,
+            instIdx,
+        );
+    }
+}
+
+function checkBinopTypeEq(
+    ctx: ValidationContext,
+    inst: { left: ValueId; right: ValueId; irType: IRType },
+    blockName: string,
+    instIdx: number,
+): void {
+    const lTy = ctx.getType(inst.left);
+    const rTy = ctx.getType(inst.right);
+    if (lTy && rTy && !lTy.typeEq(rTy)) {
+        ctx.addError(
+            `Binary operand types must match, got ${getIRTypeKey(lTy)} and ${getIRTypeKey(rTy)}`,
+            blockName,
+            instIdx,
+        );
+    }
+    if (lTy && !inst.irType.typeEq(lTy)) {
+        ctx.addError(
+            `Binary result type ${getIRTypeKey(inst.irType)} does not match operand type ${getIRTypeKey(lTy)}`,
             blockName,
             instIdx,
         );
@@ -928,6 +963,60 @@ function checkEnumBounds(ctx: ValidationContext): void {
     }
 }
 
+function checkEnumTypes(ctx: ValidationContext): void {
+    for (const block of ctx.fn.blocks) {
+        for (let i = 0; i < block.instructions.length; i++) {
+            const inst = block.instructions[i];
+
+            if (inst instanceof EnumCreateInst) {
+                if (inst.data !== undefined) {
+                    const dataTy = ctx.getType(inst.data);
+                    const variantPayloads = inst.enumType.variants[inst.tag];
+                    if (variantPayloads.length > 0 && dataTy) {
+                        const [expectedTy] = variantPayloads;
+                        if (!dataTy.typeEq(expectedTy)) {
+                            ctx.addError(
+                                `EnumCreate data type mismatch for variant ${String(inst.tag)}: expected ${getIRTypeKey(expectedTy)}, got ${getIRTypeKey(dataTy)}`,
+                                block.name,
+                                i,
+                            );
+                        }
+                    }
+                }
+            } else if (inst instanceof EnumGetTagInst) {
+                const operandTy = ctx.getType(inst.enum_);
+                if (operandTy && !operandTy.typeEq(inst.enumType)) {
+                    ctx.addError(
+                        `EnumGetTag operand type ${getIRTypeKey(operandTy)} does not match enum type ${getIRTypeKey(inst.enumType)}`,
+                        block.name,
+                        i,
+                    );
+                }
+            } else if (inst instanceof EnumGetDataInst) {
+                const operandTy = ctx.getType(inst.enum_);
+                if (operandTy && !operandTy.typeEq(inst.enumType)) {
+                    ctx.addError(
+                        `EnumGetData operand type ${getIRTypeKey(operandTy)} does not match enum type ${getIRTypeKey(inst.enumType)}`,
+                        block.name,
+                        i,
+                    );
+                }
+                const variantPayloads = inst.enumType.variants[inst.variant];
+                if (inst.index < variantPayloads.length) {
+                    const expectedTy = variantPayloads[inst.index];
+                    if (!inst.dataType.typeEq(expectedTy)) {
+                        ctx.addError(
+                            `EnumGetData dataType ${getIRTypeKey(inst.dataType)} does not match variant ${String(inst.variant)} payload type ${getIRTypeKey(expectedTy)}`,
+                            block.name,
+                            i,
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ============================================================================
 // 03.8: Struct Operations Check
 // ============================================================================
@@ -951,6 +1040,44 @@ function checkStructBounds(ctx: ValidationContext): void {
                 if (inst.index < 0 || inst.index >= limit) {
                     ctx.addError(
                         `StructGet index ${String(inst.index)} out of bounds (${String(limit)} fields)`,
+                        block.name,
+                        i,
+                    );
+                }
+            }
+        }
+    }
+}
+
+function checkStructTypes(ctx: ValidationContext): void {
+    for (const block of ctx.fn.blocks) {
+        for (let i = 0; i < block.instructions.length; i++) {
+            const inst = block.instructions[i];
+
+            if (inst instanceof StructCreateInst) {
+                const fieldCount = Math.min(
+                    inst.fields.length,
+                    inst.structType.fields.length,
+                );
+                for (let fi = 0; fi < fieldCount; fi++) {
+                    const valTy = ctx.getType(inst.fields[fi]);
+                    const expectedTy = inst.structType.fields[fi];
+                    if (valTy && !valTy.typeEq(expectedTy)) {
+                        ctx.addError(
+                            `StructCreate field ${String(fi)} type mismatch: expected ${getIRTypeKey(expectedTy)}, got ${getIRTypeKey(valTy)}`,
+                            block.name,
+                            i,
+                        );
+                    }
+                }
+            } else if (inst instanceof StructGetInst) {
+                const operandTy = ctx.getType(inst.struct);
+                if (
+                    operandTy &&
+                    !operandTy.typeEq(inst.structType)
+                ) {
+                    ctx.addError(
+                        `StructGet operand type ${getIRTypeKey(operandTy)} does not match struct type ${getIRTypeKey(inst.structType)}`,
                         block.name,
                         i,
                     );

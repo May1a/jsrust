@@ -2968,7 +2968,7 @@ function checkFnTailReturn(
 
     if (
         !resolvedTailTy ||
-        isInferredPlaceholder(declaredReturnType) ||
+        containsInferredPlaceholder(declaredReturnType) ||
         containsInferredPlaceholder(resolvedTailTy) ||
         typesEqual(declaredReturnType, resolvedTailTy)
     ) {
