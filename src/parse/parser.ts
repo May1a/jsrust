@@ -627,9 +627,14 @@ class Parser {
     // Attributes
     // -----------------------------------------------------------------------
 
-    parseAttributes(): { derives: string[]; isTest: boolean } {
+    parseAttributes(): {
+        derives: string[];
+        isTest: boolean;
+        expectedOutput: string | undefined;
+    } {
         const derives: string[] = [];
         let isTest = false;
+        let expectedOutput: string | undefined;
 
         while (this.check(TokenType.Hash)) {
             this.advance(); // Consume #
@@ -664,12 +669,24 @@ class Parser {
                 this.advance(); // Consume "test"
                 this.expect(TokenType.CloseSquare);
                 isTest = true;
+            } else if (
+                !isBang &&
+                this.check(TokenType.Identifier) &&
+                this.peek().value === "expect_output"
+            ) {
+                this.advance();
+                if (this.eat(TokenType.OpenParen)) {
+                    const output = this.expect(TokenType.String);
+                    expectedOutput = processStringValue(output.value);
+                    this.expect(TokenType.CloseParen);
+                }
+                this.expect(TokenType.CloseSquare);
             } else {
                 this.skipBracketContent(); // Consumes until and including ]
             }
         }
 
-        return { derives, isTest };
+        return { derives, isTest, expectedOutput };
     }
 
     // -----------------------------------------------------------------------
@@ -701,13 +718,13 @@ class Parser {
         // Skip standalone semicolons
         if (this.eat(TokenType.Semicolon)) return [];
 
-        const { derives, isTest } = this.parseAttributes();
+        const { derives, isTest, expectedOutput } = this.parseAttributes();
         this.eatPub();
 
         const start = this.peek();
         return (
-            this.parseDirectItem(start, derives, isTest) ??
-            this.parseUnsafeItem(start, derives, isTest) ??
+            this.parseDirectItem(start, derives, isTest, expectedOutput) ??
+            this.parseUnsafeItem(start, derives, isTest, expectedOutput) ??
             this.parseTypeAliasItem() ??
             this.parseStaticOrConstItem() ??
             this.parseUnexpectedItem()
@@ -718,6 +735,7 @@ class Parser {
         start: Token,
         derives: string[],
         isTest: boolean,
+        expectedOutput: string | undefined,
     ): Item[] | undefined {
         // `const fn` — consume `const` and treat as a regular function
         if (
@@ -727,7 +745,7 @@ class Parser {
             this.advance();
         }
         if (this.eat(TokenType.Fn)) {
-            return [this.parseFnBody(start, derives, isTest)];
+            return [this.parseFnBody(start, derives, isTest, expectedOutput)];
         }
         if (this.eat(TokenType.Struct)) {
             return [this.parseStructBody(start, derives)];
@@ -747,6 +765,7 @@ class Parser {
         start: Token,
         derives: string[],
         isTest: boolean,
+        expectedOutput: string | undefined,
     ): Item[] | undefined {
         if (
             !this.check(TokenType.Unsafe) ||
@@ -759,7 +778,7 @@ class Parser {
             return [
                 new UnsafeItem(
                     this.spanFrom(start),
-                    this.parseFnBody(start, derives, isTest),
+                    this.parseFnBody(start, derives, isTest, expectedOutput),
                 ),
             ];
         }
@@ -893,6 +912,7 @@ class Parser {
         startTok: Token,
         derives: string[],
         isTest: boolean,
+        expectedOutput?: string,
     ): FnItem | GenericFnItem {
         const name = this.expect(TokenType.Identifier).value;
         const genericParams = this.parseGenericParams();
@@ -932,6 +952,7 @@ class Parser {
                 params,
                 returnType,
                 body,
+                expectedOutput,
             );
         }
 

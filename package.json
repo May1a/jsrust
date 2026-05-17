@@ -2,10 +2,9 @@
     "type": "module",
     "scripts": {
         "test": "bun test",
-        "compile": "bun build main.js --minify --target=bun --outdir dist",
+        "compile": "bun build main.ts --minify --target=bun --outdir dist",
         "lint": "bunx oxlint --type-aware --type-check",
-        "format": "bunx prettier -w .",
-        "update-expected": "bun run scripts/update-expected.ts"
+        "format": "bunx prettier -w ."
     },
     "devDependencies": {
         "@types/bun": "^1.3.9",

@@ -19,9 +19,13 @@ import {
     walkAst,
 } from "./parse/ast";
 import { type IRModule, resetIRIds } from "./ir/ir";
-import { printModule as printIRModule } from "./ir/ir_printer";
-import { serializeModule } from "./ir/ir_serialize";
 import { validateFunction as validateIRFunction } from "./ir/ir_validate";
+import {
+    assembleLlvm,
+    emitLlvmModule,
+    printLlvmModule,
+    type LlvmModule,
+} from "./llvm";
 import { parseModule } from "./parse/parser";
 import { lowerAstModuleToSsa } from "./passes/ast_to_ssa";
 import { checkBorrowLite } from "./passes/borrow";
@@ -74,16 +78,12 @@ export type LoweredModule = {
     module: IRModule;
 };
 
-export type PrintedIrArtifact = {
+export type LlvmArtifact = {
     lowered: LoweredModule;
     module: IRModule;
-    ir: string;
-};
-
-export type BinaryArtifact = {
-    lowered: LoweredModule;
-    module: IRModule;
-    bytes: Uint8Array;
+    llvmModule: LlvmModule;
+    ll: string;
+    bitcode?: Uint8Array;
 };
 
 export type CompileOptions = {
@@ -92,6 +92,8 @@ export type CompileOptions = {
     validate?: boolean;
     outputFile?: string;
     sourcePath?: string;
+    emitBitcode?: boolean;
+    outputPrefix?: string;
 };
 
 export type UserDiagnosticFailure = {
@@ -137,7 +139,8 @@ export type BackendFailure = {
         | "build"
         | "runtime-trap"
         | "backend-exit"
-        | "capability-mismatch";
+        | "capability-mismatch"
+        | "toolchain";
     message: string;
     cause?: unknown;
 };
@@ -155,8 +158,7 @@ export type CompileError = CompileFailure;
 export type PreparedModuleResult = Result<PreparedModule, CompileFailure>;
 export type TypedModuleResult = Result<TypedModule, CompileFailure>;
 export type LoweredModuleResult = Result<LoweredModule, CompileFailure>;
-export type PrintedIrResult = Result<PrintedIrArtifact, CompileFailure>;
-export type BinaryCompileResult = Result<BinaryArtifact, CompileFailure>;
+export type LlvmCompileResult = Result<LlvmArtifact, CompileFailure>;
 
 export type TestFn = {
     name: string;
@@ -219,6 +221,20 @@ function ioFailure(pathValue: string, cause: unknown): IoFailure {
         phase: "io",
         path: pathValue,
         message: `Failed to read file: ${pathValue}: ${causeMessage(cause)}`,
+        cause,
+    };
+}
+
+function backendFailure(
+    kind: BackendFailure["kind"],
+    message: string,
+    cause?: unknown,
+): BackendFailure {
+    return {
+        tag: "backend",
+        phase: "backend",
+        kind,
+        message,
         cause,
     };
 }
@@ -497,36 +513,49 @@ export function lowerModule(
     return Result.ok(lowered);
 }
 
-export function printLoweredModule(
+export function emitLoweredModuleToLlvm(
     lowered: LoweredModule,
-): PrintedIrArtifact {
-    return {
+    options: CompileOptions = {},
+): LlvmCompileResult {
+    const llvmResult = emitLlvmModule(lowered.module);
+    if (llvmResult.isErr()) {
+        return Result.err(
+            internalFailure(
+                "backend",
+                `LLVM emission failed: ${llvmResult.error.message}`,
+            ),
+        );
+    }
+
+    const ll = printLlvmModule(llvmResult.value);
+    const artifact: LlvmArtifact = {
         lowered,
         module: lowered.module,
-        ir: printIRModule(lowered.module),
+        llvmModule: llvmResult.value,
+        ll,
     };
-}
 
-export function serializeLoweredModule(
-    lowered: LoweredModule,
-): BinaryCompileResult {
-    const serializationResult = Result.try({
-        try: () => serializeModule(lowered.module),
-        catch: (cause) =>
-            normalizeInternalFailure(
-                "serialize",
-                "Failed to serialize IR module",
-                cause,
-            ),
+    if (options.emitBitcode !== true) {
+        return Result.ok(artifact);
+    }
+
+    const outputPrefix = options.outputPrefix ?? "out/module";
+    const buildResult = assembleLlvm(ll, outputPrefix, {
+        verify: options.validate ?? true,
     });
-    if (serializationResult.isErr()) {
-        return Result.err(serializationResult.error);
+    if (buildResult.isErr()) {
+        return Result.err(
+            backendFailure(
+                "toolchain",
+                buildResult.error.message,
+                buildResult.error,
+            ),
+        );
     }
 
     return Result.ok({
-        lowered,
-        module: lowered.module,
-        bytes: serializationResult.value,
+        ...artifact,
+        bitcode: buildResult.value.bitcode,
     });
 }
 
@@ -551,7 +580,7 @@ function compileInputToLoweredModule(
         .andThen((typed) => lowerModule(typed, { validate: options.validate }));
 }
 
-export function compileToIRModule(
+export function compileToSsaModule(
     source: string,
     options: CompileOptions = {},
 ): LoweredModuleResult {
@@ -561,22 +590,20 @@ export function compileToIRModule(
 export function compile(
     source: string,
     options: CompileOptions = {},
-): PrintedIrResult {
-    return compileToIRModule(source, options).map((lowered) =>
-        printLoweredModule(lowered),
-    );
+): LlvmCompileResult {
+    return compileToLlvm(source, options);
 }
 
-export function compileToBinary(
+export function compileToLlvm(
     source: string,
     options: CompileOptions = {},
-): BinaryCompileResult {
-    return compileToIRModule(source, options).andThen((lowered) =>
-        serializeLoweredModule(lowered),
+): LlvmCompileResult {
+    return compileToSsaModule(source, options).andThen((lowered) =>
+        emitLoweredModuleToLlvm(lowered, options),
     );
 }
 
-export function compileFileToIRModule(
+export function compileFileToSsaModule(
     filePath: string,
     options: Omit<CompileOptions, "sourcePath"> = {},
 ): LoweredModuleResult {
@@ -589,18 +616,16 @@ export function compileFileToIRModule(
 export function compileFile(
     filePath: string,
     options: Omit<CompileOptions, "sourcePath"> = {},
-): PrintedIrResult {
-    return compileFileToIRModule(filePath, options).map((lowered) =>
-        printLoweredModule(lowered),
-    );
+): LlvmCompileResult {
+    return compileFileToLlvm(filePath, options);
 }
 
-export function compileFileToBinary(
+export function compileFileToLlvm(
     filePath: string,
     options: Omit<CompileOptions, "sourcePath"> = {},
-): BinaryCompileResult {
-    return compileFileToIRModule(filePath, options).andThen((lowered) =>
-        serializeLoweredModule(lowered),
+): LlvmCompileResult {
+    return compileFileToSsaModule(filePath, options).andThen((lowered) =>
+        emitLoweredModuleToLlvm(lowered, options),
     );
 }
 

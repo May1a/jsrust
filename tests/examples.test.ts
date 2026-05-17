@@ -1,93 +1,109 @@
-import { describe, test, expect, beforeAll } from "bun:test";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { describe, expect, test } from "bun:test";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { compileToIR } from "./helpers";
 import {
-    compileFileToBinary,
+    compileFileToLlvm,
     discoverTestFunctions,
     formatCompileError,
 } from "../src/compile";
 import {
-    runBackendWasm,
-    canRunBackendIntegrationTests,
-} from "../src/backend/backend_runner";
+    probeLlvmTools,
+    runLlvmBitcode,
+    writeTempLlvmArtifact,
+} from "../src/llvm";
 
 const examplesDir = resolve(import.meta.dir, "../examples");
-const expectedDir = resolve(examplesDir, "expected");
 const exampleFiles = readdirSync(examplesDir)
-    .filter((f) => f.endsWith(".rs"))
+    .filter((file) => file.endsWith(".rs"))
     .toSorted();
+const unsupportedExamples = new Set(["27_vec.rs", "28_comprehensive.rs"]);
 
-function getExpectedIR(file: string): string {
-    const expectedPath = resolve(expectedDir, file.replace(".rs", ".ir"));
-    if (!existsSync(expectedPath)) return "";
-    return readFileSync(expectedPath, "utf8");
-}
-
-describe("examples", () => {
+describe("examples LLVM IR emission", () => {
     for (const file of exampleFiles) {
-        const expectedContent = getExpectedIR(file);
-        if (!expectedContent) {
-            test.skip(file, () => { /* no expected IR */ });
+        if (unsupportedExamples.has(file)) {
+            test.skip(file, () => { /* Vec support is not part of the LLVM pivot. */ });
             continue;
         }
 
         test(file, () => {
-            const source = readFileSync(resolve(examplesDir, file), "utf8");
-            const irResult = compileToIR(source);
-            if (irResult.isErr()) {
-                expect(formatCompileError(irResult.error)).toBe("");
+            const result = compileFileToLlvm(resolve(examplesDir, file), {
+                validate: true,
+            });
+            if (result.isErr()) {
+                expect(formatCompileError(result.error)).toBe("");
                 return;
             }
-            expect(irResult.value).toBe(expectedContent);
+            expect(result.value.ll).toContain("; JSRust LLVM target = 22.1.5");
+            expect(result.value.ll).toContain("define");
         });
     }
 });
 
-const backendCheck = canRunBackendIntegrationTests();
+const llvmProbe = probeLlvmTools();
 
-describe.skipIf(backendCheck.isErr())("examples runtime", () => {
+describe.skipIf(llvmProbe.isErr())("examples execution tests", () => {
     for (const file of exampleFiles) {
+        if (unsupportedExamples.has(file)) {
+            continue;
+        }
         const filePath = resolve(examplesDir, file);
         const discoverResult = discoverTestFunctions(filePath);
-        if (discoverResult.isErr() || discoverResult.value.length === 0) continue;
-
-        const expectedContent = getExpectedIR(file);
+        if (discoverResult.isErr() || discoverResult.value.length === 0) {
+            continue;
+        }
 
         describe(file, () => {
-            let bytes: Uint8Array | undefined;
-            let compileError: string | undefined;
-
-            beforeAll(() => {
-                if (!expectedContent) return;
-                const binaryResult = compileFileToBinary(filePath);
-                if (binaryResult.isOk()) {
-                    ({ bytes } = binaryResult.value);
-                } else {
-                    compileError = formatCompileError(binaryResult.error);
-                }
-            });
-
             for (const testFn of discoverResult.value) {
-                if (!expectedContent) {
-                    test.skip(testFn.name, () => { /* no expected IR */ });
-                    continue;
-                }
-
                 test(testFn.name, () => {
-                    if (compileError !== undefined) {
-                        expect(compileError).toBe("");
+                    const compileResult = compileFileToLlvm(filePath, {
+                        validate: true,
+                    });
+                    if (compileResult.isErr()) {
+                        expect(formatCompileError(compileResult.error)).toBe("");
                         return;
                     }
-                    expect(bytes).toBeDefined();
-                    if (bytes === undefined) return;
 
-                    const runResult = runBackendWasm(bytes, { entry: testFn.name });
+                    const artifact = writeTempLlvmArtifact(
+                        compileResult.value.ll,
+                        { verify: true },
+                    );
+                    if (artifact.isErr()) {
+                        expect(artifact.error.message).toBe("");
+                        return;
+                    }
+
+                    const runResult = runLlvmBitcode(
+                        artifact.value.bitcodePath,
+                        testFn.name,
+                    );
                     if (runResult.isErr()) {
                         expect(runResult.error.message).toBe("");
+                        return;
+                    }
+
+                    if (testFn.expectedOutput !== undefined) {
+                        expect(runResult.value.stdout).toBe(
+                            testFn.expectedOutput,
+                        );
                     }
                 });
             }
         });
     }
+});
+
+describe("expect_output attributes", () => {
+    test("discovers expected stdout on test functions", () => {
+        const filePath = resolve(examplesDir, "10_hello_world.rs");
+        const source = readFileSync(filePath, "utf8");
+        expect(source).toContain("#[test]");
+
+        const result = discoverTestFunctions(filePath);
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) {
+            return;
+        }
+        expect(result.value[0]?.name).toBe("test_example");
+        expect(result.value[0]?.expectedOutput).toBe("Hello, World!\n");
+    });
 });

@@ -1,11 +1,13 @@
 import { Result } from "better-result";
-import { compile, type CompileError } from "../src/compile";
+import { compileToLlvm, type CompileError } from "../src/compile";
 
-export function compileToIR(source: string): Result<string, CompileError> {
-    const result = compile(source);
+export function compileToLlvmText(
+    source: string,
+): Result<string, CompileError> {
+    const result = compileToLlvm(source, { validate: true });
     if (result.isErr()) {
         return result;
     }
 
-    return Result.ok(`${result.value.ir}\n`);
+    return Result.ok(result.value.ll);
 }
