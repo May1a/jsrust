@@ -27,6 +27,7 @@ import { lowerAstModuleToSsa } from "./passes/ast_to_ssa";
 import { checkBorrowLite } from "./passes/borrow";
 import { expandDerives } from "./passes/derive_expand";
 import { inferModule } from "./passes/inference";
+import { extractModuleMetadata } from "./passes/module_metadata";
 import { resolveModuleTree } from "./passes/module_resolver";
 import { InternalBugError } from "./utils/internal_bug";
 import { TypeContext } from "./utils/type_context";
@@ -439,8 +440,13 @@ export function lowerModule(
     const { validate = true } = options;
     resetIRIds();
 
+    const metadata = extractModuleMetadata(
+        typed.typeContext,
+        typed.prepared.module,
+    );
+
     const loweringResult = Result.try({
-        try: () => lowerAstModuleToSsa(typed.prepared.module),
+        try: () => lowerAstModuleToSsa(typed.prepared.module, metadata),
         catch: (cause) =>
             normalizeInternalFailure(
                 "lower",
