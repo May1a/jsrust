@@ -19,7 +19,6 @@ import {
     type ForExpr,
     FnTypeNode,
     GenericFnItem,
-    GenericArgsNode,
     GenericStructItem,
     ImplItem,
     IdentPattern,
@@ -54,11 +53,9 @@ import {
     Span,
     type StaticItem,
     type Statement,
-    StructItem,
     type StructExpr,
     StructPattern,
     TraitImplItem,
-    TraitItem,
     type TryExpr,
     type TypeNode,
     type TypeAliasItem,
@@ -66,7 +63,6 @@ import {
     ArrayTypeNode,
     type UnsafeBlockExpr,
     type UnsafeItem,
-    UseItem,
     UnaryExpr,
     UnaryOp,
     type WhileExpr,
@@ -81,6 +77,11 @@ import {
     mangledName,
     type SubstitutionMap,
 } from "./monomorphize";
+import {
+    type ModuleConstBinding,
+    type ModuleMetadata,
+    hashName as hashNameInternal,
+} from "./module_metadata";
 import { Result } from "better-result";
 import { BUILTIN_SYMBOLS } from "../utils/builtin_symbols";
 import { match, P } from "ts-pattern";
@@ -216,18 +217,8 @@ const DEFAULT_FLOAT_VALUE = 0;
 const DEFAULT_UNIT_VALUE = 0;
 const STRING_FIRST_CHAR_INDEX = 0;
 const DEFAULT_CHAR_CODE = 0;
-const HASH_FACTOR = 31;
-const HASH_MODULUS = 1_000_000;
 const EMPTY_FORMAT = "";
 
-function qualifyModuleName(modulePrefix: string, name: string): string {
-    if (modulePrefix === "") {
-        return name;
-    }
-    return `${modulePrefix}::${name}`;
-}
-
-// Loop frame access
 const LAST_FRAME_INDEX = -1;
 
 enum FormatTag {
@@ -241,19 +232,6 @@ enum FormatTag {
 interface FormatTemplate {
     literal: string;
     placeholderCount: number;
-}
-
-function hashName(name: string): number {
-    // Keep in sync with backend/src/bytes.c: ByteSpan_hashFunctionId
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-        hash = (Math.imul(hash, HASH_FACTOR) + name.charCodeAt(i)) | 0;
-        hash |= 0;
-    }
-    if (hash < 0) {
-        hash = -hash;
-    }
-    return hash % HASH_MODULUS;
 }
 
 function zeroSpan(): Span {
@@ -3867,7 +3845,7 @@ export class AstToSsaCtx {
     }
 
     private registerSyntheticFunctionId(name: string): number {
-        const value = hashName(name);
+        const value = hashNameInternal(name);
         this.functionIds.set(name, value);
         return value;
     }
@@ -4133,530 +4111,6 @@ export function lowerAstToSsa(
     return ctx.lowerFunction(fnDecl);
 }
 
-function seedStructMetadataForItems(
-    items: ModuleNode["items"],
-    irModule: IRModule,
-    structFieldNames: Map<string, string[]>,
-    modulePrefix: string,
-): void {
-    const qualify = (name: string): string =>
-        qualifyModuleName(modulePrefix, name);
-
-    const registerStruct = (
-        name: string,
-        fields: string[],
-        fieldTypes: IRType[],
-    ): void => {
-        structFieldNames.set(name, fields);
-        if (!irModule.structs.has(name)) {
-            irModule.structs.set(name, makeIRStructType(name, fieldTypes));
-        }
-    };
-
-    for (const item of items) {
-        if (item instanceof StructItem || item instanceof GenericStructItem) {
-            const names = item.fields.map((f) => f.name);
-            const fieldTypes = item.fields.map((f) =>
-                AstToSsaCtx.translateTypeNode(f.typeNode),
-            );
-            const qualName = qualify(item.name);
-            registerStruct(qualName, names, fieldTypes);
-            if (modulePrefix) {
-                registerStruct(item.name, names, fieldTypes);
-            }
-            continue;
-        }
-        if (item instanceof ModItem) {
-            seedStructMetadataForItems(
-                item.items,
-                irModule,
-                structFieldNames,
-                qualify(item.name),
-            );
-        }
-    }
-}
-
-function seedStructMetadata(
-    moduleNode: ModuleNode,
-    irModule: IRModule,
-    structFieldNames: Map<string, string[]>,
-): void {
-    seedStructMetadataForItems(
-        moduleNode.items,
-        irModule,
-        structFieldNames,
-        "",
-    );
-}
-
-function seedBuiltinOptionMetadata(
-    irModule: IRModule,
-    enumVariantTags: Map<string, number>,
-    enumVariantOwners: Map<string, string>,
-): void {
-    const NONE_TAG = 0;
-    const SOME_TAG = 1;
-    enumVariantTags.set("None", NONE_TAG);
-    enumVariantTags.set("Option::None", NONE_TAG);
-    enumVariantTags.set("Some", SOME_TAG);
-    enumVariantTags.set("Option::Some", SOME_TAG);
-    enumVariantOwners.set("None", "Option");
-    enumVariantOwners.set("Option::None", "Option");
-    enumVariantOwners.set("Some", "Option");
-    enumVariantOwners.set("Option::Some", "Option");
-}
-
-function seedBuiltinResultMetadata(
-    _irModule: IRModule,
-    enumVariantTags: Map<string, number>,
-    enumVariantOwners: Map<string, string>,
-): void {
-    const OK_TAG = 0;
-    const ERR_TAG = 1;
-    enumVariantTags.set("Ok", OK_TAG);
-    enumVariantTags.set("Result::Ok", OK_TAG);
-    enumVariantTags.set("Err", ERR_TAG);
-    enumVariantTags.set("Result::Err", ERR_TAG);
-    enumVariantOwners.set("Ok", "Result");
-    enumVariantOwners.set("Result::Ok", "Result");
-    enumVariantOwners.set("Err", "Result");
-    enumVariantOwners.set("Result::Err", "Result");
-}
-
-function seedEnumMetadata(
-    moduleNode: ModuleNode,
-    irModule: IRModule,
-    enumVariantTags: Map<string, number>,
-    enumVariantOwners: Map<string, string>,
-): void {
-    for (const item of moduleNode.items) {
-        if (!(item instanceof EnumItem)) {
-            continue;
-        }
-        const variantTypes: IRType[][] = item.variants.map(() => []);
-        const enumType = makeIREnumType(item.name, variantTypes);
-        const enumKey = getIREnumTypeKey(enumType);
-        if (!irModule.enums.has(enumKey)) {
-            addIREnum(irModule, enumKey, enumType);
-        }
-        for (let index = 0; index < item.variants.length; index++) {
-            const variant = item.variants[index];
-            // Register both the short name (for pattern matching) and the
-            // Fully-qualified name (for expression lowering)
-            enumVariantTags.set(variant.name, index);
-            enumVariantTags.set(`${item.name}::${variant.name}`, index);
-            enumVariantOwners.set(variant.name, item.name);
-            enumVariantOwners.set(`${item.name}::${variant.name}`, item.name);
-        }
-    }
-}
-
-function collectFunctionIds(moduleNode: ModuleNode): Map<string, number> {
-    const fnIdMap = new Map<string, number>();
-    for (const item of moduleNode.items) {
-        collectItemFunctionIds(item, fnIdMap);
-    }
-    for (const builtinName of Object.values(BUILTIN_SYMBOLS)) {
-        fnIdMap.set(builtinName, hashName(builtinName));
-    }
-    return fnIdMap;
-}
-
-function collectFunctionReturnTypes(
-    moduleNode: ModuleNode,
-): Map<string, IRType> {
-    const returnTypes = new Map<string, IRType>();
-    for (const item of moduleNode.items) {
-        collectItemReturnTypes(item, returnTypes);
-    }
-    return returnTypes;
-}
-
-function collectItemFunctionIds(
-    item: ModuleNode["items"][number],
-    fnIdMap: Map<string, number>,
-    modulePrefix = "",
-): void {
-    const qualify = (name: string): string =>
-        qualifyModuleName(modulePrefix, name);
-
-    if (item instanceof GenericFnItem) {
-        // Generic functions are templates — skip lowering, but register the id
-        if (item.body) {
-            fnIdMap.set(item.name, hashName(item.name));
-            if (modulePrefix) {
-                fnIdMap.set(qualify(item.name), hashName(item.name));
-            }
-        }
-        return;
-    }
-    if (item instanceof FnItem && item.body) {
-        fnIdMap.set(item.name, hashName(item.name));
-        if (modulePrefix) {
-            fnIdMap.set(qualify(item.name), hashName(item.name));
-        }
-        return;
-    }
-    if (item instanceof ImplItem) {
-        collectImplFunctionIds(item, fnIdMap, modulePrefix);
-        return;
-    }
-    if (item instanceof TraitImplItem) {
-        const targetName = item.target.name;
-        for (const method of item.fnImpls) {
-            fnIdMap.set(method.name, hashName(method.name));
-            if (targetName) {
-                fnIdMap.set(
-                    `${targetName}::${method.name}`,
-                    hashName(method.name),
-                );
-            }
-        }
-        return;
-    }
-    if (item instanceof ModItem) {
-        for (const modItem of item.items) {
-            collectItemFunctionIds(modItem, fnIdMap, qualify(item.name));
-        }
-        return;
-    }
-    if (item instanceof UseItem) {
-        seedUseItemFunctionId(item, fnIdMap);
-    }
-}
-
-function seedUseItemFunctionId(
-    item: UseItem,
-    fnIdMap: Map<string, number>,
-): void {
-    const targetName = item.path[item.path.length - 1];
-    const targetId = fnIdMap.get(targetName) ?? hashName(targetName);
-    fnIdMap.set(targetName, targetId);
-    if (item.alias) {
-        fnIdMap.set(item.alias, targetId);
-    }
-}
-
-function collectItemReturnTypes(
-    item: ModuleNode["items"][number],
-    returnTypes: Map<string, IRType>,
-    modulePrefix = "",
-): void {
-    const qualify = (name: string): string =>
-        qualifyModuleName(modulePrefix, name);
-
-    if (item instanceof GenericFnItem || item instanceof GenericStructItem) {
-        return;
-    }
-    if (item instanceof FnItem && item.body) {
-        const returnType = AstToSsaCtx.translateTypeNode(item.returnType);
-        returnTypes.set(item.name, returnType);
-        if (modulePrefix) {
-            returnTypes.set(qualify(item.name), returnType);
-        }
-        return;
-    }
-    if (item instanceof ImplItem) {
-        collectImplReturnTypes(item, returnTypes, modulePrefix);
-        return;
-    }
-    if (item instanceof TraitImplItem) {
-        const targetName = item.target.name;
-        for (const method of item.fnImpls) {
-            if (!method.body) {
-                continue;
-            }
-            const returnType = AstToSsaCtx.translateTypeNode(
-                resolveSelfInTypeNode(method.returnType, targetName),
-            );
-            returnTypes.set(method.name, returnType);
-            returnTypes.set(`${targetName}::${method.name}`, returnType);
-        }
-        return;
-    }
-    if (item instanceof ModItem) {
-        for (const modItem of item.items) {
-            collectItemReturnTypes(modItem, returnTypes, qualify(item.name));
-        }
-        return;
-    }
-    if (item instanceof UseItem) {
-        seedUseItemReturnType(item, returnTypes);
-    }
-}
-
-function seedUseItemReturnType(
-    item: UseItem,
-    returnTypes: Map<string, IRType>,
-): void {
-    const targetName = item.path[item.path.length - 1];
-    const qualifiedName = item.path.join("::");
-    const targetReturnType =
-        returnTypes.get(qualifiedName) ?? returnTypes.get(targetName);
-    if (targetReturnType && item.alias) {
-        returnTypes.set(item.alias, targetReturnType);
-    }
-}
-
-function collectImplFunctionIds(
-    item: ImplItem,
-    fnIdMap: Map<string, number>,
-    modulePrefix = "",
-): void {
-    const implTarget = item.target.name;
-    const qualify = (name: string): string =>
-        qualifyModuleName(modulePrefix, name);
-    const qImplTarget = qualify(implTarget);
-    for (const method of item.methods) {
-        fnIdMap.set(method.name, hashName(method.name));
-        fnIdMap.set(`${implTarget}::${method.name}`, hashName(method.name));
-        if (qImplTarget !== implTarget) {
-            fnIdMap.set(
-                `${qImplTarget}::${method.name}`,
-                hashName(method.name),
-            );
-        }
-    }
-}
-
-function resolveSelfInTypeNode(ty: TypeNode, selfName: string): TypeNode {
-    if (ty instanceof NamedTypeNode) {
-        let args: GenericArgsNode | undefined;
-        if (ty.args) {
-            args = new GenericArgsNode(
-                ty.args.span,
-                ty.args.args.map((arg) => resolveSelfInTypeNode(arg, selfName)),
-            );
-        }
-        if (ty.name === "Self") {
-            return new NamedTypeNode(ty.span, selfName, args);
-        }
-        if (args) {
-            return new NamedTypeNode(ty.span, ty.name, args);
-        }
-        return ty;
-    }
-    if (ty instanceof TupleTypeNode) {
-        return new TupleTypeNode(
-            ty.span,
-            ty.elements.map((element) =>
-                resolveSelfInTypeNode(element, selfName),
-            ),
-        );
-    }
-    if (ty instanceof ArrayTypeNode) {
-        return new ArrayTypeNode(
-            ty.span,
-            resolveSelfInTypeNode(ty.element, selfName),
-            ty.length,
-        );
-    }
-    if (ty instanceof RefTypeNode) {
-        return new RefTypeNode(
-            ty.span,
-            ty.mutability,
-            resolveSelfInTypeNode(ty.inner, selfName),
-        );
-    }
-    if (ty instanceof PtrTypeNode) {
-        return new PtrTypeNode(
-            ty.span,
-            ty.mutability,
-            resolveSelfInTypeNode(ty.inner, selfName),
-        );
-    }
-    if (ty instanceof FnTypeNode) {
-        return new FnTypeNode(
-            ty.span,
-            ty.params.map((param) => resolveSelfInTypeNode(param, selfName)),
-            resolveSelfInTypeNode(ty.returnType, selfName),
-        );
-    }
-    return ty;
-}
-
-function collectImplReturnTypes(
-    item: ImplItem,
-    returnTypes: Map<string, IRType>,
-    modulePrefix = "",
-): void {
-    const implTarget = item.target.name;
-    const qualify = (name: string): string =>
-        qualifyModuleName(modulePrefix, name);
-    const qImplTarget = qualify(implTarget);
-    for (const method of item.methods) {
-        if (!method.body) {
-            continue;
-        }
-        const returnType = AstToSsaCtx.translateTypeNode(
-            resolveSelfInTypeNode(method.returnType, implTarget),
-        );
-        returnTypes.set(method.name, returnType);
-        returnTypes.set(`${implTarget}::${method.name}`, returnType);
-        if (qImplTarget !== implTarget) {
-            returnTypes.set(`${qImplTarget}::${method.name}`, returnType);
-        }
-    }
-}
-
-function collectDirectConstBinding(
-    item: ConstItem,
-    constBindings: Map<string, LoweringConstBinding>,
-    qualify: (name: string) => string,
-    modulePrefix: string,
-): void {
-    if (!item.value) {
-        return;
-    }
-    const key = qualify(item.name);
-    const binding: LoweringConstBinding = {
-        key,
-        typeNode: item.typeNode,
-        value: item.value,
-        span: item.span,
-    };
-    constBindings.set(key, binding);
-    if (!modulePrefix) {
-        constBindings.set(item.name, binding);
-    }
-}
-
-function registerAssociatedConstBindings(
-    constItems: ConstItem[],
-    targetName: string,
-    qualifiedTarget: string,
-    constBindings: Map<string, LoweringConstBinding>,
-): void {
-    for (const constItem of constItems) {
-        if (!constItem.value) {
-            continue;
-        }
-        const key = `${qualifiedTarget}::${constItem.name}`;
-        const binding: LoweringConstBinding = {
-            key,
-            typeNode: constItem.typeNode,
-            value: constItem.value,
-            span: constItem.span,
-            selfTypeName: targetName,
-        };
-        constBindings.set(key, binding);
-        if (qualifiedTarget !== targetName) {
-            constBindings.set(`${targetName}::${constItem.name}`, binding);
-        }
-    }
-}
-
-function collectImplConstBindings(
-    item: ImplItem,
-    constBindings: Map<string, LoweringConstBinding>,
-    qualify: (name: string) => string,
-): void {
-    const targetName = item.target.name;
-    registerAssociatedConstBindings(
-        item.constItems,
-        targetName,
-        qualify(targetName),
-        constBindings,
-    );
-}
-
-function collectTraitImplConstBindings(
-    item: TraitImplItem,
-    constBindings: Map<string, LoweringConstBinding>,
-    qualify: (name: string) => string,
-): void {
-    const targetName = item.target.name;
-    const qualifiedTarget = qualify(targetName);
-    const overrides = new Map(
-        item.constItems.map((constItem) => [constItem.name, constItem]),
-    );
-    registerAssociatedConstBindings(
-        item.constItems,
-        targetName,
-        qualifiedTarget,
-        constBindings,
-    );
-
-    const defaultConstItems: ConstItem[] = [];
-    for (const traitConst of item.trait.constItems) {
-        if (overrides.has(traitConst.name) || !traitConst.value) {
-            continue;
-        }
-        defaultConstItems.push(traitConst);
-    }
-    registerAssociatedConstBindings(
-        defaultConstItems,
-        targetName,
-        qualifiedTarget,
-        constBindings,
-    );
-}
-
-function useLookupPaths(item: UseItem): string[] {
-    const fullPath = item.path.join("::");
-    const fallbackPaths = [fullPath];
-    if (item.path[0] === "self" && item.path.length > 1) {
-        fallbackPaths.push(item.path.slice(1).join("::"));
-    }
-    return fallbackPaths;
-}
-
-function collectUseConstBinding(
-    item: UseItem,
-    constBindings: Map<string, LoweringConstBinding>,
-): void {
-    const localName = item.alias ?? item.path[item.path.length - 1];
-    let binding: LoweringConstBinding | undefined;
-    for (const path of useLookupPaths(item)) {
-        binding = constBindings.get(path);
-        if (binding) {
-            break;
-        }
-    }
-    if (binding) {
-        constBindings.set(localName, binding);
-    }
-}
-
-function collectNamedConstBindings(
-    item: ModuleNode["items"][number],
-    constBindings: Map<string, LoweringConstBinding>,
-    modulePrefix = "",
-): void {
-    const qualify = (name: string): string =>
-        qualifyModuleName(modulePrefix, name);
-
-    if (item instanceof ConstItem) {
-        collectDirectConstBinding(item, constBindings, qualify, modulePrefix);
-        return;
-    }
-    if (item instanceof ImplItem) {
-        collectImplConstBindings(item, constBindings, qualify);
-        return;
-    }
-    if (item instanceof TraitImplItem) {
-        collectTraitImplConstBindings(item, constBindings, qualify);
-        return;
-    }
-    if (item instanceof TraitItem) {
-        return;
-    }
-    if (item instanceof ModItem) {
-        for (const modItem of item.items) {
-            collectNamedConstBindings(
-                modItem,
-                constBindings,
-                qualify(item.name),
-            );
-        }
-        return;
-    }
-    if (item instanceof UseItem) {
-        collectUseConstBinding(item, constBindings);
-    }
-}
-
 function lowerOwnedFunction(
     fnItem: FnItem,
     irModule: IRModule,
@@ -4778,33 +4232,62 @@ function rewriteSelfInMethod(method: FnItem, implTarget: string): FnItem {
     );
 }
 
-function collectSelfConstBindings(
-    selfTypeName: string,
-    constItems: ConstItem[],
-    namedConsts: Map<string, LoweringConstBinding>,
-    traitConstItems: ConstItem[] = [],
+function convertToInitialConsts(
+    implConsts: Map<string, ModuleConstBinding> | undefined,
 ): Map<string, LoweringConstBinding> {
-    const bindings = new Map<string, LoweringConstBinding>();
-    const overridden = new Set(constItems.map((constItem) => constItem.name));
+    const result = new Map<string, LoweringConstBinding>();
+    if (implConsts === undefined) {
+        return result;
+    }
+    for (const [key, binding] of implConsts) {
+        if (binding.value === undefined) continue;
+        result.set(key, {
+            key: binding.key,
+            typeNode: binding.typeNode,
+            value: binding.value,
+            span: binding.span,
+            selfTypeName: binding.selfTypeName,
+        });
+    }
+    return result;
+}
 
-    for (const constItem of constItems) {
-        const binding = namedConsts.get(`${selfTypeName}::${constItem.name}`);
-        if (binding) {
-            bindings.set(`Self::${constItem.name}`, binding);
+function lowerTraitImplMethods(
+    item: TraitImplItem,
+    irModule: IRModule,
+    functionReturnTypes: Map<string, IRType>,
+    structFieldNames: Map<string, string[]>,
+    enumVariantTags: Map<string, number>,
+    enumVariantOwners: Map<string, string>,
+    namedConsts: Map<string, LoweringConstBinding>,
+    fnIdMap: Map<string, number>,
+    metadata: ModuleMetadata,
+    monoRegistry?: MonomorphizationRegistry,
+): Result<void, LoweringError> {
+    const implTarget = item.target.name;
+    const initialConsts = convertToInitialConsts(
+        metadata.implConsts.get(implTarget),
+    );
+    for (const method of item.fnImpls) {
+        if (!method.body) continue;
+        ensureImplStructMetadata(irModule, structFieldNames, implTarget);
+        const result = lowerOwnedFunction(
+            rewriteSelfInMethod(method, implTarget),
+            irModule,
+            functionReturnTypes,
+            structFieldNames,
+            enumVariantTags,
+            enumVariantOwners,
+            namedConsts,
+            fnIdMap,
+            initialConsts,
+            monoRegistry,
+        );
+        if (result.isErr()) {
+            return result;
         }
     }
-
-    for (const traitConst of traitConstItems) {
-        if (overridden.has(traitConst.name)) {
-            continue;
-        }
-        const binding = namedConsts.get(`${selfTypeName}::${traitConst.name}`);
-        if (binding) {
-            bindings.set(`Self::${traitConst.name}`, binding);
-        }
-    }
-
-    return bindings;
+    return Result.ok(undefined);
 }
 
 function lowerImplMethods(
@@ -4816,14 +4299,12 @@ function lowerImplMethods(
     enumVariantOwners: Map<string, string>,
     namedConsts: Map<string, LoweringConstBinding>,
     fnIdMap: Map<string, number>,
+    metadata: ModuleMetadata,
     monoRegistry?: MonomorphizationRegistry,
 ): Result<void, LoweringError> {
     const implTarget = item.target.name;
-    const initialConsts = collectSelfConstBindings(
-        implTarget,
-        item.constItems,
-        namedConsts,
-        [],
+    const initialConsts = convertToInitialConsts(
+        metadata.implConsts.get(implTarget),
     );
     for (const method of item.methods) {
         if (method instanceof GenericFnItem) {
@@ -4861,6 +4342,7 @@ function lowerModuleItem(
     enumVariantOwners: Map<string, string>,
     namedConsts: Map<string, LoweringConstBinding>,
     fnIdMap: Map<string, number>,
+    metadata: ModuleMetadata,
     monoRegistry?: MonomorphizationRegistry,
 ): Result<void, LoweringError> {
     if (item instanceof GenericFnItem || item instanceof GenericStructItem) {
@@ -4890,40 +4372,23 @@ function lowerModuleItem(
             enumVariantOwners,
             namedConsts,
             fnIdMap,
+            metadata,
             monoRegistry,
         );
     }
     if (item instanceof TraitImplItem) {
-        let implTarget = "Self";
-        if (item.target instanceof NamedTypeNode) {
-            implTarget = item.target.name;
-        }
-        const initialConsts = collectSelfConstBindings(
-            implTarget,
-            item.constItems,
+        return lowerTraitImplMethods(
+            item,
+            irModule,
+            functionReturnTypes,
+            structFieldNames,
+            enumVariantTags,
+            enumVariantOwners,
             namedConsts,
-            item.trait.constItems,
+            fnIdMap,
+            metadata,
+            monoRegistry,
         );
-        for (const method of item.fnImpls) {
-            if (!method.body) continue;
-            ensureImplStructMetadata(irModule, structFieldNames, implTarget);
-            const result = lowerOwnedFunction(
-                rewriteSelfInMethod(method, implTarget),
-                irModule,
-                functionReturnTypes,
-                structFieldNames,
-                enumVariantTags,
-                enumVariantOwners,
-                namedConsts,
-                fnIdMap,
-                initialConsts,
-                monoRegistry,
-            );
-            if (result.isErr()) {
-                return result;
-            }
-        }
-        return Result.ok(undefined);
     }
     if (item instanceof ModItem) {
         for (const modItem of item.items) {
@@ -4936,6 +4401,7 @@ function lowerModuleItem(
                 enumVariantOwners,
                 namedConsts,
                 fnIdMap,
+                metadata,
                 monoRegistry,
             );
             if (result.isErr()) {
@@ -4946,39 +4412,94 @@ function lowerModuleItem(
     return Result.ok(undefined);
 }
 
+function toLoweringBinding(binding: ModuleConstBinding): LoweringConstBinding | undefined {
+    if (binding.value === undefined) return undefined;
+    return {
+        key: binding.key,
+        typeNode: binding.typeNode,
+        value: binding.value,
+        span: binding.span,
+        selfTypeName: binding.selfTypeName,
+    };
+}
+
+function deriveLoweringMaps(
+    metadata: ModuleMetadata,
+    moduleNode: ModuleNode,
+    irModule: IRModule,
+): {
+    structFieldNames: Map<string, string[]>;
+    fnIdMap: Map<string, number>;
+    functionReturnTypes: Map<string, IRType>;
+    namedConsts: Map<string, LoweringConstBinding>;
+} {
+    const structFieldNames = new Map<string, string[]>();
+    for (const [name, fields] of metadata.structFields) {
+        structFieldNames.set(name, fields.map((f) => f.name));
+        if (!irModule.structs.has(name)) {
+            const fieldTypes = fields.map((f) =>
+                AstToSsaCtx.translateTypeNode(f.type),
+            );
+            irModule.structs.set(name, makeIRStructType(name, fieldTypes));
+        }
+    }
+
+    for (const item of moduleNode.items) {
+        if (!(item instanceof EnumItem)) continue;
+        const variantTypes: IRType[][] = item.variants.map(() => []);
+        const enumType = makeIREnumType(item.name, variantTypes);
+        const enumKey = getIREnumTypeKey(enumType);
+        if (!irModule.enums.has(enumKey)) {
+            addIREnum(irModule, enumKey, enumType);
+        }
+    }
+
+    const fnIdMap = new Map(metadata.fnIds);
+
+    const functionReturnTypes = new Map<string, IRType>();
+    for (const [name, sig] of metadata.fnSignatures) {
+        functionReturnTypes.set(
+            name,
+            AstToSsaCtx.translateTypeNode(sig.returnType),
+        );
+    }
+
+    const namedConsts = new Map<string, LoweringConstBinding>();
+    for (const [name, binding] of metadata.namedConsts) {
+        const lowering = toLoweringBinding(binding);
+        if (lowering) namedConsts.set(name, lowering);
+    }
+
+    return { structFieldNames, fnIdMap, functionReturnTypes, namedConsts };
+}
+
 export function lowerAstModuleToSsa(
     moduleNode: ModuleNode,
+    metadata: ModuleMetadata,
 ): Result<IRModule, LoweringError> {
     const irModule = makeIRModule(moduleNode.name);
-    const structFieldNames = new Map<string, string[]>();
-    const enumVariantTags = new Map<string, number>();
-    const enumVariantOwners = new Map<string, string>();
-    seedStructMetadata(moduleNode, irModule, structFieldNames);
-    seedBuiltinOptionMetadata(irModule, enumVariantTags, enumVariantOwners);
-    seedBuiltinResultMetadata(irModule, enumVariantTags, enumVariantOwners);
-    seedEnumMetadata(moduleNode, irModule, enumVariantTags, enumVariantOwners);
+    const { structFieldNames, fnIdMap, functionReturnTypes, namedConsts } =
+        deriveLoweringMaps(metadata, moduleNode, irModule);
 
-    // Collect generic items and generate monomorphized specializations
+    const enumVariantTags = metadata.variantTags;
+    const enumVariantOwners = metadata.variantOwners;
+
     const registry = new MonomorphizationRegistry();
     collectGenericItems(moduleNode, registry);
-    const specializations = collectAndMonomorphize(moduleNode, registry);
+    const specializations = collectAndMonomorphize(
+        moduleNode,
+        registry,
+        metadata,
+    );
 
-    // Register specialization function IDs
-    const fnIdMap = collectFunctionIds(moduleNode);
-    const functionReturnTypes = collectFunctionReturnTypes(moduleNode);
-    const namedConsts = new Map<string, LoweringConstBinding>();
-    for (const item of moduleNode.items) {
-        collectNamedConstBindings(item, namedConsts);
-    }
     for (const spec of specializations) {
-        fnIdMap.set(spec.name, hashName(spec.name));
+        fnIdMap.set(spec.name, hashNameInternal(spec.name));
         functionReturnTypes.set(
             spec.name,
             AstToSsaCtx.translateTypeNode(spec.returnType),
         );
     }
 
-    // Lower regular items (pass registry so calls to generics get rewritten)
     for (const item of moduleNode.items) {
         const result = lowerModuleItem(
             item,
@@ -4989,6 +4510,7 @@ export function lowerAstModuleToSsa(
             enumVariantOwners,
             namedConsts,
             fnIdMap,
+            metadata,
             registry,
         );
         if (result.isErr()) {
@@ -4996,7 +4518,6 @@ export function lowerAstModuleToSsa(
         }
     }
 
-    // Lower monomorphized specializations
     for (const spec of specializations) {
         const result = lowerOwnedFunction(
             spec,
@@ -5035,8 +4556,8 @@ function collectGenericItems(
 function collectAndMonomorphize(
     moduleNode: ModuleNode,
     registry: MonomorphizationRegistry,
+    metadata: ModuleMetadata,
 ): FnItem[] {
-    // Walk all non-generic function bodies to find call sites
     walkAst(moduleNode, (node) => {
         if (!(node instanceof CallExpr)) return;
         if (!(node.callee instanceof IdentifierExpr)) return;
@@ -5044,10 +4565,10 @@ function collectAndMonomorphize(
         const generic = registry.lookupGenericFn(node.callee.name);
         if (generic === undefined) return;
 
-        // Infer type arguments from the call expression's explicit type args
-        // Use explicit args or infer from literals; full inference happens
-        // In the inference pass which stores substitutions on TypeContext
-        const subs = inferCallSiteTypeArgs(generic, node);
+        const inferredSubs =
+            metadata.getCallSubstitution(node);
+        const subs =
+            inferredSubs ?? inferCallSiteTypeArgs(generic, node);
         if (subs === undefined) return;
 
         registry.getOrCreateFn(generic, subs);
