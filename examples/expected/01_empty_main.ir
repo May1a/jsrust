@@ -1,8 +1,0 @@
-module main {
-
-  fn f949693 test_example() -> () {
-    b0 (entry):
-      ret
-  }
-
-}

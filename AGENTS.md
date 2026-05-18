@@ -28,3 +28,17 @@ Code which does not pass the lints is **NOT** working code (it **is** a bug)
 - Write typesafe code
 - **NEVER** use an `eslint-disable` comment (if you see one, **remove** it)
 - **NEVER** modify `oxlint.config.ts`
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues on `github.com:May1a/jsrust`. Use the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default label vocabulary — all five canonical labels used as-is. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.

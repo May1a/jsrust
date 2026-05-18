@@ -4,6 +4,4 @@ export * from "./ast_to_ssa";
 export * from "./monomorphize";
 export * from "./derive_expand";
 export * from "./module_resolver";
-export * from "./memory_layout";
-export * from "./stack_alloc";
 export * from "./module_metadata";
