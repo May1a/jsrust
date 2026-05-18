@@ -24,6 +24,20 @@ When picking up this work, load these skills:
 7. **This file (`PLAN.md`)** — the implementation plan
 8. **The PRD on GitHub Issues** — the official specification
 
+## GitHub issues
+
+All issues are labeled `ready-for-agent` and listed in dependency order.
+
+| Issue | Title | Blocked by |
+|---|---|---|
+| [#22](https://github.com/May1a/jsrust/issues/22) | PRD: Split monolithic AST-to-SSA lowering into deep modules | - |
+| [#23](https://github.com/May1a/jsrust/issues/23) | Slice 1: Extract type_translation and LoweringInput | None |
+| [#24](https://github.com/May1a/jsrust/issues/24) | Slice 2: Introduce LoweredValue tuples | #23 |
+| [#25](https://github.com/May1a/jsrust/issues/25) | Slice 3: Extract lower_expr.ts | #24 |
+| [#26](https://github.com/May1a/jsrust/issues/26) | Slice 4: Extract lower_control_flow.ts | #25 |
+| [#27](https://github.com/May1a/jsrust/issues/27) | Slice 5: Extract lower_closure.ts with fresh builder | #26 |
+| [#28](https://github.com/May1a/jsrust/issues/28) | Slice 6: Extract lower_module.ts, wire compile.ts, delete ast_to_ssa.ts | #27 |
+
 ## The problem
 
 `ast_to_ssa.ts` holds all of this in one class:
@@ -136,7 +150,7 @@ bun test tests/compile.test.ts tests/examples.test.ts
 
 All slices must pass before moving to the next.
 
-### Slice 1: Extract `type_translation` and `LoweringInput` (AFK)
+### Slice 1: Extract `type_translation` and `LoweringInput` (AFK) — [#23](https://github.com/May1a/jsrust/issues/23)
 
 **Files created:**
 - `src/passes/lowering/types.ts` — `LoweringInput` interface, `LoweredValue = { id: ValueId; ty: IRType }`, `FormatTag` enum, `LoweringError` types, `LocalBinding`, `LoopFrame`, `LoweringConstBinding`, `BuilderSnapshot`, `FormatTemplate`
@@ -158,7 +172,7 @@ Must pass.
 
 **Key principle:** This slice is about moving the *type* glue (types + pure type translation) into the new directory while keeping the old class working. No behavior change. No test should break.
 
-### Slice 2: Introduce `LoweredValue { id, ty }` tuples (AFK)
+### Slice 2: Introduce `LoweredValue { id, ty }` tuples (AFK) — [#24](https://github.com/May1a/jsrust/issues/24)
 
 **Files modified:**
 - `src/passes/ast_to_ssa.ts` — change ALL `lower*` method return types from `Result<ValueId, LoweringError>` to `Result<LoweredValue, LoweringError>`. Update every call site that destructures the result to use `.value.id` and `.value.ty`. Delete `resolveValueType` and `handleInstructionId`.
@@ -169,7 +183,7 @@ Must pass.
 
 **Key principle:** This is a mechanical change with ~50 call sites. Do it in one pass, run tests, fix any missed sites. The type of every expression is now explicitly known at the call site.
 
-### Slice 3: Extract `lower_expr.ts` (AFK)
+### Slice 3: Extract `lower_expr.ts` (AFK) — [#25](https://github.com/May1a/jsrust/issues/25)
 
 **File created:**
 - `src/passes/lowering/lower_expr.ts`
@@ -209,7 +223,7 @@ Where `makeExprCtx()` constructs the slice from the instance fields.
 
 **What to verify:** Full test suite passes. The expression lowering implementation lives in `lower_expr.ts`. `AstToSsaCtx` is a delegating shell.
 
-### Slice 4: Extract `lower_control_flow.ts` (AFK)
+### Slice 4: Extract `lower_control_flow.ts` (AFK) — [#26](https://github.com/May1a/jsrust/issues/26)
 
 **File created:**
 - `src/passes/lowering/lower_control_flow.ts`
@@ -234,7 +248,7 @@ export function lowerIf(expr: IfExpr, builder: IRBuilder, ctx: LoweringCfgCtx): 
 
 **What to verify:** Full test suite passes. Control-flow logic lives in `lower_control_flow.ts`.
 
-### Slice 5: Extract `lower_closure.ts` with fresh builder (AFK)
+### Slice 5: Extract `lower_closure.ts` with fresh builder (AFK) — [#27](https://github.com/May1a/jsrust/issues/27)
 
 **File created:**
 - `src/passes/lowering/lower_closure.ts`
@@ -262,7 +276,7 @@ export function lowerClosure(expr: ClosureExpr, builder: IRBuilder, ctx: Lowerin
 
 **What to verify:** Full test suite passes. Snapshot/restore is gone. Closures produce correct functions.
 
-### Slice 6: Extract `lower_module.ts`, wire `compile.ts`, delete `ast_to_ssa.ts` (AFK)
+### Slice 6: Extract `lower_module.ts`, wire `compile.ts`, delete `ast_to_ssa.ts` (AFK) — [#28](https://github.com/May1a/jsrust/issues/28)
 
 **File created:**
 - `src/passes/lowering/lower_module.ts`
