@@ -10,6 +10,8 @@ import {
     ReceiverKind,
     StructExpr,
     StructItem,
+    TraitImplItem,
+    TraitItem,
     type Item,
     type Span,
     ModuleNode,
@@ -63,14 +65,28 @@ function expandCloneForStruct(item: StructItem): ImplItem {
     return new ImplItem(span, structType, [cloneFn]);
 }
 
+function expandCopyForStruct(item: StructItem): TraitImplItem {
+    const span = syntheticSpan(item.span);
+    const copyTrait = new TraitItem(span, "Copy", []);
+    const structType = new NamedTypeNode(span, item.name);
+    return new TraitImplItem(span, "Copy", copyTrait, structType, []);
+}
+
 function expandDerivesForItem(item: Item): Item[] {
     if (item instanceof ModItem) {
         const expandedChildren = item.items.flatMap(expandDerivesForItem);
         return [new ModItem(item.span, item.name, expandedChildren)];
     }
 
-    if (item instanceof StructItem && item.derives.includes("Clone")) {
-        return [item, expandCloneForStruct(item)];
+    if (item instanceof StructItem) {
+        const expanded: Item[] = [item];
+        if (item.derives.includes("Clone")) {
+            expanded.push(expandCloneForStruct(item));
+        }
+        if (item.derives.includes("Copy")) {
+            expanded.push(expandCopyForStruct(item));
+        }
+        return expanded;
     }
 
     return [item];

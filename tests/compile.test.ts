@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+    compileToSsaModule,
     compileToLlvm,
     formatCompileError,
 } from "../src/compile";
@@ -39,6 +40,72 @@ describe("compile diagnostics", () => {
         expect(formatCompileError(result.error)).toContain(
             "`?` expressions are parsed but not implemented yet",
         );
+    });
+});
+
+describe("type aliases", () => {
+    test("compiles a non-generic return type alias", () => {
+        const result = compileToSsaModule("type MyInt = i32; fn foo() -> MyInt { 42 }");
+        expect(result.isOk()).toBe(true);
+    });
+
+    test("resolves non-generic aliases in parameters and returns", () => {
+        const result = compileToSsaModule(
+            "type MyInt = i32; fn add(a: MyInt, b: MyInt) -> MyInt { a + b }",
+        );
+        expect(result.isOk()).toBe(true);
+    });
+
+    test("resolves generic aliases at use sites", () => {
+        const result = compileToSsaModule(
+            "type Wrapper<T> = Option<T>; fn unwrap(x: Wrapper<i32>) -> i32 { match x { Some(v) => v, None => 0 } }",
+        );
+        expect(result.isOk()).toBe(true);
+    });
+
+    test("rejects cyclical aliases", () => {
+        const result = compileToSsaModule("type A = B; type B = A;");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) {
+            return;
+        }
+        expect(formatCompileError(result.error)).toContain("cyclical type alias");
+    });
+
+    test("rejects aliases that shadow existing definitions", () => {
+        const result = compileToSsaModule("struct Foo { x: i32 } type Foo = i32;");
+        expect(result.isErr()).toBe(true);
+        if (result.isOk()) {
+            return;
+        }
+        expect(formatCompileError(result.error)).toContain("duplicate definition");
+    });
+});
+
+describe("derive Copy", () => {
+    test("compiles derive Copy on structs", () => {
+        const result = compileToSsaModule(
+            "#[derive(Copy)] struct Point { x: i32, y: i32 }",
+        );
+        expect(result.isOk()).toBe(true);
+        if (result.isErr()) {
+            return;
+        }
+        expect(result.value.typed.typeContext.isCopyType("Point")).toBe(true);
+    });
+
+    test("uses Copy structs normally", () => {
+        const result = compileToSsaModule(
+            "#[derive(Copy)] struct Point { x: i32, y: i32 } fn get_x(p: Point) -> i32 { p.x }",
+        );
+        expect(result.isOk()).toBe(true);
+    });
+
+    test("compiles derive Clone and Copy together", () => {
+        const result = compileToSsaModule(
+            "#[derive(Clone, Copy)] struct Point { x: i32, y: i32 }",
+        );
+        expect(result.isOk()).toBe(true);
     });
 });
 

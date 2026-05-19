@@ -1,6 +1,11 @@
 import type { CallExpr, Expression, GenericFnItem, TypeNode } from "../parse/ast";
 import type { SubstitutionMap } from "../passes/monomorphize";
 
+export interface TypeAliasInfo {
+    aliasedType: TypeNode;
+    genericParamNames: string[];
+}
+
 interface StructFieldInfo {
     name: string;
     ty: TypeNode;
@@ -51,6 +56,8 @@ export class TypeContext {
     private readonly callSubstitutions: WeakMap<CallExpr, SubstitutionMap>;
     private readonly variantOwners: Map<string, string>;
     private readonly namedConsts: Map<string, ConstBindingInfo>;
+    private readonly typeAliases: Map<string, TypeAliasInfo>;
+    private readonly copyTypes: Set<string>;
 
     constructor() {
         this.expressionTypes = new WeakMap();
@@ -62,6 +69,8 @@ export class TypeContext {
         this.callSubstitutions = new WeakMap();
         this.variantOwners = new Map();
         this.namedConsts = new Map();
+        this.typeAliases = new Map();
+        this.copyTypes = new Set();
     }
 
     setExpressionType(expr: Expression, ty: TypeNode): void {
@@ -78,6 +87,26 @@ export class TypeContext {
 
     lookupNamedType(name: string): TypeNode | undefined {
         return this.namedTypes.get(name);
+    }
+
+    hasNamedType(name: string): boolean {
+        return this.namedTypes.has(name);
+    }
+
+    registerTypeAlias(
+        name: string,
+        aliasedType: TypeNode,
+        genericParamNames: string[],
+    ): void {
+        this.typeAliases.set(name, { aliasedType, genericParamNames });
+    }
+
+    lookupTypeAlias(name: string): TypeAliasInfo | undefined {
+        return this.typeAliases.get(name);
+    }
+
+    hasTypeAlias(name: string): boolean {
+        return this.typeAliases.has(name);
     }
 
     // --- Scope tracking ---
@@ -113,6 +142,10 @@ export class TypeContext {
 
     lookupNamedConst(name: string): ConstBindingInfo | undefined {
         return this.namedConsts.get(name);
+    }
+
+    hasNamedConst(name: string): boolean {
+        return this.namedConsts.has(name);
     }
 
     setConst(name: string, binding: ConstBindingInfo): void {
@@ -161,6 +194,18 @@ export class TypeContext {
 
     lookupFnSignature(name: string): FnSignature | undefined {
         return this.fnSignatures.get(name);
+    }
+
+    hasFnSignature(name: string): boolean {
+        return this.fnSignatures.has(name);
+    }
+
+    markCopyType(name: string): void {
+        this.copyTypes.add(name);
+    }
+
+    isCopyType(name: string): boolean {
+        return this.copyTypes.has(name);
     }
 
     // --- Generic function tracking ---

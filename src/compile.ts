@@ -11,7 +11,6 @@ import {
     StaticItem,
     TestFnItem,
     TryExpr,
-    TypeAliasItem,
     UnsafeBlockExpr,
     UnsafeItem,
     type ModuleNode,
@@ -316,13 +315,6 @@ function unsupportedFeatureOfNode(
             feature: "unsafe-item",
             span: node.span,
             message: "`unsafe` items are parsed but not implemented yet",
-        };
-    }
-    if (node instanceof TypeAliasItem) {
-        return {
-            feature: "type-alias-item",
-            span: node.span,
-            message: "type aliases are parsed but not implemented yet",
         };
     }
     if (node instanceof StaticItem) {

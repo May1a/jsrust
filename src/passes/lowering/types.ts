@@ -30,6 +30,7 @@ export interface LoweringInput {
     structFieldNames: Map<string, string[]>;
     fnIdMap: Map<string, number>;
     functionReturnTypes: Map<string, IRType>;
+    functionParamTypes: Map<string, TypeNode[]>;
     enumVariantTags: Map<string, number>;
     enumVariantOwners: Map<string, string>;
     namedConsts: Map<string, LoweringConstBinding>;
