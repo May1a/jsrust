@@ -4,7 +4,6 @@ import {
     BinaryOp,
     BlockExpr,
     type BreakExpr,
-    BuiltinType,
     CallExpr,
     type CastExpr,
     ConstItem,
@@ -39,10 +38,8 @@ import {
     ModItem,
     type ModuleNode,
     NamedTypeNode,
-    OptionTypeNode,
     type RecoveryExpr,
     type RecoveryItem,
-    ResultTypeNode,
     type ParamNode,
     type PathExpr,
     PtrTypeNode,
@@ -59,8 +56,8 @@ import {
     type TryExpr,
     type TypeNode,
     type TypeAliasItem,
-    TupleTypeNode,
-    ArrayTypeNode,
+    type TupleTypeNode,
+    type ArrayTypeNode,
     type UnsafeBlockExpr,
     type UnsafeItem,
     UnaryExpr,
@@ -131,7 +128,6 @@ import {
     makeIRFloatType,
     makeIRIntType,
     makeIRModule,
-    makeIRPtrType,
     makeIRStructType,
     makeIRUnitType,
     isIRUnitType,
@@ -151,7 +147,16 @@ import {
     type BoolType,
 } from "../ir/ir";
 import { IRBuilder } from "../ir/ir_builder";
-import { internalBug } from "../utils/internal_bug";
+import { FormatTag } from "./lowering/types";
+import {
+    builtinToIrType,
+    irTypeName,
+    namedBuiltin,
+    translateArrayTypeNode,
+    translateTupleTypeNode,
+    translateTypeNode,
+    tupleStructName,
+} from "./lowering/type_translation";
 
 export enum LoweringErrorKind {
     UnsupportedNode,
@@ -220,14 +225,6 @@ const DEFAULT_CHAR_CODE = 0;
 const EMPTY_FORMAT = "";
 
 const LAST_FRAME_INDEX = -1;
-
-enum FormatTag {
-    String = 0,
-    Int = 1,
-    Float = 2,
-    Bool = 3,
-    Char = 4,
-}
 
 interface FormatTemplate {
     literal: string;
@@ -3492,214 +3489,33 @@ export class AstToSsaCtx {
     }
 
     private static translateArrayTypeNode(typeNode: ArrayTypeNode): IRType {
-        const elemTy = AstToSsaCtx.translateTypeNode(typeNode.element);
-        if (
-            !(typeNode.length instanceof LiteralExpr) ||
-            typeNode.length.literalKind !== LiteralKind.Int
-        ) {
-            internalBug(
-                "Array type requires a literal integer length; non-const lengths are not supported",
-            );
-        }
-        const len = Number(typeNode.length.value);
-        return makeIRArrayType(elemTy, len);
+        return translateArrayTypeNode(typeNode);
     }
 
     private static translateTupleTypeNode(typeNode: TupleTypeNode): IRType {
-        if (typeNode.elements.length === 0) {
-            return makeIRUnitType();
-        }
-        const elementTypes = typeNode.elements.map((e) =>
-            AstToSsaCtx.translateTypeNode(e),
-        );
-        const name = AstToSsaCtx.tupleStructName(elementTypes);
-        return makeIRStructType(name, elementTypes);
+        return translateTupleTypeNode(typeNode);
     }
 
     static translateTypeNode(typeNode: TypeNode): IRType {
-        if (typeNode instanceof OptionTypeNode) {
-            const innerIrType = AstToSsaCtx.translateTypeNode(typeNode.inner);
-            return makeIREnumType("Option", [[], [innerIrType]]);
-        }
-        if (typeNode instanceof ResultTypeNode) {
-            const okType = AstToSsaCtx.translateTypeNode(typeNode.okType);
-            const errType = AstToSsaCtx.translateTypeNode(typeNode.errType);
-            return makeIREnumType("Result", [[okType], [errType]]);
-        }
-        if (typeNode instanceof NamedTypeNode) {
-            const builtin = AstToSsaCtx.namedBuiltin(typeNode.name);
-            if (builtin) {
-                return AstToSsaCtx.builtinToIrType(builtin);
-            }
-            return makeIRStructType(typeNode.name, []);
-        }
-        if (typeNode instanceof RefTypeNode) {
-            return makeIRPtrType(AstToSsaCtx.translateTypeNode(typeNode.inner));
-        }
-        if (typeNode instanceof PtrTypeNode) {
-            return makeIRPtrType(AstToSsaCtx.translateTypeNode(typeNode.inner));
-        }
-        if (typeNode instanceof FnTypeNode) {
-            // Function pointers are represented as 64-bit function IDs.
-            return makeIRIntType(IntWidth.I64);
-        }
-        if (typeNode instanceof ArrayTypeNode) {
-            return AstToSsaCtx.translateArrayTypeNode(typeNode);
-        }
-        if (typeNode instanceof TupleTypeNode) {
-            return AstToSsaCtx.translateTupleTypeNode(typeNode);
-        }
-        return makeIRUnitType();
+        return translateTypeNode(typeNode);
     }
 
     private static irTypeName(ty: IRType): string {
-        if (ty instanceof IntType) return `i${String(ty.width)}`;
-        if (ty instanceof FloatType) return `f${String(ty.width)}`;
-        if (ty.kind === IRTypeKind.Bool) return "bool";
-        if (ty instanceof PtrType) {
-            return `ptr_${AstToSsaCtx.irTypeName(ty.inner)}`;
-        }
-        if (ty instanceof StructType) return ty.name;
-        if (ty instanceof ArrayType) {
-            return `arr${String(ty.length)}_${AstToSsaCtx.irTypeName(ty.element)}`;
-        }
-        if (ty.kind === IRTypeKind.Unit) return "unit";
-        return `k${String(ty.kind)}`;
+        return irTypeName(ty);
     }
 
     private static tupleStructName(elementTypes: IRType[]): string {
-        const parts = elementTypes.map((ty) => AstToSsaCtx.irTypeName(ty));
-        return `__tuple${elementTypes.length}_${parts.join("_")}`;
+        return tupleStructName(elementTypes);
     }
 
-    static namedBuiltin(name: string): BuiltinType | undefined {
-        const n = name.toLowerCase();
-        switch (n) {
-            case "i8": {
-                return BuiltinType.I8;
-            }
-            case "i16": {
-                return BuiltinType.I16;
-            }
-            case "i32": {
-                return BuiltinType.I32;
-            }
-            case "i64": {
-                return BuiltinType.I64;
-            }
-            case "i128": {
-                return BuiltinType.I128;
-            }
-            case "isize": {
-                return BuiltinType.Isize;
-            }
-            case "u8": {
-                return BuiltinType.U8;
-            }
-            case "u16": {
-                return BuiltinType.U16;
-            }
-            case "u32": {
-                return BuiltinType.U32;
-            }
-            case "u64": {
-                return BuiltinType.U64;
-            }
-            case "u128": {
-                return BuiltinType.U128;
-            }
-            case "usize": {
-                return BuiltinType.Usize;
-            }
-            case "f32": {
-                return BuiltinType.F32;
-            }
-            case "f64": {
-                return BuiltinType.F64;
-            }
-            case "bool": {
-                return BuiltinType.Bool;
-            }
-            case "char": {
-                return BuiltinType.Char;
-            }
-            case "str": {
-                return BuiltinType.Str;
-            }
-            case "unit": {
-                return BuiltinType.Unit;
-            }
-            case "never": {
-                return BuiltinType.Never;
-            }
-            default: {
-                return undefined;
-            }
-        }
+    static namedBuiltin(name: string): ReturnType<typeof namedBuiltin> {
+        return namedBuiltin(name);
     }
 
-    static builtinToIrType(ty: BuiltinType): IRType {
-        switch (ty) {
-            case BuiltinType.I8: {
-                return makeIRIntType(IntWidth.I8);
-            }
-            case BuiltinType.I16: {
-                return makeIRIntType(IntWidth.I16);
-            }
-            case BuiltinType.I32: {
-                return makeIRIntType(IntWidth.I32);
-            }
-            case BuiltinType.I64: {
-                return makeIRIntType(IntWidth.I64);
-            }
-            case BuiltinType.I128: {
-                return makeIRIntType(IntWidth.I128);
-            }
-            case BuiltinType.Isize: {
-                return makeIRIntType(IntWidth.Isize);
-            }
-            case BuiltinType.U8: {
-                return makeIRIntType(IntWidth.U8);
-            }
-            case BuiltinType.U16: {
-                return makeIRIntType(IntWidth.U16);
-            }
-            case BuiltinType.U32: {
-                return makeIRIntType(IntWidth.U32);
-            }
-            case BuiltinType.U64: {
-                return makeIRIntType(IntWidth.U64);
-            }
-            case BuiltinType.U128: {
-                return makeIRIntType(IntWidth.U128);
-            }
-            case BuiltinType.Usize: {
-                return makeIRIntType(IntWidth.Usize);
-            }
-            case BuiltinType.F32: {
-                return makeIRFloatType(FloatWidth.F32);
-            }
-            case BuiltinType.F64: {
-                return makeIRFloatType(FloatWidth.F64);
-            }
-            case BuiltinType.Bool: {
-                return makeIRBoolType();
-            }
-            case BuiltinType.Char: {
-                return makeIRIntType(IntWidth.U32);
-            }
-            case BuiltinType.Str: {
-                return makeIRPtrType(makeIRIntType(IntWidth.U8));
-            }
-            case BuiltinType.Unit:
-            case BuiltinType.Never: {
-                return makeIRUnitType();
-            }
-            default: {
-                const unreachable: never = ty;
-                return unreachable;
-            }
-        }
+    static builtinToIrType(
+        ty: Parameters<typeof builtinToIrType>[0],
+    ): IRType {
+        return builtinToIrType(ty);
     }
 
     private static formatTagFromTypeNode(
@@ -4423,7 +4239,7 @@ function toLoweringBinding(binding: ModuleConstBinding): LoweringConstBinding | 
     };
 }
 
-function deriveLoweringMaps(
+export function deriveLoweringMaps(
     metadata: ModuleMetadata,
     moduleNode: ModuleNode,
     irModule: IRModule,

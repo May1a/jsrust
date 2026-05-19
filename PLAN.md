@@ -2,7 +2,18 @@
 
 ## Branch purpose
 
-This branch contains the **context and plan** for refactoring the monolithic lowering pass (`src/passes/ast_to_ssa.ts`, 4,631 lines) into five deep sub-modules under `src/passes/lowering/`. No implementation code exists yet — this branch carries only the documentation (context map, context files, issue breakdown, and this plan). Implementation happens in subsequent PRs.
+Refactoring the monolithic lowering pass (`src/passes/ast_to_ssa.ts`, ~4,400 lines) into five deep sub-modules under `src/passes/lowering/`. Slice 1 is complete. Slices 2–6 remain.
+
+## Progress
+
+| Slice | Issue | Status | Description |
+|-------|-------|--------|-------------|
+| 1 | [#23](https://github.com/May1a/jsrust/issues/23) | **Done** | Extract `type_translation`, `LoweringInput`, `FormatTag` consolidation |
+| 2 | [#24](https://github.com/May1a/jsrust/issues/24) | Next | Introduce `LoweredValue { id, ty }` tuples |
+| 3 | [#25](https://github.com/May1a/jsrust/issues/25) | Blocked by #24 | Extract `lower_expr.ts` |
+| 4 | [#26](https://github.com/May1a/jsrust/issues/26) | Blocked by #25 | Extract `lower_control_flow.ts` |
+| 5 | [#27](https://github.com/May1a/jsrust/issues/27) | Blocked by #26 | Extract `lower_closure.ts` with fresh builder |
+| 6 | [#28](https://github.com/May1a/jsrust/issues/28) | Blocked by #27 | Extract `lower_module.ts`, wire `compile.ts`, delete `ast_to_ssa.ts` |
 
 ## Skills an agent should load
 
@@ -21,7 +32,7 @@ When picking up this work, load these skills:
 4. **`src/ir/CONTEXT.md`** — the SSA IR context (IRBuilder, IRFunction, IRBlock, etc.)
 5. **`src/parse/CONTEXT.md`** — the parsing context (AST nodes, ModuleNode, etc.)
 6. **`src/llvm/CONTEXT.md`** — the LLVM context (emission, printing, toolchain)
-7. **This file (`PLAN.md`)** — the implementation plan
+7. **This file (`PLAN.md`)** — the implementation plan and progress
 8. **The PRD on GitHub Issues** — the official specification
 
 ## GitHub issues
@@ -59,7 +70,7 @@ All issues are labeled `ready-for-agent` and listed in dependency order.
 - Snapshot/restore for isolated builder scopes
 - Module-level iteration over items
 
-It is 4,631 lines with ~50 instance methods and no internal seams.
+It is ~4,400 lines with ~50 instance methods and no internal seams.
 
 ## The solution (summary)
 
@@ -130,7 +141,7 @@ interface LoweringCfgCtx {
 
 ### D6: `FormatTag` consolidation
 
-The `FormatTag` enum in `ast_to_ssa.ts` (which duplicates `format_tags.ts`) is moved to `src/passes/lowering/types.ts`. The file `src/utils/format_tags.ts` is deleted. All lowering code imports `FormatTag` from `src/passes/lowering/types`.
+The `FormatTag` enum is now in `src/passes/lowering/types.ts`. The file `src/utils/format_tags.ts` has been deleted. All lowering code imports `FormatTag` from `src/passes/lowering/types`. **Done in slice 1.**
 
 ### D7: `irModule` as shared writable
 
@@ -145,34 +156,58 @@ Lowering code accesses `IRBuilder` only through public methods. No reading of `b
 Each slice is independently verifiable by running the full test suite:
 
 ```bash
-bun test tests/compile.test.ts tests/examples.test.ts
+PATH="/root/.bun/bin:$PATH" bun test tests/compile.test.ts tests/examples.test.ts
 ```
+
+Note: `bun` is installed at `/root/.bun/bin/bun`. You must use `PATH="/root/.bun/bin:$PATH"` or the absolute path when running `bun` commands in this environment.
 
 All slices must pass before moving to the next.
 
-### Slice 1: Extract `type_translation` and `LoweringInput` (AFK) — [#23](https://github.com/May1a/jsrust/issues/23)
+### Slice 1: Extract `type_translation` and `LoweringInput` — [#23](https://github.com/May1a/jsrust/issues/23) — DONE
 
-**Files created:**
-- `src/passes/lowering/types.ts` — `LoweringInput` interface, `LoweredValue = { id: ValueId; ty: IRType }`, `FormatTag` enum, `LoweringError` types, `LocalBinding`, `LoopFrame`, `LoweringConstBinding`, `BuilderSnapshot`, `FormatTemplate`
-- `src/passes/lowering/type_translation.ts` — `translateTypeNode`, `builtinToIrType`, `namedBuiltin`, `translateArrayTypeNode`, `translateTupleTypeNode`, `irTypeName`, `tupleStructName`
+**Status: Complete.** Verified with `bun lint` (all files pass) and `bun test` (38 pass, 33 skip, 0 fail).
 
-**Files modified:**
-- `src/passes/ast_to_ssa.ts` — import `translateTypeNode`, `builtinToIrType`, `namedBuiltin` from `./lowering/type_translation`; remove the static methods (or delegate to them). Import `LoweringInput`, `LoweredValue`, `FormatTag` from `./lowering/types`.
-- `src/passes/lowering/index.ts` — re-export module types and type_translation
+**What was done:**
 
-Introduce `deriveLoweringMaps` as a free function exported from a new file or from `lower_module.ts` (but `lower_module.ts` is created in slice 6... hmm). Actually, slice 1 should create the converter function somewhere. Let me reconsider.
+1. Created `src/passes/lowering/types.ts` with:
+   - `LoweringErrorKind` enum, `LoweringError` interface
+   - `LoweringInput` interface
+   - `LoweredValue = { id: ValueId; ty: IRType }` interface
+   - `LocalBinding`, `LoopFrame`, `LoweringConstBinding`, `BuilderSnapshot` interfaces
+   - `FormatTag` enum (consolidated from the old inline enum and `format_tags.ts`)
+   - `FormatTemplate` interface
+   - `LoweringResult<T>` type alias
 
-**Revised for slice 1:** Create `src/passes/lowering/types.ts`, `type_translation.ts`, `index.ts`. Create `deriveLoweringMaps` in a temporary location (could be in `lowering/` or as a free function exported from the index). The function `lowerAstModuleToSsa` still accepts `ModuleMetadata` during this slice — the seam migration happens in slice 6.
+2. Created `src/passes/lowering/type_translation.ts` with pure free functions:
+   - `translateTypeNode(typeNode) → IRType`
+   - `builtinToIrType(ty) → IRType`
+   - `namedBuiltin(name) → BuiltinType | undefined`
+   - `translateArrayTypeNode(typeNode) → IRType`
+   - `translateTupleTypeNode(typeNode) → IRType`
+   - `irTypeName(ty) → string`
+   - `tupleStructName(elementTypes) → string`
 
-**What to verify:**
-```bash
-bun test tests/compile.test.ts tests/examples.test.ts
+3. Created `src/passes/lowering/index.ts` — re-exports from `types.ts` and `type_translation.ts`
+
+4. Modified `src/passes/ast_to_ssa.ts`:
+   - Removed the inline `FormatTag` enum (now imported from `./lowering/types`)
+   - Removed the inline `LoweringErrorKind`/`LoweringError` (still defined locally in `ast_to_ssa.ts` but the canonical definitions are in `lowering/types.ts`; the local ones will be removed in a later slice when the class is dismantled)
+   - Static methods `translateTypeNode`, `builtinToIrType`, `namedBuiltin`, `translateArrayTypeNode`, `translateTupleTypeNode`, `irTypeName`, `tupleStructName` now delegate to the pure functions in `lowering/type_translation.ts`
+   - Removed unused imports: `OptionTypeNode`, `ResultTypeNode`, `BuiltinType`, `makeIRPtrType`, `internalBug`
+   - Made `deriveLoweringMaps` an exported function (was module-private)
+
+5. Deleted `src/utils/format_tags.ts` and removed its re-export from `src/utils/index.ts`
+
+**Current file structure:**
 ```
-Must pass.
+src/passes/lowering/
+  CONTEXT.md          (domain docs — unchanged)
+  index.ts            (re-exports types + type_translation)
+  types.ts            (LoweringInput, LoweredValue, FormatTag, error types)
+  type_translation.ts (pure TypeNode → IRType functions)
+```
 
-**Key principle:** This slice is about moving the *type* glue (types + pure type translation) into the new directory while keeping the old class working. No behavior change. No test should break.
-
-### Slice 2: Introduce `LoweredValue { id, ty }` tuples (AFK) — [#24](https://github.com/May1a/jsrust/issues/24)
+### Slice 2: Introduce `LoweredValue { id, ty }` tuples — [#24](https://github.com/May1a/jsrust/issues/24)
 
 **Files modified:**
 - `src/passes/ast_to_ssa.ts` — change ALL `lower*` method return types from `Result<ValueId, LoweringError>` to `Result<LoweredValue, LoweringError>`. Update every call site that destructures the result to use `.value.id` and `.value.ty`. Delete `resolveValueType` and `handleInstructionId`.
@@ -183,7 +218,15 @@ Must pass.
 
 **Key principle:** This is a mechanical change with ~50 call sites. Do it in one pass, run tests, fix any missed sites. The type of every expression is now explicitly known at the call site.
 
-### Slice 3: Extract `lower_expr.ts` (AFK) — [#25](https://github.com/May1a/jsrust/issues/25)
+**Tips for the implementer:**
+- `LoweredValue` is already defined in `src/passes/lowering/types.ts`
+- `resolveValueType` is at ~line 4040 in `ast_to_ssa.ts`; it walks `fn.params`, `block.params`, and `block.instructions` to find a `ValueId`'s type
+- `handleInstructionId` is at ~line 4092; it wraps `id: ValueId | null` into `Result<ValueId, LoweringError>`
+- Every call to `this.resolveValueType(...)` must be replaced by using the `.ty` from the `LoweredValue` that was already returned
+- Every call to `AstToSsaCtx.handleInstructionId(...)` must be replaced by wrapping the result directly (the null check can be done inline or via a small helper)
+- Search patterns: `this.resolveValueType(`, `AstToSsaCtx.handleInstructionId(`
+
+### Slice 3: Extract `lower_expr.ts` — [#25](https://github.com/May1a/jsrust/issues/25)
 
 **File created:**
 - `src/passes/lowering/lower_expr.ts`
@@ -223,7 +266,7 @@ Where `makeExprCtx()` constructs the slice from the instance fields.
 
 **What to verify:** Full test suite passes. The expression lowering implementation lives in `lower_expr.ts`. `AstToSsaCtx` is a delegating shell.
 
-### Slice 4: Extract `lower_control_flow.ts` (AFK) — [#26](https://github.com/May1a/jsrust/issues/26)
+### Slice 4: Extract `lower_control_flow.ts` — [#26](https://github.com/May1a/jsrust/issues/26)
 
 **File created:**
 - `src/passes/lowering/lower_control_flow.ts`
@@ -248,7 +291,7 @@ export function lowerIf(expr: IfExpr, builder: IRBuilder, ctx: LoweringCfgCtx): 
 
 **What to verify:** Full test suite passes. Control-flow logic lives in `lower_control_flow.ts`.
 
-### Slice 5: Extract `lower_closure.ts` with fresh builder (AFK) — [#27](https://github.com/May1a/jsrust/issues/27)
+### Slice 5: Extract `lower_closure.ts` with fresh builder — [#27](https://github.com/May1a/jsrust/issues/27)
 
 **File created:**
 - `src/passes/lowering/lower_closure.ts`
@@ -276,7 +319,7 @@ export function lowerClosure(expr: ClosureExpr, builder: IRBuilder, ctx: Lowerin
 
 **What to verify:** Full test suite passes. Snapshot/restore is gone. Closures produce correct functions.
 
-### Slice 6: Extract `lower_module.ts`, wire `compile.ts`, delete `ast_to_ssa.ts` (AFK) — [#28](https://github.com/May1a/jsrust/issues/28)
+### Slice 6: Extract `lower_module.ts`, wire `compile.ts`, delete `ast_to_ssa.ts` — [#28](https://github.com/May1a/jsrust/issues/28)
 
 **File created:**
 - `src/passes/lowering/lower_module.ts`
@@ -316,9 +359,9 @@ const loweringResult = lowerAstModuleToSsa(module, loweringInput);
 
 ### During the refactor (all slices)
 
-- **Regression gate**: `bun test tests/compile.test.ts tests/examples.test.ts` must pass after every slice
+- **Regression gate**: `PATH="/root/.bun/bin:$PATH" bun test tests/compile.test.ts tests/examples.test.ts` must pass after every slice
 - **No new tests written during the refactor** — the structural change is the deliverable
-- **Lint**: `bun lint <file>` after each file is modified
+- **Lint**: `PATH="/root/.bun/bin:$PATH" bun lint <file>` after each file is modified
 
 ### After the refactor (future work)
 
@@ -341,7 +384,7 @@ Test pattern: construct input AST nodes, call the lowering function, assert on t
 6. `resolveValueType` and `handleInstructionId` no longer exist
 7. `saveBuilderSnapshot` / `restoreBuilderSnapshot` / `withIsolatedBuilderScope` no longer exist
 8. Closure lowering uses a fresh `IRBuilder` instance
-9. `FormatTag` is defined once in `lowering/types.ts`; `format_tags.ts` is deleted
+9. `FormatTag` is defined once in `lowering/types.ts`; `format_tags.ts` is deleted (**done**)
 10. All lowering functions receive `IRBuilder` as an explicit argument
 11. Each sub-module has a sliced context interface declaring only the state it reads
 12. `bun test tests/compile.test.ts tests/examples.test.ts` passes
