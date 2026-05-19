@@ -49,6 +49,7 @@ import {
     EnumItem,
     TraitImplItem,
     TraitItem,
+    TypeAliasItem,
     ArrayTypeNode,
     FnTypeNode,
     GenericArgsNode,
@@ -585,6 +586,93 @@ function typesCompatibleList(left: TypeNode[], right: TypeNode[]): boolean {
     return left.every((type, index) => typesCompatible(type, right[index]));
 }
 
+function resolveTypeAliases(
+    typeCtx: TypeContext,
+    ty: TypeNode,
+    seen = new Set<string>(),
+): TypeNode {
+    if (ty instanceof NamedTypeNode) {
+        if (seen.has(ty.name)) {
+            return ty;
+        }
+        const alias = typeCtx.lookupTypeAlias(ty.name);
+        if (!alias) {
+            return ty;
+        }
+        const subs = new Map<string, TypeNode>();
+        if (ty.args) {
+            for (let i = 0; i < alias.genericParamNames.length; i++) {
+                const arg = ty.args.args[i];
+                subs.set(
+                    alias.genericParamNames[i],
+                    resolveTypeAliases(typeCtx, arg, new Set(seen)),
+                );
+            }
+        }
+        seen.add(ty.name);
+        const result = resolveTypeAliases(
+            typeCtx,
+            substituteTypeNode(alias.aliasedType, subs),
+            seen,
+        );
+        seen.delete(ty.name);
+        return result;
+    }
+    if (ty instanceof RefTypeNode) {
+        return new RefTypeNode(
+            ty.span,
+            ty.mutability,
+            resolveTypeAliases(typeCtx, ty.inner, seen),
+        );
+    }
+    if (ty instanceof TupleTypeNode) {
+        return new TupleTypeNode(
+            ty.span,
+            ty.elements.map((element) =>
+                resolveTypeAliases(typeCtx, element, new Set(seen)),
+            ),
+        );
+    }
+    if (ty instanceof ArrayTypeNode) {
+        return new ArrayTypeNode(
+            ty.span,
+            resolveTypeAliases(typeCtx, ty.element, seen),
+            ty.length,
+        );
+    }
+    if (ty instanceof PtrTypeNode) {
+        return new PtrTypeNode(
+            ty.span,
+            ty.mutability,
+            resolveTypeAliases(typeCtx, ty.inner, seen),
+        );
+    }
+    if (ty instanceof FnTypeNode) {
+        return new FnTypeNode(
+            ty.span,
+            ty.params.map((param) =>
+                resolveTypeAliases(typeCtx, param, new Set(seen)),
+            ),
+            resolveTypeAliases(typeCtx, ty.returnType, seen),
+        );
+    }
+    if (ty instanceof OptionTypeNode) {
+        return new OptionTypeNode(
+            ty.span,
+            resolveTypeAliases(typeCtx, ty.inner, seen),
+        );
+    }
+    if (ty instanceof ResultTypeNode) {
+        return new ResultTypeNode(
+            ty.span,
+            resolveTypeAliases(typeCtx, ty.okType, seen),
+            resolveTypeAliases(typeCtx, ty.errType, seen),
+        );
+    }
+    return ty;
+}
+
+
 function genericArgsCompatible(
     left: GenericArgsNode | undefined,
     right: GenericArgsNode | undefined,
@@ -654,10 +742,20 @@ function validateNamedTypeNode(
     const errors: TypeError[] = [];
     const builtIn = isBuiltinTypeName(ty.name);
     const known = typeCtx.lookupNamedType(ty.name);
+    const alias = typeCtx.lookupTypeAlias(ty.name);
     const generic = genericNames.has(ty.name);
-    if (!known && !builtIn && !generic) {
+    if (!known && !alias && !builtIn && !generic) {
         errors.push({
             message: `Unknown type \`${ty.name}\``,
+            span: ty.span,
+        });
+    }
+    const foundArgsCount = match(ty.args)
+        .with(P.nullish, () => 0)
+        .otherwise((args) => args.args.length);
+    if (alias && foundArgsCount !== alias.genericParamNames.length) {
+        errors.push({
+            message: `type alias \`${ty.name}\` expects ${alias.genericParamNames.length} generic arguments, found ${foundArgsCount}`,
             span: ty.span,
         });
     }
@@ -993,6 +1091,164 @@ function registerItemTypesWithPrefix(
     }
 }
 
+function registerTypeAliasWithPrefix(
+    typeCtx: TypeContext,
+    node: TypeAliasItem,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+): void {
+    const genericParamNames = node.genericParams.map((param) => param.name);
+    typeCtx.registerTypeAlias(
+        qualify(node.name),
+        node.aliasedType,
+        genericParamNames,
+    );
+    if (modulePrefix) {
+        typeCtx.registerTypeAlias(node.name, node.aliasedType, genericParamNames);
+    }
+}
+
+function registerGenericFnWithPrefix(
+    typeCtx: TypeContext,
+    node: GenericFnItem,
+    qualify: (name: string) => string,
+): void {
+    const qualifiedName = qualify(node.name);
+    typeCtx.registerFnSignature(qualifiedName, {
+        params: buildParamList(node.params),
+        returnType: node.returnType,
+    });
+    typeCtx.registerGenericFn(qualifiedName, node);
+}
+
+function registerFnWithPrefix(
+    typeCtx: TypeContext,
+    node: FnItem,
+    qualify: (name: string) => string,
+): void {
+    typeCtx.registerFnSignature(qualify(node.name), {
+        params: buildParamList(node.params),
+        returnType: node.returnType,
+    });
+}
+
+function registerImplItemWithPrefix(
+    typeCtx: TypeContext,
+    node: ImplItem,
+    qualify: (name: string) => string,
+    modulePrefix: string,
+): void {
+    registerImplConstsWithPrefix(typeCtx, node, qualify, modulePrefix);
+    registerImplMethodsWithPrefix(typeCtx, node, qualify, modulePrefix);
+}
+
+function isTypeCopy(typeCtx: TypeContext, ty: TypeNode): boolean {
+    if (ty instanceof NamedTypeNode) {
+        return typeCtx.isCopyType(ty.name);
+    }
+    if (ty instanceof RefTypeNode) {
+        return true; // References are always Copy
+    }
+    if (ty instanceof PtrTypeNode) {
+        return true; // Pointers are always Copy
+    }
+    if (ty instanceof OptionTypeNode) {
+        return isTypeCopy(typeCtx, ty.inner);
+    }
+    if (ty instanceof ResultTypeNode) {
+        return isTypeCopy(typeCtx, ty.okType) && isTypeCopy(typeCtx, ty.errType);
+    }
+    if (ty instanceof ArrayTypeNode) {
+        return isTypeCopy(typeCtx, ty.element);
+    }
+    if (ty instanceof TupleTypeNode) {
+        return ty.elements.every((e) => isTypeCopy(typeCtx, e));
+    }
+    if (ty instanceof FnTypeNode) {
+        return true; // Function pointers are Copy
+    }
+    return false;
+}
+
+function typeAliasCyclePath(
+    typeCtx: TypeContext,
+    item: TypeAliasItem,
+    visited = new Set<string>(),
+): string[] | undefined {
+    if (visited.has(item.name)) {
+        return [item.name];
+    }
+    visited.add(item.name);
+
+    const check = (ty: TypeNode): string[] | undefined => {
+        if (ty instanceof NamedTypeNode) {
+            const alias = typeCtx.lookupTypeAlias(ty.name);
+            if (alias) {
+                const subPath = typeAliasCyclePath(
+                    typeCtx,
+                    new TypeAliasItem(ty.span, ty.name, [], alias.aliasedType),
+                    new Set(visited),
+                );
+                if (subPath) {
+                    return [item.name, ...subPath];
+                }
+            }
+        } else if (ty instanceof OptionTypeNode) {
+            return check(ty.inner);
+        } else if (ty instanceof ResultTypeNode) {
+            return check(ty.okType) ?? check(ty.errType);
+        } else if (ty instanceof RefTypeNode) {
+            return check(ty.inner);
+        } else if (ty instanceof PtrTypeNode) {
+            return check(ty.inner);
+        } else if (ty instanceof ArrayTypeNode) {
+            return check(ty.element);
+        } else if (ty instanceof TupleTypeNode) {
+            for (const element of ty.elements) {
+                const res = check(element);
+                if (res) return res;
+            }
+        } else if (ty instanceof FnTypeNode) {
+            for (const param of ty.params) {
+                const res = check(param);
+                if (res) return res;
+            }
+            return check(ty.returnType);
+        }
+        return undefined;
+    };
+
+    return check(item.aliasedType);
+}
+
+
+function inferTypeAliasItem(
+    typeCtx: TypeContext,
+    item: TypeAliasItem,
+): TypeError[] {
+    const errors: TypeError[] = [];
+    if (
+        typeCtx.hasNamedType(item.name) ||
+        typeCtx.hasFnSignature(item.name) ||
+        typeCtx.hasNamedConst(item.name)
+    ) {
+        errors.push({
+            message: `duplicate definition \`${item.name}\``,
+            span: item.span,
+        });
+    }
+    const genericNames = new Set(item.genericParams.map((param) => param.name));
+    errors.push(...validateTypeNode(typeCtx, item.aliasedType, genericNames));
+    const cyclePath = typeAliasCyclePath(typeCtx, item);
+    if (cyclePath) {
+        errors.push({
+            message: `cyclical type alias: ${cyclePath.join(" -> ")}`,
+            span: item.span,
+        });
+    }
+    return errors;
+}
+
 function registerItemTypeWithPrefix(
     typeCtx: TypeContext,
     node: Item,
@@ -1011,25 +1267,20 @@ function registerItemTypeWithPrefix(
         registerConstWithPrefix(typeCtx, node, qualify, modulePrefix);
         return;
     }
+    if (node instanceof TypeAliasItem) {
+        registerTypeAliasWithPrefix(typeCtx, node, qualify, modulePrefix);
+        return;
+    }
     if (node instanceof GenericFnItem) {
-        const qualifiedName = qualify(node.name);
-        typeCtx.registerFnSignature(qualifiedName, {
-            params: buildParamList(node.params),
-            returnType: node.returnType,
-        });
-        typeCtx.registerGenericFn(qualifiedName, node);
+        registerGenericFnWithPrefix(typeCtx, node, qualify);
         return;
     }
     if (node instanceof FnItem) {
-        typeCtx.registerFnSignature(qualify(node.name), {
-            params: buildParamList(node.params),
-            returnType: node.returnType,
-        });
+        registerFnWithPrefix(typeCtx, node, qualify);
         return;
     }
     if (node instanceof ImplItem) {
-        registerImplConstsWithPrefix(typeCtx, node, qualify, modulePrefix);
-        registerImplMethodsWithPrefix(typeCtx, node, qualify, modulePrefix);
+        registerImplItemWithPrefix(typeCtx, node, qualify, modulePrefix);
         return;
     }
     if (node instanceof TraitImplItem) {
@@ -2752,7 +3003,7 @@ function inferLetStmt(
     } else {
         initTy = initResult.value;
     }
-    const annotationTy = stmt.type;
+    const annotationTy = resolveTypeAliases(typeCtx, stmt.type);
     const hasAnnotation = !isInferredPlaceholder(annotationTy);
 
     if (hasAnnotation) {
@@ -2796,7 +3047,10 @@ function inferConstBinding(
     selfTypeName?: string,
 ): TypeError[] {
     const errors: TypeError[] = [];
-    const declaredType = resolveSelf(binding.typeNode, selfTypeName);
+    const declaredType = resolveTypeAliases(
+        typeCtx,
+        resolveSelf(binding.typeNode, selfTypeName),
+    );
     errors.push(...validateTypeNode(typeCtx, declaredType, new Set<string>()));
 
     if (!binding.value) {
@@ -2943,7 +3197,7 @@ function bindFnParams(
         const bindName = match(param.isReceiver)
             .with(true, () => "self")
             .otherwise(() => param.name);
-        const ty = resolveSelf(param.ty, selfTypeName);
+        const ty = resolveTypeAliases(typeCtx, resolveSelf(param.ty, selfTypeName));
         typeCtx.setVariable(bindName, ty);
     }
 }
@@ -2960,10 +3214,16 @@ function checkFnTailReturn(
 
     const tailResult = inferExprType(typeCtx, fnItem.body.expr);
     const tailTy = mergeInferResult(errors, tailResult);
-    const declaredReturnType = resolveSelf(fnItem.returnType, selfTypeName);
+    const declaredReturnType = resolveTypeAliases(
+        typeCtx,
+        resolveSelf(fnItem.returnType, selfTypeName),
+    );
     let resolvedTailTy: TypeNode | undefined;
     if (tailTy !== undefined) {
-        resolvedTailTy = resolveSelf(tailTy, selfTypeName);
+        resolvedTailTy = resolveTypeAliases(
+            typeCtx,
+            resolveSelf(tailTy, selfTypeName),
+        );
     }
 
     if (
@@ -2983,10 +3243,14 @@ function checkFnTailReturn(
 
 function checkImplicitUnitReturn(
     errors: TypeError[],
+    typeCtx: TypeContext,
     fnItem: FnItem | GenericFnItem,
     selfTypeName: string | undefined,
 ): void {
-    const declaredReturnType = resolveSelf(fnItem.returnType, selfTypeName);
+    const declaredReturnType = resolveTypeAliases(
+        typeCtx,
+        resolveSelf(fnItem.returnType, selfTypeName),
+    );
     const implicitUnitType = new TupleTypeNode(fnItem.span, []);
     if (
         isInferredPlaceholder(declaredReturnType) ||
@@ -3023,7 +3287,7 @@ function inferFnBody(
     if (fnItem.body.expr) {
         checkFnTailReturn(errors, typeCtx, fnItem, selfTypeName);
     } else {
-        checkImplicitUnitReturn(errors, fnItem, selfTypeName);
+        checkImplicitUnitReturn(errors, typeCtx, fnItem, selfTypeName);
     }
     typeCtx.popScope();
 
@@ -3192,6 +3456,30 @@ function inferTraitImplItem(
     if (item.target instanceof NamedTypeNode) {
         selfTypeName = item.target.name;
     }
+    if (item.name === "Copy") {
+        if (!selfTypeName || !typeCtx.lookupNamedType(selfTypeName)) {
+            errors.push({
+                message: `Unknown type \`${selfTypeName ?? typeToString(item.target)}\``,
+                span: item.target.span,
+            });
+            return errors;
+        }
+
+        const fields = typeCtx.lookupStructFields(selfTypeName);
+        if (fields) {
+            for (const field of fields) {
+                if (!isTypeCopy(typeCtx, field.ty)) {
+                    errors.push({
+                        message: `type \`${selfTypeName}\` cannot implement \`Copy\` because its field \`${field.name}\` does not implement \`Copy\``,
+                        span: item.span,
+                    });
+                }
+            }
+        }
+
+        typeCtx.markCopyType(selfTypeName);
+        return errors;
+    }
     if (selfTypeName) {
         const targetFields = typeCtx.lookupStructFields(selfTypeName);
         if (targetFields) {
@@ -3258,6 +3546,9 @@ function inferModuleItem(typeCtx: TypeContext, item: Item): TypeError[] {
     }
     if (item instanceof ConstItem) {
         return inferConstItem(typeCtx, item);
+    }
+    if (item instanceof TypeAliasItem) {
+        return inferTypeAliasItem(typeCtx, item);
     }
     if (item instanceof FnItem) {
         return [

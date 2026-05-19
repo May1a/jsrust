@@ -18,6 +18,7 @@ import {
     CallExpr,
     IdentifierExpr,
 } from "../../parse/ast";
+import { match } from "ts-pattern";
 import {
     MonomorphizationRegistry,
     type SubstitutionMap,
@@ -52,13 +53,15 @@ export function lowerAstToSsa(
     options: { irModule?: IRModule } = {},
 ): Result<IRFunction, LoweringError> {
     const ctx = new AstToSsaCtx(options);
-    return ctx.lowerFunction(fnDecl);
+    return ctx.lowerFunction(fnDecl, fnDecl.fullName ?? fnDecl.name);
 }
 
 function lowerOwnedFunction(
     fnItem: FnItem,
+    fullName: string,
     irModule: IRModule,
     functionReturnTypes: Map<string, IRType>,
+    functionParamTypes: Map<string, TypeNode[]>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
     enumVariantOwners: Map<string, string>,
@@ -67,9 +70,11 @@ function lowerOwnedFunction(
     initialConsts?: Map<string, LoweringConstBinding>,
     monoRegistry?: MonomorphizationRegistry,
 ): Result<void, LoweringError> {
+    fnItem.fullName = fullName;
     const ctx = new AstToSsaCtx({
         irModule,
         functionReturnTypes,
+        functionParamTypes,
         structFieldNames,
         enumVariantTags,
         enumVariantOwners,
@@ -78,7 +83,7 @@ function lowerOwnedFunction(
         monoRegistry,
     });
     ctx.seedFunctionIds(fnIdMap);
-    const lowered = ctx.lowerFunction(fnItem);
+    const lowered = ctx.lowerFunction(fnItem, fullName);
     if (!lowered.isOk()) {
         return lowered;
     }
@@ -200,6 +205,7 @@ function lowerTraitImplMethods(
     item: TraitImplItem,
     irModule: IRModule,
     functionReturnTypes: Map<string, IRType>,
+    functionParamTypes: Map<string, TypeNode[]>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
     enumVariantOwners: Map<string, string>,
@@ -215,10 +221,13 @@ function lowerTraitImplMethods(
     for (const method of item.fnImpls) {
         if (!method.body) continue;
         ensureImplStructMetadata(irModule, structFieldNames, implTarget);
+        const fullName = `${implTarget}::${method.name}`;
         const result = lowerOwnedFunction(
             rewriteSelfInMethod(method, implTarget),
+            fullName,
             irModule,
             functionReturnTypes,
+            functionParamTypes,
             structFieldNames,
             enumVariantTags,
             enumVariantOwners,
@@ -238,6 +247,7 @@ function lowerImplMethods(
     item: ImplItem,
     irModule: IRModule,
     functionReturnTypes: Map<string, IRType>,
+    functionParamTypes: Map<string, TypeNode[]>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
     enumVariantOwners: Map<string, string>,
@@ -258,10 +268,13 @@ function lowerImplMethods(
             continue;
         }
         ensureImplStructMetadata(irModule, structFieldNames, implTarget);
+        const fullName = `${implTarget}::${method.name}`;
         const result = lowerOwnedFunction(
             rewriteSelfInMethod(method, implTarget),
+            fullName,
             irModule,
             functionReturnTypes,
+            functionParamTypes,
             structFieldNames,
             enumVariantTags,
             enumVariantOwners,
@@ -281,22 +294,29 @@ function lowerModuleItem(
     item: ModuleNode["items"][number],
     irModule: IRModule,
     functionReturnTypes: Map<string, IRType>,
+    functionParamTypes: Map<string, TypeNode[]>,
     structFieldNames: Map<string, string[]>,
     enumVariantTags: Map<string, number>,
     enumVariantOwners: Map<string, string>,
     namedConsts: Map<string, LoweringConstBinding>,
     fnIdMap: Map<string, number>,
     implConsts: Map<string, Map<string, LoweringConstBinding>>,
+    prefix: string,
     monoRegistry?: MonomorphizationRegistry,
 ): Result<void, LoweringError> {
     if (item instanceof GenericFnItem || item instanceof GenericStructItem) {
         return Result.ok(undefined);
     }
     if (item instanceof FnItem && item.body) {
+        const fullName = match(prefix)
+            .with("", () => item.name)
+            .otherwise((p: string) => `${p}::${item.name}`);
         return lowerOwnedFunction(
             item,
+            fullName,
             irModule,
             functionReturnTypes,
+            functionParamTypes,
             structFieldNames,
             enumVariantTags,
             enumVariantOwners,
@@ -311,6 +331,7 @@ function lowerModuleItem(
             item,
             irModule,
             functionReturnTypes,
+            functionParamTypes,
             structFieldNames,
             enumVariantTags,
             enumVariantOwners,
@@ -325,6 +346,7 @@ function lowerModuleItem(
             item,
             irModule,
             functionReturnTypes,
+            functionParamTypes,
             structFieldNames,
             enumVariantTags,
             enumVariantOwners,
@@ -335,17 +357,22 @@ function lowerModuleItem(
         );
     }
     if (item instanceof ModItem) {
+        const newPrefix = match(prefix)
+            .with("", () => item.name)
+            .otherwise((p: string) => `${p}::${item.name}`);
         for (const modItem of item.items) {
             const result = lowerModuleItem(
                 modItem,
                 irModule,
                 functionReturnTypes,
+                functionParamTypes,
                 structFieldNames,
                 enumVariantTags,
                 enumVariantOwners,
                 namedConsts,
                 fnIdMap,
                 implConsts,
+                newPrefix,
                 monoRegistry,
             );
             if (result.isErr()) {
@@ -403,11 +430,13 @@ export function deriveLoweringMaps(
     const fnIdMap = new Map(metadata.fnIds);
 
     const functionReturnTypes = new Map<string, IRType>();
+    const functionParamTypes = new Map<string, TypeNode[]>();
     for (const [name, sig] of metadata.fnSignatures) {
         functionReturnTypes.set(
             name,
             AstToSsaCtx.translateTypeNode(sig.returnType),
         );
+        functionParamTypes.set(name, sig.params.map((param) => param.type));
     }
 
     const namedConsts = new Map<string, LoweringConstBinding>();
@@ -426,6 +455,7 @@ export function deriveLoweringMaps(
         structFieldNames,
         fnIdMap,
         functionReturnTypes,
+        functionParamTypes,
         enumVariantTags: metadata.variantTags,
         enumVariantOwners: metadata.variantOwners,
         namedConsts,
@@ -449,6 +479,7 @@ export function lowerAstModuleToSsa(
     } = loweringInput;
     const fnIdMap = new Map(loweringInput.fnIdMap);
     const functionReturnTypes = new Map(loweringInput.functionReturnTypes);
+    const functionParamTypes = new Map(loweringInput.functionParamTypes);
 
     const registry = new MonomorphizationRegistry();
     collectGenericItems(moduleNode, registry);
@@ -464,6 +495,7 @@ export function lowerAstModuleToSsa(
             spec.name,
             AstToSsaCtx.translateTypeNode(spec.returnType),
         );
+        functionParamTypes.set(spec.name, spec.params.map((param) => param.ty));
     }
 
     for (const item of moduleNode.items) {
@@ -471,12 +503,14 @@ export function lowerAstModuleToSsa(
             item,
             irModule,
             functionReturnTypes,
+            functionParamTypes,
             structFieldNames,
             enumVariantTags,
             enumVariantOwners,
             namedConsts,
             fnIdMap,
             implConsts,
+            "",
             registry,
         );
         if (result.isErr()) {
@@ -487,8 +521,10 @@ export function lowerAstModuleToSsa(
     for (const spec of specializations) {
         const result = lowerOwnedFunction(
             spec,
+            spec.name,
             irModule,
             functionReturnTypes,
+            functionParamTypes,
             structFieldNames,
             enumVariantTags,
             enumVariantOwners,

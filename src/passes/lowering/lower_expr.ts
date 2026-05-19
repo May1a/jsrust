@@ -48,7 +48,6 @@ import {
     type StructPattern,
     type TryExpr,
     type TypeNode,
-    type TypeAliasItem,
     type TupleTypeNode,
     type ArrayTypeNode,
     type UnsafeBlockExpr,
@@ -244,6 +243,7 @@ export interface LoweringExprCtx {
     constResolutionStack: LoweringConstBinding[];
     functionIds: Map<string, number>;
     functionReturnTypes: Map<string, IRType>;
+    functionParamTypes: Map<string, TypeNode[]>;
     structFieldNames: Map<string, string[]>;
     enumVariantTags: Map<string, number>;
     enumVariantOwners: Map<string, string>;
@@ -286,6 +286,7 @@ export class AstToSsaCtx implements LoweringExprCtx {
     readonly locals: Map<string, LocalBinding>;
     readonly functionIds: Map<string, number>;
     readonly functionReturnTypes: Map<string, IRType>;
+    readonly functionParamTypes: Map<string, TypeNode[]>;
     readonly structFieldNames: Map<string, string[]>;
     readonly enumVariantTags: Map<string, number>;
     readonly enumVariantOwners: Map<string, string>;
@@ -314,6 +315,7 @@ export class AstToSsaCtx implements LoweringExprCtx {
         options: {
             irModule?: IRModule;
             functionReturnTypes?: Map<string, IRType>;
+            functionParamTypes?: Map<string, TypeNode[]>;
             structFieldNames?: Map<string, string[]>;
             enumVariantTags?: Map<string, number>;
             enumVariantOwners?: Map<string, string>;
@@ -328,6 +330,8 @@ export class AstToSsaCtx implements LoweringExprCtx {
         this.functionIds = new Map();
         this.functionReturnTypes =
             options.functionReturnTypes ?? new Map<string, IRType>();
+        this.functionParamTypes =
+            options.functionParamTypes ?? new Map<string, TypeNode[]>();
         this.structFieldNames =
             options.structFieldNames ?? new Map<string, string[]>();
         this.enumVariantTags =
@@ -352,33 +356,40 @@ export class AstToSsaCtx implements LoweringExprCtx {
         }
     }
 
-    lowerFunction(fnDecl: FnItem): Result<IRFunction, LoweringError> {
+    lowerFunction(
+        fnDecl: FnItem,
+        fullName: string,
+    ): Result<IRFunction, LoweringError> {
         this.locals.clear();
         this.constScopes = [new Map(this.initialConsts)];
         this.constResolutionStack = [];
         this.loopStack = [];
-
+ 
         const paramEntries = this.getLowerableParams(fnDecl);
         if (!paramEntries.isOk()) {
             return paramEntries;
         }
-        const paramTypes = paramEntries.value.map(({ ty }) =>
+        const resolvedParamEntries = this.resolveFunctionParamEntries(
+            fullName,
+            paramEntries.value,
+        );
+        const paramTypes = resolvedParamEntries.map(({ ty }) =>
             AstToSsaCtx.translateTypeNode(ty),
         );
-        this.currentReturnType = AstToSsaCtx.translateTypeNode(
-            fnDecl.returnType,
-        );
+        this.currentReturnType =
+            this.functionReturnTypes.get(fullName) ??
+            AstToSsaCtx.translateTypeNode(fnDecl.returnType);
         this.registerEnumTypeMetadata(this.currentReturnType);
-
+ 
         const startResult = this.startFunction(
-            fnDecl.name,
+            fullName,
             paramTypes,
             fnDecl.span,
         );
         if (startResult.isErr()) {
             return startResult;
         }
-        this.bindFunctionParams(paramEntries.value);
+        this.bindFunctionParams(resolvedParamEntries);
 
         if (!fnDecl.body) {
             return loweringError(
@@ -417,6 +428,20 @@ export class AstToSsaCtx implements LoweringExprCtx {
             params.push({ name: param.name, ty: param.ty });
         }
         return Result.ok(params);
+    }
+
+    private resolveFunctionParamEntries(
+        name: string,
+        params: { name?: string; ty: TypeNode }[],
+    ): { name?: string; ty: TypeNode }[] {
+        const resolvedTypes = this.functionParamTypes.get(name);
+        if (!resolvedTypes) {
+            return params;
+        }
+        return params.map((param, index) => ({
+            name: param.name,
+            ty: resolvedTypes[index] ?? param.ty,
+        }));
     }
 
     private startFunction(
@@ -814,12 +839,7 @@ export class AstToSsaCtx implements LoweringExprCtx {
                     "`unsafe` items are not implemented",
                     item.span,
                 ),
-            visitTypeAliasItem: (item: TypeAliasItem) =>
-                loweringError(
-                    LoweringErrorKind.UnsupportedNode,
-                    "type aliases are not implemented",
-                    item.span,
-                ),
+            visitTypeAliasItem: () => Result.ok(this.loweredUnit()),
             visitStaticItem: (item: StaticItem) =>
                 loweringError(
                     LoweringErrorKind.UnsupportedNode,

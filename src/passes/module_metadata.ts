@@ -13,8 +13,10 @@ import {
     ModItem,
     type ModuleNode,
     NamedTypeNode,
+    OptionTypeNode,
     PtrTypeNode,
     RefTypeNode,
+    ResultTypeNode,
     type Span,
     StructItem,
     TraitImplItem,
@@ -69,6 +71,134 @@ interface ExtractionMaps {
     namedConsts: Map<string, ModuleConstBinding>;
     implConsts: Map<string, Map<string, ModuleConstBinding>>;
     genericFns: Map<string, GenericFnItem>;
+    typeContext: TypeContext;
+}
+
+function substituteTypeNode(
+    ty: TypeNode,
+    subs: Map<string, TypeNode>,
+): TypeNode {
+    if (ty instanceof NamedTypeNode) {
+        const replacement = subs.get(ty.name);
+        if (replacement) return replacement;
+        if (!ty.args) return ty;
+        return new NamedTypeNode(
+            ty.span,
+            ty.name,
+            new GenericArgsNode(
+                ty.args.span,
+                ty.args.args.map((arg) => substituteTypeNode(arg, subs)),
+            ),
+        );
+    }
+    if (ty instanceof TupleTypeNode) {
+        return new TupleTypeNode(
+            ty.span,
+            ty.elements.map((element) => substituteTypeNode(element, subs)),
+        );
+    }
+    if (ty instanceof ArrayTypeNode) {
+        return new ArrayTypeNode(ty.span, substituteTypeNode(ty.element, subs), ty.length);
+    }
+    if (ty instanceof RefTypeNode) {
+        return new RefTypeNode(ty.span, ty.mutability, substituteTypeNode(ty.inner, subs));
+    }
+    if (ty instanceof PtrTypeNode) {
+        return new PtrTypeNode(ty.span, ty.mutability, substituteTypeNode(ty.inner, subs));
+    }
+    if (ty instanceof FnTypeNode) {
+        return new FnTypeNode(
+            ty.span,
+            ty.params.map((param) => substituteTypeNode(param, subs)),
+            substituteTypeNode(ty.returnType, subs),
+        );
+    }
+    if (ty instanceof OptionTypeNode) {
+        return new OptionTypeNode(ty.span, substituteTypeNode(ty.inner, subs));
+    }
+    if (ty instanceof ResultTypeNode) {
+        return new ResultTypeNode(
+            ty.span,
+            substituteTypeNode(ty.okType, subs),
+            substituteTypeNode(ty.errType, subs),
+        );
+    }
+    return ty;
+}
+
+function resolveAliasesInType(
+    typeContext: TypeContext,
+    ty: TypeNode,
+    seen = new Set<string>(),
+): TypeNode {
+    if (ty instanceof NamedTypeNode) {
+        const alias = typeContext.lookupTypeAlias(ty.name);
+        if (!alias || seen.has(ty.name)) return ty;
+        const subs = new Map<string, TypeNode>();
+        if (ty.args) {
+            for (let i = 0; i < alias.genericParamNames.length; i++) {
+                const arg = ty.args.args[i];
+                subs.set(
+                    alias.genericParamNames[i],
+                    resolveAliasesInType(typeContext, arg, new Set(seen)),
+                );
+            }
+        }
+        seen.add(ty.name);
+        return resolveAliasesInType(typeContext, substituteTypeNode(alias.aliasedType, subs), seen);
+    }
+    if (ty instanceof TupleTypeNode) {
+        return new TupleTypeNode(
+            ty.span,
+            ty.elements.map((element) =>
+                resolveAliasesInType(typeContext, element, new Set(seen)),
+            ),
+        );
+    }
+    if (ty instanceof ArrayTypeNode) {
+        return new ArrayTypeNode(
+            ty.span,
+            resolveAliasesInType(typeContext, ty.element, seen),
+            ty.length,
+        );
+    }
+    if (ty instanceof RefTypeNode) {
+        return new RefTypeNode(
+            ty.span,
+            ty.mutability,
+            resolveAliasesInType(typeContext, ty.inner, seen),
+        );
+    }
+    if (ty instanceof PtrTypeNode) {
+        return new PtrTypeNode(
+            ty.span,
+            ty.mutability,
+            resolveAliasesInType(typeContext, ty.inner, seen),
+        );
+    }
+    if (ty instanceof FnTypeNode) {
+        return new FnTypeNode(
+            ty.span,
+            ty.params.map((param) =>
+                resolveAliasesInType(typeContext, param, new Set(seen)),
+            ),
+            resolveAliasesInType(typeContext, ty.returnType, seen),
+        );
+    }
+    if (ty instanceof OptionTypeNode) {
+        return new OptionTypeNode(
+            ty.span,
+            resolveAliasesInType(typeContext, ty.inner, seen),
+        );
+    }
+    if (ty instanceof ResultTypeNode) {
+        return new ResultTypeNode(
+            ty.span,
+            resolveAliasesInType(typeContext, ty.okType, seen),
+            resolveAliasesInType(typeContext, ty.errType, seen),
+        );
+    }
+    return ty;
 }
 
 export function hashName(name: string): number {
@@ -136,6 +266,16 @@ function resolveSelfInType(ty: TypeNode, selfName: string): TypeNode {
             ty.span,
             ty.params.map((p) => resolveSelfInType(p, selfName)),
             resolveSelfInType(ty.returnType, selfName),
+        );
+    }
+    if (ty instanceof OptionTypeNode) {
+        return new OptionTypeNode(ty.span, resolveSelfInType(ty.inner, selfName));
+    }
+    if (ty instanceof ResultTypeNode) {
+        return new ResultTypeNode(
+            ty.span,
+            resolveSelfInType(ty.okType, selfName),
+            resolveSelfInType(ty.errType, selfName),
         );
     }
     return ty;
@@ -223,8 +363,11 @@ function extractFnItem(
                 resolveSelfInType(item.returnType, name),
             );
     const sig: ModuleFnSignature = {
-        params: item.params.map((p) => ({ name: p.name, type: p.ty })),
-        returnType,
+        params: item.params.map((p) => ({
+            name: p.name,
+            type: resolveAliasesInType(maps.typeContext, p.ty),
+        })),
+        returnType: resolveAliasesInType(maps.typeContext, returnType),
     };
     maps.fnSignatures.set(item.name, sig);
     if (prefix) {
@@ -343,8 +486,14 @@ function extractImplItem(
         }
         const returnType = resolveSelfInType(method.returnType, targetName);
         const sig: ModuleFnSignature = {
-            params: method.params.map((p) => ({ name: p.name, type: p.ty })),
-            returnType,
+            params: method.params.map((p) => ({
+                name: p.name,
+                type: resolveAliasesInType(
+                    maps.typeContext,
+                    resolveSelfInType(p.ty, targetName),
+                ),
+            })),
+            returnType: resolveAliasesInType(maps.typeContext, returnType),
         };
         maps.fnSignatures.set(method.name, sig);
         maps.fnSignatures.set(`${targetName}::${method.name}`, sig);
@@ -380,8 +529,14 @@ function extractTraitImplItem(
         }
         const returnType = resolveSelfInType(method.returnType, targetName);
         const sig: ModuleFnSignature = {
-            params: method.params.map((p) => ({ name: p.name, type: p.ty })),
-            returnType,
+            params: method.params.map((p) => ({
+                name: p.name,
+                type: resolveAliasesInType(
+                    maps.typeContext,
+                    resolveSelfInType(p.ty, targetName),
+                ),
+            })),
+            returnType: resolveAliasesInType(maps.typeContext, returnType),
         };
         maps.fnSignatures.set(method.name, sig);
         maps.fnSignatures.set(`${targetName}::${method.name}`, sig);
@@ -520,6 +675,7 @@ export function extractModuleMetadata(
         namedConsts,
         implConsts,
         genericFns,
+        typeContext,
     }, "");
 
     for (const name of Object.values(BUILTIN_SYMBOLS)) {

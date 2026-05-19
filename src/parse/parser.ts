@@ -647,19 +647,7 @@ class Parser {
                 this.check(TokenType.Identifier) &&
                 this.peek().value === "derive"
             ) {
-                this.advance(); // Consume "derive"
-                if (this.eat(TokenType.OpenParen)) {
-                    while (
-                        !this.check(TokenType.CloseParen) &&
-                        !this.check(TokenType.Eof)
-                    ) {
-                        if (this.check(TokenType.Identifier)) {
-                            derives.push(this.advance().value);
-                        }
-                        this.eat(TokenType.Comma);
-                    }
-                    this.eat(TokenType.CloseParen);
-                }
+                derives.push(...this.parseDeriveAttribute());
                 this.expect(TokenType.CloseSquare);
             } else if (
                 !isBang &&
@@ -688,6 +676,26 @@ class Parser {
 
         return { derives, isTest, expectedOutput };
     }
+
+    // TODO: Make attribute parsing more generic (e.g. handle arbitrary meta items)
+    private parseDeriveAttribute(): string[] {
+        const derives: string[] = [];
+        this.advance(); // Consume "derive"
+        if (this.eat(TokenType.OpenParen)) {
+            while (
+                !this.check(TokenType.CloseParen) &&
+                !this.check(TokenType.Eof)
+            ) {
+                if (this.check(TokenType.Identifier)) {
+                    derives.push(this.advance().value);
+                }
+                this.eat(TokenType.Comma);
+            }
+            this.expect(TokenType.CloseParen);
+        }
+        return derives;
+    }
+
 
     // -----------------------------------------------------------------------
     // Module
