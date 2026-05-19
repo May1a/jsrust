@@ -140,7 +140,7 @@ function resolveAliasesInType(
                 const arg = ty.args.args[i];
                 subs.set(
                     alias.genericParamNames[i],
-                    resolveAliasesInType(typeContext, arg, seen),
+                    resolveAliasesInType(typeContext, arg, new Set(seen)),
                 );
             }
         }
@@ -150,7 +150,9 @@ function resolveAliasesInType(
     if (ty instanceof TupleTypeNode) {
         return new TupleTypeNode(
             ty.span,
-            ty.elements.map((element) => resolveAliasesInType(typeContext, element, seen)),
+            ty.elements.map((element) =>
+                resolveAliasesInType(typeContext, element, new Set(seen)),
+            ),
         );
     }
     if (ty instanceof ArrayTypeNode) {
@@ -177,12 +179,17 @@ function resolveAliasesInType(
     if (ty instanceof FnTypeNode) {
         return new FnTypeNode(
             ty.span,
-            ty.params.map((param) => resolveAliasesInType(typeContext, param, seen)),
+            ty.params.map((param) =>
+                resolveAliasesInType(typeContext, param, new Set(seen)),
+            ),
             resolveAliasesInType(typeContext, ty.returnType, seen),
         );
     }
     if (ty instanceof OptionTypeNode) {
-        return new OptionTypeNode(ty.span, resolveAliasesInType(typeContext, ty.inner, seen));
+        return new OptionTypeNode(
+            ty.span,
+            resolveAliasesInType(typeContext, ty.inner, seen),
+        );
     }
     if (ty instanceof ResultTypeNode) {
         return new ResultTypeNode(
@@ -259,6 +266,16 @@ function resolveSelfInType(ty: TypeNode, selfName: string): TypeNode {
             ty.span,
             ty.params.map((p) => resolveSelfInType(p, selfName)),
             resolveSelfInType(ty.returnType, selfName),
+        );
+    }
+    if (ty instanceof OptionTypeNode) {
+        return new OptionTypeNode(ty.span, resolveSelfInType(ty.inner, selfName));
+    }
+    if (ty instanceof ResultTypeNode) {
+        return new ResultTypeNode(
+            ty.span,
+            resolveSelfInType(ty.okType, selfName),
+            resolveSelfInType(ty.errType, selfName),
         );
     }
     return ty;

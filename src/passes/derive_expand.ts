@@ -26,17 +26,21 @@ function syntheticSpan(ref: Span): Span {
     return ref;
 }
 
+function createStructType(item: StructItem): NamedTypeNode {
+    return new NamedTypeNode(syntheticSpan(item.span), item.name);
+}
+
 function expandCloneForStruct(item: StructItem): ImplItem {
     const span = syntheticSpan(item.span);
-    const structType = new NamedTypeNode(span, item.name);
+    const structType = createStructType(item);
 
-    // Use NamedTypeNode("Self") as the parser does — rewriteSelfInMethod in
-    // Lowering will replace "Self" with the concrete type and wrap it in
-    // RefTypeNode for ref receivers. Providing RefTypeNode here would cause it
-    // to be double-wrapped and produce ptr<ptr<Struct>> in the IR.
     const selfParam = {
         span,
         name: "Self",
+        // Use NamedTypeNode("Self") as the parser does — rewriteSelfInMethod in
+        // Lowering will replace "Self" with the concrete type and wrap it in
+        // RefTypeNode for ref receivers. Providing RefTypeNode here would cause it
+        // to be double-wrapped and produce ptr<ptr<Struct>> in the IR.
         ty: new NamedTypeNode(span, "Self"),
         isReceiver: true,
         receiverKind: ReceiverKind.ref,
@@ -67,8 +71,9 @@ function expandCloneForStruct(item: StructItem): ImplItem {
 
 function expandCopyForStruct(item: StructItem): TraitImplItem {
     const span = syntheticSpan(item.span);
+    const structType = createStructType(item);
+    // TODO: Consider verifying that all fields are Copy via TypeContext in a later pass
     const copyTrait = new TraitItem(span, "Copy", []);
-    const structType = new NamedTypeNode(span, item.name);
     return new TraitImplItem(span, "Copy", copyTrait, structType, []);
 }
 

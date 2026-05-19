@@ -356,30 +356,33 @@ export class AstToSsaCtx implements LoweringExprCtx {
         }
     }
 
-    lowerFunction(fnDecl: FnItem): Result<IRFunction, LoweringError> {
+    lowerFunction(
+        fnDecl: FnItem,
+        fullName: string,
+    ): Result<IRFunction, LoweringError> {
         this.locals.clear();
         this.constScopes = [new Map(this.initialConsts)];
         this.constResolutionStack = [];
         this.loopStack = [];
-
+ 
         const paramEntries = this.getLowerableParams(fnDecl);
         if (!paramEntries.isOk()) {
             return paramEntries;
         }
         const resolvedParamEntries = this.resolveFunctionParamEntries(
-            fnDecl.name,
+            fullName,
             paramEntries.value,
         );
         const paramTypes = resolvedParamEntries.map(({ ty }) =>
             AstToSsaCtx.translateTypeNode(ty),
         );
         this.currentReturnType =
-            this.functionReturnTypes.get(fnDecl.name) ??
+            this.functionReturnTypes.get(fullName) ??
             AstToSsaCtx.translateTypeNode(fnDecl.returnType);
         this.registerEnumTypeMetadata(this.currentReturnType);
-
+ 
         const startResult = this.startFunction(
-            fnDecl.name,
+            fullName,
             paramTypes,
             fnDecl.span,
         );

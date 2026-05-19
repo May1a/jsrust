@@ -18,6 +18,7 @@ import {
     CallExpr,
     IdentifierExpr,
 } from "../../parse/ast";
+import { match } from "ts-pattern";
 import {
     MonomorphizationRegistry,
     type SubstitutionMap,
@@ -52,11 +53,12 @@ export function lowerAstToSsa(
     options: { irModule?: IRModule } = {},
 ): Result<IRFunction, LoweringError> {
     const ctx = new AstToSsaCtx(options);
-    return ctx.lowerFunction(fnDecl);
+    return ctx.lowerFunction(fnDecl, fnDecl.fullName ?? fnDecl.name);
 }
 
 function lowerOwnedFunction(
     fnItem: FnItem,
+    fullName: string,
     irModule: IRModule,
     functionReturnTypes: Map<string, IRType>,
     functionParamTypes: Map<string, TypeNode[]>,
@@ -68,6 +70,7 @@ function lowerOwnedFunction(
     initialConsts?: Map<string, LoweringConstBinding>,
     monoRegistry?: MonomorphizationRegistry,
 ): Result<void, LoweringError> {
+    fnItem.fullName = fullName;
     const ctx = new AstToSsaCtx({
         irModule,
         functionReturnTypes,
@@ -80,7 +83,7 @@ function lowerOwnedFunction(
         monoRegistry,
     });
     ctx.seedFunctionIds(fnIdMap);
-    const lowered = ctx.lowerFunction(fnItem);
+    const lowered = ctx.lowerFunction(fnItem, fullName);
     if (!lowered.isOk()) {
         return lowered;
     }
@@ -218,8 +221,10 @@ function lowerTraitImplMethods(
     for (const method of item.fnImpls) {
         if (!method.body) continue;
         ensureImplStructMetadata(irModule, structFieldNames, implTarget);
+        const fullName = `${implTarget}::${method.name}`;
         const result = lowerOwnedFunction(
             rewriteSelfInMethod(method, implTarget),
+            fullName,
             irModule,
             functionReturnTypes,
             functionParamTypes,
@@ -263,8 +268,10 @@ function lowerImplMethods(
             continue;
         }
         ensureImplStructMetadata(irModule, structFieldNames, implTarget);
+        const fullName = `${implTarget}::${method.name}`;
         const result = lowerOwnedFunction(
             rewriteSelfInMethod(method, implTarget),
+            fullName,
             irModule,
             functionReturnTypes,
             functionParamTypes,
@@ -294,14 +301,19 @@ function lowerModuleItem(
     namedConsts: Map<string, LoweringConstBinding>,
     fnIdMap: Map<string, number>,
     implConsts: Map<string, Map<string, LoweringConstBinding>>,
+    prefix: string,
     monoRegistry?: MonomorphizationRegistry,
 ): Result<void, LoweringError> {
     if (item instanceof GenericFnItem || item instanceof GenericStructItem) {
         return Result.ok(undefined);
     }
     if (item instanceof FnItem && item.body) {
+        const fullName = match(prefix)
+            .with("", () => item.name)
+            .otherwise((p: string) => `${p}::${item.name}`);
         return lowerOwnedFunction(
             item,
+            fullName,
             irModule,
             functionReturnTypes,
             functionParamTypes,
@@ -345,6 +357,9 @@ function lowerModuleItem(
         );
     }
     if (item instanceof ModItem) {
+        const newPrefix = match(prefix)
+            .with("", () => item.name)
+            .otherwise((p: string) => `${p}::${item.name}`);
         for (const modItem of item.items) {
             const result = lowerModuleItem(
                 modItem,
@@ -357,6 +372,7 @@ function lowerModuleItem(
                 namedConsts,
                 fnIdMap,
                 implConsts,
+                newPrefix,
                 monoRegistry,
             );
             if (result.isErr()) {
@@ -494,6 +510,7 @@ export function lowerAstModuleToSsa(
             namedConsts,
             fnIdMap,
             implConsts,
+            "",
             registry,
         );
         if (result.isErr()) {
@@ -504,6 +521,7 @@ export function lowerAstModuleToSsa(
     for (const spec of specializations) {
         const result = lowerOwnedFunction(
             spec,
+            spec.name,
             irModule,
             functionReturnTypes,
             functionParamTypes,

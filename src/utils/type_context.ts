@@ -71,6 +71,18 @@ export class TypeContext {
         this.namedConsts = new Map();
         this.typeAliases = new Map();
         this.copyTypes = new Set();
+        this.seedCopyTypes();
+    }
+
+    private seedCopyTypes(): void {
+        const builtins = [
+            "i8", "i16", "i32", "i64", "i128", "isize",
+            "u8", "u16", "u32", "u64", "u128", "usize",
+            "f32", "f64", "bool", "char", "str"
+        ];
+        for (const ty of builtins) {
+            this.copyTypes.add(ty);
+        }
     }
 
     setExpressionType(expr: Expression, ty: TypeNode): void {

@@ -690,6 +690,7 @@ export class ItemStmt extends Statement {
 }
 export class FnItem extends Item {
     readonly name: string;
+    fullName?: string;
     readonly params: ParamNode[];
     readonly returnType: TypeNode;
     readonly body?: BlockExpr;
