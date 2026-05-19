@@ -1,6 +1,7 @@
 import type { Result } from "better-result";
-import type { Span, Expression, TypeNode } from "../../parse/ast";
+import type { CallExpr, Span, Expression, TypeNode } from "../../parse/ast";
 import type { BlockId, IRModule, IRType, ValueId } from "../../ir/ir";
+import type { SubstitutionMap } from "../monomorphize";
 
 export enum LoweringErrorKind {
     UnsupportedNode,
@@ -24,6 +25,8 @@ export interface LoweringInput {
     enumVariantTags: Map<string, number>;
     enumVariantOwners: Map<string, string>;
     namedConsts: Map<string, LoweringConstBinding>;
+    implConsts: Map<string, Map<string, LoweringConstBinding>>;
+    getCallSubstitution: (expr: CallExpr) => SubstitutionMap | undefined;
 }
 
 export interface LoweredValue {
@@ -49,22 +52,6 @@ export interface LoweringConstBinding {
     value: Expression;
     span: Span;
     selfTypeName?: string;
-}
-
-export interface BuilderSnapshot {
-    fn: unknown;
-    block: unknown;
-    sealed: Set<BlockId>;
-    varDefs: Map<string, Map<BlockId, ValueId>>;
-    incompletePhis: Map<string, Map<BlockId, ValueId[]>>;
-    varTypes: Map<string, IRType>;
-    nextBlockId: number;
-    locals: Map<string, LocalBinding>;
-    constScopes: Map<string, LoweringConstBinding>[];
-    constResolutionStack: LoweringConstBinding[];
-    loopStack: LoopFrame[];
-    returnType: IRType;
-    expectedValueTypes: IRType[];
 }
 
 export enum FormatTag {

@@ -1,369 +1,211 @@
-# PLAN: Split monolithic `ast_to_ssa.ts` into deep lowering modules
+# PLAN: Split monolithic lowering into deep modules
 
-## Branch purpose
+## Current state
 
-Refactoring the monolithic lowering pass (`src/passes/ast_to_ssa.ts`, ~4,400 lines) into five deep sub-modules under `src/passes/lowering/`. Slice 1 is complete. Slices 2–6 remain.
-
-## Progress
-
-| Slice | Issue | Status | Description |
-|-------|-------|--------|-------------|
-| 1 | [#23](https://github.com/May1a/jsrust/issues/23) | **Done** | Extract `type_translation`, `LoweringInput`, `FormatTag` consolidation |
-| 2 | [#24](https://github.com/May1a/jsrust/issues/24) | Next | Introduce `LoweredValue { id, ty }` tuples |
-| 3 | [#25](https://github.com/May1a/jsrust/issues/25) | Blocked by #24 | Extract `lower_expr.ts` |
-| 4 | [#26](https://github.com/May1a/jsrust/issues/26) | Blocked by #25 | Extract `lower_control_flow.ts` |
-| 5 | [#27](https://github.com/May1a/jsrust/issues/27) | Blocked by #26 | Extract `lower_closure.ts` with fresh builder |
-| 6 | [#28](https://github.com/May1a/jsrust/issues/28) | Blocked by #27 | Extract `lower_module.ts`, wire `compile.ts`, delete `ast_to_ssa.ts` |
-
-## Skills an agent should load
-
-When picking up this work, load these skills:
-
-- **`grill-with-docs`** — if any design decision needs revisiting, grill against the constraints in `CONTEXT-MAP.md` and the per-context CONTEXT.md files
-- **`diagnose`** — if the test suite fails after a slice, use the diagnosis loop to find the root cause
-- **`tdd`** — when writing unit tests for the new sub-modules (after the refactor, not during)
-- **`improve-codebase-architecture`** — if the split reveals new architectural friction or the module boundaries need adjustment
-
-## Reading order for a new agent
-
-1. **`CONTEXT-MAP.md`** (repo root) — the overall context map, listing all contexts and their relationships
-2. **`src/passes/lowering/CONTEXT.md`** — the detailed lowering context with all grilling decisions encoded as domain language
-3. **`src/passes/CONTEXT.md`** — the passes context (inference, borrow, monomorphization)
-4. **`src/ir/CONTEXT.md`** — the SSA IR context (IRBuilder, IRFunction, IRBlock, etc.)
-5. **`src/parse/CONTEXT.md`** — the parsing context (AST nodes, ModuleNode, etc.)
-6. **`src/llvm/CONTEXT.md`** — the LLVM context (emission, printing, toolchain)
-7. **This file (`PLAN.md`)** — the implementation plan and progress
-8. **The PRD on GitHub Issues** — the official specification
+Slices 1–2 are done. Slices 3–6 created the seam interfaces but **did not extract the implementation**. All 4,383 lines of lowering logic still live in `src/passes/lowering/lower_module.ts` inside the monolithic `AstToSsaCtx` class (line 275). The sub-module files (`lower_expr.ts`, `lower_control_flow.ts`, `lower_closure.ts`) contain only type/interface stubs.
 
 ## GitHub issues
 
-All issues are labeled `ready-for-agent` and listed in dependency order.
+| Issue | Title | State | Reality |
+|-------|-------|-------|---------|
+| [#22](https://github.com/May1a/jsrust/issues/22) | PRD: Split monolithic AST-to-SSA lowering into deep modules | OPEN | — |
+| [#23](https://github.com/May1a/jsrust/issues/23) | Slice 1: Extract type_translation and LoweringInput | **CLOSED** | Genuinely done |
+| [#24](https://github.com/May1a/jsrust/issues/24) | Slice 2: Introduce LoweredValue { id, ty } tuples | OPEN | Genuinely done |
+| [#25](https://github.com/May1a/jsrust/issues/25) | Slice 3: Extract lower_expr.ts | OPEN | Only interface stubs exist |
+| [#26](https://github.com/May1a/jsrust/issues/26) | Slice 4: Extract lower_control_flow.ts | OPEN | Only interface stubs exist |
+| [#27](https://github.com/May1a/jsrust/issues/27) | Slice 5: Extract lower_closure.ts | OPEN | Only interface stubs exist |
+| [#28](https://github.com/May1a/jsrust/issues/28) | Slice 6: Extract lower_module.ts, wire compile.ts, delete ast_to_ssa.ts | OPEN | Only orchestration wiring done; implementation not extracted |
 
-| Issue | Title | Blocked by |
-|---|---|---|
-| [#22](https://github.com/May1a/jsrust/issues/22) | PRD: Split monolithic AST-to-SSA lowering into deep modules | - |
-| [#23](https://github.com/May1a/jsrust/issues/23) | Slice 1: Extract type_translation and LoweringInput | None |
-| [#24](https://github.com/May1a/jsrust/issues/24) | Slice 2: Introduce LoweredValue tuples | #23 |
-| [#25](https://github.com/May1a/jsrust/issues/25) | Slice 3: Extract lower_expr.ts | #24 |
-| [#26](https://github.com/May1a/jsrust/issues/26) | Slice 4: Extract lower_control_flow.ts | #25 |
-| [#27](https://github.com/May1a/jsrust/issues/27) | Slice 5: Extract lower_closure.ts with fresh builder | #26 |
-| [#28](https://github.com/May1a/jsrust/issues/28) | Slice 6: Extract lower_module.ts, wire compile.ts, delete ast_to_ssa.ts | #27 |
+## What's genuinely done
 
-## The problem
+### Slice 1 (#23) — DONE
 
-`ast_to_ssa.ts` holds all of this in one class:
+- `src/passes/lowering/types.ts` — `LoweringInput`, `LoweredValue`, `FormatTag`, error types, `LocalBinding`, `LoopFrame`, `LoweringConstBinding`, `BuilderSnapshot`
+- `src/passes/lowering/type_translation.ts` — pure free functions: `translateTypeNode`, `builtinToIrType`, `namedBuiltin`, `translateArrayTypeNode`, `translateTupleTypeNode`, `irTypeName`, `tupleStructName`
+- `src/passes/lowering/index.ts` — barrel re-exports
+- `src/utils/format_tags.ts` deleted; `FormatTag` consolidated into `lowering/types.ts`
+- `deriveLoweringMaps` exported (was module-private)
 
-- Expression lowering (literals, binary/unary ops, field/index access, struct literals, calls, macros)
-- Statement lowering (let, const, blocks)
-- Control-flow graph construction (if, loop, while, match, break, continue, return)
-- Phi-node insertion and merge-block management
-- Memory allocation for locals (alloca/load/store)
-- Type translation (TypeNode → IRType, builtin mapping)
-- Format-string parsing and format-tag inference
-- Enum constructor lowering (Some, Ok, Err, Option/Result resolution)
-- Builtin method lowering (is_some, is_none, is_ok, is_err, unwrap, expect, clone)
-- Closure lowering (free-variable analysis, non-capturing closures → IR functions)
-- Method-call dispatch and receiver resolution
-- Const resolution (const scopes, const binding, cycle detection)
-- Monomorphization orchestration (generic item collection, specialization lowering)
-- Impl/trait dispatch and Self-type rewriting
-- Snapshot/restore for isolated builder scopes
-- Module-level iteration over items
+### Slice 2 (#24) — DONE
 
-It is ~4,400 lines with ~50 instance methods and no internal seams.
+- All `lower*` methods return `Result<LoweredValue, LoweringError>` (not bare `ValueId`)
+- `resolveValueType` deleted
+- `handleInstructionId` deleted
+- `saveBuilderSnapshot` / `restoreBuilderSnapshot` / `withIsolatedBuilderScope` deleted
+- `ast_to_ssa.ts` deleted; code moved to `lower_module.ts`
 
-## The solution (summary)
+### Wired
 
-Split into five files under `src/passes/lowering/`:
+- `compile.ts` imports from `./passes/lowering/lower_module` and passes `LoweringInput` correctly
+- Test suite passes: 38 pass, 33 skip, 0 fail
+- Lint passes on all files
 
-| # | File | Concern |
-|---|------|---------|
-| 1 | `types.ts` | `LoweringInput`, `LoweredValue`, `FormatTag`, error types |
-| 2 | `type_translation.ts` | Pure `TypeNode → IRType` mapping |
-| 3 | `lower_expr.ts` | Expression + statement lowering |
-| 4 | `lower_control_flow.ts` | Control-flow graph construction |
-| 5 | `lower_closure.ts` | Closure lowering with fresh builder |
-| 6 | `lower_module.ts` | Orchestrator, impl/trait, monomorphization |
+## What was NOT done (the remaining work)
 
-## All implementation decisions (from grilling)
+### The seam files are stubs
 
-These are non-negotiable. See `src/passes/lowering/CONTEXT.md` for the domain-language framing.
+| File | Lines | Contains |
+|------|-------|----------|
+| `lower_expr.ts` | 31 | Only `LoweringExprCtx` interface + `LowerExpression` type alias |
+| `lower_control_flow.ts` | 27 | Only `LoweringCfgCtx` interface + `LowerControlFlow` type alias |
+| `lower_closure.ts` | 22 | Only `LoweringClosureCtx` interface + `LowerClosure` type alias |
 
-### D1: Fresh `IRBuilder` per closure function
+None of these files contain any function implementations. All lowering logic remains as 178 methods on the `AstToSsaCtx` class in `lower_module.ts` (4,383 lines).
 
-Closure lowering creates a new `IRBuilder()` instance. The old `saveBuilderSnapshot` / `restoreBuilderSnapshot` / `withIsolatedBuilderScope` methods are deleted. The closure lowering produces a full `IRFunction` which is added to the `IRModule` via `addIRFunction(irModule, fn)`.
+### `BuilderSnapshot` dead type
 
-### D2: `LoweredValue` bundles `id` and `ty`
+`BuilderSnapshot` interface is still declared in `types.ts:57` but never referenced (snapshot/restore methods were deleted in slice 2). Should be removed.
 
-Every `lower*` function returns `{ id: ValueId; ty: IRType }` instead of bare `ValueId`. The `resolveValueType` method (which walked params, block params, and instructions to find a ValueId's type) is deleted. `handleInstructionId` (which checked for null IDs) is also deleted.
+### `ModuleMetadata` import in lowering
 
-### D3: Sliced contexts
+`lower_module.ts:79` imports `ModuleMetadata` — violates the planned seam (decision D4). However this is by necessity: `deriveLoweringMaps` must accept `ModuleMetadata` to convert it to `LoweringInput`. Once the implementation is fully extracted, this import should be confined to the conversion function only.
 
-Each sub-module defines its own context interface. The orchestrator constructs the appropriate slice for each call. Example:
+## Remaining work
 
-```ts
-// In lower_expr.ts
-interface LoweringExprCtx {
-  locals: Map<string, LocalBinding>;
-  constScopes: Map<string, LoweringConstBinding>[];
-  constResolutionStack: LoweringConstBinding[];
-  functionIds: Map<string, number>;
-  functionReturnTypes: Map<string, IRType>;
-  structFieldNames: Map<string, string[]>;
-  enumVariantTags: Map<string, number>;
-  enumVariantOwners: Map<string, string>;
-  namedConsts: Map<string, LoweringConstBinding>;
-  irModule: IRModule;
-  currentReturnType: IRType;
-  expectedValueTypes: IRType[];
-}
+### The extraction pattern
 
-// In lower_control_flow.ts
-interface LoweringCfgCtx {
-  loopStack: LoopFrame[];
-  currentReturnType: IRType;
-  locals: Map<string, LocalBinding>;
-  enumVariantTags: Map<string, number>;
-  enumVariantOwners: Map<string, string>;
-  structFieldNames: Map<string, string[]>;
-  irModule: IRModule;
-  // ... plus whatever lower_expr methods are called during sub-expression lowering
-}
+For each method currently on `AstToSsaCtx`:
+
+```
+Before (method on AstToSsaCtx):
+  private lowerBinary(expr: BinaryExpr): Result<LoweredValue, LoweringError> { ... }
+
+After (free function in sub-module):
+  export function lowerBinary(expr: BinaryExpr, builder: IRBuilder, ctx: LoweringExprCtx): Result<LoweredValue, LoweringError> { ... }
 ```
 
-### D4: `LoweringInput` seam
+The `AstToSsaCtx` method body moves verbatim; `this.builder` becomes the `builder` parameter; `this.<field>` becomes `ctx.<field>`. Control-flow lowering receives a `lowerExpression: (expr: Expression) => Result<LoweredValue, LoweringError>` callback in its context for lowering sub-expressions.
 
-`lowerAstModuleToSsa(moduleNode, loweringInput: LoweringInput)` — it does NOT accept `ModuleMetadata`. The function `deriveLoweringMaps(metadata: ModuleMetadata) → LoweringInput` converts metadata into lowering input. `compile.ts` is responsible for calling `deriveLoweringMaps` before lowering.
+### Slice 3 (#25): Extract expression lowering into `lower_expr.ts`
 
-### D5: Type translation is pure
+Move these methods from `AstToSsaCtx` → free functions in `lower_expr.ts`:
 
-`translateTypeNode(typeNode) → IRType`, `builtinToIrType(ty) → IRType`, `namedBuiltin(name) → BuiltinType` are free functions. No `this`, no context, no builder access. No dependencies on other lowering modules.
-
-### D6: `FormatTag` consolidation
-
-The `FormatTag` enum is now in `src/passes/lowering/types.ts`. The file `src/utils/format_tags.ts` has been deleted. All lowering code imports `FormatTag` from `src/passes/lowering/types`. **Done in slice 1.**
-
-### D7: `irModule` as shared writable
-
-The `IRModule` is passed by reference to sub-modules that register types (`registerEnumTypeMetadata` → `irModule.enums.set`), intern strings (`internIRStringLiteral`), or register struct types. The caller at the module level adds functions via `addIRFunction`. No delta-accumulation pattern.
-
-### D8: No direct IRBuilder field reads
-
-Lowering code accesses `IRBuilder` only through public methods. No reading of `builder.currentFunction`, `builder.currentBlock`, `builder.sealedBlocks`, etc. If a sub-module needs to query builder state, add a proper method to `IRBuilder` (e.g., `isTerminated()`, `getCurrentBlockId()`, `getFunctionParamTypes()`).
-
-## Vertical slice plan
-
-Each slice is independently verifiable by running the full test suite:
-
-```bash
-PATH="/root/.bun/bin:$PATH" bun test tests/compile.test.ts tests/examples.test.ts
-```
-
-Note: `bun` is installed at `/root/.bun/bin/bun`. You must use `PATH="/root/.bun/bin:$PATH"` or the absolute path when running `bun` commands in this environment.
-
-All slices must pass before moving to the next.
-
-### Slice 1: Extract `type_translation` and `LoweringInput` — [#23](https://github.com/May1a/jsrust/issues/23) — DONE
-
-**Status: Complete.** Verified with `bun lint` (all files pass) and `bun test` (38 pass, 33 skip, 0 fail).
-
-**What was done:**
-
-1. Created `src/passes/lowering/types.ts` with:
-   - `LoweringErrorKind` enum, `LoweringError` interface
-   - `LoweringInput` interface
-   - `LoweredValue = { id: ValueId; ty: IRType }` interface
-   - `LocalBinding`, `LoopFrame`, `LoweringConstBinding`, `BuilderSnapshot` interfaces
-   - `FormatTag` enum (consolidated from the old inline enum and `format_tags.ts`)
-   - `FormatTemplate` interface
-   - `LoweringResult<T>` type alias
-
-2. Created `src/passes/lowering/type_translation.ts` with pure free functions:
-   - `translateTypeNode(typeNode) → IRType`
-   - `builtinToIrType(ty) → IRType`
-   - `namedBuiltin(name) → BuiltinType | undefined`
-   - `translateArrayTypeNode(typeNode) → IRType`
-   - `translateTupleTypeNode(typeNode) → IRType`
-   - `irTypeName(ty) → string`
-   - `tupleStructName(elementTypes) → string`
-
-3. Created `src/passes/lowering/index.ts` — re-exports from `types.ts` and `type_translation.ts`
-
-4. Modified `src/passes/ast_to_ssa.ts`:
-   - Removed the inline `FormatTag` enum (now imported from `./lowering/types`)
-   - Removed the inline `LoweringErrorKind`/`LoweringError` (still defined locally in `ast_to_ssa.ts` but the canonical definitions are in `lowering/types.ts`; the local ones will be removed in a later slice when the class is dismantled)
-   - Static methods `translateTypeNode`, `builtinToIrType`, `namedBuiltin`, `translateArrayTypeNode`, `translateTupleTypeNode`, `irTypeName`, `tupleStructName` now delegate to the pure functions in `lowering/type_translation.ts`
-   - Removed unused imports: `OptionTypeNode`, `ResultTypeNode`, `BuiltinType`, `makeIRPtrType`, `internalBug`
-   - Made `deriveLoweringMaps` an exported function (was module-private)
-
-5. Deleted `src/utils/format_tags.ts` and removed its re-export from `src/utils/index.ts`
-
-**Current file structure:**
-```
-src/passes/lowering/
-  CONTEXT.md          (domain docs — unchanged)
-  index.ts            (re-exports types + type_translation)
-  types.ts            (LoweringInput, LoweredValue, FormatTag, error types)
-  type_translation.ts (pure TypeNode → IRType functions)
-```
-
-### Slice 2: Introduce `LoweredValue { id, ty }` tuples — [#24](https://github.com/May1a/jsrust/issues/24)
-
-**Files modified:**
-- `src/passes/ast_to_ssa.ts` — change ALL `lower*` method return types from `Result<ValueId, LoweringError>` to `Result<LoweredValue, LoweringError>`. Update every call site that destructures the result to use `.value.id` and `.value.ty`. Delete `resolveValueType` and `handleInstructionId`.
-
-**No new files.**
-
-**What to verify:** Test suite passes. Type is now available on every lowerer return without querying.
-
-**Key principle:** This is a mechanical change with ~50 call sites. Do it in one pass, run tests, fix any missed sites. The type of every expression is now explicitly known at the call site.
-
-**Tips for the implementer:**
-- `LoweredValue` is already defined in `src/passes/lowering/types.ts`
-- `resolveValueType` is at ~line 4040 in `ast_to_ssa.ts`; it walks `fn.params`, `block.params`, and `block.instructions` to find a `ValueId`'s type
-- `handleInstructionId` is at ~line 4092; it wraps `id: ValueId | null` into `Result<ValueId, LoweringError>`
-- Every call to `this.resolveValueType(...)` must be replaced by using the `.ty` from the `LoweredValue` that was already returned
-- Every call to `AstToSsaCtx.handleInstructionId(...)` must be replaced by wrapping the result directly (the null check can be done inline or via a small helper)
-- Search patterns: `this.resolveValueType(`, `AstToSsaCtx.handleInstructionId(`
-
-### Slice 3: Extract `lower_expr.ts` — [#25](https://github.com/May1a/jsrust/issues/25)
-
-**File created:**
-- `src/passes/lowering/lower_expr.ts`
-
-**Content moved from `AstToSsaCtx` (instance methods → free functions):**
-- `lowerLiteral`, `lowerIdentifier`, `lowerBinary`, `lowerUnary`
-- `lowerCall`, `lowerIdentifierCall`, `lowerMethodCall`, `lowerResolvedCall`, `resolveReceiverArg`, `resolveQualifiedMethodName`, `resolveNamedCallReturnType`
-- `lowerFieldAccess`, `lowerIndexExpr`, `lowerStructLiteral`, `lowerTupleLiteral`, `lowerArrayLiteral`
-- `lowerMacro`, `lowerPrintMacro`, `lowerAssert`, `lowerAssertEq`, `lowerAssertEqEnum`, `lowerEnumVariantFieldCmp`, `preparePrintArguments`, `parseFormatTemplate`
-- `lowerStatement`, `lowerLetStatement`, `lowerConstItem`, `lowerBlock`
-- `lowerAssign`, `lowerAssignTarget`, `lowerAssignTargetIdent`, `lowerAssignTargetDeref`, `lowerAssignTargetField`, `lowerAssignTargetIndex`
-- `lowerReturn` (called from expression visitor, but CFG-adjacent — could go in this slice or slice 4)
+**Expression lowerers:**
+- `lowerLiteral`, `lowerIdentifier` / `visitPathExpr`
+- `lowerBinary`, `handleBinaryOperation`, `handleArithmeticOperation`, `handleComparisonOperation`, `handleBitwiseOperation`
+- `lowerUnary`
+- `lowerCall`, `lowerIdentifierCall`, `lowerMethodCall`, `lowerResolvedCall`
+- `resolveReceiverArg`, `resolveQualifiedMethodName`, `resolveNamedCallReturnType`
+- `lowerFieldAccess`, `lowerIndexExpr`
+- `lowerStructLiteral`, `lowerTupleLiteral`, `lowerArrayLiteral`
 - `lowerEnumConstructorCall`, `lowerSomeConstructor`, `lowerOkConstructor`, `lowerErrConstructor`
-- `resolveExpectedOptionPayloadType`, `resolveResultOkType`, `resolveResultErrType`, `peekExpectedValueType`, `resolveExpectedResultType`
 - `lowerEnumIsTag`, `lowerEnumUnwrap`
 - `tryLowerBuiltinMethod`, `tryLowerBuiltinIsMethod`, `tryLowerBuiltinUnwrapMethod`
-- `resolveGenericCallName`, `resolveEnumTypeForVariant`, `findEnumTypeByName`
-- Format tag helpers: `resolveExpressionFormatTag`, `inferExpressionFormatTag`, `inferFormatTagFromValueType`, `formatTagFromTypeNode`, `isIntegerFormatType`, `formatTagForLiteral`, `countFormatPlaceholders`
-- Binary op helpers: `handleBinaryOperation`, `handleArithmeticOperation`, `handleComparisonOperation`, `handleBitwiseOperation`, all `handle*Operation` methods, `isArithmeticOperation`, `isComparisonOperation`, `isBitwiseOperation`, `resolveIntWidth`, `resolveFloatWidth`, `isFloatish`, `autoDerefForBinaryOp`
-- `visitPathExpr` (delegates to `lowerIdentifier`)
-- Constants: `lowerConstBinding`, `lookupConst`, `bindConst`, `currentConstScope`, `cloneConstScopes`
-- Locals: `bindLocalValue`, `cloneLocals`, `restoreLocals`, `registerEnumTypeMetadata`
+- `resolveEnumTypeForVariant`, `findEnumTypeByName`
+- `resolveGenericCallName`
+
+**Macro lowerers:**
+- `lowerMacro`, `lowerPrintMacro`, `lowerAssert`, `lowerAssertEq`, `lowerAssertEqEnum`, `lowerEnumVariantFieldCmp`
+- `preparePrintArguments`, `parseFormatTemplate`
+
+**Statement lowerers:**
+- `lowerStatement`, `lowerLetStatement`, `lowerConstItem`, `lowerBlock`
+- `lowerAssign`, `lowerAssignTarget`, `lowerAssignTargetIdent`, `lowerAssignTargetDeref`, `lowerAssignTargetField`, `lowerAssignTargetIndex`
+
+**Format tag helpers:**
+- `resolveExpressionFormatTag`, `inferExpressionFormatTag`, `inferFormatTagFromValueType`
+- `formatTagFromTypeNode` (static), `isIntegerFormatType` (static)
+- `formatTagForLiteral` (static), `countFormatPlaceholders` (static)
+
+**Binary op helpers:**
+- `isArithmeticOperation` (static), `isComparisonOperation` (static), `isBitwiseOperation` (static)
+- `resolveIntWidth`, `resolveFloatWidth`, `isFloatish`, `autoDerefForBinaryOp`
+
+**Const helpers:**
+- `lowerConstBinding`, `lookupConst`, `bindConst`, `currentConstScope`, `cloneConstScopes`
+- `lowerExpression`, `lowerExpressionWithExpected`, `getExpressionVisitor`
+
+**Value helpers:**
+- `locals` state + `bindLocalValue`, `cloneLocals`, `restoreLocals`
+- `registerEnumTypeMetadata`
 - `defaultValueForType`, `unitValue`
+- `loweredInst` (static), `loweredUnit`, `loweredValue`
+- `peekExpectedValueType`, `resolveExpectedOptionPayloadType`, `resolveResultOkType`, `resolveResultErrType`, `resolveExpectedResultType`
 
-**Each function signature becomes:**
-```ts
-export function lowerBinary(expr: BinaryExpr, builder: IRBuilder, ctx: LoweringExprCtx): Result<LoweredValue, LoweringError>
-```
+Expected change: `lower_module.ts` shrinks by ~1,700 lines; `lower_expr.ts` grows to ~1,700 lines.
 
-**The `AstToSsaCtx` class delegates:**
-```ts
-private lowerBinary(expr: BinaryExpr): Result<LoweredValue, LoweringError> {
-  return lowerBinaryImpl(expr, this.builder, this.makeExprCtx());
-}
-```
-Where `makeExprCtx()` constructs the slice from the instance fields.
+### Slice 4 (#26): Extract control-flow lowering into `lower_control_flow.ts`
 
-**What to verify:** Full test suite passes. The expression lowering implementation lives in `lower_expr.ts`. `AstToSsaCtx` is a delegating shell.
+Move these methods from `AstToSsaCtx`:
 
-### Slice 4: Extract `lower_control_flow.ts` — [#26](https://github.com/May1a/jsrust/issues/26)
-
-**File created:**
-- `src/passes/lowering/lower_control_flow.ts`
-
-**Content moved from `AstToSsaCtx`:**
 - `lowerIf`, `terminateIfBranches`
 - `lowerLoop`, `lowerWhile`
 - `lowerBreak`, `lowerContinue`
-- `lowerMatchExpr`, `buildMatchCases`, `resolveLiteralPatternValue`, `resolveStructPatternTag`
-- `lowerMatchArms`, `lowerMatchArmBodies`, `bindMatchArmPattern`, `bindStructPatternPayload`
-- `createMergeBlock`, `mergeBlockArgs`, `mergeBlockResultValue`, `resolveMergeResultType`, `connectMergePredecessors`
+- `lowerReturn`
+- `lowerMatchExpr`, `buildMatchCases`
+- `resolveLiteralPatternValue`, `resolveStructPatternTag`
+- `lowerMatchArms`, `lowerMatchArmBodies`
+- `bindMatchArmPattern`, `bindStructPatternPayload`
+- `createMergeBlock`, `mergeBlockArgs`, `mergeBlockResultValue`
+- `resolveMergeResultType`, `connectMergePredecessors`
 - `sealAllBlocks`
-- `lowerReturn` (if not already in slice 3)
 - `currentBlockValue`, `currentBlockId`, `isCurrentBlockTerminated`, `currentTypeKind`
 
-**Each function signature:**
-```ts
-export function lowerIf(expr: IfExpr, builder: IRBuilder, ctx: LoweringCfgCtx): Result<LoweredValue, LoweringError>
-```
+`LoweringCfgCtx` already has a `lowerExpression` callback field — this lets CFG functions recurse into expression lowering without importing expression-specific types.
 
-`LoweringCfgCtx` includes: `loopStack`, `currentReturnType`, `locals`, `enumVariantTags`, `enumVariantOwners`, `structFieldNames`, `irModule`. It also needs access to the expression lowerer (from slice 3) since CFG lowering calls `lowerExpression` to lower sub-expressions. This means `LoweringCfgCtx` must include a `lowerExpression: (expr: Expression) => Result<LoweredValue, LoweringError>` callback.
+Expected change: `lower_module.ts` shrinks by ~400 lines; `lower_control_flow.ts` grows to ~400 lines.
 
-**What to verify:** Full test suite passes. Control-flow logic lives in `lower_control_flow.ts`.
+### Slice 5 (#27): Extract closure lowering into `lower_closure.ts`
 
-### Slice 5: Extract `lower_closure.ts` with fresh builder — [#27](https://github.com/May1a/jsrust/issues/27)
+Move from `AstToSsaCtx`:
 
-**File created:**
-- `src/passes/lowering/lower_closure.ts`
-
-**Content moved from `AstToSsaCtx`:**
 - `lowerClosure`, `lowerNonCapturingClosure`, `lowerClosureFunction`
-- `collectFreeVars`, `inferParamTypeFromBody`, `resolveClosureParamType`, `resolveClosureReturnType`, `inferExprType`
+- `collectFreeVars`
+- `inferParamTypeFromBody`, `resolveClosureParamType`, `resolveClosureReturnType`, `inferExprType`
+- Module-level `closureCounter` (already at module level, line 213)
 
-**DELETED from `AstToSsaCtx`:**
-- `saveBuilderSnapshot`, `restoreBuilderSnapshot`, `withIsolatedBuilderScope` — replaced by fresh `IRBuilder` convention
-- `closureCounter` — moved to `lower_closure.ts` as module-level state
+The fresh `IRBuilder` pattern is already in `lowerNonCapturingClosure` (line 3034: `new AstToSsaCtx(options)` creates a fresh builder). After extraction, this becomes a standalone call to create a fresh `IRBuilder()` + `lowerClosureFunction(...)`.
 
-**The fresh builder convention:**
-```ts
-export function lowerClosure(expr: ClosureExpr, builder: IRBuilder, ctx: LoweringCtx): Result<LoweredValue, LoweringError> {
-  const freeVars = collectFreeVars(expr);
-  const hasCaptures = [...freeVars].some((v) => ctx.locals.has(v));
-  if (!hasCaptures) {
-    const closureBuilder = new IRBuilder();  // fresh builder
-    const fn = lowerClosureFunction(name, expr, closureBuilder, ctx);
-    // fn is added to irModule, closureBuilder is discarded
-  }
-}
-```
+Expected change: `lower_module.ts` shrinks by ~250 lines; `lower_closure.ts` grows to ~250 lines.
 
-**What to verify:** Full test suite passes. Snapshot/restore is gone. Closures produce correct functions.
+### Slice 6 (#28): Finish extraction, clean up `lower_module.ts`
 
-### Slice 6: Extract `lower_module.ts`, wire `compile.ts`, delete `ast_to_ssa.ts` — [#28](https://github.com/May1a/jsrust/issues/28)
+After slices 3–5, `AstToSsaCtx` should only hold the orchestrator methods:
 
-**File created:**
-- `src/passes/lowering/lower_module.ts`
-
-**Content moved (remaining from `AstToSsaCtx` + module-level functions):**
-- `lowerAstModuleToSsa` — now accepts `(moduleNode, loweringInput: LoweringInput)` instead of `(moduleNode, metadata: ModuleMetadata)`
-- `deriveLoweringMaps` — converts `ModuleMetadata → LoweringInput`
-- `lowerModuleItem`
-- `lowerOwnedFunction`
-- `lowerImplMethods`, `lowerTraitImplMethods`
-- `rewriteSelfInMethod`, `ensureImplStructMetadata`, `convertToInitialConsts`, `toLoweringBinding`
-- `collectGenericItems`, `collectAndMonomorphize`, `inferCallSiteTypeArgs`, `inferLiteralType`
-- `lowerFunction` (function-level setup: param binding, body lowering, return, seal)
-- `getLowerableParams`, `startFunction`, `bindFunctionParams`
+- `lowerFunction`, `getLowerableParams`, `startFunction`, `bindFunctionParams`
 - `registerSyntheticFunctionId`, `requireFunctionId`
+- `seedFunctionIds`
+- `lowerModuleItem`, `lowerOwnedFunction`
+- `lowerImplMethods`, `lowerTraitImplMethods`
+- `ensureImplStructMetadata`, `rewriteSelfInMethod`
+- `convertToInitialConsts`, `toLoweringBinding`
+- Top-level: `deriveLoweringMaps`, `lowerAstModuleToSsa`, `lowerAstToSsa`
+- Top-level: `collectGenericItems`, `collectAndMonomorphize`, `inferCallSiteTypeArgs`, `inferLiteralType`
 
-**`compile.ts` changes:**
-```ts
-// Before:
-import { lowerAstModuleToSsa } from "./passes/ast_to_ssa";
-const loweringResult = lowerAstModuleToSsa(module, metadata);
+The `AstToSsaCtx` class itself can optionally be replaced with a plain context object and free functions.
 
-// After:
-import { lowerAstModuleToSsa, deriveLoweringMaps } from "./passes/lowering/lower_module";
-const loweringInput = deriveLoweringMaps(metadata, moduleNode, irModule);
-const loweringResult = lowerAstModuleToSsa(module, loweringInput);
-```
+Cleanups:
+- Delete `BuilderSnapshot` from `types.ts` (dead code since slice 2)
+- Update `CONTEXT.md` sub-module table to reflect actual line counts
+- Ensure `ModuleMetadata` import in `lower_module.ts` is only used by `deriveLoweringMaps`
+- Close GitHub issues #22, #24, #25, #26, #27, #28
 
-**Deleted:**
-- `src/passes/ast_to_ssa.ts` — entire file
-- `AstToSsaCtx` class
-- All delegating shell methods
+## Success criteria (remaining)
 
-**What to verify:** Full test suite passes. `ast_to_ssa.ts` no longer exists. `compile.ts` imports from the new modules.
+1. `lower_expr.ts` contains expression + statement lowering implementation (~1,700 lines)
+2. `lower_control_flow.ts` contains CFG lowering implementation (~400 lines)
+3. `lower_closure.ts` contains closure lowering implementation (~250 lines)
+4. `lower_module.ts` contains only the orchestrator (~400 lines)
+5. `compile.ts` imports from the new modules; passes `LoweringInput` (already done)
+6. `LoweredValue { id, ty }` is universal return type (already done)
+7. `resolveValueType`, `handleInstructionId`, snapshot/restore do not exist (already done)
+8. `BuilderSnapshot` type removed from `types.ts`
+9. `FormatTag` defined once in `lowering/types.ts` (already done)
+10. All lowering functions receive `IRBuilder` as explicit argument
+11. Each sub-module has a sliced context interface (interfaces exist; must be used)
+12. `bun test tests/compile.test.ts tests/examples.test.ts` passes
+13. `bun lint` passes on all modified files
+14. No behavior changes — emitted LLVM IR is identical to baseline
 
 ## Test strategy
 
-### During the refactor (all slices)
+### During extraction
 
-- **Regression gate**: `PATH="/root/.bun/bin:$PATH" bun test tests/compile.test.ts tests/examples.test.ts` must pass after every slice
-- **No new tests written during the refactor** — the structural change is the deliverable
-- **Lint**: `PATH="/root/.bun/bin:$PATH" bun lint <file>` after each file is modified
+- **Regression gate**: `PATH="/root/.bun/bin:$PATH" bun test tests/compile.test.ts tests/examples.test.ts` must pass after every method is moved
+- **Extract one method at a time**, verify, commit
+- **No new tests during extraction** — the structural change is the deliverable
 
-### After the refactor (future work)
+### After extraction
 
 New unit tests for each sub-module:
 - `type_translation.test.ts` — pure function assertions
@@ -372,30 +214,28 @@ New unit tests for each sub-module:
 - `lower_closure.test.ts` — closure lowering assertions
 - `lower_module.test.ts` — integration assertions
 
-Test pattern: construct input AST nodes, call the lowering function, assert on the IR structure. Follow the same test style as `tests/compile.test.ts`.
+## Skills an agent should load
 
-## Success criteria
+- **`tdd`** — if a method extraction causes test failures, work red-green-refactor on the specific method
+- **`diagnose`** — if the regression gate fails and the cause is unclear
+- **`grill-with-docs`** — if any design decision needs revisiting against the lowering domain language in `CONTEXT.md`
 
-1. `ast_to_ssa.ts` no longer exists
-2. Five files exist under `src/passes/lowering/` (plus `types.ts` and `index.ts`)
-3. `compile.ts` imports from the new modules and passes `LoweringInput`
-4. `LoweringInput` seam: lowering never imports `ModuleMetadata` or `TypeContext`
-5. `LoweredValue { id, ty }` is the universal return type from all lowering functions
-6. `resolveValueType` and `handleInstructionId` no longer exist
-7. `saveBuilderSnapshot` / `restoreBuilderSnapshot` / `withIsolatedBuilderScope` no longer exist
-8. Closure lowering uses a fresh `IRBuilder` instance
-9. `FormatTag` is defined once in `lowering/types.ts`; `format_tags.ts` is deleted (**done**)
-10. All lowering functions receive `IRBuilder` as an explicit argument
-11. Each sub-module has a sliced context interface declaring only the state it reads
-12. `bun test tests/compile.test.ts tests/examples.test.ts` passes
-13. `bun lint` passes on all modified files
-14. No behavior changes — emitted LLVM IR is identical to baseline
+## Reading order
+
+1. `CONTEXT-MAP.md` — overall context map
+2. `src/passes/lowering/CONTEXT.md` — lowering domain language and implementation decisions
+3. `src/passes/CONTEXT.md` — passes context (inference, borrow, monomorphization)
+4. `src/ir/CONTEXT.md` — SSA IR context
+5. `src/parse/CONTEXT.md` — parsing context
+6. `src/llvm/CONTEXT.md` — LLVM emission context
+7. This file (`PLAN.md`)
+8. The PRD on GitHub Issues ([#22](https://github.com/May1a/jsrust/issues/22))
 
 ## Out of scope
 
-- Writing unit tests for the new sub-modules (follow-up work)
+- Writing unit tests for new sub-modules (follow-up work)
 - Adding new language features
-- Changing the IR model or builder interface (beyond what D8 requires)
+- Changing the IR model or builder interface
 - Changing the LLVM emission, printer, or toolchain
 - Adding capture-supporting closures
 - Changing parsing or inference

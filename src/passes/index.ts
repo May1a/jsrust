@@ -1,6 +1,6 @@
 export * from "./inference";
 export * from "./borrow";
-export * from "./ast_to_ssa";
+export * from "./lowering/lower_module";
 export * from "./monomorphize";
 export * from "./derive_expand";
 export * from "./module_resolver";

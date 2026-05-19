@@ -18,7 +18,7 @@ import {
     type Node,
     walkAst,
 } from "./parse/ast";
-import { type IRModule, resetIRIds } from "./ir/ir";
+import { makeIRModule, type IRModule, resetIRIds } from "./ir/ir";
 import { validateFunction as validateIRFunction } from "./ir/ir_validate";
 import {
     assembleLlvm,
@@ -27,7 +27,10 @@ import {
     type LlvmModule,
 } from "./llvm";
 import { parseModule } from "./parse/parser";
-import { lowerAstModuleToSsa } from "./passes/ast_to_ssa";
+import {
+    deriveLoweringMaps,
+    lowerAstModuleToSsa,
+} from "./passes/lowering/lower_module";
 import { checkBorrowLite } from "./passes/borrow";
 import { expandDerives } from "./passes/derive_expand";
 import { inferModule } from "./passes/inference";
@@ -461,8 +464,15 @@ export function lowerModule(
         typed.prepared.module,
     );
 
+    const irModule = makeIRModule(typed.prepared.module.name);
+    const loweringInput = deriveLoweringMaps(
+        metadata,
+        typed.prepared.module,
+        irModule,
+    );
+
     const loweringResult = Result.try({
-        try: () => lowerAstModuleToSsa(typed.prepared.module, metadata),
+        try: () => lowerAstModuleToSsa(typed.prepared.module, loweringInput),
         catch: (cause) =>
             normalizeInternalFailure(
                 "lower",

@@ -2,7 +2,7 @@
 
 Translates the typed AST into SSA IR. Consumes a `ModuleNode` plus `LoweringInput` and produces an `IRModule` populated with lowered functions, struct types, enum types, and string literals.
 
-Currently a single monolithic file (`ast_to_ssa.ts`, ~4,600 lines). Being split into five sub-modules by concern.
+The monolithic `ast_to_ssa.ts` has been deleted. Implementation currently lives in `lower_module.ts` (~4,400 lines) inside the `AstToSsaCtx` class. The seam interfaces for sub-modules (`lower_expr.ts`, `lower_control_flow.ts`, `lower_closure.ts`) exist but the implementation has not yet been extracted — that extraction is the current work.
 
 ## Language
 
@@ -104,14 +104,14 @@ Lowering code accesses the builder only through its public methods. Snapshot/res
 
 ## Implementation plan (vertical slices)
 
-Six slices, each independently verifiable by the full test suite:
+Six slices, each independently verifiable by the full test suite. Slices 1–2 are **done**. Slices 3–6 created the seam interfaces but the implementation has not yet been extracted from `AstToSsaCtx`.
 
-1. **Extract `type_translation` and `LoweringInput`**: Create `types.ts`, `type_translation.ts`. Wire `ast_to_ssa.ts` to import from new files. Create `deriveLoweringMaps`.
-2. **Introduce `LoweredValue { id, ty }` tuples**: Change all return types, eliminate `resolveValueType` and `handleInstructionId`.
-3. **Extract `lower_expr.ts`**: Move expression + statement lowerers to free functions with `LoweringExprCtx`.
-4. **Extract `lower_control_flow.ts`**: Move CFG lowering to free functions with `LoweringCfgCtx`.
-5. **Extract `lower_closure.ts` + fresh builder**: Move closure lowering, eliminate snapshot/restore.
-6. **Extract `lower_module.ts` as orchestrator, wire `compile.ts`, delete `ast_to_ssa.ts`**: `lowerAstModuleToSsa` accepts `LoweringInput`. Delete old `AstToSsaCtx`.
+1. **Extract `type_translation` and `LoweringInput`** — **DONE**: Created `types.ts`, `type_translation.ts`, `index.ts`. Deleted `format_tags.ts`. Exported `deriveLoweringMaps`.
+2. **Introduce `LoweredValue { id, ty }` tuples** — **DONE**: All return types changed, `resolveValueType` and `handleInstructionId` deleted. Snapshot/restore methods deleted.
+3. **Extract `lower_expr.ts`** — **PENDING**: `LoweringExprCtx` interface and `LowerExpression` type exist in `lower_expr.ts`. Move the expression + statement lowerer implementations from `AstToSsaCtx` methods into free functions.
+4. **Extract `lower_control_flow.ts`** — **PENDING**: `LoweringCfgCtx` interface and `LowerControlFlow` type exist in `lower_control_flow.ts`. Move CFG implementations from `AstToSsaCtx` methods into free functions.
+5. **Extract `lower_closure.ts` + fresh builder** — **PENDING**: `LoweringClosureCtx` interface and `LowerClosure` type exist in `lower_closure.ts`. Move closure lowering implementations and `closureCounter` from `AstToSsaCtx` into free functions.
+6. **Extract `lower_module.ts` as orchestrator, wire `compile.ts`, delete `ast_to_ssa.ts`** — **WIRED, NOT EXTRACTED**: `compile.ts` correctly calls `deriveLoweringMaps` + `lowerAstModuleToSsa`. `ast_to_ssa.ts` is deleted. But `AstToSsaCtx` still holds all implementation — only the orchestrator methods should remain after slices 3–5.
 
 ## Relationships
 

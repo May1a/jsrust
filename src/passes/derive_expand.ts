@@ -29,7 +29,7 @@ function expandCloneForStruct(item: StructItem): ImplItem {
     const structType = new NamedTypeNode(span, item.name);
 
     // Use NamedTypeNode("Self") as the parser does — rewriteSelfInMethod in
-    // ast_to_ssa.ts will replace "Self" with the concrete type and wrap it in
+    // Lowering will replace "Self" with the concrete type and wrap it in
     // RefTypeNode for ref receivers. Providing RefTypeNode here would cause it
     // to be double-wrapped and produce ptr<ptr<Struct>> in the IR.
     const selfParam = {
