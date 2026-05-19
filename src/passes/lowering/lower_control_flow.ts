@@ -11,7 +11,6 @@ import {
     type MatchArmNode,
     type MatchExpr,
     type ReturnExpr,
-    type Span,
     StructPattern,
     type IfExpr,
     type LoopExpr,
@@ -37,18 +36,11 @@ import {
     type LoweredValue,
     type LoweringError,
     type FormatTag,
+    loweringError,
 } from "./types";
 
 const STRING_FIRST_CHAR_INDEX = 0;
 const DEFAULT_CHAR_CODE = 0;
-
-function loweringError<T>(
-    kind: LoweringErrorKind,
-    message: string,
-    span: Span,
-): Result<T, LoweringError> {
-    return Result.err({ kind, message, span });
-}
 
 export interface LoweringCfgCtx {
     loopStack: LoopFrame[];

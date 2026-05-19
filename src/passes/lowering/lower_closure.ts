@@ -36,16 +36,13 @@ import {
     type LocalBinding,
     type LoweredValue,
     type LoweringError,
+    loweringError,
 } from "./types";
 
 let closureCounter = 0;
 
-function loweringError<T>(
-    kind: LoweringErrorKind,
-    message: string,
-    span: Span,
-): Result<T, LoweringError> {
-    return Result.err({ kind, message, span });
+export function resetClosureCounter(): void {
+    closureCounter = 0;
 }
 
 function intSuffixToWidth(suffix: string | undefined): IntWidth {

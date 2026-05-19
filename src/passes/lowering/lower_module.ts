@@ -383,15 +383,22 @@ export function deriveLoweringMaps(
         }
     }
 
-    for (const item of moduleNode.items) {
-        if (!(item instanceof EnumItem)) continue;
-        const variantTypes: IRType[][] = item.variants.map(() => []);
-        const enumType = makeIREnumType(item.name, variantTypes);
-        const enumKey = getIREnumTypeKey(enumType);
-        if (!irModule.enums.has(enumKey)) {
-            addIREnum(irModule, enumKey, enumType);
+    const collectEnums = (items: ModuleNode["items"]): void => {
+        for (const item of items) {
+            if (item instanceof EnumItem) {
+                const variantTypes: IRType[][] = item.variants.map(() => []);
+                const enumType = makeIREnumType(item.name, variantTypes);
+                const enumKey = getIREnumTypeKey(enumType);
+                if (!irModule.enums.has(enumKey)) {
+                    addIREnum(irModule, enumKey, enumType);
+                }
+            }
+            if (item instanceof ModItem) {
+                collectEnums(item.items);
+            }
         }
-    }
+    };
+    collectEnums(moduleNode.items);
 
     const fnIdMap = new Map(metadata.fnIds);
 
@@ -434,14 +441,14 @@ export function lowerAstModuleToSsa(
     const {
         irModule,
         structFieldNames,
-        fnIdMap,
-        functionReturnTypes,
         enumVariantTags,
         enumVariantOwners,
         namedConsts,
         implConsts,
         getCallSubstitution,
     } = loweringInput;
+    const fnIdMap = new Map(loweringInput.fnIdMap);
+    const functionReturnTypes = new Map(loweringInput.functionReturnTypes);
 
     const registry = new MonomorphizationRegistry();
     collectGenericItems(moduleNode, registry);
@@ -502,13 +509,23 @@ function collectGenericItems(
     moduleNode: ModuleNode,
     registry: MonomorphizationRegistry,
 ): void {
-    for (const item of moduleNode.items) {
+    const visitItem = (item: ModuleNode["items"][number]): void => {
         if (item instanceof GenericFnItem) {
             registry.registerGenericFn(item);
+            return;
         }
         if (item instanceof GenericStructItem) {
             registry.registerGenericStruct(item);
+            return;
         }
+        if (item instanceof ModItem) {
+            for (const nested of item.items) {
+                visitItem(nested);
+            }
+        }
+    };
+    for (const item of moduleNode.items) {
+        visitItem(item);
     }
 }
 

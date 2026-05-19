@@ -129,7 +129,7 @@ import {
     type ValueId,
 } from "../../ir/ir";
 import { IRBuilder } from "../../ir/ir_builder";
-import { FormatTag, LoweringErrorKind, type LocalBinding, type LoopFrame, type LoweredValue, type LoweringConstBinding, type LoweringError } from "./types";
+import { FormatTag, LoweringErrorKind, loweringError, type LocalBinding, type LoopFrame, type LoweredValue, type LoweringConstBinding, type LoweringError, type FormatTemplate } from "./types";
 import {
     builtinToIrType,
     irTypeName,
@@ -174,15 +174,6 @@ import {
     type LoweringClosureCtx,
 } from "./lower_closure";
 
-function loweringError<T>(
-    kind: LoweringErrorKind,
-    message: string,
-    span: Span,
-): Result<T, LoweringError> {
-    return Result.err({ kind, message, span });
-}
-
-// Default values for type initialization
 const DEFAULT_INT_VALUE = 0;
 const DEFAULT_FLOAT_VALUE = 0;
 const DEFAULT_UNIT_VALUE = 0;
@@ -191,11 +182,6 @@ const DEFAULT_CHAR_CODE = 0;
 const EMPTY_FORMAT = "";
 
 const LAST_FRAME_INDEX = -1;
-
-interface FormatTemplate {
-    literal: string;
-    placeholderCount: number;
-}
 
 function zeroSpan(): Span {
     return new Span(0, 0, 0, 0);

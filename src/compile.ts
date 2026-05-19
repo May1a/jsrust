@@ -31,6 +31,7 @@ import {
     deriveLoweringMaps,
     lowerAstModuleToSsa,
 } from "./passes/lowering/lower_module";
+import { resetClosureCounter } from "./passes/lowering/lower_closure";
 import { checkBorrowLite } from "./passes/borrow";
 import { expandDerives } from "./passes/derive_expand";
 import { inferModule } from "./passes/inference";
@@ -458,6 +459,7 @@ export function lowerModule(
 ): LoweredModuleResult {
     const { validate = true } = options;
     resetIRIds();
+    resetClosureCounter();
 
     const metadata = extractModuleMetadata(
         typed.typeContext,

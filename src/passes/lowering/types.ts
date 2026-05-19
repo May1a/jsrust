@@ -1,7 +1,7 @@
-import type { Result } from "better-result";
 import type { CallExpr, Span, Expression, TypeNode } from "../../parse/ast";
 import type { BlockId, IRModule, IRType, ValueId } from "../../ir/ir";
 import type { SubstitutionMap } from "../monomorphize";
+import { Result } from "better-result";
 
 export enum LoweringErrorKind {
     UnsupportedNode,
@@ -15,6 +15,14 @@ export interface LoweringError {
     kind: LoweringErrorKind;
     message: string;
     span: Span;
+}
+
+export function loweringError<T>(
+    kind: LoweringErrorKind,
+    message: string,
+    span: Span,
+): Result<T, LoweringError> {
+    return Result.err({ kind, message, span });
 }
 
 export interface LoweringInput {

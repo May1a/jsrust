@@ -2,6 +2,7 @@ import {
     ArrayTypeNode,
     BuiltinType,
     FnTypeNode,
+    InferredTypeNode,
     LiteralExpr,
     LiteralKind,
     NamedTypeNode,
@@ -44,6 +45,11 @@ export function translateArrayTypeNode(typeNode: ArrayTypeNode): IRType {
         );
     }
     const len = Number(typeNode.length.value);
+    if (len <= 0) {
+        internalBug(
+            `Array length must be positive, got ${String(len)}`,
+        );
+    }
     return makeIRArrayType(elemTy, len);
 }
 
@@ -90,7 +96,12 @@ export function translateTypeNode(typeNode: TypeNode): IRType {
     if (typeNode instanceof TupleTypeNode) {
         return translateTupleTypeNode(typeNode);
     }
-    return makeIRUnitType();
+    if (typeNode instanceof InferredTypeNode) {
+        return makeIRUnitType();
+    }
+    internalBug(
+        `Unhandled TypeNode in translateTypeNode: ${typeNode.constructor.name}`,
+    );
 }
 
 export function irTypeName(ty: IRType): string {
