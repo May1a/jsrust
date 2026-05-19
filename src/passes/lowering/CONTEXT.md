@@ -2,7 +2,7 @@
 
 Translates the typed AST into SSA IR. Consumes a `ModuleNode` plus `LoweringInput` and produces an `IRModule` populated with lowered functions, struct types, enum types, and string literals.
 
-The monolithic `ast_to_ssa.ts` has been deleted. Implementation currently lives in `lower_module.ts` (~4,400 lines) inside the `AstToSsaCtx` class. The seam interfaces for sub-modules (`lower_expr.ts`, `lower_control_flow.ts`, `lower_closure.ts`) exist but the implementation has not yet been extracted — that extraction is the current work.
+The monolithic `ast_to_ssa.ts` has been deleted. Module orchestration now lives in `lower_module.ts`; the lowering implementation class (`AstToSsaCtx`) lives in `lower_expr.ts`. `lower_control_flow.ts` owns CFG lowering free functions, and `lower_closure.ts` owns closure dispatch plus closure function-body lowering.
 
 ## Language
 
@@ -35,7 +35,7 @@ Each sub-module receives only the subset of lowering state it actually reads. `l
 _Avoid_: Shared context, global state
 
 **Phi merging**:
-The pattern shared by `if`, `match`, and `loop` control flow: create a merge block with block parameters for the result type, connect each predecessor with a `br` carrying its value as args, then read the phi-block parameter at the merge. Extracted into `lower_control_flow.ts` with shared helpers (`createMergeBlock`, `connectMergePredecessors`, `mergeBlockResultValue`).
+The pattern shared by `if`, `match`, and `loop` control flow: create a merge block with block parameters for the result type, connect each predecessor with a `br` carrying its value as args, then read the phi-block parameter at the merge. These helpers live in `lower_control_flow.ts`; `AstToSsaCtx` keeps thin wrapper methods for visitor compatibility.
 _Avoid_: Phi insertion, value joining
 
 ## Sub-modules
@@ -44,12 +44,12 @@ The split produces five files under `src/passes/lowering/`:
 
 | File | Concern | ~Lines | Receives |
 |---|---|---|---|
-| `types.ts` | `LoweringInput`, `LoweredValue`, `FormatTag`, error types, common interfaces | ~60 | n/a (pure types) |
-| `type_translation.ts` | `translateTypeNode`, `builtinToIrType`, `namedBuiltin` | ~200 | no builder or context |
-| `lower_expr.ts` | Expression + statement lowering: literals, binary/unary, field/index, struct literals, calls, macros (print, assert, assert_eq, vec, tuple), assignments, let, const, block | ~1,700 | `(expr, builder: IRBuilder, ctx: LoweringExprCtx)` |
-| `lower_control_flow.ts` | `if`/`else` phi merges, `loop`/`while` with break/continue, `match` with enum/literal patterns, `return` | ~400 | `(expr, builder: IRBuilder, ctx: LoweringCfgCtx)` |
-| `lower_closure.ts` | Free-var collection, non-capturing closure → IR function lowering, fresh `IRBuilder` per closure | ~250 | `(expr, builder: IRBuilder, ctx: LoweringCtx)` |
-| `lower_module.ts` | Orchestrator: `lowerAstModuleToSsa`, `deriveLoweringMaps` (converts `ModuleMetadata → LoweringInput`), impl/trait dispatch, `rewriteSelfInMethod`, monomorphization orchestration | ~400 | `(moduleNode, loweringInput)` |
+| `types.ts` | `LoweringInput`, `LoweredValue`, `FormatTag`, error types, common interfaces | ~70 | n/a (pure types) |
+| `type_translation.ts` | `translateTypeNode`, `builtinToIrType`, `namedBuiltin` | ~244 | no builder or context |
+| `lower_expr.ts` | `AstToSsaCtx`; expression + statement lowering; thin wrappers into extracted CFG and closure slices | ~3,300 | class state plus callbacks into extracted slices |
+| `lower_control_flow.ts` | CFG lowering for return/break/continue, if, loops, match, and merge helpers | ~774 | `(expr, builder: IRBuilder, ctx: LoweringCfgCtx)` |
+| `lower_closure.ts` | Free-var collection, capture rejection, non-capturing closure registration, closure function-body lowering | ~250 | `(expr, builder: IRBuilder, ctx: LoweringClosureCtx)` |
+| `lower_module.ts` | Orchestrator: `lowerAstModuleToSsa`, `deriveLoweringMaps` (converts `ModuleMetadata → LoweringInput`), impl/trait dispatch, `rewriteSelfInMethod`, monomorphization orchestration | ~595 | `(moduleNode, loweringInput)` |
 
 ## Implementation decisions (from grilling)
 
@@ -104,14 +104,14 @@ Lowering code accesses the builder only through its public methods. Snapshot/res
 
 ## Implementation plan (vertical slices)
 
-Six slices, each independently verifiable by the full test suite. Slices 1–2 are **done**. Slices 3–6 created the seam interfaces but the implementation has not yet been extracted from `AstToSsaCtx`.
+Six slices, each independently verifiable by the full test suite. Slices 1–6 are complete. Expression, statement, and block lowering are exposed through exported free-function seams that receive `IRBuilder` explicitly and delegate through `LoweringExprCtx`.
 
 1. **Extract `type_translation` and `LoweringInput`** — **DONE**: Created `types.ts`, `type_translation.ts`, `index.ts`. Deleted `format_tags.ts`. Exported `deriveLoweringMaps`.
 2. **Introduce `LoweredValue { id, ty }` tuples** — **DONE**: All return types changed, `resolveValueType` and `handleInstructionId` deleted. Snapshot/restore methods deleted.
-3. **Extract `lower_expr.ts`** — **PENDING**: `LoweringExprCtx` interface and `LowerExpression` type exist in `lower_expr.ts`. Move the expression + statement lowerer implementations from `AstToSsaCtx` methods into free functions.
-4. **Extract `lower_control_flow.ts`** — **PENDING**: `LoweringCfgCtx` interface and `LowerControlFlow` type exist in `lower_control_flow.ts`. Move CFG implementations from `AstToSsaCtx` methods into free functions.
-5. **Extract `lower_closure.ts` + fresh builder** — **PENDING**: `LoweringClosureCtx` interface and `LowerClosure` type exist in `lower_closure.ts`. Move closure lowering implementations and `closureCounter` from `AstToSsaCtx` into free functions.
-6. **Extract `lower_module.ts` as orchestrator, wire `compile.ts`, delete `ast_to_ssa.ts`** — **WIRED, NOT EXTRACTED**: `compile.ts` correctly calls `deriveLoweringMaps` + `lowerAstModuleToSsa`. `ast_to_ssa.ts` is deleted. But `AstToSsaCtx` still holds all implementation — only the orchestrator methods should remain after slices 3–5.
+3. **Extract `lower_expr.ts`** — **DONE**: `AstToSsaCtx` and expression/statement implementation live in `lower_expr.ts`, with explicit `LoweringExprCtx` conformance.
+4. **Extract `lower_control_flow.ts`** — **DONE**: CFG lowering and merge helpers are free functions in `lower_control_flow.ts`; class methods delegate to them.
+5. **Extract `lower_closure.ts` + fresh builder** — **DONE**: closure dispatch, free-var collection, capture rejection, non-capturing closure registration, and closure function-body lowering are free functions in `lower_closure.ts`.
+6. **Extract `lower_module.ts` as orchestrator, wire `compile.ts`, delete `ast_to_ssa.ts`** — **DONE**: `compile.ts` correctly calls `deriveLoweringMaps` + `lowerAstModuleToSsa`, `ast_to_ssa.ts` is deleted, and `lower_module.ts` contains orchestration rather than the monolithic lowering implementation.
 
 ## Relationships
 
